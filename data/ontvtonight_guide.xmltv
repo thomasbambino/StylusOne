@@ -1,0 +1,63 @@
+<?xml version='1.0' encoding='utf-8'?>
+<tv source-info-name="San Diego OTA Guide" generator-info-name="HomelabDashboard" generator-info-url="https://epgshare01.online/epgshare01/">
+  <channel id="10.1">
+    <display-name>ABC San Diego</display-name>
+    <display-name>KGTV</display-name>
+  </channel>
+  <channel id="8.1">
+    <display-name>CBS San Diego</display-name>
+    <display-name>KFMB</display-name>
+  </channel>
+  <channel id="39.1">
+    <display-name>NBC San Diego</display-name>
+    <display-name>KNSD</display-name>
+  </channel>
+  <channel id="69.1">
+    <display-name>FOX San Diego</display-name>
+    <display-name>KSWB</display-name>
+  </channel>
+  <channel id="15.1">
+    <display-name>PBS San Diego</display-name>
+    <display-name>KPBS</display-name>
+  </channel>
+  <channel id="51.1">
+    <display-name>KUSI Independent</display-name>
+    <display-name>KUSI</display-name>
+  </channel>
+  <channel id="8.2">
+    <display-name>Antenna TV</display-name>
+    <display-name>KFMB-DT2</display-name>
+  </channel>
+  <channel id="8.3">
+    <display-name>Decades</display-name>
+    <display-name>KFMB-DT3</display-name>
+  </channel>
+  <channel id="15.2">
+    <display-name>PBS Kids</display-name>
+    <display-name>KPBS2</display-name>
+  </channel>
+  <channel id="15.3">
+    <display-name>Create TV</display-name>
+    <display-name>KPBS3</display-name>
+  </channel>
+  <channel id="39.2">
+    <display-name>Bounce TV</display-name>
+    <display-name>KNSD-DT2</display-name>
+  </channel>
+  <channel id="39.3">
+    <display-name>Court TV</display-name>
+    <display-name>KNSD-DT3</display-name>
+  </channel>
+  <channel id="69.2">
+    <display-name>Grit</display-name>
+    <display-name>KSWB-DT2</display-name>
+  </channel>
+  <channel id="69.3">
+    <display-name>Laff</display-name>
+    <display-name>KSWB-DT3</display-name>
+  </channel>
+  <channel id="45.1">
+    <display-name>The CW</display-name>
+    <display-name>KFMB-TV2</display-name>
+  </channel>
+</tv>

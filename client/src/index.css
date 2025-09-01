@@ -1,0 +1,136 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply font-sans antialiased bg-background text-foreground;
+  }
+}
+
+@layer components {
+
+  /* Completely disable ALL video controls - nuclear option */
+  video {
+    -webkit-appearance: none !important;
+    -moz-appearance: none !important;
+    appearance: none !important;
+  }
+
+  video::-webkit-media-controls,
+  video::-webkit-media-controls-enclosure,
+  video::-webkit-media-controls-panel,
+  video::-webkit-media-controls-play-button,
+  video::-webkit-media-controls-timeline-container,
+  video::-webkit-media-controls-current-time-display,
+  video::-webkit-media-controls-time-remaining-display,
+  video::-webkit-media-controls-timeline,
+  video::-webkit-media-controls-seek-back-button,
+  video::-webkit-media-controls-seek-forward-button,
+  video::-webkit-media-controls-fullscreen-button,
+  video::-webkit-media-controls-rewind-button,
+  video::-webkit-media-controls-return-to-realtime-button,
+  video::-webkit-media-controls-toggle-closed-captions-button,
+  video::-webkit-media-controls-volume-slider,
+  video::-webkit-media-controls-mute-button,
+  video::-webkit-media-controls-start-playback-button {
+    display: none !important;
+    opacity: 0 !important;
+    pointer-events: none !important;
+    visibility: hidden !important;
+    width: 0 !important;
+    height: 0 !important;
+  }
+
+  /* Hide controls in ALL fullscreen states */
+  video:-webkit-full-screen::-webkit-media-controls,
+  video:-webkit-full-screen::-webkit-media-controls-enclosure,
+  video:-webkit-full-screen::-webkit-media-controls-panel,
+  video:-webkit-full-screen::-webkit-media-controls-start-playback-button,
+  video:-moz-full-screen::-moz-media-controls,
+  video:fullscreen::-webkit-media-controls {
+    display: none !important;
+    visibility: hidden !important;
+  }
+
+  /* Complete Firefox support */
+  video::-moz-media-controls {
+    display: none !important;
+    visibility: hidden !important;
+  }
+
+  /* Disable context menu to prevent native controls */
+  video {
+    -webkit-user-select: none !important;
+    -moz-user-select: none !important;
+    -ms-user-select: none !important;
+    user-select: none !important;
+  }
+  
+  /* Style the live TV player */
+  .live-tv-player {
+    outline: none;
+  }
+
+  /* Custom volume slider with proper positioning */
+  .slider {
+    -webkit-appearance: none;
+    appearance: none;
+    background: transparent;
+    cursor: pointer;
+  }
+
+  .slider::-webkit-slider-track {
+    width: 100%;
+    height: 4px;
+    border-radius: 2px;
+    background: rgba(255,255,255,0.3);
+    border: none;
+  }
+  
+  .slider::-webkit-slider-runnable-track {
+    width: 100%;
+    height: 4px;
+    border-radius: 2px;
+    background: rgba(255,255,255,0.3);
+    border: none;
+  }
+
+  .slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    background: white;
+    cursor: pointer;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+    border: none;
+    margin-top: -5px;
+  }
+
+  .slider::-moz-range-track {
+    width: 100%;
+    height: 4px;
+    border-radius: 2px;
+    background: rgba(255,255,255,0.3);
+    border: none;
+  }
+
+  .slider::-moz-range-thumb {
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    background: white;
+    cursor: pointer;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+    border: none;
+    -moz-appearance: none;
+    appearance: none;
+    margin-top: -5px;
+  }
+}

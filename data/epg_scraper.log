@@ -1,0 +1,51 @@
+2025-08-31 03:00:01 - Starting EPG scraper process
+2025-08-31 03:00:01 - Installing Python dependencies...
+2025-08-31 03:00:03 - Running Zap2it scraper...
+/Users/tommyshorez/Library/Python/3.9/lib/python/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2 only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://github.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+2025-08-31 03:00:05,036 - INFO - Loaded config: /Users/tommyshorez/Projects/HomelabDashboard/scripts/zap2itconfig.ini
+2025-08-31 03:00:05,036 - INFO - Starting Zap2it scraping process
+2025-08-31 03:00:05,036 - INFO - Setting up Chrome driver...
+2025-08-31 03:00:05,036 - INFO - ====== WebDriver manager ======
+2025-08-31 03:00:05,434 - INFO - Get LATEST chromedriver version for google-chrome
+2025-08-31 03:00:05,575 - INFO - Get LATEST chromedriver version for google-chrome
+2025-08-31 03:00:05,706 - INFO - Get LATEST chromedriver version for google-chrome
+2025-08-31 03:00:05,980 - INFO - WebDriver version 139.0.7258.154 selected
+2025-08-31 03:00:05,990 - INFO - Modern chrome version https://storage.googleapis.com/chrome-for-testing-public/139.0.7258.154/mac-arm64/chromedriver-mac-arm64.zip
+2025-08-31 03:00:05,990 - INFO - About to download new driver from https://storage.googleapis.com/chrome-for-testing-public/139.0.7258.154/mac-arm64/chromedriver-mac-arm64.zip
+2025-08-31 03:00:06,161 - INFO - Driver downloading response is 200
+2025-08-31 03:00:06,449 - INFO - Get LATEST chromedriver version for google-chrome
+2025-08-31 03:00:06,652 - INFO - Driver has been saved in cache [/Users/tommyshorez/.wdm/drivers/chromedriver/mac64/139.0.7258.154]
+2025-08-31 03:00:07,977 - INFO - Chrome driver setup complete
+2025-08-31 03:00:07,977 - INFO - Navigating to Gracenote login...
+2025-08-31 03:00:16,503 - INFO - Already logged in or no login required
+2025-08-31 03:00:16,503 - INFO - Extracting TV guide data...
+2025-08-31 03:00:36,929 - ERROR - Failed to extract grid data: Message: 
+Stacktrace:
+0   chromedriver                        0x000000010062ae00 cxxbridge1$str$ptr + 2742224
+1   chromedriver                        0x0000000100622d00 cxxbridge1$str$ptr + 2709200
+2   chromedriver                        0x000000010016d0b8 cxxbridge1$string$len + 90520
+3   chromedriver                        0x00000001001b45d8 cxxbridge1$string$len + 382648
+4   chromedriver                        0x00000001001f5980 cxxbridge1$string$len + 649824
+5   chromedriver                        0x00000001001a88f4 cxxbridge1$string$len + 334292
+6   chromedriver                        0x00000001005ee478 cxxbridge1$str$ptr + 2494024
+7   chromedriver                        0x00000001005f16a4 cxxbridge1$str$ptr + 2506868
+8   chromedriver                        0x00000001005cf3b0 cxxbridge1$str$ptr + 2366848
+9   chromedriver                        0x00000001005f1f4c cxxbridge1$str$ptr + 2509084
+10  chromedriver                        0x00000001005c04a8 cxxbridge1$str$ptr + 2305656
+11  chromedriver                        0x0000000100611644 cxxbridge1$str$ptr + 2637844
+12  chromedriver                        0x00000001006117d0 cxxbridge1$str$ptr + 2638240
+13  chromedriver                        0x000000010062294c cxxbridge1$str$ptr + 2708252
+14  libsystem_pthread.dylib             0x0000000185672bc8 _pthread_start + 136
+15  libsystem_pthread.dylib             0x000000018566db80 thread_start + 8
+
+2025-08-31 03:00:36,929 - INFO - Generating sample TV guide data
+2025-08-31 03:00:36,932 - INFO - Building XMLTV document...
+2025-08-31 03:00:36,942 - INFO - Saving XMLTV to /Users/tommyshorez/Projects/HomelabDashboard/data/xmlguide.xmltv
+2025-08-31 03:00:36,955 - INFO - XMLTV saved successfully to /Users/tommyshorez/Projects/HomelabDashboard/data/xmlguide.xmltv
+2025-08-31 03:00:36,955 - INFO - Scraping completed successfully
+2025-08-31 03:00:37,301 - INFO - Browser closed
+2025-08-31 03:00:37 - Scraper completed successfully
+2025-08-31 03:00:37 - XMLTV file created successfully (37762 bytes)
+2025-08-31 03:00:37 - XMLTV_PATH set to: /Users/tommyshorez/Projects/HomelabDashboard/data/xmlguide.xmltv
+2025-08-31 03:00:37 - Backup created: /Users/tommyshorez/Projects/HomelabDashboard/data/xmlguide_20250831_030037.xmltv

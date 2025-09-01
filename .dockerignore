@@ -1,0 +1,58 @@
+# Git
+.git
+.gitignore
+
+# Docker
+Dockerfile
+docker-compose.yml
+.dockerignore
+
+# Node.js
+node_modules
+npm-debug.log
+yarn-debug.log
+yarn-error.log
+
+# Build output
+dist
+build
+.next
+out
+
+# Environment variables
+.env
+.env.local
+.env.development
+.env.test
+!.env.production
+
+# Logs
+logs
+*.log
+
+# Editor directories and files
+.idea
+.vscode
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Other
+README.md
+LICENSE
+*.md
+!README.md
+.npmrc
+homelab-control.sh
+
+# Database
+*.sqlite
+*.sql
+*.dump
+
+# Keep all uploads and assets from being copied (they'll be mounted as volumes)
+uploads/*
+!uploads/.gitkeep

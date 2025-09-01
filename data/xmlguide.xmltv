@@ -1,0 +1,791 @@
+<?xml version="1.0" ?>
+<!DOCTYPE tv
+  SYSTEM 'xmltv.dtd'>
+<tv source-info-url="https://tvlistings.gracenote.com/" source-info-name="Gracenote" generator-info-name="Modern Zap2it Scraper" generator-info-url="https://github.com/your-repo">
+  <channel id="10.1">
+    <display-name lang="en">10.1 ABC</display-name>
+    <display-name lang="en">10.1</display-name>
+    <display-name lang="en">ABC</display-name>
+  </channel>
+  <channel id="15.1">
+    <display-name lang="en">15.1 PBS</display-name>
+    <display-name lang="en">15.1</display-name>
+    <display-name lang="en">PBS</display-name>
+  </channel>
+  <channel id="10.7">
+    <display-name lang="en">10.7 HSN</display-name>
+    <display-name lang="en">10.7</display-name>
+    <display-name lang="en">HSN</display-name>
+  </channel>
+  <channel id="10.8">
+    <display-name lang="en">10.8 QVC</display-name>
+    <display-name lang="en">10.8</display-name>
+    <display-name lang="en">QVC</display-name>
+  </channel>
+  <channel id="39.1">
+    <display-name lang="en">39.1 NBC</display-name>
+    <display-name lang="en">39.1</display-name>
+    <display-name lang="en">NBC</display-name>
+  </channel>
+  <channel id="69.1">
+    <display-name lang="en">69.1 FOX</display-name>
+    <display-name lang="en">69.1</display-name>
+    <display-name lang="en">FOX</display-name>
+  </channel>
+  <programme start="20250831030000 +0000" stop="20250831040000 +0000" channel="10.1">
+    <title lang="en">Late Night Good Morning America</title>
+    <sub-title lang="en">New Episode</sub-title>
+    <desc lang="en">Currently airing on KGTV-HD</desc>
+    <length units="minutes">60</length>
+  </programme>
+  <programme start="20250831040000 +0000" stop="20250831043000 +0000" channel="10.1">
+    <title lang="en">Late Night The View</title>
+    <desc lang="en">Currently airing on KGTV-HD</desc>
+    <length units="minutes">30</length>
+  </programme>
+  <programme start="20250831043000 +0000" stop="20250831053000 +0000" channel="10.1">
+    <title lang="en">Late Night General Hospital</title>
+    <desc lang="en">Currently airing on KGTV-HD</desc>
+    <length units="minutes">60</length>
+  </programme>
+  <programme start="20250831053000 +0000" stop="20250831060000 +0000" channel="10.1">
+    <title lang="en">Late Night Local News</title>
+    <desc lang="en">Currently airing on KGTV-HD</desc>
+    <length units="minutes">30</length>
+  </programme>
+  <programme start="20250831060000 +0000" stop="20250831070000 +0000" channel="10.1">
+    <title lang="en">Late Night Wheel of Fortune</title>
+    <sub-title lang="en">New Episode</sub-title>
+    <desc lang="en">Currently airing on KGTV-HD</desc>
+    <length units="minutes">60</length>
+  </programme>
+  <programme start="20250831070000 +0000" stop="20250831073000 +0000" channel="10.1">
+    <title lang="en">Late Night Jeopardy!</title>
+    <desc lang="en">Currently airing on KGTV-HD</desc>
+    <length units="minutes">30</length>
+  </programme>
+  <programme start="20250831073000 +0000" stop="20250831083000 +0000" channel="10.1">
+    <title lang="en">Morning World News Tonight</title>
+    <desc lang="en">Currently airing on KGTV-HD</desc>
+    <length units="minutes">60</length>
+  </programme>
+  <programme start="20250831083000 +0000" stop="20250831090000 +0000" channel="10.1">
+    <title lang="en">Morning The Bachelor</title>
+    <desc lang="en">Currently airing on KGTV-HD</desc>
+    <length units="minutes">30</length>
+  </programme>
+  <programme start="20250831090000 +0000" stop="20250831100000 +0000" channel="10.1">
+    <title lang="en">Morning Abbott Elementary</title>
+    <sub-title lang="en">New Episode</sub-title>
+    <desc lang="en">Currently airing on KGTV-HD</desc>
+    <length units="minutes">60</length>
+  </programme>
+  <programme start="20250831100000 +0000" stop="20250831103000 +0000" channel="10.1">
+    <title lang="en">Morning The Rookie</title>
+    <desc lang="en">Currently airing on KGTV-HD</desc>
+    <length units="minutes">30</length>
+  </programme>
+  <programme start="20250831103000 +0000" stop="20250831113000 +0000" channel="10.1">
+    <title lang="en">Local News</title>
+    <desc lang="en">Currently airing on KGTV-HD</desc>
+    <length units="minutes">60</length>
+  </programme>
+  <programme start="20250831113000 +0000" stop="20250831120000 +0000" channel="10.1">
+    <title lang="en">Jimmy Kimmel Live!</title>
+    <desc lang="en">Currently airing on KGTV-HD</desc>
+    <length units="minutes">30</length>
+  </programme>
+  <programme start="20250831120000 +0000" stop="20250831130000 +0000" channel="10.1">
+    <title lang="en">Good Morning America</title>
+    <sub-title lang="en">New Episode</sub-title>
+    <desc lang="en">Currently airing on KGTV-HD</desc>
+    <length units="minutes">60</length>
+  </programme>
+  <programme start="20250831130000 +0000" stop="20250831133000 +0000" channel="10.1">
+    <title lang="en">The View</title>
+    <desc lang="en">Currently airing on KGTV-HD</desc>
+    <length units="minutes">30</length>
+  </programme>
+  <programme start="20250831133000 +0000" stop="20250831143000 +0000" channel="10.1">
+    <title lang="en">General Hospital</title>
+    <desc lang="en">Currently airing on KGTV-HD</desc>
+    <length units="minutes">60</length>
+  </programme>
+  <programme start="20250831143000 +0000" stop="20250831150000 +0000" channel="10.1">
+    <title lang="en">Local News</title>
+    <desc lang="en">Currently airing on KGTV-HD</desc>
+    <length units="minutes">30</length>
+  </programme>
+  <programme start="20250831150000 +0000" stop="20250831160000 +0000" channel="10.1">
+    <title lang="en">Wheel of Fortune</title>
+    <sub-title lang="en">New Episode</sub-title>
+    <desc lang="en">Currently airing on KGTV-HD</desc>
+    <length units="minutes">60</length>
+  </programme>
+  <programme start="20250831160000 +0000" stop="20250831163000 +0000" channel="10.1">
+    <title lang="en">Evening News</title>
+    <desc lang="en">Currently airing on KGTV-HD</desc>
+    <length units="minutes">30</length>
+  </programme>
+  <programme start="20250831163000 +0000" stop="20250831173000 +0000" channel="10.1">
+    <title lang="en">World News Tonight</title>
+    <desc lang="en">Currently airing on KGTV-HD</desc>
+    <length units="minutes">60</length>
+  </programme>
+  <programme start="20250831173000 +0000" stop="20250831180000 +0000" channel="10.1">
+    <title lang="en">The Bachelor</title>
+    <desc lang="en">Currently airing on KGTV-HD</desc>
+    <length units="minutes">30</length>
+  </programme>
+  <programme start="20250831180000 +0000" stop="20250831190000 +0000" channel="10.1">
+    <title lang="en">Abbott Elementary</title>
+    <sub-title lang="en">New Episode</sub-title>
+    <desc lang="en">Currently airing on KGTV-HD</desc>
+    <length units="minutes">60</length>
+  </programme>
+  <programme start="20250831190000 +0000" stop="20250831193000 +0000" channel="10.1">
+    <title lang="en">The Rookie</title>
+    <desc lang="en">Currently airing on KGTV-HD</desc>
+    <length units="minutes">30</length>
+  </programme>
+  <programme start="20250831193000 +0000" stop="20250831203000 +0000" channel="10.1">
+    <title lang="en">Local News</title>
+    <desc lang="en">Currently airing on KGTV-HD</desc>
+    <length units="minutes">60</length>
+  </programme>
+  <programme start="20250831203000 +0000" stop="20250831210000 +0000" channel="10.1">
+    <title lang="en">Late Night Jimmy Kimmel Live!</title>
+    <desc lang="en">Currently airing on KGTV-HD</desc>
+    <length units="minutes">30</length>
+  </programme>
+  <programme start="20250831030000 +0000" stop="20250831040000 +0000" channel="15.1">
+    <title lang="en">PBS NewsHour</title>
+    <sub-title lang="en">New Episode</sub-title>
+    <desc lang="en">Currently airing on KPBSHD</desc>
+    <length units="minutes">60</length>
+  </programme>
+  <programme start="20250831040000 +0000" stop="20250831043000 +0000" channel="15.1">
+    <title lang="en">Nature</title>
+    <desc lang="en">Currently airing on KPBSHD</desc>
+    <length units="minutes">30</length>
+  </programme>
+  <programme start="20250831043000 +0000" stop="20250831053000 +0000" channel="15.1">
+    <title lang="en">NOVA</title>
+    <desc lang="en">Currently airing on KPBSHD</desc>
+    <length units="minutes">60</length>
+  </programme>
+  <programme start="20250831053000 +0000" stop="20250831060000 +0000" channel="15.1">
+    <title lang="en">Frontline</title>
+    <desc lang="en">Currently airing on KPBSHD</desc>
+    <length units="minutes">30</length>
+  </programme>
+  <programme start="20250831060000 +0000" stop="20250831070000 +0000" channel="15.1">
+    <title lang="en">Masterpiece</title>
+    <sub-title lang="en">New Episode</sub-title>
+    <desc lang="en">Currently airing on KPBSHD</desc>
+    <length units="minutes">60</length>
+  </programme>
+  <programme start="20250831070000 +0000" stop="20250831073000 +0000" channel="15.1">
+    <title lang="en">Independent Lens</title>
+    <desc lang="en">Currently airing on KPBSHD</desc>
+    <length units="minutes">30</length>
+  </programme>
+  <programme start="20250831073000 +0000" stop="20250831083000 +0000" channel="15.1">
+    <title lang="en">Morning American Experience</title>
+    <desc lang="en">Currently airing on KPBSHD</desc>
+    <length units="minutes">60</length>
+  </programme>
+  <programme start="20250831083000 +0000" stop="20250831090000 +0000" channel="15.1">
+    <title lang="en">Morning Antiques Roadshow</title>
+    <desc lang="en">Currently airing on KPBSHD</desc>
+    <length units="minutes">30</length>
+  </programme>
+  <programme start="20250831090000 +0000" stop="20250831100000 +0000" channel="15.1">
+    <title lang="en">Morning Call the Midwife</title>
+    <sub-title lang="en">New Episode</sub-title>
+    <desc lang="en">Currently airing on KPBSHD</desc>
+    <length units="minutes">60</length>
+  </programme>
+  <programme start="20250831100000 +0000" stop="20250831103000 +0000" channel="15.1">
+    <title lang="en">Morning All Creatures Great &amp; Small</title>
+    <desc lang="en">Currently airing on KPBSHD</desc>
+    <length units="minutes">30</length>
+  </programme>
+  <programme start="20250831103000 +0000" stop="20250831113000 +0000" channel="15.1">
+    <title lang="en">Austin City Limits</title>
+    <desc lang="en">Currently airing on KPBSHD</desc>
+    <length units="minutes">60</length>
+  </programme>
+  <programme start="20250831113000 +0000" stop="20250831120000 +0000" channel="15.1">
+    <title lang="en">Amanpour and Company</title>
+    <desc lang="en">Currently airing on KPBSHD</desc>
+    <length units="minutes">30</length>
+  </programme>
+  <programme start="20250831120000 +0000" stop="20250831130000 +0000" channel="15.1">
+    <title lang="en">PBS NewsHour</title>
+    <sub-title lang="en">New Episode</sub-title>
+    <desc lang="en">Currently airing on KPBSHD</desc>
+    <length units="minutes">60</length>
+  </programme>
+  <programme start="20250831130000 +0000" stop="20250831133000 +0000" channel="15.1">
+    <title lang="en">Nature</title>
+    <desc lang="en">Currently airing on KPBSHD</desc>
+    <length units="minutes">30</length>
+  </programme>
+  <programme start="20250831133000 +0000" stop="20250831143000 +0000" channel="15.1">
+    <title lang="en">NOVA</title>
+    <desc lang="en">Currently airing on KPBSHD</desc>
+    <length units="minutes">60</length>
+  </programme>
+  <programme start="20250831143000 +0000" stop="20250831150000 +0000" channel="15.1">
+    <title lang="en">Frontline</title>
+    <desc lang="en">Currently airing on KPBSHD</desc>
+    <length units="minutes">30</length>
+  </programme>
+  <programme start="20250831150000 +0000" stop="20250831160000 +0000" channel="15.1">
+    <title lang="en">Masterpiece</title>
+    <sub-title lang="en">New Episode</sub-title>
+    <desc lang="en">Currently airing on KPBSHD</desc>
+    <length units="minutes">60</length>
+  </programme>
+  <programme start="20250831160000 +0000" stop="20250831163000 +0000" channel="15.1">
+    <title lang="en">Independent Lens</title>
+    <desc lang="en">Currently airing on KPBSHD</desc>
+    <length units="minutes">30</length>
+  </programme>
+  <programme start="20250831163000 +0000" stop="20250831173000 +0000" channel="15.1">
+    <title lang="en">American Experience</title>
+    <desc lang="en">Currently airing on KPBSHD</desc>
+    <length units="minutes">60</length>
+  </programme>
+  <programme start="20250831173000 +0000" stop="20250831180000 +0000" channel="15.1">
+    <title lang="en">Antiques Roadshow</title>
+    <desc lang="en">Currently airing on KPBSHD</desc>
+    <length units="minutes">30</length>
+  </programme>
+  <programme start="20250831180000 +0000" stop="20250831190000 +0000" channel="15.1">
+    <title lang="en">Call the Midwife</title>
+    <sub-title lang="en">New Episode</sub-title>
+    <desc lang="en">Currently airing on KPBSHD</desc>
+    <length units="minutes">60</length>
+  </programme>
+  <programme start="20250831190000 +0000" stop="20250831193000 +0000" channel="15.1">
+    <title lang="en">All Creatures Great &amp; Small</title>
+    <desc lang="en">Currently airing on KPBSHD</desc>
+    <length units="minutes">30</length>
+  </programme>
+  <programme start="20250831193000 +0000" stop="20250831203000 +0000" channel="15.1">
+    <title lang="en">Austin City Limits</title>
+    <desc lang="en">Currently airing on KPBSHD</desc>
+    <length units="minutes">60</length>
+  </programme>
+  <programme start="20250831203000 +0000" stop="20250831210000 +0000" channel="15.1">
+    <title lang="en">Amanpour and Company</title>
+    <desc lang="en">Currently airing on KPBSHD</desc>
+    <length units="minutes">30</length>
+  </programme>
+  <programme start="20250831030000 +0000" stop="20250831040000 +0000" channel="10.7">
+    <title lang="en">Today's Special Value</title>
+    <sub-title lang="en">New Episode</sub-title>
+    <desc lang="en">Currently airing on HSN</desc>
+    <length units="minutes">60</length>
+  </programme>
+  <programme start="20250831040000 +0000" stop="20250831043000 +0000" channel="10.7">
+    <title lang="en">Fashion Friday</title>
+    <desc lang="en">Currently airing on HSN</desc>
+    <length units="minutes">30</length>
+  </programme>
+  <programme start="20250831043000 +0000" stop="20250831053000 +0000" channel="10.7">
+    <title lang="en">Home Solutions</title>
+    <desc lang="en">Currently airing on HSN</desc>
+    <length units="minutes">60</length>
+  </programme>
+  <programme start="20250831053000 +0000" stop="20250831060000 +0000" channel="10.7">
+    <title lang="en">Beauty Hour</title>
+    <desc lang="en">Currently airing on HSN</desc>
+    <length units="minutes">30</length>
+  </programme>
+  <programme start="20250831060000 +0000" stop="20250831070000 +0000" channel="10.7">
+    <title lang="en">Kitchen &amp; Food</title>
+    <sub-title lang="en">New Episode</sub-title>
+    <desc lang="en">Currently airing on HSN</desc>
+    <length units="minutes">60</length>
+  </programme>
+  <programme start="20250831070000 +0000" stop="20250831073000 +0000" channel="10.7">
+    <title lang="en">Jewelry Showcase</title>
+    <desc lang="en">Currently airing on HSN</desc>
+    <length units="minutes">30</length>
+  </programme>
+  <programme start="20250831073000 +0000" stop="20250831083000 +0000" channel="10.7">
+    <title lang="en">Morning Electronics Show</title>
+    <desc lang="en">Currently airing on HSN</desc>
+    <length units="minutes">60</length>
+  </programme>
+  <programme start="20250831083000 +0000" stop="20250831090000 +0000" channel="10.7">
+    <title lang="en">Morning Holiday Gifts</title>
+    <desc lang="en">Currently airing on HSN</desc>
+    <length units="minutes">30</length>
+  </programme>
+  <programme start="20250831090000 +0000" stop="20250831100000 +0000" channel="10.7">
+    <title lang="en">Morning Wellness Wednesday</title>
+    <sub-title lang="en">New Episode</sub-title>
+    <desc lang="en">Currently airing on HSN</desc>
+    <length units="minutes">60</length>
+  </programme>
+  <programme start="20250831100000 +0000" stop="20250831103000 +0000" channel="10.7">
+    <title lang="en">Morning Clearance Event</title>
+    <desc lang="en">Currently airing on HSN</desc>
+    <length units="minutes">30</length>
+  </programme>
+  <programme start="20250831103000 +0000" stop="20250831113000 +0000" channel="10.7">
+    <title lang="en">New Product Launch</title>
+    <desc lang="en">Currently airing on HSN</desc>
+    <length units="minutes">60</length>
+  </programme>
+  <programme start="20250831113000 +0000" stop="20250831120000 +0000" channel="10.7">
+    <title lang="en">Customer Choice</title>
+    <desc lang="en">Currently airing on HSN</desc>
+    <length units="minutes">30</length>
+  </programme>
+  <programme start="20250831120000 +0000" stop="20250831130000 +0000" channel="10.7">
+    <title lang="en">Today's Special Value</title>
+    <sub-title lang="en">New Episode</sub-title>
+    <desc lang="en">Currently airing on HSN</desc>
+    <length units="minutes">60</length>
+  </programme>
+  <programme start="20250831130000 +0000" stop="20250831133000 +0000" channel="10.7">
+    <title lang="en">Fashion Friday</title>
+    <desc lang="en">Currently airing on HSN</desc>
+    <length units="minutes">30</length>
+  </programme>
+  <programme start="20250831133000 +0000" stop="20250831143000 +0000" channel="10.7">
+    <title lang="en">Home Solutions</title>
+    <desc lang="en">Currently airing on HSN</desc>
+    <length units="minutes">60</length>
+  </programme>
+  <programme start="20250831143000 +0000" stop="20250831150000 +0000" channel="10.7">
+    <title lang="en">Beauty Hour</title>
+    <desc lang="en">Currently airing on HSN</desc>
+    <length units="minutes">30</length>
+  </programme>
+  <programme start="20250831150000 +0000" stop="20250831160000 +0000" channel="10.7">
+    <title lang="en">Kitchen &amp; Food</title>
+    <sub-title lang="en">New Episode</sub-title>
+    <desc lang="en">Currently airing on HSN</desc>
+    <length units="minutes">60</length>
+  </programme>
+  <programme start="20250831160000 +0000" stop="20250831163000 +0000" channel="10.7">
+    <title lang="en">Jewelry Showcase</title>
+    <desc lang="en">Currently airing on HSN</desc>
+    <length units="minutes">30</length>
+  </programme>
+  <programme start="20250831163000 +0000" stop="20250831173000 +0000" channel="10.7">
+    <title lang="en">Electronics Show</title>
+    <desc lang="en">Currently airing on HSN</desc>
+    <length units="minutes">60</length>
+  </programme>
+  <programme start="20250831173000 +0000" stop="20250831180000 +0000" channel="10.7">
+    <title lang="en">Holiday Gifts</title>
+    <desc lang="en">Currently airing on HSN</desc>
+    <length units="minutes">30</length>
+  </programme>
+  <programme start="20250831180000 +0000" stop="20250831190000 +0000" channel="10.7">
+    <title lang="en">Wellness Wednesday</title>
+    <sub-title lang="en">New Episode</sub-title>
+    <desc lang="en">Currently airing on HSN</desc>
+    <length units="minutes">60</length>
+  </programme>
+  <programme start="20250831190000 +0000" stop="20250831193000 +0000" channel="10.7">
+    <title lang="en">Clearance Event</title>
+    <desc lang="en">Currently airing on HSN</desc>
+    <length units="minutes">30</length>
+  </programme>
+  <programme start="20250831193000 +0000" stop="20250831203000 +0000" channel="10.7">
+    <title lang="en">New Product Launch</title>
+    <desc lang="en">Currently airing on HSN</desc>
+    <length units="minutes">60</length>
+  </programme>
+  <programme start="20250831203000 +0000" stop="20250831210000 +0000" channel="10.7">
+    <title lang="en">Customer Choice</title>
+    <desc lang="en">Currently airing on HSN</desc>
+    <length units="minutes">30</length>
+  </programme>
+  <programme start="20250831030000 +0000" stop="20250831040000 +0000" channel="10.8">
+    <title lang="en">AM Style</title>
+    <sub-title lang="en">New Episode</sub-title>
+    <desc lang="en">Currently airing on QVC</desc>
+    <length units="minutes">60</length>
+  </programme>
+  <programme start="20250831040000 +0000" stop="20250831043000 +0000" channel="10.8">
+    <title lang="en">Today's Special Value</title>
+    <desc lang="en">Currently airing on QVC</desc>
+    <length units="minutes">30</length>
+  </programme>
+  <programme start="20250831043000 +0000" stop="20250831053000 +0000" channel="10.8">
+    <title lang="en">Fashion Focus</title>
+    <desc lang="en">Currently airing on QVC</desc>
+    <length units="minutes">60</length>
+  </programme>
+  <programme start="20250831053000 +0000" stop="20250831060000 +0000" channel="10.8">
+    <title lang="en">Beauty IQ</title>
+    <desc lang="en">Currently airing on QVC</desc>
+    <length units="minutes">30</length>
+  </programme>
+  <programme start="20250831060000 +0000" stop="20250831070000 +0000" channel="10.8">
+    <title lang="en">Kitchen &amp; Food</title>
+    <sub-title lang="en">New Episode</sub-title>
+    <desc lang="en">Currently airing on QVC</desc>
+    <length units="minutes">60</length>
+  </programme>
+  <programme start="20250831070000 +0000" stop="20250831073000 +0000" channel="10.8">
+    <title lang="en">In the House</title>
+    <desc lang="en">Currently airing on QVC</desc>
+    <length units="minutes">30</length>
+  </programme>
+  <programme start="20250831073000 +0000" stop="20250831083000 +0000" channel="10.8">
+    <title lang="en">Morning PM Style</title>
+    <desc lang="en">Currently airing on QVC</desc>
+    <length units="minutes">60</length>
+  </programme>
+  <programme start="20250831083000 +0000" stop="20250831090000 +0000" channel="10.8">
+    <title lang="en">Morning Saturday Night Beauty</title>
+    <desc lang="en">Currently airing on QVC</desc>
+    <length units="minutes">30</length>
+  </programme>
+  <programme start="20250831090000 +0000" stop="20250831100000 +0000" channel="10.8">
+    <title lang="en">Morning Sunday Night Football</title>
+    <sub-title lang="en">New Episode</sub-title>
+    <desc lang="en">Currently airing on QVC</desc>
+    <length units="minutes">60</length>
+  </programme>
+  <programme start="20250831100000 +0000" stop="20250831103000 +0000" channel="10.8">
+    <title lang="en">Morning For the Home</title>
+    <desc lang="en">Currently airing on QVC</desc>
+    <length units="minutes">30</length>
+  </programme>
+  <programme start="20250831103000 +0000" stop="20250831113000 +0000" channel="10.8">
+    <title lang="en">Jewelry Collection</title>
+    <desc lang="en">Currently airing on QVC</desc>
+    <length units="minutes">60</length>
+  </programme>
+  <programme start="20250831113000 +0000" stop="20250831120000 +0000" channel="10.8">
+    <title lang="en">Tech Tuesday</title>
+    <desc lang="en">Currently airing on QVC</desc>
+    <length units="minutes">30</length>
+  </programme>
+  <programme start="20250831120000 +0000" stop="20250831130000 +0000" channel="10.8">
+    <title lang="en">AM Style</title>
+    <sub-title lang="en">New Episode</sub-title>
+    <desc lang="en">Currently airing on QVC</desc>
+    <length units="minutes">60</length>
+  </programme>
+  <programme start="20250831130000 +0000" stop="20250831133000 +0000" channel="10.8">
+    <title lang="en">Today's Special Value</title>
+    <desc lang="en">Currently airing on QVC</desc>
+    <length units="minutes">30</length>
+  </programme>
+  <programme start="20250831133000 +0000" stop="20250831143000 +0000" channel="10.8">
+    <title lang="en">Fashion Focus</title>
+    <desc lang="en">Currently airing on QVC</desc>
+    <length units="minutes">60</length>
+  </programme>
+  <programme start="20250831143000 +0000" stop="20250831150000 +0000" channel="10.8">
+    <title lang="en">Beauty IQ</title>
+    <desc lang="en">Currently airing on QVC</desc>
+    <length units="minutes">30</length>
+  </programme>
+  <programme start="20250831150000 +0000" stop="20250831160000 +0000" channel="10.8">
+    <title lang="en">Kitchen &amp; Food</title>
+    <sub-title lang="en">New Episode</sub-title>
+    <desc lang="en">Currently airing on QVC</desc>
+    <length units="minutes">60</length>
+  </programme>
+  <programme start="20250831160000 +0000" stop="20250831163000 +0000" channel="10.8">
+    <title lang="en">In the House</title>
+    <desc lang="en">Currently airing on QVC</desc>
+    <length units="minutes">30</length>
+  </programme>
+  <programme start="20250831163000 +0000" stop="20250831173000 +0000" channel="10.8">
+    <title lang="en">PM Style</title>
+    <desc lang="en">Currently airing on QVC</desc>
+    <length units="minutes">60</length>
+  </programme>
+  <programme start="20250831173000 +0000" stop="20250831180000 +0000" channel="10.8">
+    <title lang="en">Saturday Night Beauty</title>
+    <desc lang="en">Currently airing on QVC</desc>
+    <length units="minutes">30</length>
+  </programme>
+  <programme start="20250831180000 +0000" stop="20250831190000 +0000" channel="10.8">
+    <title lang="en">Sunday Night Football</title>
+    <sub-title lang="en">New Episode</sub-title>
+    <desc lang="en">Currently airing on QVC</desc>
+    <length units="minutes">60</length>
+  </programme>
+  <programme start="20250831190000 +0000" stop="20250831193000 +0000" channel="10.8">
+    <title lang="en">For the Home</title>
+    <desc lang="en">Currently airing on QVC</desc>
+    <length units="minutes">30</length>
+  </programme>
+  <programme start="20250831193000 +0000" stop="20250831203000 +0000" channel="10.8">
+    <title lang="en">Jewelry Collection</title>
+    <desc lang="en">Currently airing on QVC</desc>
+    <length units="minutes">60</length>
+  </programme>
+  <programme start="20250831203000 +0000" stop="20250831210000 +0000" channel="10.8">
+    <title lang="en">Tech Tuesday</title>
+    <desc lang="en">Currently airing on QVC</desc>
+    <length units="minutes">30</length>
+  </programme>
+  <programme start="20250831030000 +0000" stop="20250831040000 +0000" channel="39.1">
+    <title lang="en">Late Night Today Show</title>
+    <sub-title lang="en">New Episode</sub-title>
+    <desc lang="en">Currently airing on KNSD-DT</desc>
+    <length units="minutes">60</length>
+  </programme>
+  <programme start="20250831040000 +0000" stop="20250831043000 +0000" channel="39.1">
+    <title lang="en">Late Night Days of Our Lives</title>
+    <desc lang="en">Currently airing on KNSD-DT</desc>
+    <length units="minutes">30</length>
+  </programme>
+  <programme start="20250831043000 +0000" stop="20250831053000 +0000" channel="39.1">
+    <title lang="en">Late Night NBC Nightly News</title>
+    <desc lang="en">Currently airing on KNSD-DT</desc>
+    <length units="minutes">60</length>
+  </programme>
+  <programme start="20250831053000 +0000" stop="20250831060000 +0000" channel="39.1">
+    <title lang="en">Late Night Access Hollywood</title>
+    <desc lang="en">Currently airing on KNSD-DT</desc>
+    <length units="minutes">30</length>
+  </programme>
+  <programme start="20250831060000 +0000" stop="20250831070000 +0000" channel="39.1">
+    <title lang="en">Late Night Wheel of Fortune</title>
+    <sub-title lang="en">New Episode</sub-title>
+    <desc lang="en">Currently airing on KNSD-DT</desc>
+    <length units="minutes">60</length>
+  </programme>
+  <programme start="20250831070000 +0000" stop="20250831073000 +0000" channel="39.1">
+    <title lang="en">Late Night Jeopardy!</title>
+    <desc lang="en">Currently airing on KNSD-DT</desc>
+    <length units="minutes">30</length>
+  </programme>
+  <programme start="20250831073000 +0000" stop="20250831083000 +0000" channel="39.1">
+    <title lang="en">Morning NBC Nightly News</title>
+    <desc lang="en">Currently airing on KNSD-DT</desc>
+    <length units="minutes">60</length>
+  </programme>
+  <programme start="20250831083000 +0000" stop="20250831090000 +0000" channel="39.1">
+    <title lang="en">Morning The Voice</title>
+    <desc lang="en">Currently airing on KNSD-DT</desc>
+    <length units="minutes">30</length>
+  </programme>
+  <programme start="20250831090000 +0000" stop="20250831100000 +0000" channel="39.1">
+    <title lang="en">Morning Law &amp; Order</title>
+    <sub-title lang="en">New Episode</sub-title>
+    <desc lang="en">Currently airing on KNSD-DT</desc>
+    <length units="minutes">60</length>
+  </programme>
+  <programme start="20250831100000 +0000" stop="20250831103000 +0000" channel="39.1">
+    <title lang="en">Morning Chicago Fire</title>
+    <desc lang="en">Currently airing on KNSD-DT</desc>
+    <length units="minutes">30</length>
+  </programme>
+  <programme start="20250831103000 +0000" stop="20250831113000 +0000" channel="39.1">
+    <title lang="en">Local News</title>
+    <desc lang="en">Currently airing on KNSD-DT</desc>
+    <length units="minutes">60</length>
+  </programme>
+  <programme start="20250831113000 +0000" stop="20250831120000 +0000" channel="39.1">
+    <title lang="en">The Tonight Show</title>
+    <desc lang="en">Currently airing on KNSD-DT</desc>
+    <length units="minutes">30</length>
+  </programme>
+  <programme start="20250831120000 +0000" stop="20250831130000 +0000" channel="39.1">
+    <title lang="en">Today Show</title>
+    <sub-title lang="en">New Episode</sub-title>
+    <desc lang="en">Currently airing on KNSD-DT</desc>
+    <length units="minutes">60</length>
+  </programme>
+  <programme start="20250831130000 +0000" stop="20250831133000 +0000" channel="39.1">
+    <title lang="en">Days of Our Lives</title>
+    <desc lang="en">Currently airing on KNSD-DT</desc>
+    <length units="minutes">30</length>
+  </programme>
+  <programme start="20250831133000 +0000" stop="20250831143000 +0000" channel="39.1">
+    <title lang="en">NBC Nightly News</title>
+    <desc lang="en">Currently airing on KNSD-DT</desc>
+    <length units="minutes">60</length>
+  </programme>
+  <programme start="20250831143000 +0000" stop="20250831150000 +0000" channel="39.1">
+    <title lang="en">Access Hollywood</title>
+    <desc lang="en">Currently airing on KNSD-DT</desc>
+    <length units="minutes">30</length>
+  </programme>
+  <programme start="20250831150000 +0000" stop="20250831160000 +0000" channel="39.1">
+    <title lang="en">Wheel of Fortune</title>
+    <sub-title lang="en">New Episode</sub-title>
+    <desc lang="en">Currently airing on KNSD-DT</desc>
+    <length units="minutes">60</length>
+  </programme>
+  <programme start="20250831160000 +0000" stop="20250831163000 +0000" channel="39.1">
+    <title lang="en">Evening News</title>
+    <desc lang="en">Currently airing on KNSD-DT</desc>
+    <length units="minutes">30</length>
+  </programme>
+  <programme start="20250831163000 +0000" stop="20250831173000 +0000" channel="39.1">
+    <title lang="en">NBC Nightly News</title>
+    <desc lang="en">Currently airing on KNSD-DT</desc>
+    <length units="minutes">60</length>
+  </programme>
+  <programme start="20250831173000 +0000" stop="20250831180000 +0000" channel="39.1">
+    <title lang="en">The Voice</title>
+    <desc lang="en">Currently airing on KNSD-DT</desc>
+    <length units="minutes">30</length>
+  </programme>
+  <programme start="20250831180000 +0000" stop="20250831190000 +0000" channel="39.1">
+    <title lang="en">Law &amp; Order</title>
+    <sub-title lang="en">New Episode</sub-title>
+    <desc lang="en">Currently airing on KNSD-DT</desc>
+    <length units="minutes">60</length>
+  </programme>
+  <programme start="20250831190000 +0000" stop="20250831193000 +0000" channel="39.1">
+    <title lang="en">Chicago Fire</title>
+    <desc lang="en">Currently airing on KNSD-DT</desc>
+    <length units="minutes">30</length>
+  </programme>
+  <programme start="20250831193000 +0000" stop="20250831203000 +0000" channel="39.1">
+    <title lang="en">Local News</title>
+    <desc lang="en">Currently airing on KNSD-DT</desc>
+    <length units="minutes">60</length>
+  </programme>
+  <programme start="20250831203000 +0000" stop="20250831210000 +0000" channel="39.1">
+    <title lang="en">Late Night The Tonight Show</title>
+    <desc lang="en">Currently airing on KNSD-DT</desc>
+    <length units="minutes">30</length>
+  </programme>
+  <programme start="20250831030000 +0000" stop="20250831040000 +0000" channel="69.1">
+    <title lang="en">Good Day</title>
+    <sub-title lang="en">New Episode</sub-title>
+    <desc lang="en">Currently airing on KSWB-HD</desc>
+    <length units="minutes">60</length>
+  </programme>
+  <programme start="20250831040000 +0000" stop="20250831043000 +0000" channel="69.1">
+    <title lang="en">The People's Court</title>
+    <desc lang="en">Currently airing on KSWB-HD</desc>
+    <length units="minutes">30</length>
+  </programme>
+  <programme start="20250831043000 +0000" stop="20250831053000 +0000" channel="69.1">
+    <title lang="en">Judge Judy</title>
+    <desc lang="en">Currently airing on KSWB-HD</desc>
+    <length units="minutes">60</length>
+  </programme>
+  <programme start="20250831053000 +0000" stop="20250831060000 +0000" channel="69.1">
+    <title lang="en">Local News</title>
+    <desc lang="en">Currently airing on KSWB-HD</desc>
+    <length units="minutes">30</length>
+  </programme>
+  <programme start="20250831060000 +0000" stop="20250831070000 +0000" channel="69.1">
+    <title lang="en">The Simpsons</title>
+    <sub-title lang="en">New Episode</sub-title>
+    <desc lang="en">Currently airing on KSWB-HD</desc>
+    <length units="minutes">60</length>
+  </programme>
+  <programme start="20250831070000 +0000" stop="20250831073000 +0000" channel="69.1">
+    <title lang="en">Family Guy</title>
+    <desc lang="en">Currently airing on KSWB-HD</desc>
+    <length units="minutes">30</length>
+  </programme>
+  <programme start="20250831073000 +0000" stop="20250831083000 +0000" channel="69.1">
+    <title lang="en">Morning FOX News</title>
+    <desc lang="en">Currently airing on KSWB-HD</desc>
+    <length units="minutes">60</length>
+  </programme>
+  <programme start="20250831083000 +0000" stop="20250831090000 +0000" channel="69.1">
+    <title lang="en">Morning The Masked Singer</title>
+    <desc lang="en">Currently airing on KSWB-HD</desc>
+    <length units="minutes">30</length>
+  </programme>
+  <programme start="20250831090000 +0000" stop="20250831100000 +0000" channel="69.1">
+    <title lang="en">Morning 9-1-1</title>
+    <sub-title lang="en">New Episode</sub-title>
+    <desc lang="en">Currently airing on KSWB-HD</desc>
+    <length units="minutes">60</length>
+  </programme>
+  <programme start="20250831100000 +0000" stop="20250831103000 +0000" channel="69.1">
+    <title lang="en">Morning The Resident</title>
+    <desc lang="en">Currently airing on KSWB-HD</desc>
+    <length units="minutes">30</length>
+  </programme>
+  <programme start="20250831103000 +0000" stop="20250831113000 +0000" channel="69.1">
+    <title lang="en">Local News</title>
+    <desc lang="en">Currently airing on KSWB-HD</desc>
+    <length units="minutes">60</length>
+  </programme>
+  <programme start="20250831113000 +0000" stop="20250831120000 +0000" channel="69.1">
+    <title lang="en">TMZ</title>
+    <desc lang="en">Currently airing on KSWB-HD</desc>
+    <length units="minutes">30</length>
+  </programme>
+  <programme start="20250831120000 +0000" stop="20250831130000 +0000" channel="69.1">
+    <title lang="en">Good Day</title>
+    <sub-title lang="en">New Episode</sub-title>
+    <desc lang="en">Currently airing on KSWB-HD</desc>
+    <length units="minutes">60</length>
+  </programme>
+  <programme start="20250831130000 +0000" stop="20250831133000 +0000" channel="69.1">
+    <title lang="en">The People's Court</title>
+    <desc lang="en">Currently airing on KSWB-HD</desc>
+    <length units="minutes">30</length>
+  </programme>
+  <programme start="20250831133000 +0000" stop="20250831143000 +0000" channel="69.1">
+    <title lang="en">Judge Judy</title>
+    <desc lang="en">Currently airing on KSWB-HD</desc>
+    <length units="minutes">60</length>
+  </programme>
+  <programme start="20250831143000 +0000" stop="20250831150000 +0000" channel="69.1">
+    <title lang="en">Local News</title>
+    <desc lang="en">Currently airing on KSWB-HD</desc>
+    <length units="minutes">30</length>
+  </programme>
+  <programme start="20250831150000 +0000" stop="20250831160000 +0000" channel="69.1">
+    <title lang="en">The Simpsons</title>
+    <sub-title lang="en">New Episode</sub-title>
+    <desc lang="en">Currently airing on KSWB-HD</desc>
+    <length units="minutes">60</length>
+  </programme>
+  <programme start="20250831160000 +0000" stop="20250831163000 +0000" channel="69.1">
+    <title lang="en">Evening News</title>
+    <desc lang="en">Currently airing on KSWB-HD</desc>
+    <length units="minutes">30</length>
+  </programme>
+  <programme start="20250831163000 +0000" stop="20250831173000 +0000" channel="69.1">
+    <title lang="en">FOX News</title>
+    <desc lang="en">Currently airing on KSWB-HD</desc>
+    <length units="minutes">60</length>
+  </programme>
+  <programme start="20250831173000 +0000" stop="20250831180000 +0000" channel="69.1">
+    <title lang="en">The Masked Singer</title>
+    <desc lang="en">Currently airing on KSWB-HD</desc>
+    <length units="minutes">30</length>
+  </programme>
+  <programme start="20250831180000 +0000" stop="20250831190000 +0000" channel="69.1">
+    <title lang="en">9-1-1</title>
+    <sub-title lang="en">New Episode</sub-title>
+    <desc lang="en">Currently airing on KSWB-HD</desc>
+    <length units="minutes">60</length>
+  </programme>
+  <programme start="20250831190000 +0000" stop="20250831193000 +0000" channel="69.1">
+    <title lang="en">The Resident</title>
+    <desc lang="en">Currently airing on KSWB-HD</desc>
+    <length units="minutes">30</length>
+  </programme>
+  <programme start="20250831193000 +0000" stop="20250831203000 +0000" channel="69.1">
+    <title lang="en">Local News</title>
+    <desc lang="en">Currently airing on KSWB-HD</desc>
+    <length units="minutes">60</length>
+  </programme>
+  <programme start="20250831203000 +0000" stop="20250831210000 +0000" channel="69.1">
+    <title lang="en">TMZ</title>
+    <desc lang="en">Currently airing on KSWB-HD</desc>
+    <length units="minutes">30</length>
+  </programme>
+</tv>
