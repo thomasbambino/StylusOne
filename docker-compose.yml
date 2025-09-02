@@ -1,0 +1,80 @@
+# Production Docker Compose Configuration
+# This version handles port conflicts automatically
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "5001:5000"  # Use 5001 by default to avoid conflicts
+    env_file:
+      - .env.production
+    environment:
+      - NODE_ENV=production
+      - PORT=5000
+      - DATABASE_URL=postgresql://postgres:postgres@db:5432/gamelab
+      # Firebase Configuration (loaded from .env.production)
+      - VITE_FIREBASE_API_KEY=${VITE_FIREBASE_API_KEY:-demo-api-key}
+      - VITE_FIREBASE_PROJECT_ID=${VITE_FIREBASE_PROJECT_ID:-demo-project}
+      - VITE_FIREBASE_APP_ID=${VITE_FIREBASE_APP_ID:-demo-app-id}
+      # Security
+      - SESSION_SECRET=${SESSION_SECRET:-change_this_in_production}
+      # Mailgun Email Service Configuration (loaded from .env.production)
+      - MAILGUN_API_KEY=${MAILGUN_API_KEY:-}
+      - MAILGUN_DOMAIN=${MAILGUN_DOMAIN:-stylus.services}
+      - MAILGUN_FROM_EMAIL=${MAILGUN_FROM_EMAIL:-noreply@stylus.services}
+      - MAILGUN_REGION=${MAILGUN_REGION:-us}
+      - EMAIL_FROM=${EMAIL_FROM:-noreply@stylus.services}
+      - EMAIL_FROM_NAME=${EMAIL_FROM_NAME:-StylusOne Dashboard}
+      - KINDLE_SENDER_EMAIL=${KINDLE_SENDER_EMAIL:-kindle@stylus.services}
+      - AMP_API_URL=${AMP_API_URL:-}
+      - AMP_API_USERNAME=${AMP_API_USERNAME:-}
+      - AMP_API_PASSWORD=${AMP_API_PASSWORD:-}
+      - TAUTULLI_URL=${TAUTULLI_URL:-}
+      - TAUTULLI_API_KEY=${TAUTULLI_API_KEY:-}
+      - HDHOMERUN_URL=${HDHOMERUN_URL:-}
+    volumes:
+      - app_uploads:/app/uploads
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s  # Give app more time to start
+    restart: unless-stopped
+    networks:
+      - app-network
+
+  db:
+    image: postgres:16-alpine
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_DB=gamelab
+    # Database port NOT exposed externally for security
+    # Only accessible within Docker network
+    expose:
+      - "5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    restart: unless-stopped
+    networks:
+      - app-network
+
+volumes:
+  postgres_data:
+  app_uploads:
+
+networks:
+  app-network:
+    driver: bridge

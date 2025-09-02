@@ -339,6 +339,16 @@ function ChannelListItem({ channel, selectedChannel, onChannelSelect, useChannel
               HD
             </div>
           )}
+          {channel.GuideNumber === "8.1" && (
+            <div className={cn(
+              "inline-block text-[10px] px-1.5 py-0.5 rounded font-medium",
+              isSelected
+                ? "bg-white/20 text-white"
+                : "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400"
+            )}>
+              STREAM
+            </div>
+          )}
         </div>
         
         {/* Program Information */}
