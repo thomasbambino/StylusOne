@@ -43,6 +43,9 @@ export default function SettingsPage() {
       tracking_code: settings?.tracking_code ?? "",
       default_role: settings?.default_role ?? "pending",
       site_title: settings?.site_title ?? "",
+      site_description: settings?.site_description ?? "",
+      site_keywords: settings?.site_keywords ?? "",
+      og_image_url: settings?.og_image_url ?? "",
       font_family: settings?.font_family ?? "",
       login_description: settings?.login_description ?? "",
       online_color: settings?.online_color ?? "#22c55e",
@@ -70,6 +73,9 @@ export default function SettingsPage() {
         tracking_code: settings.tracking_code,
         default_role: settings.default_role,
         site_title: settings.site_title,
+        site_description: settings.site_description,
+        site_keywords: settings.site_keywords,
+        og_image_url: settings.og_image_url,
         font_family: settings.font_family,
         login_description: settings.login_description,
         online_color: settings.online_color,
@@ -110,6 +116,9 @@ export default function SettingsPage() {
           tracking_code: data.tracking_code,
           online_color: data.online_color,
           offline_color: data.offline_color,
+          site_description: data.site_description,
+          site_keywords: data.site_keywords,
+          og_image_url: data.og_image_url,
         });
       } else if (currentTab === "visibility") {
         Object.assign(relevantData, {
@@ -208,27 +217,18 @@ export default function SettingsPage() {
           <Card className="border-0 shadow-none">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle>Settings</CardTitle>
-              <Link href="/">
-                <Button variant="outline" className="gap-2">
-                  <ArrowLeft className="h-4 w-4" />
-                  Back to Dashboard
-                </Button>
-              </Link>
             </CardHeader>
             <CardContent>
               <Tabs defaultValue="general" className="space-y-4" onValueChange={setCurrentTab}>
-                <TabsList className="grid w-full grid-cols-5">
+                <TabsList className="grid w-full grid-cols-4">
                   <TabsTrigger value="general">General</TabsTrigger>
                   <TabsTrigger value="branding">Branding</TabsTrigger>
                   <TabsTrigger value="visibility">Visibility</TabsTrigger>
                   {isSuperAdmin && (
-                    <>
-                      <TabsTrigger value="amp">AMP</TabsTrigger>
-                      <TabsTrigger value="email">
-                        <Mail className="h-4 w-4 mr-2" />
-                        Email
-                      </TabsTrigger>
-                    </>
+                    <TabsTrigger value="email">
+                      <Mail className="h-4 w-4 mr-2" />
+                      Email
+                    </TabsTrigger>
                   )}
                 </TabsList>
 
@@ -389,6 +389,75 @@ export default function SettingsPage() {
                           </FormItem>
                         )}
                       />
+                      
+                      <Separator className="my-4" />
+                      <div className="space-y-2">
+                        <h3 className="text-lg font-semibold">SEO & Social Sharing</h3>
+                        <p className="text-sm text-muted-foreground">Customize how your site appears in search results and when shared on social media</p>
+                      </div>
+                      
+                      <FormField
+                        control={form.control}
+                        name="site_description"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Site Description</FormLabel>
+                            <FormControl>
+                              <Textarea 
+                                placeholder="A comprehensive dashboard for monitoring your homelab services and game servers..." 
+                                {...field} 
+                                value={field.value || ""} 
+                                className="min-h-[80px]"
+                              />
+                            </FormControl>
+                            <p className="text-xs text-muted-foreground">Used for search engine results and social media previews (recommended: 150-160 characters)</p>
+                          </FormItem>
+                        )}
+                      />
+                      
+                      <FormField
+                        control={form.control}
+                        name="site_keywords"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Keywords</FormLabel>
+                            <FormControl>
+                              <Input 
+                                placeholder="homelab, dashboard, monitoring, services, game servers" 
+                                {...field} 
+                                value={field.value || ""} 
+                              />
+                            </FormControl>
+                            <p className="text-xs text-muted-foreground">Comma-separated keywords for SEO</p>
+                          </FormItem>
+                        )}
+                      />
+                      
+                      <FormField
+                        control={form.control}
+                        name="og_image_url"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Social Share Image (Open Graph)</FormLabel>
+                            <div className="flex gap-2">
+                              <FormControl>
+                                <Input 
+                                  placeholder="https://example.com/preview-image.png" 
+                                  {...field} 
+                                  value={field.value || ""} 
+                                />
+                              </FormControl>
+                              <Button variant="outline" type="button" className="shrink-0">
+                                Upload
+                              </Button>
+                            </div>
+                            <p className="text-xs text-muted-foreground">Image shown when your site is shared on social media (recommended: 1200x630px)</p>
+                          </FormItem>
+                        )}
+                      />
+                      
+                      <Separator className="my-4" />
+                      
                       <div className="grid grid-cols-2 gap-4">
                         <FormField
                           control={form.control}
@@ -585,69 +654,6 @@ export default function SettingsPage() {
 
                 {isSuperAdmin && (
                   <>
-                    <TabsContent value="amp">
-                      <Form {...ampForm}>
-                        <form onSubmit={ampForm.handleSubmit((data) => updateAMPCredentialsMutation.mutate(data))} className="space-y-4">
-                          <FormField
-                            control={ampForm.control}
-                            name="amp_url"
-                            render={({ field }) => (
-                              <FormItem>
-                                <FormLabel>AMP Server URL</FormLabel>
-                                <FormControl>
-                                  <Input placeholder="https://amp.example.com" {...field} />
-                                </FormControl>
-                              </FormItem>
-                            )}
-                          />
-                          <FormField
-                            control={ampForm.control}
-                            name="amp_username"
-                            render={({ field }) => (
-                              <FormItem>
-                                <FormLabel>AMP Username</FormLabel>
-                                <FormControl>
-                                  <Input {...field} />
-                                </FormControl>
-                              </FormItem>
-                            )}
-                          />
-                          <FormField
-                            control={ampForm.control}
-                            name="amp_password"
-                            render={({ field }) => (
-                              <FormItem>
-                                <FormLabel>AMP Password</FormLabel>
-                                <FormControl>
-                                  <Input type="password" {...field} />
-                                </FormControl>
-                              </FormItem>
-                            )}
-                          />
-                          <div className="flex gap-2">
-                            <Button type="submit" className="flex-1" disabled={updateAMPCredentialsMutation.isPending}>
-                              {updateAMPCredentialsMutation.isPending && (
-                                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                              )}
-                              Save Credentials
-                            </Button>
-                            <Button
-                              type="button"
-                              variant="outline"
-                              onClick={testAMPConnection}
-                              disabled={isTestingConnection}
-                            >
-                              {isTestingConnection ? (
-                                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                              ) : (
-                                <RefreshCw className="mr-2 h-4 w-4" />
-                              )}
-                              Test Connection
-                            </Button>
-                          </div>
-                        </form>
-                      </Form>
-                    </TabsContent>
 
                     <TabsContent value="email">
                       <div className="space-y-4">

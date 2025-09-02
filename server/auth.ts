@@ -413,9 +413,11 @@ export function setupAuth(app: Express) {
       });
     }
 
+    // Always return the temporary password so admin can provide it directly
     res.json({
       message: "Password reset successful",
-      tempPassword: user.email ? undefined : tempPassword
+      tempPassword: tempPassword,  // Always return it for admin to share
+      emailSent: !!user.email
     });
   });
 

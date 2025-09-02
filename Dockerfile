@@ -44,7 +44,7 @@ COPY --from=builder /app/dist ./dist
 
 # Copy necessary configuration files
 COPY tsconfig.json ./
-COPY .env.production ./.env
+COPY .env.stylus ./.env
 
 # Copy server source files for services
 COPY server/ ./server/

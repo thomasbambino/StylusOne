@@ -18,6 +18,8 @@ import { sendEmail } from './email';
 import { ampService } from './services/amp-service';
 import { plexService } from './services/plex-service';
 import { trueNASService } from './services/truenas-service';
+import { epubService } from './services/epub-service';
+import booksRouter from './routes/books';
 import { z } from "zod";
 import { spawn } from 'child_process';
 import fetch from 'node-fetch';
@@ -472,6 +474,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/upload/site", upload.single('image'), (req, res) => handleUpload(req, res, 'site'));
   app.post("/api/upload/service", upload.single('image'), (req, res) => handleUpload(req, res, 'service'));
   app.post("/api/upload/game", upload.single('image'), (req, res) => handleUpload(req, res, 'game'));
+
+  // Books routes
+  app.use("/api/books", booksRouter);
 
   app.get("/api/services", async (req, res) => {
     if (!req.isAuthenticated()) return res.sendStatus(401);

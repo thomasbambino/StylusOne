@@ -100,7 +100,7 @@ export class DatabaseStorage implements IStorage {
   sessionStore: session.Store;
 
   constructor() {
-    // Use memory store for simplicity - in production you might want to use Redis or proper PostgreSQL store
+    // Use MemoryStore for all environments - production session store is handled in server setup
     this.sessionStore = new session.MemoryStore();
   }
 

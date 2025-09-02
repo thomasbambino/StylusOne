@@ -13,6 +13,7 @@ import SettingsPage from "@/pages/settings-page";
 import GameServersPage from "@/pages/game-servers-page";
 import PlexPage from "@/pages/plex-page";
 import LiveTVPage from "@/pages/live-tv-page";
+import BooksPage from "@/pages/books-page";
 import { ProtectedRoute } from "./lib/protected-route";
 import { ThemeProvider } from "@/components/theme-provider";
 import { DiscordButton } from "@/components/discord-button";
@@ -26,6 +27,7 @@ function Router() {
       <ProtectedRoute path="/plex" component={PlexPage} />
       <ProtectedRoute path="/game-servers" component={GameServersPage} />
       <ProtectedRoute path="/live-tv" component={LiveTVPage} />
+      <ProtectedRoute path="/books" component={BooksPage} />
       <ProtectedRoute path="/users" component={UsersPage} />
       <ProtectedRoute path="/settings" component={SettingsPage} />
       <Route path="/auth" component={AuthPage} />

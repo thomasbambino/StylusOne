@@ -31,6 +31,7 @@ export function NavigationBar({ settings, pageTitle }: NavigationBarProps) {
     { href: "/plex", label: "Plex" },
     { href: "/game-servers", label: "Game Servers" },
     { href: "/live-tv", label: "Live TV" },
+    { href: "/books", label: "Books" },
   ];
 
   return (
@@ -49,7 +50,7 @@ export function NavigationBar({ settings, pageTitle }: NavigationBarProps) {
       } as React.CSSProperties}
     >
       <div className="max-w-7xl mx-auto">
-        <div className="flex items-center justify-between h-16 px-6">
+        <div className="relative flex items-center justify-between h-16 px-6">
           
           {/* Left: Logo */}
           <div className="flex items-center">
@@ -71,8 +72,8 @@ export function NavigationBar({ settings, pageTitle }: NavigationBarProps) {
             </Link>
           </div>
 
-          {/* Center: Navigation Links */}
-          <div className="hidden lg:flex items-center space-x-1">
+          {/* Center: Navigation Links - Absolutely positioned to center */}
+          <div className="hidden lg:flex items-center space-x-1 absolute left-1/2 transform -translate-x-1/2">
             {navLinks.map((link) => {
               const isActive = location === link.href;
               return (

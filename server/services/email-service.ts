@@ -8,6 +8,15 @@ import axios from 'axios';
 import FormData from 'form-data';
 
 /**
+ * Interface for email attachment
+ */
+export interface EmailAttachment {
+  filename: string;
+  data: Buffer;
+  contentType?: string;
+}
+
+/**
  * Interface for email parameters
  */
 export interface EmailParams {
@@ -17,6 +26,7 @@ export interface EmailParams {
   html?: string;
   templateId?: number;
   templateData?: Record<string, any>;
+  attachments?: EmailAttachment[];
 }
 
 /**
@@ -37,7 +47,8 @@ export class EmailService implements IService {
     this.mailgunApiKey = process.env.MAILGUN_API_KEY || '';
     this.mailgunRegion = process.env.MAILGUN_REGION || 'us';
     this.sendgridApiKey = process.env.SENDGRID_API_KEY || '';
-    this.fromEmail = process.env.EMAIL_FROM || '';
+    // Use KINDLE_SENDER_EMAIL if available, otherwise fall back to EMAIL_FROM
+    this.fromEmail = process.env.KINDLE_SENDER_EMAIL || process.env.EMAIL_FROM || '';
     this.fromName = process.env.EMAIL_FROM_NAME || 'Homelab Dashboard';
   }
 
@@ -139,6 +150,12 @@ export class EmailService implements IService {
    */
   private async sendWithMailgun(params: EmailParams): Promise<boolean> {
     try {
+      console.log('Sending email via Mailgun:');
+      console.log('  From:', `${this.fromName} <${this.fromEmail}>`);
+      console.log('  To:', params.to);
+      console.log('  Subject:', params.subject);
+      console.log('  Attachments:', params.attachments?.length || 0);
+      
       const formData = new FormData();
       formData.append('from', `${this.fromName} <${this.fromEmail}>`);
       formData.append('to', params.to);
@@ -150,6 +167,16 @@ export class EmailService implements IService {
       
       if (params.html) {
         formData.append('html', params.html);
+      }
+
+      // Add attachments if provided
+      if (params.attachments && params.attachments.length > 0) {
+        for (const attachment of params.attachments) {
+          formData.append('attachment', attachment.data, {
+            filename: attachment.filename,
+            contentType: attachment.contentType || 'application/octet-stream'
+          });
+        }
       }
 
       const endpoint = this.mailgunRegion === 'eu' 
@@ -169,8 +196,13 @@ export class EmailService implements IService {
 
       console.log('Mailgun API response:', response.data);
       return true;
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error sending email with Mailgun:', error);
+      if (error.response) {
+        console.error('Mailgun error response status:', error.response.status);
+        console.error('Mailgun error response data:', error.response.data);
+        console.error('Mailgun error response headers:', error.response.headers);
+      }
       return false;
     }
   }
@@ -256,7 +288,7 @@ export class EmailService implements IService {
       }
 
       const subject = this.compileTemplate(template.subject, data);
-      const html = this.compileTemplate(template.body, data);
+      const html = this.compileTemplate(template.template, data);
 
       return { subject, html };
     } catch (error) {
@@ -280,7 +312,7 @@ export class EmailService implements IService {
           {
             name: 'Welcome',
             subject: 'Welcome to {{appName}}',
-            body: `
+            template: `
               <h1>Welcome to {{appName}}!</h1>
               <p>Hello {{username}},</p>
               <p>Your account has been created and you can now log in to your dashboard.</p>
@@ -291,7 +323,7 @@ export class EmailService implements IService {
           {
             name: 'Password Reset',
             subject: 'Password Reset Request',
-            body: `
+            template: `
               <h1>Password Reset</h1>
               <p>Hello {{username}},</p>
               <p>You have requested to reset your password. Please click the link below to set a new password:</p>
@@ -303,7 +335,7 @@ export class EmailService implements IService {
           {
             name: 'Account Approved',
             subject: 'Your Account Has Been Approved',
-            body: `
+            template: `
               <h1>Account Approved</h1>
               <p>Hello {{username}},</p>
               <p>Your account has been approved by an administrator. You can now log in and access all features.</p>
@@ -314,7 +346,7 @@ export class EmailService implements IService {
           {
             name: 'New Game Server Request',
             subject: 'New Game Server Request',
-            body: `
+            template: `
               <h1>New Game Server Request</h1>
               <p>Hello Admin,</p>
               <p>A user has requested a new game server:</p>

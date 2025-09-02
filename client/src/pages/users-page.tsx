@@ -13,10 +13,12 @@ import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { useState } from "react";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { LoginAttemptsDialog } from "@/components/login-attempts-dialog";
 import { format } from 'date-fns';
 import { PageTransition } from "@/components/page-transition";
 import { Separator } from "@/components/ui/separator"; // Import Separator
+import { Copy, Check } from "lucide-react";
 
 
 export default function UsersPage() {
@@ -24,6 +26,13 @@ export default function UsersPage() {
   const { user } = useAuth();
   const [tempPasswords, setTempPasswords] = useState<Record<number, string>>({});
   const [editingEmails, setEditingEmails] = useState<Record<number, string>>({});
+  const [passwordDialog, setPasswordDialog] = useState<{ open: boolean; password: string; username: string; emailSent: boolean }>({
+    open: false,
+    password: '',
+    username: '',
+    emailSent: false
+  });
+  const [copiedPassword, setCopiedPassword] = useState(false);
   const isSuperAdmin = user?.role === 'superadmin';
 
   const { data: users = [] } = useQuery<User[]>({
@@ -98,20 +107,28 @@ export default function UsersPage() {
   });
 
   const resetPasswordMutation = useMutation({
-    mutationFn: async (userId: number) => {
+    mutationFn: async ({ userId, username }: { userId: number; username: string }) => {
       const res = await apiRequest("POST", "/api/admin/reset-user-password", { userId });
-      return res.json();
+      const data = await res.json();
+      return { ...data, username };
     },
-    onSuccess: (data, userId) => {
+    onSuccess: (data) => {
       if (data.tempPassword) {
-        setTempPasswords(prev => ({ ...prev, [userId]: data.tempPassword }));
+        // Open dialog with password
+        setPasswordDialog({
+          open: true,
+          password: data.tempPassword,
+          username: data.username,
+          emailSent: data.emailSent
+        });
       }
-      toast({
-        title: "Password reset",
-        description: data.tempPassword
-          ? "A temporary password has been generated."
-          : "A password reset email has been sent to the user.",
-      });
+      // Still send toast for email notification
+      if (data.emailSent) {
+        toast({
+          title: "Password reset",
+          description: "A password reset email has been sent to the user.",
+        });
+      }
     },
     onError: (error: Error) => {
       toast({
@@ -167,12 +184,6 @@ export default function UsersPage() {
           <Card className="border-0 shadow-none">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle>Users</CardTitle>
-              <Link href="/">
-                <Button variant="outline" className="gap-2">
-                  <ArrowLeft className="h-4 w-4" />
-                  Back to Dashboard
-                </Button>
-              </Link>
             </CardHeader>
             <CardContent>
               <div className="flex items-center justify-between">
@@ -258,7 +269,7 @@ export default function UsersPage() {
                             <Button
                               variant="outline"
                               size="sm"
-                              onClick={() => resetPasswordMutation.mutate(u.id)}
+                              onClick={() => resetPasswordMutation.mutate({ userId: u.id, username: u.username })}
                             >
                               <KeyRound className="h-4 w-4 mr-2" />
                               Reset Password
@@ -346,6 +357,57 @@ export default function UsersPage() {
           </div>
         </main>
       </div>
+
+      {/* Password Reset Dialog */}
+      <Dialog open={passwordDialog.open} onOpenChange={(open) => {
+        setPasswordDialog(prev => ({ ...prev, open }));
+        if (!open) {
+          setCopiedPassword(false);
+        }
+      }}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Temporary Password Generated</DialogTitle>
+            <DialogDescription>
+              A temporary password has been generated for <strong>{passwordDialog.username}</strong>.
+              {passwordDialog.emailSent && " An email has also been sent to the user."}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex items-center space-x-2">
+            <div className="grid flex-1 gap-2">
+              <Label htmlFor="password" className="sr-only">
+                Password
+              </Label>
+              <div className="flex items-center gap-2">
+                <Input
+                  id="password"
+                  value={passwordDialog.password}
+                  readOnly
+                  className="font-mono"
+                />
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => {
+                    navigator.clipboard.writeText(passwordDialog.password);
+                    setCopiedPassword(true);
+                    setTimeout(() => setCopiedPassword(false), 2000);
+                  }}
+                >
+                  {copiedPassword ? (
+                    <Check className="h-4 w-4" />
+                  ) : (
+                    <Copy className="h-4 w-4" />
+                  )}
+                </Button>
+              </div>
+            </div>
+          </div>
+          <div className="text-sm text-muted-foreground">
+            The user will be prompted to change this password on their next login.
+          </div>
+        </DialogContent>
+      </Dialog>
     </PageTransition>
   );
 }

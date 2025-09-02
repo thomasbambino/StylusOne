@@ -29,7 +29,7 @@ export const createRateLimiter = (options: {
 // General API rate limiter
 export const apiRateLimiter = createRateLimiter({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 100, // limit each IP to 100 requests per 15 minutes
+  max: 500, // limit each IP to 500 requests per 15 minutes
   message: 'Too many API requests from this IP'
 });
 
@@ -44,7 +44,7 @@ export const authRateLimiter = createRateLimiter({
 // More permissive rate limiter for game server actions
 export const gameServerRateLimiter = createRateLimiter({
   windowMs: 60 * 1000, // 1 minute
-  max: 10, // limit each IP to 10 game server actions per minute
+  max: 30, // limit each IP to 30 game server actions per minute
   message: 'Too many game server requests from this IP'
 });
 

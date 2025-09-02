@@ -73,6 +73,7 @@ interface EPGProgram {
 // Channel logos mapping based on Zap2it data  
 const CHANNEL_LOGOS: Record<string, string> = {
   // Major networks
+  'CBS8SANDIEGO': 'https://zap2it.tmsimg.com/h3/NowShowing/21212/s28711_ll_h15_ab.png', // CBS 8 San Diego (same as KFMB)
   'XHJKTDT': 'https://zap2it.tmsimg.com/h3/NowShowing/68084/s116153_ll_h15_ab.png',
   'XHJKTDT2': 'https://zap2it.tmsimg.com/h3/NowShowing/88217/s15384_ll_h15_ad.png',
   'XHCTTITDT': 'https://zap2it.tmsimg.com/h3/NowShowing/107888/s101096_ll_h15_aa.png',
@@ -179,6 +180,9 @@ function ChannelListItem({ channel, selectedChannel, onChannelSelect, useChannel
   const getChannelLogo = (guideNumber: string, guideName: string) => {
     // Primary mapping: HDHomeRun channel number to Zap2it logo key
     const channelToLogoMapping: Record<string, string> = {
+      // CBS 8 San Diego (static channel)
+      '8.1': 'CBS8SANDIEGO',  // CBS 8 San Diego
+      
       // Channel 10 - ABC San Diego (KGTV/KZSDLD)
       '10.1': 'KGTVDT',     // ABC San Diego
       '10.2': 'KGTVDT2',    // Bounce TV
@@ -581,7 +585,16 @@ export default function LiveTVPage() {
 
       setSelectedChannel(channel);
 
-      // Request stream through tuner manager
+      // Check if this is CBS 8 (static channel)
+      if (channel.GuideNumber === "8.1") {
+        // CBS 8 doesn't need tuner manager, play directly
+        console.log('Playing CBS 8 San Diego directly');
+        playStreamDirectly(channel.URL);
+        setIsLoading(false);
+        return;
+      }
+
+      // Request stream through tuner manager for HDHomeRun channels
       console.log('Requesting stream for channel:', channel.GuideNumber);
       const res = await fetch('/api/tuner/request-stream', {
         method: 'POST',
@@ -1072,7 +1085,19 @@ export default function LiveTVPage() {
     );
   }
 
-  const availableChannels = channelsData?.channels?.filter(ch => !ch.DRM) || [];
+  // Add CBS 8 San Diego as a static channel
+  const cbs8Channel: HDHomeRunChannel = {
+    GuideNumber: "8.1",
+    GuideName: "CBS 8 San Diego",
+    URL: "https://video.tegnaone.com/kfmb/live/v1/master/f9c1bf9ffd6ac86b6173a7c169ff6e3f4efbd693/KFMB-Production/live/index.m3u8",
+    HD: true,
+    Favorite: false,
+    DRM: false
+  };
+
+  // Combine HDHomeRun channels with static CBS 8 channel
+  const hdHomeRunChannels = channelsData?.channels?.filter(ch => !ch.DRM) || [];
+  const availableChannels = [cbs8Channel, ...hdHomeRunChannels];
 
   return (
     <motion.div 
@@ -1109,6 +1134,7 @@ export default function LiveTVPage() {
                           {(() => {
                             const getChannelLogo = (guideNumber: string, guideName: string) => {
                               const channelToLogoMapping: Record<string, string> = {
+                                '8.1': 'CBS8SANDIEGO',
                                 '10.1': 'KGTVDT', '10.2': 'KGTVDT2', '10.3': 'KGTVDT3', '10.4': 'KGTVDT4', '10.5': 'KGTVDT5', '10.6': 'KGTVDT6', '10.7': 'KGTVDT7',
                                 '15.1': 'KPBSDT', '15.2': 'KPBSDT2', '15.3': 'KPBSDT3', '15.4': 'KPBSDT4',
                                 '39.1': 'KNSDDT', '39.2': 'KNSDDT2', '39.3': 'KNSDDT3', '39.4': 'KNSDDT4',

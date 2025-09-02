@@ -2,23 +2,25 @@ import formData from 'form-data';
 import Mailgun from 'mailgun.js';
 import { storage } from './storage';
 
-if (!process.env.MAILGUN_API_KEY) {
-  throw new Error("MAILGUN_API_KEY environment variable must be set");
-}
+const MAILGUN_CONFIGURED = !!(
+  process.env.MAILGUN_API_KEY && 
+  process.env.MAILGUN_DOMAIN && 
+  process.env.MAILGUN_FROM_EMAIL
+);
 
-if (!process.env.MAILGUN_DOMAIN) {
-  throw new Error("MAILGUN_DOMAIN environment variable must be set");
-}
+let mailgun: Mailgun | null = null;
+let client: any = null;
 
-if (!process.env.MAILGUN_FROM_EMAIL) {
-  throw new Error("MAILGUN_FROM_EMAIL environment variable must be set");
+if (MAILGUN_CONFIGURED) {
+  mailgun = new Mailgun(formData);
+  client = mailgun.client({
+    username: 'api',
+    key: process.env.MAILGUN_API_KEY!,
+  });
+  console.log('Mailgun email service initialized');
+} else {
+  console.warn('Mailgun not configured - email functionality will be disabled');
 }
-
-const mailgun = new Mailgun(formData);
-const client = mailgun.client({
-  username: 'api',
-  key: process.env.MAILGUN_API_KEY,
-});
 
 interface EmailParams {
   to: string;

@@ -28,12 +28,16 @@ export const users = pgTable("users", {
   last_ip: text("last_ip"),
   temp_password: boolean("temp_password").notNull().default(false),
   reset_token: text("reset_token"),
+  kindle_email: text("kindle_email"),
 });
 
 export const settings = pgTable("settings", {
   id: serial("id").primaryKey(),
   default_role: text("default_role", { enum: ['admin', 'user', 'pending'] }).notNull().default('pending'),
   site_title: text("site_title").default("Homelab Dashboard"),
+  site_description: text("site_description").default("Monitor your services and game servers in real-time with our comprehensive dashboard."),
+  site_keywords: text("site_keywords").default("homelab, dashboard, monitoring, services, game servers"),
+  og_image_url: text("og_image_url"),
   font_family: text("font_family").default("Inter"),
   logo_url: text("logo_url"),
   logo_url_large: text("logo_url_large"),
@@ -138,6 +142,25 @@ export const loginAttempts = pgTable("loginAttempts", {
   country: text("country"),
 });
 
+export const books = pgTable("books", {
+  id: serial("id").primaryKey(),
+  filename: text("filename").notNull(), // Original filename
+  file_path: text("file_path").notNull(), // Path to stored file
+  title: text("title").notNull(),
+  author: text("author"),
+  description: text("description"),
+  publisher: text("publisher"),
+  publication_date: text("publication_date"),
+  isbn: text("isbn"),
+  language: text("language"),
+  cover_path: text("cover_path"), // Path to extracted cover image
+  file_size: integer("file_size").notNull(), // File size in bytes
+  page_count: integer("page_count"),
+  uploaded_by: integer("uploaded_by").notNull().references(() => users.id, { onDelete: 'cascade' }),
+  uploaded_at: timestamp("uploaded_at").notNull().defaultNow(),
+  updated_at: timestamp("updated_at").notNull().defaultNow(),
+});
+
 export const insertUserSchema = createInsertSchema(users);
 export const insertServiceSchema = createInsertSchema(services);
 export const insertGameServerSchema = createInsertSchema(gameServers);
@@ -147,6 +170,7 @@ export const insertNotificationPreferenceSchema = createInsertSchema(notificatio
 export const insertEmailTemplateSchema = createInsertSchema(emailTemplates);
 export const insertSentNotificationSchema = createInsertSchema(sentNotifications);
 export const insertLoginAttemptSchema = createInsertSchema(loginAttempts);
+export const insertBookSchema = createInsertSchema(books);
 
 // Export the update schemas
 export const updateServiceSchema = insertServiceSchema.extend({
@@ -177,6 +201,10 @@ export const updateLoginAttemptSchema = insertLoginAttemptSchema.extend({
   id: z.number(),
 }).partial().required({ id: true });
 
+export const updateBookSchema = insertBookSchema.extend({
+  id: z.number(),
+}).partial().required({ id: true });
+
 // Export types
 export type InsertUser = z.infer<typeof insertUserSchema>;
 export type InsertService = z.infer<typeof insertServiceSchema>;
@@ -196,3 +224,6 @@ export type EmailTemplate = typeof emailTemplates.$inferSelect;
 export type SentNotification = typeof sentNotifications.$inferSelect;
 export type InsertLoginAttempt = z.infer<typeof insertLoginAttemptSchema>;
 export type LoginAttempt = typeof loginAttempts.$inferSelect;
+export type InsertBook = z.infer<typeof insertBookSchema>;
+export type UpdateBook = z.infer<typeof updateBookSchema>;
+export type Book = typeof books.$inferSelect;

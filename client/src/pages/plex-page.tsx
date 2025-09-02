@@ -127,6 +127,34 @@ export default function PlexPage() {
     }
   };
 
+  // Function to open item in Plex
+  const openInPlex = (item: any) => {
+    // For episodes, use the grandparent (series) rating key to open the series page
+    // For movies, use the direct rating key
+    let targetKey = item.rating_key;
+    
+    if (item.media_type === 'episode' && item.grandparent_rating_key) {
+      targetKey = item.grandparent_rating_key;
+    }
+    
+    // Get server machine identifier from server info
+    const machineId = serverInfo?.data?.pms_identifier;
+    
+    // Use Plex cloud URL format if we have machine ID, otherwise fallback to local
+    let plexWebUrl;
+    if (machineId) {
+      // Plex cloud format: https://app.plex.tv/desktop/#!/server/{machineId}/details?key=%2Flibrary%2Fmetadata%2F{key}
+      plexWebUrl = `https://app.plex.tv/desktop/#!/server/${machineId}/details?key=%2Flibrary%2Fmetadata%2F${targetKey}`;
+    } else {
+      // Fallback to local format
+      const plexUrl = settings?.plexUrl || 'http://localhost:32400';
+      plexWebUrl = `${plexUrl}/web/index.html#!/media/${targetKey}`;
+    }
+    
+    // Open in new tab
+    window.open(plexWebUrl, '_blank');
+  };
+
   // Calculate stats
   const activeStreams = activity?.sessions?.length || 0;
   const tvShowCount = libraries?.find((lib: any) => lib.section_type === 'show')?.count || 0;
@@ -433,7 +461,7 @@ export default function PlexPage() {
                   {recentlyAddedItems.length > 0 ? (
                     <div className="space-y-3">
                       {recentlyAddedItems.slice(0, 5).map((item: any, index: number) => (
-                        <div key={index} className="flex items-start gap-3">
+                        <div key={index} className="flex items-start gap-3 cursor-pointer hover:bg-accent/50 rounded-lg p-2 -m-2 transition-colors" onClick={() => openInPlex(item)}>
                           {getThumbnailUrl(item) ? (
                             <img 
                               src={getThumbnailUrl(item, 60, 90)} 
@@ -497,7 +525,7 @@ export default function PlexPage() {
                   {historyItems.length > 0 ? (
                     <div className="space-y-3">
                       {historyItems.slice(0, 5).map((item: any, index: number) => (
-                        <div key={index} className="flex items-start gap-3">
+                        <div key={index} className="flex items-start gap-3 cursor-pointer hover:bg-accent/50 rounded-lg p-2 -m-2 transition-colors" onClick={() => openInPlex(item)}>
                           {getThumbnailUrl(item) ? (
                             <img 
                               src={getThumbnailUrl(item, 60, 90)} 
