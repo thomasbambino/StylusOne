@@ -331,6 +331,12 @@ router.get('/kindle-settings', async (req, res) => {
   if (!req.isAuthenticated()) return res.sendStatus(401);
   try {
     const user = req.user!;
+    
+    // Validate user ID
+    if (!user.id || isNaN(user.id)) {
+      console.error('Invalid user ID:', user.id);
+      return res.status(400).json({ error: 'Invalid user session' });
+    }
 
     // Get current user data
     const [userData] = await db
@@ -532,13 +538,13 @@ router.post('/:id/send-to-kindle', async (req, res) => {
 
     // Prepare email with book attachment
     // Following Amazon's Send to Kindle requirements:
-    // - No subject line needed
+    // - No subject line needed (but our email service requires one)
     // - No body text needed
     // - Just the EPUB attachment
     const emailParams = {
       to: userData.kindle_email,
-      subject: '', // Amazon says no subject needed
-      text: ' ', // Minimal text (some email services require non-empty body)
+      subject: 'Document', // Amazon ignores this but our email service requires it
+      text: 'Document attached', // Minimal text (email service requires non-empty body)
       attachments: [{
         filename: book.filename,
         data: fileBuffer,
