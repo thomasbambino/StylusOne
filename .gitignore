@@ -12,6 +12,11 @@ vite.config.ts.*
 .env.test.local
 .env.production.local
 .env.stylus
+.env.production
+
+# Local Docker configuration
+docker-compose.yml
+docker-compose.override.yml
 
 # Logs
 *.log
