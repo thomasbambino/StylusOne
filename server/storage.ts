@@ -36,6 +36,7 @@ import { db, pool } from "./db.js";
 import { eq, desc, and, gte, lte, or, asc } from "drizzle-orm";
 import session from "express-session";
 import connectPgSimple from "connect-pg-simple";
+import { Pool } from "pg";
 
 export interface IStorage {
   getUser(id: number): Promise<User | undefined>;
@@ -103,8 +104,16 @@ export class DatabaseStorage implements IStorage {
   constructor() {
     // Use PostgreSQL session store for production
     const PgStore = connectPgSimple(session);
+    
+    // Create a pg pool specifically for sessions (connect-pg-simple requires pg, not postgres)
+    const sessionPool = new Pool({
+      connectionString: process.env.DATABASE_URL,
+      max: 10,
+      idleTimeoutMillis: 30000,
+    });
+    
     this.sessionStore = new PgStore({
-      pool: pool,
+      pool: sessionPool,
       tableName: 'user_sessions',
       createTableIfMissing: true,
     });
