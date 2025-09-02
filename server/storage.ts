@@ -35,6 +35,7 @@ import {
 import { db, pool } from "./db.js";
 import { eq, desc, and, gte, lte, or, asc } from "drizzle-orm";
 import session from "express-session";
+import connectPgSimple from "connect-pg-simple";
 
 export interface IStorage {
   getUser(id: number): Promise<User | undefined>;
@@ -100,8 +101,13 @@ export class DatabaseStorage implements IStorage {
   sessionStore: session.Store;
 
   constructor() {
-    // Use MemoryStore for all environments - production session store is handled in server setup
-    this.sessionStore = new session.MemoryStore();
+    // Use PostgreSQL session store for production
+    const PgStore = connectPgSimple(session);
+    this.sessionStore = new PgStore({
+      pool: pool,
+      tableName: 'user_sessions',
+      createTableIfMissing: true,
+    });
   }
 
   async getUser(id: number): Promise<User | undefined> {
