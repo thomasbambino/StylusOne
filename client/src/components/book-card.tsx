@@ -130,7 +130,7 @@ export function BookCard({
                   <Button 
                     size="sm" 
                     variant="secondary"
-                    className="h-8 w-8 p-0 bg-white/90 hover:bg-white shadow-lg backdrop-blur-sm"
+                    className="h-8 w-8 p-0 bg-background/90 hover:bg-background text-foreground shadow-lg backdrop-blur-sm border border-border/50"
                   >
                     <MoreVertical className="h-4 w-4" />
                   </Button>

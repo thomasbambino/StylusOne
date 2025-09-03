@@ -31,6 +31,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { useAuth } from "@/hooks/use-auth";
+import { useToast } from "@/hooks/use-toast";
 import {
   Dialog,
   DialogContent,
@@ -44,6 +45,7 @@ interface GameServerCardModernProps {
 
 export function GameServerCardModern({ server }: GameServerCardModernProps) {
   const { user } = useAuth();
+  const { toast } = useToast();
   const [showDetails, setShowDetails] = useState(false);
   const [isTransitioning, setIsTransitioning] = useState(false);
   const queryClient = useQueryClient();
@@ -484,10 +486,22 @@ export function GameServerCardModern({ server }: GameServerCardModernProps) {
                   <Button
                     variant="ghost"
                     size="sm"
-                    onClick={() => {
-                      const shareUrl = `${window.location.origin}/server/${server.instanceId}`;
-                      navigator.clipboard.writeText(shareUrl);
-                      // You can add a toast notification here if you have one set up
+                    onClick={async () => {
+                      try {
+                        const shareUrl = `${window.location.origin}/server/${server.instanceId}`;
+                        await navigator.clipboard.writeText(shareUrl);
+                        toast({
+                          title: "Share Link Copied",
+                          description: "The server share link has been copied to your clipboard.",
+                        });
+                      } catch (error) {
+                        console.error('Failed to copy to clipboard:', error);
+                        toast({
+                          title: "Copy Failed",
+                          description: "Failed to copy the share link. Please try again.",
+                          variant: "destructive",
+                        });
+                      }
                     }}
                     className="text-xs"
                   >
