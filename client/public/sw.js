@@ -1,6 +1,10 @@
 // Cache version - update this when cache structure changes
-const CACHE_VERSION = 'v1';
+// INCREMENT THIS VERSION TO FORCE CACHE REFRESH
+const CACHE_VERSION = 'v2.0.0-20250903';
 const CACHE_NAME = `homelab-dashboard-${CACHE_VERSION}`;
+
+// Add message to notify clients of updates
+const UPDATE_NOTIFICATION = true;
 
 // Assets to cache on install
 const STATIC_CACHE_URLS = [
@@ -13,6 +17,10 @@ const STATIC_CACHE_URLS = [
 
 // Install service worker and cache static assets
 self.addEventListener('install', (event) => {
+  console.log('[ServiceWorker] Installing new version:', CACHE_VERSION);
+  // Skip waiting to activate immediately
+  self.skipWaiting();
+  
   event.waitUntil(
     caches.open(CACHE_NAME).then((cache) => {
       return cache.addAll(STATIC_CACHE_URLS);
@@ -22,13 +30,36 @@ self.addEventListener('install', (event) => {
 
 // Clean up old caches when a new service worker takes over
 self.addEventListener('activate', (event) => {
+  console.log('[ServiceWorker] Activating new version:', CACHE_VERSION);
+  
   event.waitUntil(
-    caches.keys().then((cacheNames) => {
-      return Promise.all(
-        cacheNames
-          .filter((name) => name.startsWith('homelab-dashboard-') && name !== CACHE_NAME)
-          .map((name) => caches.delete(name))
-      );
+    Promise.all([
+      // Clean up old caches
+      caches.keys().then((cacheNames) => {
+        return Promise.all(
+          cacheNames
+            .filter((name) => name.startsWith('homelab-dashboard-') && name !== CACHE_NAME)
+            .map((name) => {
+              console.log('[ServiceWorker] Removing old cache:', name);
+              return caches.delete(name);
+            })
+        );
+      }),
+      // Take control of all clients immediately
+      clients.claim()
+    ]).then(() => {
+      // Notify all clients about the update
+      if (UPDATE_NOTIFICATION) {
+        clients.matchAll().then(clients => {
+          clients.forEach(client => {
+            client.postMessage({
+              type: 'CACHE_UPDATED',
+              version: CACHE_VERSION,
+              message: 'New version available! The page will refresh automatically.'
+            });
+          });
+        });
+      }
     })
   );
 });

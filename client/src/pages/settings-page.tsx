@@ -7,7 +7,7 @@ import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useAuth } from "@/hooks/use-auth";
 import { Link } from "wouter";
-import { ArrowLeft, Loader2, Mail, RefreshCw } from "lucide-react";
+import { ArrowLeft, Loader2, Mail, RefreshCw, Trash2, AlertCircle } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Form, FormControl, FormField, FormItem, FormLabel } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
@@ -21,6 +21,7 @@ import { Separator } from "@/components/ui/separator";
 import { ImageUpload } from "@/components/ui/image-upload";
 import { Textarea } from "@/components/ui/textarea";
 import { EmailTemplateDialog } from "@/components/email-template-dialog";
+import { clearAllCaches, forceRefresh, getCurrentCacheVersion } from "@/utils/cache-helper";
 
 export default function SettingsPage() {
   const { toast } = useToast();
@@ -220,10 +221,11 @@ export default function SettingsPage() {
             </CardHeader>
             <CardContent>
               <Tabs defaultValue="general" className="space-y-4" onValueChange={setCurrentTab}>
-                <TabsList className="grid w-full grid-cols-4">
+                <TabsList className="grid w-full grid-cols-5">
                   <TabsTrigger value="general">General</TabsTrigger>
                   <TabsTrigger value="branding">Branding</TabsTrigger>
                   <TabsTrigger value="visibility">Visibility</TabsTrigger>
+                  <TabsTrigger value="maintenance">Maintenance</TabsTrigger>
                   {isSuperAdmin && (
                     <TabsTrigger value="email">
                       <Mail className="h-4 w-4 mr-2" />
@@ -650,6 +652,94 @@ export default function SettingsPage() {
                       </Button>
                     </form>
                   </Form>
+                </TabsContent>
+
+                <TabsContent value="maintenance">
+                  <div className="space-y-6">
+                    <div>
+                      <h3 className="text-lg font-medium mb-2">Cache Management</h3>
+                      <p className="text-sm text-muted-foreground mb-4">
+                        Clear cached data to ensure you're seeing the latest version of the application
+                      </p>
+                      
+                      <Card className="border-warning">
+                        <CardContent className="pt-6">
+                          <div className="space-y-4">
+                            <div className="flex items-start gap-3">
+                              <AlertCircle className="h-5 w-5 text-warning mt-0.5" />
+                              <div className="flex-1">
+                                <h4 className="font-medium mb-1">Current Cache Version</h4>
+                                <p className="text-sm text-muted-foreground mb-3">
+                                  Version: {getCurrentCacheVersion()}
+                                </p>
+                                <p className="text-sm text-muted-foreground mb-4">
+                                  If you're experiencing issues with outdated content or the app not updating properly,
+                                  clearing the cache can help resolve these problems.
+                                </p>
+                              </div>
+                            </div>
+                            
+                            <Separator />
+                            
+                            <div className="space-y-3">
+                              <Button
+                                onClick={async () => {
+                                  try {
+                                    await clearAllCaches();
+                                    toast({
+                                      title: "Cache Cleared",
+                                      description: "All cached data has been cleared. The page will reload.",
+                                    });
+                                    setTimeout(() => window.location.reload(), 1500);
+                                  } catch (error) {
+                                    toast({
+                                      title: "Error",
+                                      description: "Failed to clear cache. Please try again.",
+                                      variant: "destructive",
+                                    });
+                                  }
+                                }}
+                                variant="outline"
+                                className="w-full"
+                              >
+                                <Trash2 className="h-4 w-4 mr-2" />
+                                Clear Cache Only
+                              </Button>
+                              
+                              <Button
+                                onClick={async () => {
+                                  try {
+                                    toast({
+                                      title: "Performing Hard Refresh",
+                                      description: "Clearing all data and reloading...",
+                                    });
+                                    await forceRefresh();
+                                  } catch (error) {
+                                    toast({
+                                      title: "Error",
+                                      description: "Failed to perform hard refresh. Please try again.",
+                                      variant: "destructive",
+                                    });
+                                  }
+                                }}
+                                variant="destructive"
+                                className="w-full"
+                              >
+                                <RefreshCw className="h-4 w-4 mr-2" />
+                                Force Hard Refresh (Clear Everything)
+                              </Button>
+                            </div>
+                            
+                            <div className="bg-muted p-3 rounded-lg">
+                              <p className="text-xs text-muted-foreground">
+                                <strong>Tip:</strong> You can also use <kbd className="px-1.5 py-0.5 text-xs font-semibold bg-background rounded">Ctrl</kbd> + <kbd className="px-1.5 py-0.5 text-xs font-semibold bg-background rounded">Shift</kbd> + <kbd className="px-1.5 py-0.5 text-xs font-semibold bg-background rounded">R</kbd> (or <kbd className="px-1.5 py-0.5 text-xs font-semibold bg-background rounded">Cmd</kbd> on Mac) to perform a hard refresh.
+                              </p>
+                            </div>
+                          </div>
+                        </CardContent>
+                      </Card>
+                    </div>
+                  </div>
                 </TabsContent>
 
                 {isSuperAdmin && (
