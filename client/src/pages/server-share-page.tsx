@@ -124,7 +124,7 @@ export default function ServerSharePage() {
   const maxPlayers = server.Metrics?.['Active Users']?.MaxValue ?? 0;
   const playerPercentage = maxPlayers > 0 ? (currentPlayers / maxPlayers) * 100 : 0;
 
-  const connectionString = server.connectionString || `${server.serverIP}:${server.serverPort}`;
+  const connectionString = server.connectionString || `game.stylus.services:${(server as any).port || server.serverPort}`;
 
   const copyToClipboard = (text: string, message: string) => {
     navigator.clipboard.writeText(text);
