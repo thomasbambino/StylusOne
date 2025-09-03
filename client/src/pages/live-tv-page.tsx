@@ -482,17 +482,37 @@ export default function LiveTVPage() {
   // Fullscreen change event listener
   useEffect(() => {
     const handleFullscreenChange = () => {
-      setIsFullscreen(!!document.fullscreenElement);
+      const isFullscreenActive = !!(
+        document.fullscreenElement ||
+        (document as any).webkitFullscreenElement ||
+        (document as any).mozFullScreenElement ||
+        (document as any).msFullscreenElement
+      );
+      setIsFullscreen(isFullscreenActive);
     };
 
+    // Listen to all fullscreen change events for cross-browser compatibility
     document.addEventListener('fullscreenchange', handleFullscreenChange);
     document.addEventListener('webkitfullscreenchange', handleFullscreenChange);
     document.addEventListener('mozfullscreenchange', handleFullscreenChange);
+    document.addEventListener('msfullscreenchange', handleFullscreenChange);
+
+    // Also listen for video-specific fullscreen events on mobile
+    if (videoRef.current) {
+      videoRef.current.addEventListener('webkitbeginfullscreen', () => setIsFullscreen(true));
+      videoRef.current.addEventListener('webkitendfullscreen', () => setIsFullscreen(false));
+    }
 
     return () => {
       document.removeEventListener('fullscreenchange', handleFullscreenChange);
       document.removeEventListener('webkitfullscreenchange', handleFullscreenChange);
       document.removeEventListener('mozfullscreenchange', handleFullscreenChange);
+      document.removeEventListener('msfullscreenchange', handleFullscreenChange);
+      
+      if (videoRef.current) {
+        videoRef.current.removeEventListener('webkitbeginfullscreen', () => setIsFullscreen(true));
+        videoRef.current.removeEventListener('webkitendfullscreen', () => setIsFullscreen(false));
+      }
     };
   }, []);
 
@@ -557,13 +577,64 @@ export default function LiveTVPage() {
     if (!fullscreenContainerRef.current) return;
     
     try {
-      if (document.fullscreenElement) {
-        await document.exitFullscreen();
+      // Check if we're currently in fullscreen
+      const isCurrentlyFullscreen = !!(
+        document.fullscreenElement ||
+        (document as any).webkitFullscreenElement ||
+        (document as any).mozFullScreenElement ||
+        (document as any).msFullscreenElement
+      );
+      
+      if (isCurrentlyFullscreen) {
+        // Exit fullscreen
+        if (document.exitFullscreen) {
+          await document.exitFullscreen();
+        } else if ((document as any).webkitExitFullscreen) {
+          await (document as any).webkitExitFullscreen();
+        } else if ((document as any).mozCancelFullScreen) {
+          await (document as any).mozCancelFullScreen();
+        } else if ((document as any).msExitFullscreen) {
+          await (document as any).msExitFullscreen();
+        }
       } else {
-        await fullscreenContainerRef.current.requestFullscreen();
+        // Enter fullscreen
+        const element = fullscreenContainerRef.current;
+        
+        if (element.requestFullscreen) {
+          await element.requestFullscreen();
+        } else if ((element as any).webkitRequestFullscreen) {
+          await (element as any).webkitRequestFullscreen();
+        } else if ((element as any).webkitEnterFullscreen) {
+          // iOS Safari fallback
+          await (element as any).webkitEnterFullscreen();
+        } else if ((element as any).mozRequestFullScreen) {
+          await (element as any).mozRequestFullScreen();
+        } else if ((element as any).msRequestFullscreen) {
+          await (element as any).msRequestFullscreen();
+        } else {
+          console.warn('Fullscreen API not supported on this device');
+          // Fallback: try to make the video element go fullscreen on mobile
+          if (videoRef.current && (videoRef.current as any).webkitEnterFullscreen) {
+            (videoRef.current as any).webkitEnterFullscreen();
+          }
+        }
       }
     } catch (error) {
       console.error('Error toggling fullscreen:', error);
+      
+      // Mobile Safari fallback - try the video element directly
+      if (videoRef.current) {
+        try {
+          if ((videoRef.current as any).webkitEnterFullscreen) {
+            console.log('Trying iOS Safari video fullscreen fallback');
+            (videoRef.current as any).webkitEnterFullscreen();
+          } else if ((videoRef.current as any).requestFullscreen) {
+            await (videoRef.current as any).requestFullscreen();
+          }
+        } catch (fallbackError) {
+          console.error('Fullscreen fallback also failed:', fallbackError);
+        }
+      }
     }
   };
 
@@ -1323,9 +1394,10 @@ export default function LiveTVPage() {
                       {...({ 'webkit-playsinline': 'true' } as any)}
                       muted={false}
                       controls={false}
-                      controlsList="nodownload nofullscreen"
+                      controlsList="nodownload"
                       crossOrigin="anonymous"
                       disablePictureInPicture={false}
+                      {...({ 'x-webkit-airplay': 'allow' } as any)}
                     >
                       Your browser does not support the video tag.
                     </video>
