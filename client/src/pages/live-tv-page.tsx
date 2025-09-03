@@ -577,6 +577,108 @@ export default function LiveTVPage() {
     }, 3000);
   };
 
+  // Function to play static streams directly (like CBS 8)
+  const playStreamDirectly = (streamUrl: string) => {
+    if (!videoRef.current) return;
+
+    const video = videoRef.current;
+    
+    // Clean up existing HLS instance
+    if (hlsRef.current) {
+      console.log('🔥 Destroying existing HLS instance for direct stream');
+      hlsRef.current.destroy();
+      hlsRef.current = null;
+    }
+    
+    console.log('Loading direct stream:', streamUrl);
+    
+    if (Hls.isSupported()) {
+      // Use HLS.js for browsers that support it  
+      const hls = new Hls({
+        enableWorker: true,
+        lowLatencyMode: false,
+        backBufferLength: 90,
+        liveSyncDurationCount: 1,
+        liveMaxLatencyDurationCount: 3,
+        maxBufferLength: 20,
+        maxMaxBufferLength: 30,
+        maxBufferSize: 60 * 1000 * 1000, // 60MB
+        maxBufferHole: 0.5,
+        fragLoadingTimeOut: 20000,
+        manifestLoadingTimeOut: 15000,
+        debug: true,
+        fragLoadingMaxRetry: 4,
+        fragLoadingRetryDelay: 500,
+        startFragPrefetch: true,
+        testBandwidth: false,
+        progressive: true,
+      });
+      
+      hlsRef.current = hls;
+      
+      hls.on(Hls.Events.MANIFEST_PARSED, () => {
+        console.log('Direct stream HLS manifest parsed, starting playback');
+        setIsLoading(false);
+        
+        video.play().then(() => {
+          console.log('Direct stream started playing successfully');
+          setIsPlaying(true);
+        }).catch(error => {
+          console.error('Direct stream play error:', error);
+          setIsLoading(false);
+        });
+      });
+      
+      hls.on(Hls.Events.ERROR, (event, data) => {
+        console.error('Direct stream HLS error:', data);
+        if (data.fatal) {
+          console.log('Fatal direct stream error, destroying HLS instance');
+          hls.destroy();
+          setIsLoading(false);
+        }
+      });
+
+      // Add video event listeners
+      video.addEventListener('play', () => {
+        console.log('Direct stream video play event');
+        setIsPlaying(true);
+      });
+      video.addEventListener('pause', () => {
+        console.log('Direct stream video pause event');
+        setIsPlaying(false);
+      });
+      video.addEventListener('error', (e) => {
+        console.error('Direct stream video error:', e);
+        console.error('Direct stream video error code:', video.error?.code);
+      });
+
+      hls.attachMedia(video);
+      hls.loadSource(streamUrl);
+      
+    } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
+      // Safari has native HLS support
+      video.src = streamUrl;
+      
+      video.addEventListener('loadedmetadata', () => {
+        video.play().then(() => {
+          setIsPlaying(true);
+          setIsLoading(false);
+        }).catch(error => {
+          console.error('Safari direct stream error:', error);
+          setIsLoading(false);
+        });
+      });
+      
+      video.addEventListener('error', () => {
+        console.error('Safari direct stream playback error');
+        setIsLoading(false);
+      });
+    } else {
+      console.error('HLS is not supported in this browser for direct stream');
+      setIsLoading(false);
+    }
+  };
+
   const handleChannelSelect = async (channel: HDHomeRunChannel) => {
     
     // Prevent multiple simultaneous channel selections
