@@ -904,6 +904,7 @@ export default function BooksPage() {
                       onEdit={handleEdit}
                       onDelete={(bookId) => deleteBookMutation.mutate(bookId)}
                       isSendingToKindle={sendToKindleMutation.isPending}
+                    />
                   ) : (
                     <Card className="group hover:shadow-lg transition-all duration-300 border-muted/40 bg-card/80 backdrop-blur-sm">
                       <CardContent className="p-4">
@@ -1013,7 +1014,7 @@ export default function BooksPage() {
                       </CardContent>
                     </Card>
                   )}
-                </motion.div>
+                </div>
               ))}
             </motion.div>
           )}
