@@ -1,6 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useState, useEffect } from "react";
 import { Card, CardContent } from "@/components/ui/card";
+import { BookCard } from "@/components/book-card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -893,109 +894,16 @@ export default function BooksPage() {
               )}
             >
               {filteredBooks.map((book, index) => (
-                <motion.div
-                  key={book.id}
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ duration: 0.4, delay: index * 0.03 }}
-                >
+                <div key={book.id} className="h-full">
                   {viewMode === "grid" ? (
-                    <Card className="group hover:shadow-2xl hover:shadow-primary/10 transition-all duration-300 border-muted/40 bg-card/80 backdrop-blur-sm hover:scale-[1.02] overflow-hidden">
-                      {/* Cover */}
-                      <div className="aspect-[2/3] relative overflow-hidden bg-gradient-to-br from-muted/20 to-muted/5">
-                        <img
-                          src={`/api/books/${book.id}/cover`}
-                          alt={book.title}
-                          className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110"
-                          loading="lazy"
-                          onError={(e) => {
-                            const target = e.target as HTMLImageElement;
-                            target.style.display = 'none';
-                            const parent = target.parentElement;
-                            if (parent && !parent.querySelector('.fallback-cover')) {
-                              const fallback = document.createElement('div');
-                              fallback.className = 'fallback-cover w-full h-full flex flex-col items-center justify-center bg-gradient-to-br from-primary/10 to-primary/5';
-                              fallback.innerHTML = '<svg class="h-16 w-16 text-primary/40 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.746 0 3.332.477 4.5 1.253v13C19.832 18.477 18.246 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"></path></svg><p class="text-xs font-medium text-primary/50 px-3 text-center">' + book.title + '</p>';
-                              parent.appendChild(fallback);
-                            }
-                          }}
-                        />
-                        
-                        {/* Actions Overlay */}
-                        <div className="absolute inset-0 bg-black/0 group-hover:bg-black/50 transition-all duration-300 flex items-center justify-center gap-2 opacity-0 group-hover:opacity-100">
-                          <Button
-                            size="sm"
-                            onClick={() => handleDownload(book)}
-                            className="bg-white/90 hover:bg-white text-black shadow-lg backdrop-blur-sm"
-                          >
-                            <Download className="h-4 w-4" />
-                          </Button>
-                          
-                          <Button
-                            size="sm"
-                            onClick={() => handleSendToKindle(book)}
-                            disabled={sendToKindleMutation.isPending}
-                            className="bg-green-500/90 hover:bg-green-600 text-white shadow-lg backdrop-blur-sm"
-                          >
-                            <Send className="h-4 w-4" />
-                          </Button>
-                          
-                          <Button
-                            size="sm"
-                            onClick={() => handleEdit(book)}
-                            className="bg-blue-500/90 hover:bg-blue-600 text-white shadow-lg backdrop-blur-sm"
-                          >
-                            <Edit className="h-4 w-4" />
-                          </Button>
-                          
-                          <AlertDialog>
-                            <AlertDialogTrigger asChild>
-                              <Button size="sm" variant="destructive" className="shadow-lg backdrop-blur-sm">
-                                <Trash2 className="h-4 w-4" />
-                              </Button>
-                            </AlertDialogTrigger>
-                            <AlertDialogContent>
-                              <AlertDialogHeader>
-                                <AlertDialogTitle>Delete Book</AlertDialogTitle>
-                                <AlertDialogDescription>
-                                  Are you sure you want to delete "{book.title}"? This action cannot be undone.
-                                </AlertDialogDescription>
-                              </AlertDialogHeader>
-                              <AlertDialogFooter>
-                                <AlertDialogCancel>Cancel</AlertDialogCancel>
-                                <AlertDialogAction
-                                  onClick={() => deleteBookMutation.mutate(book.id)}
-                                  className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                                >
-                                  Delete
-                                </AlertDialogAction>
-                              </AlertDialogFooter>
-                            </AlertDialogContent>
-                          </AlertDialog>
-                        </div>
-                      </div>
-
-                      {/* Info */}
-                      <CardContent className="p-3">
-                        <h3 className="font-semibold text-sm line-clamp-2 leading-tight mb-1 group-hover:text-primary transition-colors">
-                          {book.title}
-                        </h3>
-                        {book.author && (
-                          <p className="text-xs text-muted-foreground line-clamp-1 mb-2">
-                            {book.author}
-                          </p>
-                        )}
-                        <div className="flex items-center justify-between text-xs text-muted-foreground">
-                          {book.page_count && (
-                            <span className="flex items-center gap-1">
-                              <FileText className="h-3 w-3" />
-                              {book.page_count}p
-                            </span>
-                          )}
-                          <span>{formatFileSize(book.file_size)}</span>
-                        </div>
-                      </CardContent>
-                    </Card>
+                    <BookCard
+                      book={book}
+                      index={index}
+                      onDownload={handleDownload}
+                      onSendToKindle={handleSendToKindle}
+                      onEdit={handleEdit}
+                      onDelete={(bookId) => deleteBookMutation.mutate(bookId)}
+                      isSendingToKindle={sendToKindleMutation.isPending}
                   ) : (
                     <Card className="group hover:shadow-lg transition-all duration-300 border-muted/40 bg-card/80 backdrop-blur-sm">
                       <CardContent className="p-4">

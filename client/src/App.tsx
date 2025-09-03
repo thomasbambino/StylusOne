@@ -14,6 +14,7 @@ import GameServersPage from "@/pages/game-servers-page";
 import PlexPage from "@/pages/plex-page";
 import LiveTVPage from "@/pages/live-tv-page";
 import BooksPage from "@/pages/books-page";
+import ServerSharePage from "@/pages/server-share-page";
 import { ProtectedRoute } from "./lib/protected-route";
 import { ThemeProvider } from "@/components/theme-provider";
 import { DiscordButton } from "@/components/discord-button";
@@ -30,6 +31,7 @@ function Router() {
       <ProtectedRoute path="/books" component={BooksPage} />
       <ProtectedRoute path="/users" component={UsersPage} />
       <ProtectedRoute path="/settings" component={SettingsPage} />
+      <Route path="/server/:serverId" component={ServerSharePage} />
       <Route path="/auth" component={AuthPage} />
       <Route path="/pending" component={PendingPage} />
       <Route component={NotFound} />

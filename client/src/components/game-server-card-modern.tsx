@@ -16,7 +16,8 @@ import {
   Gamepad2,
   Server,
   Activity,
-  ChevronRight
+  ChevronRight,
+  Share2
 } from "lucide-react";
 import { useState, useEffect } from "react";
 import { useMutation, useQueryClient, useQuery } from "@tanstack/react-query";
@@ -470,15 +471,30 @@ export function GameServerCardModern({ server }: GameServerCardModernProps) {
             {/* Quick Actions Bar */}
             {server.status && (
               <div className="mt-auto pt-2 border-t flex items-center justify-between">
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => setShowDetails(true)}
-                  className="text-xs"
-                >
-                  View Details
-                  <ChevronRight className="h-3 w-3 ml-1" />
-                </Button>
+                <div className="flex gap-1">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setShowDetails(true)}
+                    className="text-xs"
+                  >
+                    View Details
+                    <ChevronRight className="h-3 w-3 ml-1" />
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => {
+                      const shareUrl = `${window.location.origin}/server/${server.instanceId}`;
+                      navigator.clipboard.writeText(shareUrl);
+                      // You can add a toast notification here if you have one set up
+                    }}
+                    className="text-xs"
+                  >
+                    <Share2 className="h-3 w-3 mr-1" />
+                    Share
+                  </Button>
+                </div>
                 
                 <div className="flex gap-1">
                     {server.status ? (

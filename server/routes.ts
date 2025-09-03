@@ -538,6 +538,57 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Get a single game server by instance ID (public endpoint for sharing)
+  app.get("/api/game-servers/:instanceId", async (req, res) => {
+    // No auth required - this is a public share endpoint
+    try {
+      const { instanceId } = req.params;
+      
+      // Get all AMP instances
+      const ampInstances = await ampService.getInstances();
+      
+      // Find the specific instance
+      const instance = ampInstances.find(i => i.InstanceID === instanceId);
+      
+      if (!instance) {
+        return res.status(404).json({ message: "Server not found" });
+      }
+      
+      // Check if instance is a game server (not ADS)
+      if (instance.Module === 'ADS' || 
+          instance.ModuleDisplayName === 'ADS' || 
+          instance.FriendlyName.toLowerCase().includes('ads')) {
+        return res.status(404).json({ message: "Server not found" });
+      }
+      
+      // Get stored server info if exists
+      const storedServer = await storage.getGameServerByInstanceId(instanceId);
+      
+      // Format the server response
+      const server = {
+        instanceId: instance.InstanceID,
+        name: instance.FriendlyName || instance.InstanceName || "Unnamed Server",
+        type: instance.ModuleDisplayName || instance.Module || "Unknown",
+        status: instance.Running || false,
+        connectionString: instance.ConnectionString || null,
+        serverIP: instance.IP || null,
+        serverPort: instance.Port || null,
+        version: instance.Version || null,
+        uptime: instance.Uptime || null,
+        Metrics: instance.Metrics || null,
+        hidden: storedServer?.hidden || false
+      };
+      
+      res.json(server);
+    } catch (error) {
+      console.error('Error getting game server:', error);
+      res.status(500).json({ 
+        message: "Failed to get game server",
+        error: error instanceof Error ? error.message : "Unknown error"
+      });
+    }
+  });
+
   app.get("/api/game-servers", async (req, res) => {
     if (!req.isAuthenticated()) return res.sendStatus(401);
     try {
