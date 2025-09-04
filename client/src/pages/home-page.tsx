@@ -540,11 +540,18 @@ export default function HomePage() {
                               alt={`${server.type || 'Game'} logo`}
                               className="w-12 h-8 object-contain"
                               onError={(e) => {
-                                // Fallback to text badge
+                                // Fallback to text badge - using safe DOM manipulation instead of innerHTML
                                 const parent = (e.target as HTMLImageElement).parentElement;
                                 if (parent) {
                                   const gameType = server.type || 'Game';
-                                  parent.innerHTML = `<div class="w-12 h-8 flex items-center justify-center text-gray-700 font-bold text-xs rounded bg-gray-200">${gameType.substring(0, 3).toUpperCase()}</div>`;
+                                  // Create element safely without innerHTML
+                                  const fallbackDiv = document.createElement('div');
+                                  fallbackDiv.className = 'w-12 h-8 flex items-center justify-center text-gray-700 font-bold text-xs rounded bg-gray-200';
+                                  // Use textContent to safely set text (prevents XSS)
+                                  fallbackDiv.textContent = gameType.substring(0, 3).toUpperCase();
+                                  // Clear parent and append safe element
+                                  parent.innerHTML = '';
+                                  parent.appendChild(fallbackDiv);
                                 }
                               }}
                             />
