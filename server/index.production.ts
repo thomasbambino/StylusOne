@@ -1,10 +1,35 @@
 import express, { type Request, Response, NextFunction } from "express";
+import helmet from "helmet";
 import { registerRoutes } from "./routes";
 import { startBackgroundTasks } from "./background-tasks";
 import { initializeServices } from "./services";
 import { log, serveStatic } from "./static";
 
 const app = express();
+
+// Apply Helmet security headers with custom configuration
+app.use(helmet({
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'", "https://www.gstatic.com"],
+      styleSrc: ["'self'", "'unsafe-inline'"],
+      imgSrc: ["'self'", "data:", "blob:", "https:", "http:"],
+      fontSrc: ["'self'", "data:"],
+      connectSrc: ["'self'", "https:", "wss:", "ws:"],
+      mediaSrc: ["'self'", "blob:", "https:", "http:"],
+      objectSrc: ["'none'"],
+      frameSrc: ["'self'"],
+      workerSrc: ["'self'", "blob:"],
+      childSrc: ["'self'", "blob:"],
+      formAction: ["'self'"],
+      frameAncestors: ["'self'"],
+      upgradeInsecureRequests: [],
+    },
+  },
+  crossOriginEmbedderPolicy: false, // Disable for video streaming compatibility
+}));
+
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
 
