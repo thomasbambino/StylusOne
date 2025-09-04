@@ -7,7 +7,7 @@ import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useAuth } from "@/hooks/use-auth";
 import { Link } from "wouter";
-import { ArrowLeft, Loader2, Mail, RefreshCw, Trash2, AlertCircle } from "lucide-react";
+import { ArrowLeft, Loader2, Mail, RefreshCw, Trash2, AlertCircle, Tv } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Form, FormControl, FormField, FormItem, FormLabel } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
@@ -29,6 +29,7 @@ export default function SettingsPage() {
   const [showEmailTemplates, setShowEmailTemplates] = useState(false);
   const [isTestingConnection, setIsTestingConnection] = useState(false);
   const [currentTab, setCurrentTab] = useState("general");
+  const [isUpdatingEPG, setIsUpdatingEPG] = useState(false);
   const isSuperAdmin = user?.role === 'superadmin';
 
   const { data: settings } = useQuery<Settings>({
@@ -196,6 +197,35 @@ export default function SettingsPage() {
       });
     } finally {
       setIsTestingConnection(false);
+    }
+  };
+
+  const updateEPGData = async () => {
+    try {
+      setIsUpdatingEPG(true);
+      const res = await apiRequest("POST", "/api/epg/update");
+      const data = await res.json();
+
+      if (data.success) {
+        toast({
+          title: "EPG Update Started",
+          description: "Electronic Program Guide update has started in the background.",
+        });
+      } else {
+        toast({
+          title: "EPG Update Failed",
+          description: data.message || "Could not start EPG update.",
+          variant: "destructive",
+        });
+      }
+    } catch (error) {
+      toast({
+        title: "EPG Update Failed",
+        description: error instanceof Error ? error.message : "An unknown error occurred",
+        variant: "destructive",
+      });
+    } finally {
+      setIsUpdatingEPG(false);
     }
   };
 
@@ -565,6 +595,48 @@ export default function SettingsPage() {
                               <p className="text-xs text-muted-foreground">
                                 <strong>Tip:</strong> You can also use <kbd className="px-1.5 py-0.5 text-xs font-semibold bg-background rounded">Ctrl</kbd> + <kbd className="px-1.5 py-0.5 text-xs font-semibold bg-background rounded">Shift</kbd> + <kbd className="px-1.5 py-0.5 text-xs font-semibold bg-background rounded">R</kbd> (or <kbd className="px-1.5 py-0.5 text-xs font-semibold bg-background rounded">Cmd</kbd> on Mac) to perform a hard refresh.
                               </p>
+                            </div>
+                          </div>
+                        </CardContent>
+                      </Card>
+                    </div>
+
+                    <div>
+                      <h3 className="text-lg font-medium mb-2">TV Guide Management</h3>
+                      <p className="text-sm text-muted-foreground mb-4">
+                        Update the Electronic Program Guide (EPG) data for Live TV scheduling
+                      </p>
+                      
+                      <Card>
+                        <CardContent className="pt-6">
+                          <div className="space-y-4">
+                            <div className="flex items-start gap-3">
+                              <Tv className="h-5 w-5 text-blue-500 mt-0.5" />
+                              <div className="flex-1">
+                                <h4 className="font-medium mb-1">EPG Data Update</h4>
+                                <p className="text-sm text-muted-foreground mb-4">
+                                  The TV guide is automatically updated twice daily at 3 AM and 6 AM. 
+                                  You can manually trigger an update if you need the latest program information.
+                                </p>
+                                <Button
+                                  onClick={updateEPGData}
+                                  disabled={isUpdatingEPG}
+                                  variant="outline"
+                                  className="w-full"
+                                >
+                                  {isUpdatingEPG ? (
+                                    <>
+                                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                                      Updating EPG...
+                                    </>
+                                  ) : (
+                                    <>
+                                      <RefreshCw className="h-4 w-4 mr-2" />
+                                      Update TV Guide Data
+                                    </>
+                                  )}
+                                </Button>
+                              </div>
                             </div>
                           </div>
                         </CardContent>
