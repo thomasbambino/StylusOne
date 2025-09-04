@@ -1535,7 +1535,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     if (!req.isAuthenticated()) return res.sendStatus(401);
     try {
       const { email } = plexInviteSchema.parse(req.body);
-      const plexToken = "WXxaPDsUPNFszKdPUmAx";
+      const plexToken = process.env.PLEX_TOKEN;
 
       if (!plexToken) {
         throw new Error("Plex token not configured");

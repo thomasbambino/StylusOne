@@ -70,7 +70,7 @@ export default function HomePage() {
 
   const createPlexAccountMutation = useMutation({
     mutationFn: async (data: PlexInviteForm) => {
-      const response = await fetch("/api/plex/create-account", {
+      const response = await fetch("/api/services/plex/account", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(data),
