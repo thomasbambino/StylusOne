@@ -6,7 +6,6 @@ export * from './service-registry';
 
 // Export service implementations
 export * from './amp-service';
-export * from './plex-service';
 export * from './service-checker';
 export * from './email-service';
 export * from './epub-service';
@@ -14,7 +13,6 @@ export * from './epub-service';
 // Import services and service registry
 import { serviceRegistry } from './service-registry';
 import { ampService } from './amp-service';
-import { plexService } from './plex-service';
 import { serviceCheckerService } from './service-checker';
 import { emailService } from './email-service';
 import { epubService } from './epub-service';
@@ -25,7 +23,6 @@ import { epubService } from './epub-service';
 export async function initializeServices(): Promise<void> {
   // Register all services with the registry
   serviceRegistry.register('amp', ampService);
-  serviceRegistry.register('plex', plexService);
   serviceRegistry.register('service-checker', serviceCheckerService);
   serviceRegistry.register('email', emailService);
   serviceRegistry.register('epub', epubService);

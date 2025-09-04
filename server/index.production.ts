@@ -1,7 +1,6 @@
 import express, { type Request, Response, NextFunction } from "express";
 import helmet from "helmet";
 import { registerRoutes } from "./routes";
-import { startBackgroundTasks } from "./background-tasks";
 import { initializeServices } from "./services";
 import { log, serveStatic } from "./static";
 
@@ -80,8 +79,6 @@ app.use((req, res, next) => {
     throw err;
   });
   
-  // Start background tasks for Plex data refreshing
-  startBackgroundTasks();
 
   // Use production static server without vite
   serveStatic(app);

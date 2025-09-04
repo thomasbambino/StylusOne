@@ -17,8 +17,6 @@ import { User } from '@shared/schema';
 import cookieParser from 'cookie-parser';
 import { sendEmail } from './email';
 import { ampService } from './services/amp-service';
-import { plexService } from './services/plex-service';
-import { trueNASService } from './services/truenas-service';
 import { epubService } from './services/epub-service';
 import booksRouter from './routes/books';
 import { z } from "zod";
@@ -1172,6 +1170,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const { game } = req.body;
       const user = req.user as User;
 
+      // Get the Game Server Request email template
+      const template = await storage.getEmailTemplateByName("Game Server Request");
+
       // Get all admin users
       const admins = await storage.getAllUsers();
       const adminEmails = admins
@@ -1179,22 +1180,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
         .map(admin => admin.email);
 
       if (adminEmails.length > 0) {
-        // Send email to all admins
+        // Send email to all admins using the template
         for (const adminEmail of adminEmails) {
           if (adminEmail) {
             await sendEmail({
               to: adminEmail,
-              subject: "New Game Server Request",
-              html: `
-                <p>A new game server has been requested:</p>
-                <ul>
-                  <li><strong>Game:</strong> ${game}</li>
-                  <li><strong>Requested by:</strong> ${user.username}</li>
-                  <li><strong>User Email:</strong> ${user.email || 'No email provided'}</li>
-                  <li><strong>Time:</strong> ${new Date().toLocaleString()}</li>
-                </ul>
-                <p>Please review this request in the admin dashboard.</p>
-              `
+              templateId: template?.id,
+              templateData: {
+                game,
+                username: user.username,
+                userEmail: user.email || 'No email provided',
+                timestamp: new Date().toLocaleString()
+              }
             });
           }
         }
@@ -1533,20 +1530,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Add endpoint for Plex server details
-  app.get("/api/services/plex/details", async (req, res) => {
-    if (!req.isAuthenticated()) return res.sendStatus(401);
-    try {
-      const serverInfo = await plexService.getServerInfo();
-      res.json(serverInfo);
-    } catch (error) {
-      console.error('Error fetching Plex server info:', error);
-      res.status(500).json({ 
-        message: "Failed to fetch Plex server info", 
-        error: error instanceof Error ? error.message : "Unknown error" 
-      });
-    }
-  });
 
   app.post("/api/services/plex/account", async (req, res) => {
     if (!req.isAuthenticated()) return res.sendStatus(401);
@@ -2359,76 +2342,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // TrueNAS API routes
-  app.get("/api/truenas/system-stats", async (req, res) => {
-    if (!req.isAuthenticated()) return res.sendStatus(401);
-    
-    try {
-      const stats = await trueNASService.getSystemStats();
-      res.json(stats);
-    } catch (error) {
-      console.error('Error fetching TrueNAS system stats:', error);
-      res.status(500).json({
-        message: "Failed to fetch TrueNAS system stats",
-        error: error instanceof Error ? error.message : "Unknown error"
-      });
-    }
-  });
 
-  app.get("/api/truenas/system-info", async (req, res) => {
-    if (!req.isAuthenticated()) return res.sendStatus(401);
-    
-    try {
-      const systemInfo = await trueNASService.getSystemInfo();
-      res.json(systemInfo);
-    } catch (error) {
-      console.error('Error fetching TrueNAS system info:', error);
-      res.status(500).json({
-        message: "Failed to fetch TrueNAS system info",
-        error: error instanceof Error ? error.message : "Unknown error"
-      });
-    }
-  });
 
-  app.get("/api/truenas/alerts", async (req, res) => {
-    if (!req.isAuthenticated()) return res.sendStatus(401);
-    
-    try {
-      const alerts = await trueNASService.getAlerts();
-      res.json(alerts);
-    } catch (error) {
-      console.error('Error fetching TrueNAS alerts:', error);
-      res.status(500).json({
-        message: "Failed to fetch TrueNAS alerts",
-        error: error instanceof Error ? error.message : "Unknown error"
-      });
-    }
-  });
 
   // Unified system alerts endpoint combining multiple sources
   app.get("/api/system/alerts", async (req, res) => {
     if (!req.isAuthenticated()) return res.sendStatus(401);
     
     const alerts: any[] = [];
-    
-    // Fetch TrueNAS alerts
-    try {
-      const trueNASAlerts = await trueNASService.getAlerts();
-      const formattedTrueNASAlerts = trueNASAlerts.map((alert: any) => ({
-        id: `truenas-${alert.id}`,
-        source: 'TrueNAS',
-        level: alert.level,
-        text: alert.text,
-        formatted: alert.formatted,
-        datetime: alert.datetime,
-        last_occurrence: alert.last_occurrence,
-        dismissed: alert.dismissed,
-        category: 'storage'
-      }));
-      alerts.push(...formattedTrueNASAlerts);
-    } catch (error) {
-      console.error('Error fetching TrueNAS alerts:', error);
-    }
     
     // Fetch Tautulli logs (errors and warnings)
     try {
@@ -2508,67 +2429,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
     res.json(alerts);
   });
 
-  app.get("/api/truenas/pools", async (req, res) => {
-    if (!req.isAuthenticated()) return res.sendStatus(401);
-    
-    try {
-      const pools = await trueNASService.getPools();
-      const datasets = await trueNASService.getDatasets();
-      
-      // Combine pool and dataset information
-      const poolsWithUsage = pools.map(pool => {
-        const dataset = datasets.find(d => d.pool === pool.name && d.name === pool.name);
-        return {
-          ...pool,
-          usedBytes: dataset?.used.parsed || 0,
-          availableBytes: dataset?.available.parsed || 0,
-          totalBytes: (dataset?.used.parsed || 0) + (dataset?.available.parsed || 0)
-        };
-      });
-      
-      res.json(poolsWithUsage);
-    } catch (error) {
-      console.error('Error fetching TrueNAS pools:', error);
-      res.status(500).json({
-        message: "Failed to fetch TrueNAS pools",
-        error: error instanceof Error ? error.message : "Unknown error"
-      });
-    }
-  });
 
-  app.get("/api/truenas/vms", async (req, res) => {
-    if (!req.isAuthenticated()) return res.sendStatus(401);
-    
-    try {
-      const vms = await trueNASService.getVMs();
-      res.json(vms);
-    } catch (error) {
-      console.error('Error fetching TrueNAS VMs:', error);
-      res.status(500).json({
-        message: "Failed to fetch TrueNAS VMs",
-        error: error instanceof Error ? error.message : "Unknown error"
-      });
-    }
-  });
 
-  app.get("/api/truenas/test", async (req, res) => {
-    if (!req.isAuthenticated()) return res.sendStatus(401);
-    
-    try {
-      const isConnected = await trueNASService.testConnection();
-      res.json({ 
-        connected: isConnected,
-        message: isConnected ? "TrueNAS connection successful" : "TrueNAS connection failed"
-      });
-    } catch (error) {
-      console.error('Error testing TrueNAS connection:', error);
-      res.status(500).json({
-        connected: false,
-        message: "Failed to test TrueNAS connection",
-        error: error instanceof Error ? error.message : "Unknown error"
-      });
-    }
-  });
 
   // EPG (Electronic Program Guide) endpoints
   app.get("/api/epg/current/:channelId", async (req, res) => {

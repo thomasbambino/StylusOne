@@ -56,6 +56,17 @@ export class EpubService implements IService {
   }
 
   /**
+   * Reinitialize the service with new configuration
+   */
+  async reinitialize(): Promise<void> {
+    // Reset state
+    this.initialized = false;
+    
+    // Re-initialize
+    await this.initialize();
+  }
+
+  /**
    * Parse EPUB file and extract metadata
    */
   async parseEpub(filePath: string): Promise<EpubMetadata> {

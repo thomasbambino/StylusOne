@@ -2,7 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Settings } from "@shared/schema";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Play, Tv, Film, Server, Activity, Plus, History } from "lucide-react";
+import { Play, Pause, Tv, Film, Server, Activity, Plus, History } from "lucide-react";
 import { motion } from "framer-motion";
 
 export default function PlexPage() {
@@ -362,7 +362,19 @@ export default function PlexPage() {
                                     : 'bg-yellow-500/20 text-yellow-100 border border-yellow-400/30'
                                   }
                                 `}>
-                                  {session.state === 'playing' ? '▶ Playing' : '⏸ Paused'}
+                                  <div className="flex items-center gap-1">
+                                    {session.state === 'playing' ? (
+                                      <>
+                                        <Play className="w-3 h-3" />
+                                        Playing
+                                      </>
+                                    ) : (
+                                      <>
+                                        <Pause className="w-3 h-3" />
+                                        Paused
+                                      </>
+                                    )}
+                                  </div>
                                 </div>
                               </div>
                               

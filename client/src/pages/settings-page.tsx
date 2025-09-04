@@ -121,17 +121,6 @@ export default function SettingsPage() {
           site_keywords: data.site_keywords,
           og_image_url: data.og_image_url,
         });
-      } else if (currentTab === "visibility") {
-        Object.assign(relevantData, {
-          show_refresh_interval: data.show_refresh_interval,
-          show_last_checked: data.show_last_checked,
-          show_service_url: data.show_service_url,
-          show_status_badge: data.show_status_badge,
-          admin_show_refresh_interval: data.admin_show_refresh_interval,
-          admin_show_last_checked: data.admin_show_last_checked,
-          admin_show_service_url: data.admin_show_service_url,
-          admin_show_status_badge: data.admin_show_status_badge,
-        });
       }
 
       const res = await apiRequest("PATCH", "/api/settings", relevantData);
@@ -221,10 +210,9 @@ export default function SettingsPage() {
             </CardHeader>
             <CardContent>
               <Tabs defaultValue="general" className="space-y-4" onValueChange={setCurrentTab}>
-                <TabsList className="grid w-full grid-cols-5">
+                <TabsList className="grid w-full grid-cols-4">
                   <TabsTrigger value="general">General</TabsTrigger>
                   <TabsTrigger value="branding">Branding</TabsTrigger>
-                  <TabsTrigger value="visibility">Visibility</TabsTrigger>
                   <TabsTrigger value="maintenance">Maintenance</TabsTrigger>
                   {isSuperAdmin && (
                     <TabsTrigger value="email">
@@ -496,163 +484,6 @@ export default function SettingsPage() {
                   </Form>
                 </TabsContent>
 
-                <TabsContent value="visibility">
-                  <Form {...form}>
-                    <form onSubmit={form.handleSubmit((data) => updateSettingsMutation.mutate(data))} className="space-y-4">
-                      <div className="space-y-4">
-                        <div>
-                          <h3 className="text-lg font-medium">Default User Settings</h3>
-                          <p className="text-sm text-muted-foreground mb-4">Configure default visibility settings for new users</p>
-                          <div className="space-y-4">
-                            <FormField
-                              control={form.control}
-                              name="show_refresh_interval"
-                              render={({ field }) => (
-                                <FormItem>
-                                  <div className="flex items-center justify-between">
-                                    <Label htmlFor="show_refresh_interval" className="text-sm cursor-pointer">Show Refresh Interval</Label>
-                                    <Switch
-                                      id="show_refresh_interval"
-                                      checked={field.value}
-                                      onCheckedChange={field.onChange}
-                                    />
-                                  </div>
-                                </FormItem>
-                              )}
-                            />
-                            <FormField
-                              control={form.control}
-                              name="show_last_checked"
-                              render={({ field }) => (
-                                <FormItem>
-                                  <div className="flex items-center justify-between">
-                                    <Label htmlFor="show_last_checked" className="text-sm cursor-pointer">Show Last Checked Time</Label>
-                                    <Switch
-                                      id="show_last_checked"
-                                      checked={field.value}
-                                      onCheckedChange={field.onChange}
-                                    />
-                                  </div>
-                                </FormItem>
-                              )}
-                            />
-                            <FormField
-                              control={form.control}
-                              name="show_service_url"
-                              render={({ field }) => (
-                                <FormItem>
-                                  <div className="flex items-center justify-between">
-                                    <Label htmlFor="show_service_url" className="text-sm cursor-pointer">Show Service URL</Label>
-                                    <Switch
-                                      id="show_service_url"
-                                      checked={field.value}
-                                      onCheckedChange={field.onChange}
-                                    />
-                                  </div>
-                                </FormItem>
-                              )}
-                            />
-                            <FormField
-                              control={form.control}
-                              name="show_status_badge"
-                              render={({ field }) => (
-                                <FormItem>
-                                  <div className="flex items-center justify-between">
-                                    <Label htmlFor="show_status_badge" className="text-sm cursor-pointer">Show Status Badge</Label>
-                                    <Switch
-                                      id="show_status_badge"
-                                      checked={field.value}
-                                      onCheckedChange={field.onChange}
-                                    />
-                                  </div>
-                                </FormItem>
-                              )}
-                            />
-                          </div>
-                        </div>
-
-                        <Separator className="my-6" />
-
-                        <div>
-                          <h3 className="text-lg font-medium">Admin Default Settings</h3>
-                          <p className="text-sm text-muted-foreground mb-4">Configure default visibility settings for admin users</p>
-                          <div className="space-y-4">
-                            <FormField
-                              control={form.control}
-                              name="admin_show_refresh_interval"
-                              render={({ field }) => (
-                                <FormItem>
-                                  <div className="flex items-center justify-between">
-                                    <Label htmlFor="admin_show_refresh_interval" className="text-sm cursor-pointer">Show Refresh Interval</Label>
-                                    <Switch
-                                      id="admin_show_refresh_interval"
-                                      checked={field.value}
-                                      onCheckedChange={field.onChange}
-                                    />
-                                  </div>
-                                </FormItem>
-                              )}
-                            />
-                            <FormField
-                              control={form.control}
-                              name="admin_show_last_checked"
-                              render={({ field }) => (
-                                <FormItem>
-                                  <div className="flex items-center justify-between">
-                                    <Label htmlFor="admin_show_last_checked" className="text-sm cursor-pointer">Show Last Checked Time</Label>
-                                    <Switch
-                                      id="admin_show_last_checked"
-                                      checked={field.value}
-                                      onCheckedChange={field.onChange}
-                                    />
-                                  </div>
-                                </FormItem>
-                              )}
-                            />
-                            <FormField
-                              control={form.control}
-                              name="admin_show_service_url"
-                              render={({ field }) => (
-                                <FormItem>
-                                  <div className="flex items-center justify-between">
-                                    <Label htmlFor="admin_show_service_url" className="text-sm cursor-pointer">Show Service URL</Label>
-                                    <Switch
-                                      id="admin_show_service_url"
-                                      checked={field.value}
-                                      onCheckedChange={field.onChange}
-                                    />
-                                  </div>
-                                </FormItem>
-                              )}
-                            />
-                            <FormField
-                              control={form.control}
-                              name="admin_show_status_badge"
-                              render={({ field }) => (
-                                <FormItem>
-                                  <div className="flex items-center justify-between">
-                                    <Label htmlFor="admin_show_status_badge" className="text-sm cursor-pointer">Show Status Badge</Label>
-                                    <Switch
-                                      id="admin_show_status_badge"
-                                      checked={field.value}
-                                      onCheckedChange={field.onChange}
-                                    />
-                                  </div>
-                                </FormItem>
-                              )}
-                            />
-                          </div>
-                        </div>
-                      </div>
-                      <Button type="submit" className="w-full mt-6" disabled={updateSettingsMutation.isPending}>
-                        {updateSettingsMutation.isPending && (
-                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                        )}
-                        Save Changes
-                      </Button>
-                    </form>
-                  </Form>
-                </TabsContent>
 
                 <TabsContent value="maintenance">
                   <div className="space-y-6">

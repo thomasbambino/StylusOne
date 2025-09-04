@@ -1,10 +1,16 @@
-import { useQuery } from "@tanstack/react-query";
+import { useState } from "react";
+import { useQuery, useMutation } from "@tanstack/react-query";
 import { Settings } from "@shared/schema";
 import { GameServerCardModern } from "@/components/game-server-card-modern";
 import { Card, CardContent } from "@/components/ui/card";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Label } from "@/components/ui/label";
+import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/hooks/use-auth";
 import { 
   Gamepad2, 
   Server, 
@@ -13,7 +19,9 @@ import {
   Activity,
   Settings as SettingsIcon,
   RefreshCw,
-  WifiOff
+  WifiOff,
+  Plus,
+  Mail
 } from "lucide-react";
 import { motion } from "framer-motion";
 import { cn } from "@/lib/utils";
@@ -111,6 +119,79 @@ export default function GameServersPage() {
     show: { opacity: 1, y: 0 }
   };
 
+  // Request functionality
+  const { toast } = useToast();
+  const { user } = useAuth();
+  const [requestDialogOpen, setRequestDialogOpen] = useState(false);
+  const [requestForm, setRequestForm] = useState({
+    gameType: ''
+  });
+
+  const requestServerMutation = useMutation({
+    mutationFn: async (requestData: typeof requestForm) => {
+      const response = await fetch('/api/game-servers/request', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        credentials: 'include',
+        body: JSON.stringify({
+          game: requestData.gameType
+        })
+      });
+      
+      if (!response.ok) {
+        throw new Error('Failed to submit request');
+      }
+      
+      return response.json();
+    },
+    onSuccess: () => {
+      toast({
+        title: "Request Submitted",
+        description: "Your game server request has been sent to administrators.",
+      });
+      setRequestDialogOpen(false);
+      setRequestForm({ gameType: '' });
+    },
+    onError: (error) => {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to submit request. Please try again.",
+        variant: "destructive",
+      });
+    }
+  });
+
+  const handleRequestSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!requestForm.gameType) {
+      toast({
+        title: "Error",
+        description: "Please select a game type.",
+        variant: "destructive",
+      });
+      return;
+    }
+    requestServerMutation.mutate(requestForm);
+  };
+
+  const gameTypes = [
+    'Minecraft',
+    'Valheim',
+    'Terraria',
+    'ARK: Survival Evolved',
+    'Rust',
+    'CS2',
+    'Team Fortress 2',
+    'Garry\'s Mod',
+    'Left 4 Dead 2',
+    'Project Zomboid',
+    'Satisfactory',
+    'Palworld',
+    'Other'
+  ];
+
   if (error) {
     return (
       <div className="min-h-screen bg-background">
@@ -161,6 +242,75 @@ export default function GameServersPage() {
       >
         <div className="max-w-[1600px] mx-auto">
           
+          {/* Request Server Button */}
+          <div className="mb-8">
+            <Dialog open={requestDialogOpen} onOpenChange={setRequestDialogOpen}>
+              <DialogTrigger asChild>
+                <Button className="mb-4" size="lg">
+                  <Plus className="h-4 w-4 mr-2" />
+                  Request Game Server
+                </Button>
+              </DialogTrigger>
+              <DialogContent className="sm:max-w-[425px]">
+                <DialogHeader>
+                  <DialogTitle className="flex items-center gap-2">
+                    <Mail className="h-5 w-5" />
+                    Request New Game Server
+                  </DialogTitle>
+                </DialogHeader>
+                <form onSubmit={handleRequestSubmit} className="space-y-4 mt-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="gameType">Game Type *</Label>
+                    <Select
+                      value={requestForm.gameType}
+                      onValueChange={(value) => setRequestForm(prev => ({ ...prev, gameType: value }))}
+                      required
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select a game type" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {gameTypes.map((type) => (
+                          <SelectItem key={type} value={type}>
+                            {type}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  
+                  
+                  <div className="flex gap-2 pt-4">
+                    <Button 
+                      type="button" 
+                      variant="outline" 
+                      onClick={() => setRequestDialogOpen(false)}
+                      className="flex-1"
+                    >
+                      Cancel
+                    </Button>
+                    <Button 
+                      type="submit" 
+                      disabled={requestServerMutation.isPending}
+                      className="flex-1"
+                    >
+                      {requestServerMutation.isPending ? (
+                        <>
+                          <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+                          Sending...
+                        </>
+                      ) : (
+                        <>
+                          <Mail className="h-4 w-4 mr-2" />
+                          Submit Request
+                        </>
+                      )}
+                    </Button>
+                  </div>
+                </form>
+              </DialogContent>
+            </Dialog>
+          </div>
 
           {/* Game Servers Sections */}
           {isLoading ? (

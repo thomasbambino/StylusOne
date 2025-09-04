@@ -1,5 +1,5 @@
 import { QueryClientProvider } from "@tanstack/react-query";
-import { Switch, Route } from "wouter";
+import { Switch, Route, useLocation } from "wouter";
 import { queryClient } from "./lib/queryClient";
 import { Toaster } from "@/components/ui/toaster";
 import NotFound from "@/pages/not-found";
@@ -41,6 +41,9 @@ function Router() {
 }
 
 function App() {
+  const [location] = useLocation();
+  const isSharePage = location.startsWith('/server/');
+
   return (
     <ThemeProvider attribute="class" defaultTheme="system" enableSystem>
       <div className="min-h-screen bg-background text-foreground">
@@ -50,9 +53,11 @@ function App() {
             <CacheUpdater />
             <Router />
             <Toaster />
-            <div className="fixed bottom-4 right-4 flex items-center gap-2" style={{ zIndex: 9999 }}>
-              <DiscordButton />
-            </div>
+            {!isSharePage && (
+              <div className="fixed bottom-4 right-4 flex items-center gap-2" style={{ zIndex: 9999 }}>
+                <DiscordButton />
+              </div>
+            )}
           </AuthProvider>
         </QueryClientProvider>
       </div>
