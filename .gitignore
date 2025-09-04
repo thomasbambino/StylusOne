@@ -14,6 +14,9 @@ vite.config.ts.*
 .env.stylus
 .env.production
 
+# Configuration files with secrets
+scripts/zap2itconfig.ini
+
 # Local Docker configuration
 docker-compose.yml
 docker-compose.override.yml

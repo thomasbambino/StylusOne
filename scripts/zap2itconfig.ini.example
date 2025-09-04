@@ -1,0 +1,15 @@
+[creds]
+username=${ZAP2IT_USERNAME:-your_email@example.com}
+password=${ZAP2IT_PASSWORD:-your_password_here}
+
+[prefs]
+zipCode=${ZAP2IT_ZIPCODE:-92108}
+country=${ZAP2IT_COUNTRY:-us}
+lang=${ZAP2IT_LANG:-en}
+guideDays=${ZAP2IT_GUIDE_DAYS:-14}
+favoriteChannels=${ZAP2IT_FAVORITE_CHANNELS:-}
+
+[lineup]
+lineupId=${ZAP2IT_LINEUP_ID:-}
+headendId=${ZAP2IT_HEADEND_ID:-}
+device=${ZAP2IT_DEVICE:--}
