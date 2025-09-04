@@ -8,6 +8,7 @@ import { emailService } from '../services/email-service';
 import path from 'path';
 import fs from 'fs';
 import { User } from '@shared/schema';
+import { sanitizeFilename, safeJoin, getUploadsPath, validateBookPath } from '../utils/path-security';
 
 const router = express.Router();
 
@@ -259,8 +260,11 @@ router.post('/:id/cover', uploadImage.single('cover'), async (req, res) => {
     // File type validation is handled by multer
 
     // Delete old cover if it exists
-    if (book.cover_path && fs.existsSync(path.join(process.cwd(), book.cover_path))) {
-      await fs.promises.unlink(path.join(process.cwd(), book.cover_path));
+    if (book.cover_path) {
+      const safePath = validateBookPath(book.cover_path);
+      if (safePath && fs.existsSync(safePath)) {
+        await fs.promises.unlink(safePath);
+      }
     }
 
     // Save new cover image
@@ -449,9 +453,14 @@ router.get('/:id/cover', async (req, res) => {
       return res.status(404).json({ error: 'Cover not found' });
     }
 
-    const fullPath = path.join(process.cwd(), book.cover_path);
+    // Validate the book cover path to prevent path traversal
+    const safePath = validateBookPath(book.cover_path);
+    if (!safePath) {
+      console.error('Invalid book cover path:', book.cover_path);
+      return res.status(404).json({ error: 'Invalid cover path' });
+    }
 
-    if (!fs.existsSync(fullPath)) {
+    if (!fs.existsSync(safePath)) {
       return res.status(404).json({ error: 'Cover file not found on disk' });
     }
 
@@ -460,7 +469,7 @@ router.get('/:id/cover', async (req, res) => {
     res.setHeader('Content-Type', 'image/jpeg');
 
     // Stream the cover image
-    const fileStream = fs.createReadStream(fullPath);
+    const fileStream = fs.createReadStream(safePath);
     fileStream.pipe(res);
 
   } catch (error) {
@@ -527,14 +536,19 @@ router.post('/:id/send-to-kindle', async (req, res) => {
       return res.status(404).json({ error: 'Book not found' });
     }
 
-    const fullPath = path.join(process.cwd(), book.file_path);
+    // Validate the book file path to prevent path traversal
+    const safePath = validateBookPath(book.file_path);
+    if (!safePath) {
+      console.error('Invalid book file path:', book.file_path);
+      return res.status(404).json({ error: 'Invalid file path' });
+    }
 
-    if (!fs.existsSync(fullPath)) {
+    if (!fs.existsSync(safePath)) {
       return res.status(404).json({ error: 'Book file not found on disk' });
     }
 
     // Read the EPUB file
-    const fileBuffer = await fs.promises.readFile(fullPath);
+    const fileBuffer = await fs.promises.readFile(safePath);
 
     // Prepare email with book attachment
     // Following Amazon's Send to Kindle requirements:

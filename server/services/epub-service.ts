@@ -5,6 +5,7 @@ import sharp from 'sharp';
 import { Book } from '@shared/schema';
 import AdmZip from 'adm-zip';
 import * as xml2js from 'xml2js';
+import { sanitizeFilename, safeJoin, getUploadsPath, validateBookPath } from '../utils/path-security';
 
 interface EpubMetadata {
   title: string;
@@ -160,13 +161,19 @@ export class EpubService implements IService {
   async deleteBookFiles(book: Book): Promise<void> {
     try {
       // Delete EPUB file
-      if (book.file_path && fs.existsSync(path.join(process.cwd(), book.file_path))) {
-        await fs.promises.unlink(path.join(process.cwd(), book.file_path));
+      if (book.file_path) {
+        const safePath = validateBookPath(book.file_path);
+        if (safePath && fs.existsSync(safePath)) {
+          await fs.promises.unlink(safePath);
+        }
       }
       
       // Delete cover image
-      if (book.cover_path && fs.existsSync(path.join(process.cwd(), book.cover_path))) {
-        await fs.promises.unlink(path.join(process.cwd(), book.cover_path));
+      if (book.cover_path) {
+        const safePath = validateBookPath(book.cover_path);
+        if (safePath && fs.existsSync(safePath)) {
+          await fs.promises.unlink(safePath);
+        }
       }
     } catch (error) {
       console.error('Error deleting book files:', error);

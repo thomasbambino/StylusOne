@@ -1,6 +1,7 @@
 import { spawn, ChildProcess } from 'child_process';
 import { join } from 'path';
 import { mkdirSync, existsSync, rmSync, readFileSync } from 'fs';
+import { sanitizeFilename, safeJoin, validatePath } from '../utils/path-security';
 
 export class StreamingService {
   private activeStreams: Map<string, { process: ChildProcess; timestamp: number }> = new Map();
@@ -158,8 +159,9 @@ export class StreamingService {
       stream.process.kill('SIGTERM');
       this.activeStreams.delete(streamId);
       
-      // Clean up stream files
-      const streamPath = join(this.streamDir, streamId);
+      // Clean up stream files - sanitize streamId to prevent path traversal
+      const sanitizedStreamId = sanitizeFilename(streamId);
+      const streamPath = safeJoin(this.streamDir, sanitizedStreamId);
       if (existsSync(streamPath)) {
         try {
           rmSync(streamPath, { recursive: true, force: true });

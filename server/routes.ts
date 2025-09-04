@@ -8,6 +8,7 @@ import { ZodError } from "zod";
 import multer from "multer";
 import path from "path";
 import fs from "fs";
+import { sanitizeFilename, safeJoin, getUploadsPath } from "./utils/path-security";
 import express from 'express';
 import https from 'https';
 import http from 'http';
@@ -56,7 +57,7 @@ const plexInviteSchema = z.object({
 const upload = multer({
   storage: multer.diskStorage({
     destination: (req, file, cb) => {
-      const uploadDir = path.join(process.cwd(), 'uploads');
+      const uploadDir = getUploadsPath();
       if (!fs.existsSync(uploadDir)) {
         fs.mkdirSync(uploadDir, { recursive: true });
       }
@@ -64,7 +65,10 @@ const upload = multer({
     },
     filename: (req, file, cb) => {
       const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
-      cb(null, file.fieldname + '-' + uniqueSuffix + path.extname(file.originalname));
+      const sanitizedOriginal = sanitizeFilename(file.originalname);
+      const ext = path.extname(sanitizedOriginal);
+      const baseName = sanitizeFilename(path.basename(sanitizedOriginal, ext));
+      cb(null, `${file.fieldname}-${uniqueSuffix}-${baseName}${ext}`);
     }
   }),
   fileFilter: (req, file, cb) => {
@@ -103,10 +107,11 @@ async function downloadImage(url: string): Promise<{ buffer: Buffer; contentType
 async function resizeAndSaveImage(inputBuffer: Buffer, basePath: string, filename: string, type: string): Promise<string | { url: string; largeUrl: string }> {
   if (type === 'site') {
     // For site logos, create both small and large versions
-    const smallFilename = `site_small_${filename}`;
-    const largeFilename = `site_large_${filename}`;
-    const smallPath = path.join(basePath, smallFilename);
-    const largePath = path.join(basePath, largeFilename);
+    const sanitizedFilename = sanitizeFilename(filename);
+    const smallFilename = `site_small_${sanitizedFilename}`;
+    const largeFilename = `site_large_${sanitizedFilename}`;
+    const smallPath = safeJoin(basePath, smallFilename);
+    const largePath = safeJoin(basePath, largeFilename);
 
     // Create small version (32x32) for header
     await sharp(inputBuffer)
@@ -145,8 +150,9 @@ async function resizeAndSaveImage(inputBuffer: Buffer, basePath: string, filenam
       size = 32;
   }
 
-  const outputFilename = `${type}_${filename}`;
-  const outputPath = path.join(basePath, outputFilename);
+  const sanitizedFilename = sanitizeFilename(filename);
+  const outputFilename = `${type}_${sanitizedFilename}`;
+  const outputPath = safeJoin(basePath, outputFilename);
 
   await sharp(inputBuffer)
     .resize(size, size, {
