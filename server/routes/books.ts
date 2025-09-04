@@ -116,9 +116,13 @@ router.post('/upload', uploadEpub.single('epub'), async (req, res) => {
       req.file.buffer
     );
 
-    // Parse EPUB metadata
-    const fullPath = path.join(process.cwd(), filePath);
-    const metadata = await epubService.parseEpub(fullPath);
+    // Parse EPUB metadata - validate path security
+    const safePath = validateBookPath(filePath);
+    if (!safePath) {
+      console.error('Invalid EPUB file path:', filePath);
+      return res.status(400).json({ error: 'Invalid file path' });
+    }
+    const metadata = await epubService.parseEpub(safePath);
 
     // Insert book record into database
     const bookData: InsertBook = {
@@ -416,9 +420,14 @@ router.get('/:id/download', async (req, res) => {
       return res.status(404).json({ error: 'Book not found' });
     }
 
-    const fullPath = path.join(process.cwd(), book.file_path);
+    // Validate the book file path to prevent path traversal
+    const safePath = validateBookPath(book.file_path);
+    if (!safePath) {
+      console.error('Invalid book file path:', book.file_path);
+      return res.status(404).json({ error: 'Invalid file path' });
+    }
 
-    if (!fs.existsSync(fullPath)) {
+    if (!fs.existsSync(safePath)) {
       return res.status(404).json({ error: 'Book file not found on disk' });
     }
 
@@ -427,7 +436,7 @@ router.get('/:id/download', async (req, res) => {
     res.setHeader('Content-Type', 'application/epub+zip');
 
     // Stream the file
-    const fileStream = fs.createReadStream(fullPath);
+    const fileStream = fs.createReadStream(safePath);
     fileStream.pipe(res);
 
   } catch (error) {
