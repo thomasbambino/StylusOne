@@ -6,16 +6,27 @@ import { log, serveStatic } from "./static";
 
 const app = express();
 
-// Apply Helmet security headers with custom configuration
+// SECURITY WARNING: Different settings for local vs production
+// Local Docker (localhost/127.0.0.1): Relaxed security for HTTP
+// Production: Strict HTTPS with HSTS and upgrade-insecure-requests
+const isLocalDocker = process.env.APP_URL?.includes('localhost') || 
+                      process.env.APP_URL?.includes('127.0.0.1') ||
+                      process.env.BASE_URL?.includes('localhost') ||
+                      process.env.BASE_URL?.includes('127.0.0.1');
+
+// Apply Helmet security headers with environment-appropriate configuration
 app.use(helmet({
   contentSecurityPolicy: {
+    useDefaults: false,
     directives: {
       defaultSrc: ["'self'"],
       scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'", "https://www.gstatic.com"],
       styleSrc: ["'self'", "'unsafe-inline'"],
       imgSrc: ["'self'", "data:", "blob:", "https:", "http:"],
       fontSrc: ["'self'", "data:"],
-      connectSrc: ["'self'", "https:", "wss:", "ws:"],
+      connectSrc: isLocalDocker 
+        ? ["'self'", "https:", "wss:", "ws:", "http:"]  // Allow HTTP for local
+        : ["'self'", "https:", "wss:"],  // HTTPS only for production
       mediaSrc: ["'self'", "blob:", "https:", "http:"],
       objectSrc: ["'none'"],
       frameSrc: ["'self'"],
@@ -23,8 +34,17 @@ app.use(helmet({
       childSrc: ["'self'", "blob:"],
       formAction: ["'self'"],
       frameAncestors: ["'self'"],
-      upgradeInsecureRequests: [],
+      baseUri: ["'self'"],
+      scriptSrcAttr: ["'none'"],
+      // Add upgrade-insecure-requests for production only
+      ...(isLocalDocker ? {} : { upgradeInsecureRequests: [] }),
     },
+  },
+  // Enable HSTS for production, disable for local Docker
+  hsts: isLocalDocker ? false : {
+    maxAge: 31536000,
+    includeSubDomains: true,
+    preload: true
   },
   crossOriginEmbedderPolicy: false, // Disable for video streaming compatibility
 }));

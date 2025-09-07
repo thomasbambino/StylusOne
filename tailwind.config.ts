@@ -84,14 +84,14 @@ export default {
             transform: "translateX(0)",
           },
           "100%": {
-            transform: "translateX(-50%)",
+            transform: "translateX(calc(-33.333% - 0.333rem))",
           },
         },
       },
       animation: {
         "accordion-down": "accordion-down 0.2s ease-out",
         "accordion-up": "accordion-up 0.2s ease-out",
-        scroll: "scroll 20s linear infinite",
+        scroll: "scroll 30s linear infinite",
       },
     },
   },

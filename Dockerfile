@@ -1,6 +1,16 @@
 # Build stage
 FROM node:20-slim AS builder
 
+# Accept build arguments for Firebase configuration
+ARG VITE_FIREBASE_API_KEY
+ARG VITE_FIREBASE_PROJECT_ID
+ARG VITE_FIREBASE_APP_ID
+
+# Set them as environment variables for the build
+ENV VITE_FIREBASE_API_KEY=$VITE_FIREBASE_API_KEY
+ENV VITE_FIREBASE_PROJECT_ID=$VITE_FIREBASE_PROJECT_ID
+ENV VITE_FIREBASE_APP_ID=$VITE_FIREBASE_APP_ID
+
 WORKDIR /app
 
 # Install Python and plexapi for Plex integration
@@ -20,7 +30,7 @@ RUN npm ci
 # Copy source code
 COPY . .
 
-# Build the application
+# Build the application (will use VITE_ env vars)
 RUN npm run build
 
 # Production stage

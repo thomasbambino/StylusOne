@@ -383,16 +383,16 @@ export default function HomePage() {
                     {/* Recently Added Carousel */}
                     {recentlyAddedItems && recentlyAddedItems.length > 0 && (
                       <div className="pt-4 flex-1 flex flex-col">
-                        <div className="relative overflow-hidden flex-1 min-h-[120px]">
-                          <div className="flex gap-4 animate-scroll h-full">
-                            {/* Duplicate items for seamless loop */}
-                            {[...recentlyAddedItems.slice(0, 8), ...recentlyAddedItems.slice(0, 8)].map((item: any, i: number) => (
-                              <div key={i} className="flex-shrink-0 w-20 h-28 relative group cursor-pointer" onClick={() => openInPlex(item)}>
+                        <div className="relative overflow-hidden flex-1 min-h-[120px] group">
+                          <div className="flex gap-4 h-full animate-scroll group-hover:[animation-play-state:paused]">
+                            {/* Triple the items for truly seamless scrolling */}
+                            {[...recentlyAddedItems.slice(0, 12), ...recentlyAddedItems.slice(0, 12), ...recentlyAddedItems.slice(0, 12)].map((item: any, i: number) => (
+                              <div key={`${item.rating_key}-${i}`} className="flex-shrink-0 w-20 h-28 relative group/item cursor-pointer" onClick={() => openInPlex(item)}>
                                 {getThumbnailUrl(item, 160, 224) ? (
                                   <img
                                     src={getThumbnailUrl(item, 160, 224)!}
                                     alt={item.title}
-                                    className="w-full h-full object-cover rounded shadow-sm group-hover:scale-105 transition-transform duration-200"
+                                    className="w-full h-full object-cover rounded shadow-sm group-hover/item:scale-105 transition-transform duration-200"
                                     loading="lazy"
                                     onError={(e) => {
                                       (e.target as HTMLImageElement).src = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNjQiIGhlaWdodD0iOTYiIHZpZXdCb3g9IjAgMCA2NCA5NiIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHJlY3Qgd2lkdGg9IjY0IiBoZWlnaHQ9Ijk2IiBmaWxsPSIjMzczNzM3Ii8+CjxwYXRoIGQ9Ik0zMiA0OEwzMiA0OCIgc3Ryb2tlPSIjNzM3Mzc0IiBzdHJva2Utd2lkdGg9IjIiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIvPgo8L3N2Zz4K';

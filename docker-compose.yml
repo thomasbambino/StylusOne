@@ -6,10 +6,14 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      args:
+        - VITE_FIREBASE_API_KEY=${VITE_FIREBASE_API_KEY}
+        - VITE_FIREBASE_PROJECT_ID=${VITE_FIREBASE_PROJECT_ID}
+        - VITE_FIREBASE_APP_ID=${VITE_FIREBASE_APP_ID}
     ports:
       - "5001:5000"  # Use 5001 by default to avoid conflicts
     env_file:
-      - .env.production
+      - .env
     environment:
       - NODE_ENV=production
       - PORT=5000
