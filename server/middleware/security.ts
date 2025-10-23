@@ -10,8 +10,8 @@ export const corsOptions = {
     
     // In production, replace with your actual domain
     const allowedOrigins = [
-      'https://yourdomain.com',
-      'https://www.yourdomain.com',
+      'https://stylus.services',
+      'https://www.stylus.services',
     ];
     
     // In development/local, allow all localhost variants
