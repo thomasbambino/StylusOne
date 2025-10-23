@@ -12,6 +12,7 @@ export const corsOptions = {
     const allowedOrigins = [
       'https://stylus.services',
       'https://www.stylus.services',
+      'https://one.stylus.services',
     ];
     
     // In development/local, allow all localhost variants
