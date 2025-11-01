@@ -9,6 +9,7 @@ export * from './amp-service';
 export * from './service-checker';
 export * from './email-service';
 export * from './epub-service';
+export * from './xtream-codes-service';
 
 // Import services and service registry
 import { serviceRegistry } from './service-registry';
@@ -16,6 +17,7 @@ import { ampService } from './amp-service';
 import { serviceCheckerService } from './service-checker';
 import { emailService } from './email-service';
 import { epubService } from './epub-service';
+import { xtreamCodesService } from './xtream-codes-service';
 
 /**
  * Initialize all services and register them with the service registry
@@ -26,9 +28,10 @@ export async function initializeServices(): Promise<void> {
   serviceRegistry.register('service-checker', serviceCheckerService);
   serviceRegistry.register('email', emailService);
   serviceRegistry.register('epub', epubService);
-  
+  serviceRegistry.register('xtream-codes', xtreamCodesService);
+
   // Initialize all registered services
   await serviceRegistry.initializeAll();
-  
+
   console.log('All services initialized');
 }

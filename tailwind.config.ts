@@ -84,7 +84,15 @@ export default {
             transform: "translateX(0)",
           },
           "100%": {
-            transform: "translateX(calc(-33.333% - 0.333rem))",
+            transform: "translateX(-83.33%)",
+          },
+        },
+        marquee: {
+          "0%": {
+            transform: "translateX(0%)",
+          },
+          "100%": {
+            transform: "translateX(-25%)",
           },
         },
       },
@@ -92,6 +100,7 @@ export default {
         "accordion-down": "accordion-down 0.2s ease-out",
         "accordion-up": "accordion-up 0.2s ease-out",
         scroll: "scroll 30s linear infinite",
+        marquee: "marquee 60s linear infinite",
       },
     },
   },

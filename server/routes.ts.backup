@@ -2058,19 +2058,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
     if (!req.isAuthenticated()) return res.sendStatus(401);
 
     try {
-      const { xtreamCodesService } = await import('./services/xtream-codes-service');
-      
+      const { XtreamCodesService } = await import('./services/xtream-codes-service');
+      const xtreamService = new XtreamCodesService();
 
-      if (!xtreamCodesService.isConfigured()) {
+      if (!xtreamService.isConfigured()) {
         return res.json({ configured: false, categories: [] });
       }
 
-      
-      if (!xtreamCodesService.isInitialized()) {
+      await xtreamService.initialize();
+      if (!xtreamService.isInitialized()) {
         return res.status(500).json({ message: "Failed to initialize IPTV service" });
       }
 
-      const categories = await xtreamCodesService.getCategories();
+      const categories = await xtreamService.getCategories();
       res.json({ configured: true, categories });
     } catch (error) {
       console.error('Error fetching IPTV categories:', error);
@@ -2087,19 +2087,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const categoryId = req.query.category as string | undefined;
 
-      const { xtreamCodesService } = await import('./services/xtream-codes-service');
-      
+      const { XtreamCodesService } = await import('./services/xtream-codes-service');
+      const xtreamService = new XtreamCodesService();
 
-      if (!xtreamCodesService.isConfigured()) {
+      if (!xtreamService.isConfigured()) {
         return res.json({ configured: false, channels: [] });
       }
 
-      
-      if (!xtreamCodesService.isInitialized()) {
+      await xtreamService.initialize();
+      if (!xtreamService.isInitialized()) {
         return res.status(500).json({ message: "Failed to initialize IPTV service" });
       }
 
-      const channels = await xtreamCodesService.getChannels(categoryId);
+      const channels = await xtreamService.getChannels(categoryId);
       res.json({ configured: true, channels });
     } catch (error) {
       console.error('Error fetching IPTV channels:', error);
@@ -2123,12 +2123,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.json({ configured: false, epg: [] });
       }
 
-      
-      if (!xtreamCodesService.isInitialized()) {
+      await xtreamService.initialize();
+      if (!xtreamService.isInitialized()) {
         return res.status(500).json({ message: "Failed to initialize IPTV service" });
       }
 
-      const epg = await xtreamCodesService.getEPG(streamId, limit);
+      const epg = await xtreamService.getEPG(streamId, limit);
       res.json({ configured: true, epg });
     } catch (error) {
       console.error('Error fetching IPTV EPG:', error);
@@ -2145,19 +2145,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const { streamId } = req.params;
 
-      const { xtreamCodesService } = await import('./services/xtream-codes-service');
-      
+      const { XtreamCodesService } = await import('./services/xtream-codes-service');
+      const xtreamService = new XtreamCodesService();
 
-      if (!xtreamCodesService.isConfigured()) {
+      if (!xtreamService.isConfigured()) {
         return res.json({ configured: false, now: null, next: null });
       }
 
-      
-      if (!xtreamCodesService.isInitialized()) {
+      await xtreamService.initialize();
+      if (!xtreamService.isInitialized()) {
         return res.status(500).json({ message: "Failed to initialize IPTV service" });
       }
 
-      const { now, next } = await xtreamCodesService.getShortEPG(streamId);
+      const { now, next } = await xtreamService.getShortEPG(streamId);
       res.json({ configured: true, now, next });
     } catch (error) {
       console.error('Error fetching short IPTV EPG:', error);
@@ -2172,10 +2172,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
     if (!req.isAuthenticated()) return res.sendStatus(401);
 
     try {
-      const { xtreamCodesService } = await import('./services/xtream-codes-service');
-      
+      const { XtreamCodesService } = await import('./services/xtream-codes-service');
+      const xtreamService = new XtreamCodesService();
 
-      if (!xtreamCodesService.isConfigured()) {
+      if (!xtreamService.isConfigured()) {
         return res.json({
           configured: false,
           m3uUrl: null,
@@ -2185,8 +2185,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       res.json({
         configured: true,
-        m3uUrl: xtreamCodesService.getM3UUrl(),
-        xmltvUrl: xtreamCodesService.getXMLTVUrl()
+        m3uUrl: xtreamService.getM3UUrl(),
+        xmltvUrl: xtreamService.getXMLTVUrl()
       });
     } catch (error) {
       console.error('Error fetching IPTV URLs:', error);

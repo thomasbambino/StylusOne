@@ -383,16 +383,56 @@ export default function HomePage() {
                     {/* Recently Added Carousel */}
                     {recentlyAddedItems && recentlyAddedItems.length > 0 && (
                       <div className="pt-4 flex-1 flex flex-col">
-                        <div className="relative overflow-hidden flex-1 min-h-[120px] group">
-                          <div className="flex gap-4 h-full animate-scroll group-hover:[animation-play-state:paused]">
-                            {/* Triple the items for truly seamless scrolling */}
-                            {[...recentlyAddedItems.slice(0, 12), ...recentlyAddedItems.slice(0, 12), ...recentlyAddedItems.slice(0, 12)].map((item: any, i: number) => (
-                              <div key={`${item.rating_key}-${i}`} className="flex-shrink-0 w-20 h-28 relative group/item cursor-pointer" onClick={() => openInPlex(item)}>
+                        <div className="relative overflow-hidden flex-1 min-h-[120px]">
+                          <div 
+                            className="flex gap-4 h-full"
+                            ref={(el) => {
+                              if (el && recentlyAddedItems?.length > 0) {
+                                // Clear any existing animation
+                                el.style.animation = 'none';
+                                
+                                // Calculate dimensions
+                                const itemWidth = 96; // 80px width + 16px gap
+                                const baseItems = Math.min(recentlyAddedItems.length, 20);
+                                const totalItems = baseItems * 6; // 6 repetitions
+                                const totalWidth = totalItems * itemWidth;
+                                const oneLoopWidth = baseItems * itemWidth;
+                                
+                                // Create smooth continuous scroll animation
+                                let scrollPosition = 0;
+                                const scrollSpeed = 0.15; // pixels per frame (much slower)
+                                
+                                const animate = () => {
+                                  scrollPosition += scrollSpeed;
+                                  
+                                  // Reset at one full loop (1/6 of total width) to create seamless loop
+                                  if (scrollPosition >= oneLoopWidth) {
+                                    scrollPosition = 0;
+                                  }
+                                  
+                                  el.style.transform = `translateX(-${scrollPosition}px)`;
+                                  requestAnimationFrame(animate);
+                                };
+                                
+                                animate();
+                              }
+                            }}
+                          >
+                            {/* Create 6 copies for seamless looping */}
+                            {(() => {
+                              const baseItems = recentlyAddedItems.slice(0, Math.min(recentlyAddedItems.length, 20));
+                              const repeatedItems = [];
+                              for (let rep = 0; rep < 6; rep++) {
+                                baseItems.forEach(item => repeatedItems.push(item));
+                              }
+                              return repeatedItems;
+                            })().map((item: any, i: number) => (
+                              <div key={`${item.rating_key}-${i}`} className="flex-shrink-0 w-20 h-28 relative group cursor-pointer" onClick={() => openInPlex(item)}>
                                 {getThumbnailUrl(item, 160, 224) ? (
                                   <img
                                     src={getThumbnailUrl(item, 160, 224)!}
                                     alt={item.title}
-                                    className="w-full h-full object-cover rounded shadow-sm group-hover/item:scale-105 transition-transform duration-200"
+                                    className="w-full h-full object-cover rounded shadow-sm group-hover:scale-105 transition-transform duration-200"
                                     loading="lazy"
                                     onError={(e) => {
                                       (e.target as HTMLImageElement).src = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNjQiIGhlaWdodD0iOTYiIHZpZXdCb3g9IjAgMCA2NCA5NiIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHJlY3Qgd2lkdGg9IjY0IiBoZWlnaHQ9Ijk2IiBmaWxsPSIjMzczNzM3Ii8+CjxwYXRoIGQ9Ik0zMiA0OEwzMiA0OCIgc3Ryb2tlPSIjNzM3Mzc0IiBzdHJva2Utd2lkdGg9IjIiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIvPgo8L3N2Zz4K';

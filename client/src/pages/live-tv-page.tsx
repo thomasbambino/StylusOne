@@ -70,6 +70,52 @@ interface EPGProgram {
   isLive?: boolean;
 }
 
+// IPTV Channel interface
+interface IPTVChannel {
+  id: string;
+  number: string;
+  name: string;
+  streamUrl: string;
+  logo: string;
+  epgId: string;
+  categoryName: string;
+  categoryId: string;
+  hasArchive: boolean;
+  archiveDays: number;
+}
+
+interface IPTVChannelsResponse {
+  configured: boolean;
+  channels: IPTVChannel[];
+}
+
+interface IPTVStatusResponse {
+  configured: boolean;
+  initialized?: boolean;
+  healthy?: boolean;
+  userInfo?: {
+    username: string;
+    status: string;
+    expiresAt: string;
+    maxConnections: number;
+    activeConnections: number;
+  };
+}
+
+// Unified channel interface for both HDHomeRun and IPTV
+interface UnifiedChannel {
+  source: 'hdhomerun' | 'iptv' | 'static';
+  GuideNumber: string;
+  GuideName: string;
+  URL: string;
+  HD: boolean;
+  Favorite: boolean;
+  DRM: boolean;
+  logo?: string;
+  iptvId?: string;
+  categoryName?: string;
+}
+
 // Channel logos mapping based on Zap2it data  
 const CHANNEL_LOGOS: Record<string, string> = {
   // Major networks
@@ -159,9 +205,9 @@ const CHANNEL_LOGOS: Record<string, string> = {
 
 // Channel List Item Component
 interface ChannelListItemProps {
-  channel: HDHomeRunChannel;
-  selectedChannel: HDHomeRunChannel | null;
-  onChannelSelect: (channel: HDHomeRunChannel) => void;
+  channel: UnifiedChannel;
+  selectedChannel: UnifiedChannel | null;
+  onChannelSelect: (channel: UnifiedChannel) => void;
   useChannelProgram: (channelName: string) => any;
 }
 
@@ -259,8 +305,9 @@ function ChannelListItem({ channel, selectedChannel, onChannelSelect, useChannel
     return guideName.split('-')[0].replace(/[^A-Z0-9]/g, '');
   };
 
+  // Use IPTV logo if available, otherwise use the mapped logo
   const logoKey = getChannelLogo(channel.GuideNumber, channel.GuideName);
-  const channelLogo = CHANNEL_LOGOS[logoKey];
+  const channelLogo = channel.logo || CHANNEL_LOGOS[logoKey];
 
   return (
     <button
@@ -339,7 +386,7 @@ function ChannelListItem({ channel, selectedChannel, onChannelSelect, useChannel
               HD
             </div>
           )}
-          {channel.GuideNumber === "8.1" && (
+          {channel.source === 'static' && (
             <div className={cn(
               "inline-block text-[10px] px-1.5 py-0.5 rounded font-medium",
               isSelected
@@ -347,6 +394,16 @@ function ChannelListItem({ channel, selectedChannel, onChannelSelect, useChannel
                 : "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400"
             )}>
               STREAM
+            </div>
+          )}
+          {channel.source === 'iptv' && (
+            <div className={cn(
+              "inline-block text-[10px] px-1.5 py-0.5 rounded font-medium",
+              isSelected
+                ? "bg-white/20 text-white"
+                : "bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400"
+            )}>
+              IPTV
             </div>
           )}
         </div>
@@ -408,7 +465,7 @@ interface TunerStatus {
 }
 
 export default function LiveTVPage() {
-  const [selectedChannel, setSelectedChannel] = useState<HDHomeRunChannel | null>(null);
+  const [selectedChannel, setSelectedChannel] = useState<UnifiedChannel | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
@@ -475,6 +532,28 @@ export default function LiveTVPage() {
     },
     enabled: deviceInfo?.configured === true,
     refetchInterval: 2000
+  });
+
+  // IPTV queries
+  const { data: iptvStatus } = useQuery<IPTVStatusResponse>({
+    queryKey: ["/api/iptv/status"],
+    queryFn: async () => {
+      const res = await fetch("/api/iptv/status");
+      if (!res.ok) throw new Error("Failed to fetch IPTV status");
+      return res.json();
+    },
+    refetchInterval: 60000
+  });
+
+  const { data: iptvChannelsData, isLoading: iptvChannelsLoading } = useQuery<IPTVChannelsResponse>({
+    queryKey: ["/api/iptv/channels"],
+    queryFn: async () => {
+      const res = await fetch("/api/iptv/channels");
+      if (!res.ok) throw new Error("Failed to fetch IPTV channels");
+      return res.json();
+    },
+    enabled: iptvStatus?.configured === true,
+    refetchInterval: 300000 // 5 minutes
   });
 
   // Auto-select first channel on load is disabled - users must manually select a channel
@@ -750,13 +829,13 @@ export default function LiveTVPage() {
     }
   };
 
-  const handleChannelSelect = async (channel: HDHomeRunChannel) => {
-    
+  const handleChannelSelect = async (channel: UnifiedChannel) => {
+
     // Prevent multiple simultaneous channel selections
     if (isLoading) {
       return;
     }
-    
+
     try {
       setIsLoading(true);
       setQueuePosition(null);
@@ -768,17 +847,17 @@ export default function LiveTVPage() {
 
       setSelectedChannel(channel);
 
-      // Check if this is CBS 8 (static channel)
-      if (channel.GuideNumber === "8.1") {
-        // CBS 8 doesn't need tuner manager, play directly
-        console.log('Playing CBS 8 San Diego directly');
+      // Check if this is a static channel or IPTV channel
+      if (channel.source === 'static' || channel.source === 'iptv') {
+        // Static channels and IPTV don't need tuner manager, play directly
+        console.log(`Playing ${channel.source} channel: ${channel.GuideName} directly`);
         playStreamDirectly(channel.URL);
         setIsLoading(false);
         return;
       }
 
-      // Request stream through tuner manager for HDHomeRun channels
-      console.log('Requesting stream for channel:', channel.GuideNumber);
+      // Request stream through tuner manager for HDHomeRun channels only
+      console.log('Requesting stream for HDHomeRun channel:', channel.GuideNumber);
       const res = await fetch('/api/tuner/request-stream', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -1185,14 +1264,19 @@ export default function LiveTVPage() {
     };
   }, []); // Only run on mount/unmount, not when currentSession changes!
 
-  if (deviceLoading) {
+  // Check if at least one source is configured
+  const hasHDHomeRun = deviceInfo?.configured === true;
+  const hasIPTV = iptvStatus?.configured === true;
+  const isAnySourceLoading = deviceLoading;
+
+  if (isAnySourceLoading) {
     return (
       <div className="min-h-screen bg-background">
           <div className="container mx-auto px-4 ">
           <div className="text-center py-12">
             <div className="inline-flex items-center gap-2">
               <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
-              <span>Loading HD HomeRun...</span>
+              <span>Loading Live TV sources...</span>
             </div>
           </div>
         </div>
@@ -1200,14 +1284,14 @@ export default function LiveTVPage() {
     );
   }
 
-  if (deviceError || !deviceInfo?.configured) {
+  if (!hasHDHomeRun && !hasIPTV) {
     return (
       <div className="min-h-screen bg-background">
           <div className="container mx-auto px-4 ">
           <Alert className="max-w-2xl mx-auto mt-8">
             <AlertTriangle className="h-4 w-4" />
             <AlertDescription>
-              HD HomeRun is not configured or not accessible. Please check your HDHOMERUN_URL environment variable and ensure your HD HomeRun device is online.
+              No Live TV sources configured. Please configure HD HomeRun (HDHOMERUN_URL) or Xtream Codes IPTV (XTREAM_SERVER_URL, XTREAM_USERNAME, XTREAM_PASSWORD) in your environment variables.
             </AlertDescription>
           </Alert>
         </div>
@@ -1269,7 +1353,8 @@ export default function LiveTVPage() {
   }
 
   // Add CBS 8 San Diego as a static channel
-  const cbs8Channel: HDHomeRunChannel = {
+  const cbs8Channel: UnifiedChannel = {
+    source: 'static',
     GuideNumber: "8.1",
     GuideName: "CBS 8 San Diego",
     URL: "https://video.tegnaone.com/kfmb/live/v1/master/f9c1bf9ffd6ac86b6173a7c169ff6e3f4efbd693/KFMB-Production/live/index.m3u8",
@@ -1278,9 +1363,33 @@ export default function LiveTVPage() {
     DRM: false
   };
 
-  // Combine HDHomeRun channels with static CBS 8 channel
-  const hdHomeRunChannels = channelsData?.channels?.filter(ch => !ch.DRM) || [];
-  const availableChannels = [cbs8Channel, ...hdHomeRunChannels];
+  // Convert HDHomeRun channels to unified format
+  const hdHomeRunChannels: UnifiedChannel[] = (channelsData?.channels?.filter(ch => !ch.DRM) || []).map(ch => ({
+    source: 'hdhomerun' as const,
+    GuideNumber: ch.GuideNumber,
+    GuideName: ch.GuideName,
+    URL: ch.URL,
+    HD: ch.HD,
+    Favorite: ch.Favorite,
+    DRM: ch.DRM
+  }));
+
+  // Convert IPTV channels to unified format
+  const iptvChannels: UnifiedChannel[] = (iptvChannelsData?.channels || []).map(ch => ({
+    source: 'iptv' as const,
+    GuideNumber: ch.number,
+    GuideName: ch.name,
+    URL: ch.streamUrl,
+    HD: true, // Assume IPTV channels are HD
+    Favorite: false,
+    DRM: false,
+    logo: ch.logo,
+    iptvId: ch.id,
+    categoryName: ch.categoryName
+  }));
+
+  // Combine all channels: Static CBS 8, HDHomeRun, and IPTV
+  const availableChannels = [cbs8Channel, ...hdHomeRunChannels, ...iptvChannels];
 
   return (
     <motion.div 
@@ -1517,7 +1626,7 @@ export default function LiveTVPage() {
                   </div>
                 </CardHeader>
                 <CardContent className="p-3 flex flex-col flex-1 min-h-0">
-                  {channelsLoading ? (
+                  {(channelsLoading || iptvChannelsLoading) ? (
                     <div className="flex-1 flex items-center justify-center text-muted-foreground">
                       <div className="text-center">
                         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto mb-2"></div>
@@ -1532,13 +1641,13 @@ export default function LiveTVPage() {
                     <div className="flex-1 flex flex-col gap-1.5 overflow-y-auto">
                       {availableChannels.map((channel, index) => (
                         <motion.div
-                          key={channel.GuideNumber}
+                          key={`${channel.source}-${channel.GuideNumber}`}
                           initial={{ opacity: 0, x: -10 }}
                           animate={{ opacity: 1, x: 0 }}
                           transition={{ duration: 0.3, delay: 0.5 + (index * 0.02) }}
                         >
-                          <ChannelListItem 
-                            channel={channel} 
+                          <ChannelListItem
+                            channel={channel}
                             selectedChannel={selectedChannel}
                             onChannelSelect={handleChannelSelect}
                             useChannelProgram={useChannelProgram}

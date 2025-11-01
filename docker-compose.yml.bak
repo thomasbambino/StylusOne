@@ -38,9 +38,6 @@ services:
       - TAUTULLI_URL=${TAUTULLI_URL:-}
       - TAUTULLI_API_KEY=${TAUTULLI_API_KEY:-}
       - HDHOMERUN_URL=${HDHOMERUN_URL:-}
-      - XTREAM_SERVER_URL=${XTREAM_SERVER_URL:-}
-      - XTREAM_USERNAME=${XTREAM_USERNAME:-}
-      - XTREAM_PASSWORD=${XTREAM_PASSWORD:-}
     volumes:
       - app_uploads:/app/uploads
     depends_on:
