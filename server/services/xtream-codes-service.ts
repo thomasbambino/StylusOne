@@ -206,7 +206,7 @@ export class XtreamCodesService implements IService {
         id: stream.stream_id.toString(),
         number: stream.num ? stream.num.toString() : stream.stream_id.toString(),
         name: stream.name,
-        streamUrl: this.getHLSStreamUrl(stream.stream_id.toString()), // Use HLS for web playback
+        streamUrl: `/api/iptv/stream/${stream.stream_id}`, // Use proxy endpoint to bypass CORS
         logo: stream.stream_icon || '',
         epgId: stream.epg_channel_id || '',
         categoryName: stream.category_name || 'Unknown',

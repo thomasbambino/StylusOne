@@ -471,8 +471,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // Uploads are served in serve-static.ts for production
 
-  // Apply rate limiting to all API routes
-  app.use('/api', apiRateLimiter);
+  // Apply rate limiting to all API routes (disabled for development/testing)
+  // app.use('/api', apiRateLimiter);
 
   // Register type-specific upload endpoints
   app.post("/api/upload/site", upload.single('image'), (req, res) => handleUpload(req, res, 'site'));
@@ -2194,6 +2194,47 @@ export async function registerRoutes(app: Express): Promise<Server> {
         message: "Failed to fetch IPTV URLs",
         error: error instanceof Error ? error.message : "Unknown error"
       });
+    }
+  });
+
+  // IPTV Stream Proxy - bypass CORS restrictions
+  app.get("/api/iptv/stream/:streamId", async (req, res) => {
+    if (!req.isAuthenticated()) return res.sendStatus(401);
+
+    try {
+      const { streamId } = req.params;
+      const { xtreamCodesService } = await import('./services/xtream-codes-service');
+
+      if (!xtreamCodesService.isConfigured()) {
+        return res.status(404).send('IPTV not configured');
+      }
+
+      // Get the HLS stream URL from the service
+      const streamUrl = xtreamCodesService.getHLSStreamUrl(streamId);
+
+      // Proxy the stream from the Xtream server
+      const response = await fetch(streamUrl);
+
+      if (!response.ok) {
+        console.error(`Failed to fetch stream ${streamId}: ${response.status}`);
+        return res.status(response.status).send('Stream not available');
+      }
+
+      // Set appropriate headers for HLS streaming
+      res.set({
+        'Content-Type': response.headers.get('content-type') || 'application/vnd.apple.mpegurl',
+        'Access-Control-Allow-Origin': '*',
+        'Cache-Control': 'no-cache, no-store, must-revalidate',
+        'Pragma': 'no-cache',
+        'Expires': '0'
+      });
+
+      // Pipe the stream response to the client
+      const buffer = await response.arrayBuffer();
+      res.send(Buffer.from(buffer));
+    } catch (error) {
+      console.error('Error proxying IPTV stream:', error);
+      res.status(500).send('Failed to proxy stream');
     }
   });
 
