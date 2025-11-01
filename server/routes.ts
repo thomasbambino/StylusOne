@@ -2198,7 +2198,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // IPTV Stream Proxy - bypass CORS restrictions
-  app.get("/api/iptv/stream/:streamId", async (req, res) => {
+  app.get("/api/iptv/stream/:streamId.m3u8", async (req, res) => {
     if (!req.isAuthenticated()) return res.sendStatus(401);
 
     try {
@@ -2209,10 +2209,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).send('IPTV not configured');
       }
 
-      // Get the HLS stream URL from the service
+      // Get the HLS manifest from Xtream server
       const streamUrl = xtreamCodesService.getHLSStreamUrl(streamId);
-
-      // Proxy the stream from the Xtream server
       const response = await fetch(streamUrl);
 
       if (!response.ok) {
@@ -2220,21 +2218,69 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(response.status).send('Stream not available');
       }
 
-      // Set appropriate headers for HLS streaming
+      // Get the manifest content and rewrite URLs to point to our proxy
+      const manifestText = await response.text();
+      const baseUrl = xtreamCodesService.getServerUrl();
+      const username = xtreamCodesService.getUsername();
+      const password = xtreamCodesService.getPassword();
+
+      // Rewrite relative URLs in the manifest to absolute URLs through our proxy
+      const rewrittenManifest = manifestText.replace(
+        /^([^#\n].+\.ts)$/gm,
+        (match) => `/api/iptv/segment/${streamId}/${encodeURIComponent(match)}`
+      );
+
       res.set({
-        'Content-Type': response.headers.get('content-type') || 'application/vnd.apple.mpegurl',
+        'Content-Type': 'application/vnd.apple.mpegurl',
         'Access-Control-Allow-Origin': '*',
-        'Cache-Control': 'no-cache, no-store, must-revalidate',
-        'Pragma': 'no-cache',
-        'Expires': '0'
+        'Cache-Control': 'no-cache, no-store, must-revalidate'
       });
 
-      // Pipe the stream response to the client
+      res.send(rewrittenManifest);
+    } catch (error) {
+      console.error('Error proxying IPTV manifest:', error);
+      res.status(500).send('Failed to proxy manifest');
+    }
+  });
+
+  // IPTV Segment Proxy - proxy the actual video segments
+  app.get("/api/iptv/segment/:streamId/:segmentPath", async (req, res) => {
+    if (!req.isAuthenticated()) return res.sendStatus(401);
+
+    try {
+      const { streamId, segmentPath } = req.params;
+      const { xtreamCodesService } = await import('./services/xtream-codes-service');
+
+      if (!xtreamCodesService.isConfigured()) {
+        return res.status(404).send('IPTV not configured');
+      }
+
+      // Build the full segment URL
+      const baseUrl = xtreamCodesService.getServerUrl();
+      const username = xtreamCodesService.getUsername();
+      const password = xtreamCodesService.getPassword();
+      const decodedPath = decodeURIComponent(segmentPath);
+      const segmentUrl = `${baseUrl}/live/${username}/${password}/${decodedPath}`;
+
+      // Proxy the segment
+      const response = await fetch(segmentUrl);
+
+      if (!response.ok) {
+        console.error(`Failed to fetch segment ${decodedPath}: ${response.status}`);
+        return res.status(response.status).send('Segment not available');
+      }
+
+      res.set({
+        'Content-Type': 'video/MP2T',
+        'Access-Control-Allow-Origin': '*',
+        'Cache-Control': 'public, max-age=31536000' // Segments can be cached
+      });
+
       const buffer = await response.arrayBuffer();
       res.send(Buffer.from(buffer));
     } catch (error) {
-      console.error('Error proxying IPTV stream:', error);
-      res.status(500).send('Failed to proxy stream');
+      console.error('Error proxying IPTV segment:', error);
+      res.status(500).send('Failed to proxy segment');
     }
   });
 

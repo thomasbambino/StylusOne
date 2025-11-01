@@ -206,7 +206,7 @@ export class XtreamCodesService implements IService {
         id: stream.stream_id.toString(),
         number: stream.num ? stream.num.toString() : stream.stream_id.toString(),
         name: stream.name,
-        streamUrl: `/api/iptv/stream/${stream.stream_id}`, // Use proxy endpoint to bypass CORS
+        streamUrl: `/api/iptv/stream/${stream.stream_id}.m3u8`, // Use proxy endpoint to bypass CORS
         logo: stream.stream_icon || '',
         epgId: stream.epg_channel_id || '',
         categoryName: stream.category_name || 'Unknown',
@@ -418,6 +418,27 @@ export class XtreamCodesService implements IService {
    */
   getAuthInfo(): any {
     return this.authInfo;
+  }
+
+  /**
+   * Get server URL for proxy purposes
+   */
+  getServerUrl(): string {
+    return this.serverUrl;
+  }
+
+  /**
+   * Get username for proxy purposes
+   */
+  getUsername(): string {
+    return this.username;
+  }
+
+  /**
+   * Get password for proxy purposes
+   */
+  getPassword(): string {
+    return this.password;
   }
 }
 
