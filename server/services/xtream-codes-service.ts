@@ -206,7 +206,7 @@ export class XtreamCodesService implements IService {
         id: stream.stream_id.toString(),
         number: stream.num ? stream.num.toString() : stream.stream_id.toString(),
         name: stream.name,
-        streamUrl: this.getStreamUrl(stream.stream_id.toString()),
+        streamUrl: this.getHLSStreamUrl(stream.stream_id.toString()), // Use HLS for web playback
         logo: stream.stream_icon || '',
         epgId: stream.epg_channel_id || '',
         categoryName: stream.category_name || 'Unknown',

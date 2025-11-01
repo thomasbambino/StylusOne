@@ -208,11 +208,11 @@ interface ChannelListItemProps {
   channel: UnifiedChannel;
   selectedChannel: UnifiedChannel | null;
   onChannelSelect: (channel: UnifiedChannel) => void;
-  useChannelProgram: (channelName: string) => any;
+  useChannelProgram: (channelName: string, source: 'hdhomerun' | 'iptv' | 'static') => any;
 }
 
 function ChannelListItem({ channel, selectedChannel, onChannelSelect, useChannelProgram }: ChannelListItemProps) {
-  const { data: program, isLoading } = useChannelProgram(channel.GuideName);
+  const { data: program, isLoading } = useChannelProgram(channel.GuideName, channel.source);
   
   const formatTime = (startTime: Date, endTime: Date) => {
     const start = new Date(startTime).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
@@ -1300,10 +1300,15 @@ export default function LiveTVPage() {
   }
 
   // Custom hook to fetch current program for a channel
-  const useChannelProgram = (channelName: string) => {
+  const useChannelProgram = (channelName: string, source: 'hdhomerun' | 'iptv' | 'static' = 'hdhomerun') => {
     return useQuery({
-      queryKey: ['epg', 'current', channelName],
+      queryKey: ['epg', 'current', channelName, source],
       queryFn: async () => {
+        // Skip EPG for IPTV channels to avoid API rate limits
+        if (source === 'iptv') {
+          return null;
+        }
+
         const response = await fetch(`/api/epg/current/${encodeURIComponent(channelName)}`);
         if (!response.ok) {
           throw new Error('Failed to fetch program data');
@@ -1313,7 +1318,7 @@ export default function LiveTVPage() {
       },
       staleTime: 5 * 60 * 1000, // 5 minutes
       refetchInterval: 5 * 60 * 1000, // Refetch every 5 minutes
-      enabled: !!channelName
+      enabled: !!channelName && source !== 'iptv' // Disable for IPTV channels
     });
   };
 
