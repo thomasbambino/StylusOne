@@ -684,7 +684,7 @@ export default function HomePage() {
                     {/* Favorite Channels - Show up to 3 */}
                     <div className="space-y-2 flex-1">
                       <p className="text-xs text-muted-foreground">Favorite Channels</p>
-                      <div className="space-y-2" style={{ minHeight: '310px' }}>
+                      <div className="space-y-2" style={{ minHeight: '260px' }}>
                         {favoriteChannels.length > 0 ? (
                           [0, 1, 2].map((index) => {
                             const fav = favoriteChannels[index];
