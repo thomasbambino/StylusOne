@@ -1,5 +1,5 @@
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { useState } from "react";
+import React, { useState, useMemo } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -48,6 +48,50 @@ const plexInviteSchema = z.object({
 });
 
 type PlexInviteForm = z.infer<typeof plexInviteSchema>;
+
+// Component for rendering individual favorite channel with EPG data (no hooks version)
+const FavoriteChannelItem = React.memo(function FavoriteChannelItem({
+  favorite,
+  program
+}: {
+  favorite: { id: number, channelId: string, channelName: string, channelLogo: string | null },
+  program?: { title?: string, startTime?: string, endTime?: string } | null
+}) {
+  return (
+    <div className="bg-accent/10 rounded-lg p-3 border border-border/50">
+      <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2">
+          <div className="w-8 h-8 rounded flex items-center justify-center overflow-hidden flex-shrink-0">
+            {favorite.channelLogo ? (
+              <img
+                src={favorite.channelLogo}
+                alt={favorite.channelName}
+                className="w-full h-full object-contain"
+                onError={(e) => {
+                  e.currentTarget.style.display = 'none';
+                }}
+              />
+            ) : (
+              <Tv className="w-4 h-4 text-blue-500" />
+            )}
+          </div>
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="text-xs font-bold truncate">{favorite.channelName}</div>
+          <div className="text-xs text-muted-foreground truncate">
+            {program?.title || 'Loading...'}
+          </div>
+          {program?.startTime && program?.endTime && (
+            <div className="text-[10px] text-muted-foreground">
+              {new Date(program.startTime).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })} -
+              {new Date(program.endTime).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+});
 
 export default function HomePage() {
   const { data: settings } = useQuery<Settings>({
@@ -147,11 +191,11 @@ export default function HomePage() {
     refetchInterval: 30000,
   });
 
-  // Fetch Live TV device info and channels
-  const { data: hdhrDevice } = useQuery({
-    queryKey: ['/api/hdhomerun/devices'],
+  // Fetch IPTV channels instead of HDHomeRun
+  const { data: iptvStatus } = useQuery({
+    queryKey: ['/api/iptv/status'],
     queryFn: async () => {
-      const response = await fetch('/api/hdhomerun/devices', {
+      const response = await fetch('/api/iptv/status', {
         credentials: 'include',
       });
       if (!response.ok) return null;
@@ -160,86 +204,67 @@ export default function HomePage() {
     refetchInterval: 60000,
   });
 
-  const { data: hdhrChannels } = useQuery({
-    queryKey: ['/api/hdhomerun/channels'],
+  const { data: iptvChannels } = useQuery({
+    queryKey: ['/api/iptv/channels'],
     queryFn: async () => {
-      const response = await fetch('/api/hdhomerun/channels', {
+      const response = await fetch('/api/iptv/channels', {
         credentials: 'include',
       });
       if (!response.ok) return null;
       return response.json();
     },
-    enabled: hdhrDevice?.configured === true,
+    enabled: iptvStatus?.configured === true,
+    refetchInterval: 60000,
+  });
+
+  // Fetch favorite channels
+  const { data: favoriteChannels = [] } = useQuery<Array<{id: number, channelId: string, channelName: string, channelLogo: string | null}>>({
+    queryKey: ['/api/favorite-channels'],
+    queryFn: async () => {
+      const response = await fetch('/api/favorite-channels', {
+        credentials: 'include',
+      });
+      if (!response.ok) return [];
+      return response.json();
+    },
     refetchInterval: 60000,
   });
 
   // Extract channels from the response
-  const liveTVChannels = hdhrChannels?.channels || [];
+  const liveTVChannels = iptvChannels?.channels || [];
 
-  // Fetch current program information for major networks
-  const { data: abcProgram } = useQuery({
-    queryKey: [`/api/epg/current/KGTV-HD`],
+  // Fetch EPG data for all favorite channels in a single query
+  // Use useMemo to stabilize the channel IDs array and prevent unnecessary re-renders
+  const favoriteChannelIds = useMemo(
+    () => favoriteChannels.map(fav => fav.channelId),
+    [favoriteChannels]
+  );
+
+  const { data: favoriteProgramsData = {} } = useQuery<Record<string, any>>({
+    queryKey: ['/api/epg/batch', favoriteChannelIds.join(',')],
     queryFn: async () => {
-      const response = await fetch(`/api/epg/current/KGTV-HD`, {
-        credentials: 'include',
-      });
-      if (!response.ok) return null;
-      const data = await response.json();
-      return data.program;
+      if (favoriteChannelIds.length === 0) return {};
+
+      const programs: Record<string, any> = {};
+      await Promise.all(
+        favoriteChannelIds.map(async (channelId) => {
+          try {
+            const response = await fetch(`/api/epg/current/${channelId}`, {
+              credentials: 'include',
+            });
+            if (response.ok) {
+              const data = await response.json();
+              programs[channelId] = data.program;
+            }
+          } catch (error) {
+            console.error(`Failed to fetch EPG for ${channelId}:`, error);
+          }
+        })
+      );
+      return programs;
     },
-    enabled: !!hdhrDevice?.configured && !!hdhrChannels?.channels,
     refetchInterval: 300000, // 5 minutes
   });
-
-  const { data: nbcProgram } = useQuery({
-    queryKey: [`/api/epg/current/KNSD-DT`],
-    queryFn: async () => {
-      const response = await fetch(`/api/epg/current/KNSD-DT`, {
-        credentials: 'include',
-      });
-      if (!response.ok) return null;
-      const data = await response.json();
-      return data.program;
-    },
-    enabled: !!hdhrDevice?.configured && !!hdhrChannels?.channels,
-    refetchInterval: 300000, // 5 minutes
-  });
-
-  const { data: foxProgram } = useQuery({
-    queryKey: [`/api/epg/current/KSWB-HD`],
-    queryFn: async () => {
-      const response = await fetch(`/api/epg/current/KSWB-HD`, {
-        credentials: 'include',
-      });
-      if (!response.ok) return null;
-      const data = await response.json();
-      return data.program;
-    },
-    enabled: !!hdhrDevice?.configured && !!hdhrChannels?.channels,
-    refetchInterval: 300000, // 5 minutes
-  });
-
-  const { data: pbsProgram } = useQuery({
-    queryKey: [`/api/epg/current/KPBSHD`],
-    queryFn: async () => {
-      const response = await fetch(`/api/epg/current/KPBSHD`, {
-        credentials: 'include',
-      });
-      if (!response.ok) return null;
-      const data = await response.json();
-      return data.program;
-    },
-    enabled: !!hdhrDevice?.configured && !!hdhrChannels?.channels,
-    refetchInterval: 300000, // 5 minutes
-  });
-
-  // Create network programs object
-  const networkPrograms = {
-    'ABC': abcProgram,
-    'NBC': nbcProgram,
-    'FOX': foxProgram,
-    'PBS': pbsProgram
-  };
 
 
   // Fetch Tautulli server info for machine ID (needed for Plex URLs)
@@ -634,7 +659,7 @@ export default function HomePage() {
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.5, delay: 0.5 }}
           >
-            <Card className="relative overflow-hidden flex flex-col hover:shadow-lg transition-shadow duration-300">
+            <Card className="relative overflow-hidden hover:shadow-lg transition-shadow duration-300">
             <div className="absolute top-0 right-0 w-32 h-32 bg-gradient-to-br from-blue-500/10 to-transparent rounded-bl-full" />
             <CardHeader>
               <div className="flex items-center justify-between">
@@ -652,155 +677,60 @@ export default function HomePage() {
                 </Badge>
               </div>
             </CardHeader>
-            <CardContent className="flex flex-col flex-1">
+            <CardContent>
               <div className="flex-1 space-y-4">
                 {liveTVChannels && liveTVChannels.length > 0 ? (
-                  <>
-                    <div className="grid grid-cols-2 gap-4">
-                      <div className="text-center">
-                        <div className="text-2xl font-bold">{liveTVChannels.length}</div>
-                        <div className="text-xs text-muted-foreground">Channels</div>
-                      </div>
-                      <div className="text-center">
-                        <div className="text-2xl font-bold">
-                          {liveTVChannels.filter((ch: any) => ch.HD).length}
-                        </div>
-                        <div className="text-xs text-muted-foreground">HD Channels</div>
-                      </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="text-center">
+                      <div className="text-2xl font-bold">{liveTVChannels.length}</div>
+                      <div className="text-xs text-muted-foreground">Channels</div>
                     </div>
-                    
-                    {/* TV Guide for Major Networks */}
-                    <div className="space-y-3">
-                      <p className="text-xs text-muted-foreground font-medium">Now Playing</p>
-                      <div className="grid grid-cols-1 gap-2">
-                        {(() => {
-                          // Find major network channels by channel number and name
-                          const networkMappings = [
-                            { network: 'ABC', numbers: ['10.1'], names: ['ABC', 'KGTV'] },
-                            { network: 'NBC', numbers: ['39.1'], names: ['NBC', 'KNSD'] },
-                            { network: 'FOX', numbers: ['69.1'], names: ['FOX', 'KSWB'] },
-                            { network: 'PBS', numbers: ['15.1'], names: ['PBS', 'KPBS'] }
-                          ];
-                          
-                          const networkChannels = networkMappings.map(({ network, numbers, names }) => {
-                            const channel = liveTVChannels.find((ch: any) => {
-                              // Check by channel number first
-                              if (numbers.length > 0 && numbers.includes(ch.GuideNumber)) {
-                                return true;
-                              }
-                              // Then check by name
-                              if (ch.GuideName) {
-                                const guideName = ch.GuideName.toUpperCase();
-                                return names.some(name => guideName.includes(name.toUpperCase()));
-                              }
-                              return false;
-                            });
-                            return { network, channel };
-                          }).filter(item => item.channel);
-
-                          // Get current show from EPG data or fallback
-                          const getCurrentShow = (network: string) => {
-                            const program = networkPrograms[network];
-                            if (program && program.title) {
-                              return program.title;
-                            }
-                            // Fallback shows
-                            const fallbacks = {
-                              'ABC': 'ABC Programming',
-                              'NBC': 'NBC Programming', 
-                              'FOX': 'FOX Programming',
-                              'PBS': 'PBS Programming'
-                            };
-                            return fallbacks[network as keyof typeof fallbacks] || 'Programming';
-                          };
-
-                          const getShowTime = (network: string) => {
-                            const program = networkPrograms[network];
-                            if (program && program.start) {
-                              const startTime = new Date(program.start);
-                              return startTime.toLocaleTimeString('en-US', { 
-                                hour: 'numeric', 
-                                minute: '2-digit',
-                                hour12: true 
-                              });
-                            }
-                            return 'Now Playing';
-                          };
-
-                          if (networkChannels.length === 0) {
-                            return (
-                              <div className="text-center py-2 text-muted-foreground">
-                                <p className="text-xs">No major network channels found</p>
-                                <p className="text-xs mt-1">Available: {liveTVChannels.slice(0, 3).map((ch: any) => ch.GuideName).join(', ')}</p>
-                              </div>
-                            );
-                          }
-
-                          const getNetworkIcon = (network: string) => {
-                            const iconProps = "w-12 h-8 object-contain";
-                            const fallbackProps = "w-12 h-8 flex items-center justify-center text-white font-bold text-xs rounded";
-                            
-                            switch (network) {
-                              case 'ABC':
-                                return <img src="/ABC.png" alt="ABC" className={iconProps} onError={(e) => {
-                                  (e.target as HTMLImageElement).style.display = 'none';
-                                  (e.target as HTMLImageElement).parentElement!.innerHTML = `<div class="${fallbackProps} bg-yellow-600">ABC</div>`;
-                                }} />;
-                              case 'NBC':
-                                return <img src="/NBC.png" alt="NBC" className={iconProps} onError={(e) => {
-                                  (e.target as HTMLImageElement).style.display = 'none';
-                                  (e.target as HTMLImageElement).parentElement!.innerHTML = `<div class="${fallbackProps} bg-blue-600">NBC</div>`;
-                                }} />;
-                              case 'FOX':
-                                return <img src="/FOX.png" alt="FOX" className={iconProps} onError={(e) => {
-                                  (e.target as HTMLImageElement).style.display = 'none';
-                                  (e.target as HTMLImageElement).parentElement!.innerHTML = `<div class="${fallbackProps} bg-gray-700">FOX</div>`;
-                                }} />;
-                              case 'PBS':
-                                return <img src="/PBS.png" alt="PBS" className={iconProps} onError={(e) => {
-                                  (e.target as HTMLImageElement).style.display = 'none';
-                                  (e.target as HTMLImageElement).parentElement!.innerHTML = `<div class="${fallbackProps} bg-blue-900">PBS</div>`;
-                                }} />;
-                              default:
-                                return <div className={`${fallbackProps} bg-gray-500`}>{network}</div>;
-                            }
-                          };
-
-                          return networkChannels.slice(0, 3).map(({ network, channel }) => (
-                            <div key={network} className="bg-accent/10 rounded-lg p-3 border border-border/50">
-                              <div className="flex items-center gap-4">
-                                <div className="flex items-center gap-3">
-                                  <div className="flex items-center justify-center w-8 h-6 bg-background rounded text-xs font-bold border">
-                                    {channel.GuideNumber}
-                                  </div>
-                                  <div className="flex items-center justify-center bg-white rounded p-1 shadow-sm">
-                                    {getNetworkIcon(network)}
-                                  </div>
-                                </div>
-                                <div className="flex-1">
-                                  <div className="text-sm font-medium text-foreground">
-                                    {getCurrentShow(network)}
-                                  </div>
-                                  <div className="text-xs text-muted-foreground">
-                                    {getShowTime(network)}
-                                  </div>
-                                </div>
-                              </div>
-                            </div>
-                          ));
-                        })()}
+                    <div className="text-center">
+                      <div className="text-2xl font-bold">
+                        {liveTVChannels.filter((ch: any) => ch.HD).length}
                       </div>
+                      <div className="text-xs text-muted-foreground">HD Channels</div>
                     </div>
-                  </>
+                  </div>
                 ) : (
                   <div className="text-center py-4 text-muted-foreground">
                     <Tv className="h-8 w-8 mx-auto mb-2 opacity-50" />
                     <p className="text-sm">No channels available</p>
-                    <p className="text-xs mt-1">Check HD HomeRun connection</p>
+                    <p className="text-xs mt-1">Check IPTV connection</p>
                   </div>
                 )}
+
+                {/* Favorite Channels Now Playing - Always render to maintain consistent hook calls */}
+                <div className="space-y-3">
+                  <p className="text-xs text-muted-foreground font-medium">Now Playing (Favorites)</p>
+                  <div className="grid grid-cols-1 gap-2">
+                    {[0, 1, 2, 3, 4].map((index) => {
+                      const fav = favoriteChannels[index];
+                      if (!fav) {
+                        // Empty slot - always render to maintain consistent component count
+                        return (
+                          <div key={`empty-${index}`} className="bg-accent/5 rounded-lg p-3 border border-dashed border-border/30 min-h-[60px] flex items-center justify-center">
+                            {index === 0 && favoriteChannels.length === 0 && (
+                              <div className="text-center text-muted-foreground">
+                                <p className="text-xs">No favorite channels</p>
+                                <p className="text-[10px] mt-1">Right-click IPTV channels to add favorites</p>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      }
+                      return (
+                        <FavoriteChannelItem
+                          key={fav.id}
+                          favorite={fav}
+                          program={favoriteProgramsData[fav.channelId]}
+                        />
+                      );
+                    })}
+                  </div>
+                </div>
               </div>
-              
+
               {/* Action Buttons */}
               <div className="space-y-2 mt-4">
                   <Link href="/live-tv">
