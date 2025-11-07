@@ -679,27 +679,10 @@ export default function HomePage() {
             </CardHeader>
             <CardContent className="flex flex-col flex-1">
               <div className="flex-1 space-y-4">
-                <div className="grid grid-cols-3 gap-4">
-                  <div className="text-center">
-                    <div className="text-2xl font-bold">{liveTVChannels?.length || 0}</div>
-                    <div className="text-xs text-muted-foreground">Channels</div>
-                  </div>
-                  <div className="text-center">
-                    <div className="text-2xl font-bold">
-                      {liveTVChannels ? new Set(liveTVChannels.map((ch: any) => ch.categoryName)).size : 0}
-                    </div>
-                    <div className="text-xs text-muted-foreground">Categories</div>
-                  </div>
-                  <div className="text-center">
-                    <div className="text-2xl font-bold">{favoriteChannels.length}</div>
-                    <div className="text-xs text-muted-foreground">Favorites</div>
-                  </div>
-                </div>
-
-                {favoriteChannels.length > 0 && (
+                {favoriteChannels.length > 0 ? (
                   <div className="space-y-2 flex-1">
                     <p className="text-xs text-muted-foreground">Favorite Channels</p>
-                    <div className="space-y-2 min-h-[180px]">
+                    <div className="space-y-2 min-h-[260px]">
                       {[0, 1, 2].map((index) => {
                         const fav = favoriteChannels[index];
                         if (!fav) return null;
@@ -711,6 +694,13 @@ export default function HomePage() {
                           />
                         );
                       })}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="flex items-center justify-center text-center text-muted-foreground" style={{ minHeight: '260px' }}>
+                    <div>
+                      <p className="text-sm">No favorite channels</p>
+                      <p className="text-xs mt-1">Right-click channels in Live TV to add favorites</p>
                     </div>
                   </div>
                 )}
