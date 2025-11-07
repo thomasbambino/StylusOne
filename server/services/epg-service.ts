@@ -113,10 +113,16 @@ export class EPGService implements IService {
         const programs: EPGProgram[] = [];
         
         for (const prog of result.tv.programme) {
+          // Clean title by removing superscript Unicode characters (ᴺᵉʷ, etc.)
+          const rawTitle = prog.title?.[0]?._ || prog.title?.[0] || 'Unknown';
+          const cleanTitle = rawTitle
+            .replace(/[\u1D2C-\u1D6A\u02B0-\u02FF]/g, '') // Remove superscript characters
+            .trim();
+
           const program: EPGProgram = {
             channelId: prog.$.channel,
             channelName: prog.$.channel, // Will be mapped later
-            title: prog.title?.[0]?._ || prog.title?.[0] || 'Unknown',
+            title: cleanTitle,
             episodeTitle: prog['sub-title']?.[0]?._ || prog['sub-title']?.[0],
             description: prog.desc?.[0]?._ || prog.desc?.[0],
             startTime: this.parseXMLTVDate(prog.$.start),
@@ -348,10 +354,16 @@ export class EPGService implements IService {
         const programs: EPGProgram[] = [];
 
         for (const prog of result.tv.programme) {
+          // Clean title by removing superscript Unicode characters (ᴺᵉʷ, etc.)
+          const rawTitle = prog.title?.[0]?._ || prog.title?.[0] || 'Unknown';
+          const cleanTitle = rawTitle
+            .replace(/[\u1D2C-\u1D6A\u02B0-\u02FF]/g, '') // Remove superscript characters
+            .trim();
+
           const program: EPGProgram = {
             channelId: prog.$.channel,
             channelName: prog.$.channel,
-            title: prog.title?.[0]?._ || prog.title?.[0] || 'Unknown',
+            title: cleanTitle,
             episodeTitle: prog['sub-title']?.[0]?._ || prog['sub-title']?.[0],
             description: prog.desc?.[0]?._ || prog.desc?.[0],
             startTime: this.parseXMLTVDate(prog.$.start),
