@@ -2286,19 +2286,67 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // IPTV Stream Proxy - bypass CORS restrictions
+  // IPTV Stream Sharing Manager
+  interface SharedStream {
+    streamId: string;
+    manifest: string;
+    baseSegmentUrl: string;
+    users: Set<string>; // Track user IDs watching this stream
+    lastAccessed: Date;
+    manifestUrl: string;
+  }
+
+  const sharedStreams = new Map<string, SharedStream>();
+
+  // Clean up streams that haven't been accessed in 30 seconds
+  setInterval(() => {
+    const now = new Date();
+    for (const [streamId, stream] of sharedStreams.entries()) {
+      const timeSinceAccess = now.getTime() - stream.lastAccessed.getTime();
+      if (timeSinceAccess > 30000) { // 30 seconds
+        console.log(`🧹 Cleaning up inactive stream ${streamId} (${stream.users.size} users)`);
+        sharedStreams.delete(streamId);
+        // Also clean up segment base URLs
+        if ((global as any).iptvSegmentBaseUrls) {
+          (global as any).iptvSegmentBaseUrls.delete(streamId);
+        }
+      }
+    }
+  }, 10000); // Check every 10 seconds
+
+  // IPTV Stream Proxy - bypass CORS restrictions with stream sharing
   app.get("/api/iptv/stream/:streamId.m3u8", async (req, res) => {
     if (!req.isAuthenticated()) return res.sendStatus(401);
 
     try {
       const { streamId } = req.params;
+      const userId = req.user!.id.toString();
       const { xtreamCodesService } = await import('./services/xtream-codes-service');
 
       if (!xtreamCodesService.isConfigured()) {
         return res.status(404).send('IPTV not configured');
       }
 
-      // Get the HLS manifest from Xtream server
+      // Check if we have a shared stream for this channel
+      const existingStream = sharedStreams.get(streamId);
+
+      if (existingStream) {
+        // Use existing shared stream
+        console.log(`📺 Sharing stream ${streamId} with user ${userId} (${existingStream.users.size + 1} total users)`);
+        existingStream.users.add(userId);
+        existingStream.lastAccessed = new Date();
+
+        res.set({
+          'Content-Type': 'application/vnd.apple.mpegurl',
+          'Access-Control-Allow-Origin': '*',
+          'Cache-Control': 'no-cache, no-store, must-revalidate'
+        });
+
+        return res.send(existingStream.manifest);
+      }
+
+      // No existing stream, fetch from provider
+      console.log(`🆕 Creating new stream ${streamId} for user ${userId}`);
       let streamUrl = xtreamCodesService.getHLSStreamUrl(streamId);
       console.log(`Fetching HLS manifest from: ${streamUrl}`);
       let response = await fetch(streamUrl);
@@ -2348,10 +2396,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
       console.log(`Final manifest URL (after redirects): ${finalManifestUrl}`);
       console.log(`Base segment URL: ${baseSegmentUrl}`);
 
-      // Log the original manifest to debug segment URL format
-      console.log(`Original manifest for stream ${streamId}:`);
-      console.log(manifestText.substring(0, 1000)); // First 1000 chars
-
       // Store the base URL in a map so the segment proxy can look it up
       (global as any).iptvSegmentBaseUrls = (global as any).iptvSegmentBaseUrls || new Map();
       (global as any).iptvSegmentBaseUrls.set(streamId, baseSegmentUrl);
@@ -2363,8 +2407,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
         (match) => `/api/iptv/segment/${streamId}/${match.trim()}`
       );
 
-      console.log(`Rewritten manifest for stream ${streamId}:`);
-      console.log(rewrittenManifest.substring(0, 1000));
+      // Cache this stream for sharing
+      sharedStreams.set(streamId, {
+        streamId,
+        manifest: rewrittenManifest,
+        baseSegmentUrl,
+        users: new Set([userId]),
+        lastAccessed: new Date(),
+        manifestUrl: finalManifestUrl
+      });
+
+      console.log(`💾 Cached stream ${streamId} for sharing (1 user)`);
 
       res.set({
         'Content-Type': 'application/vnd.apple.mpegurl',
@@ -2436,6 +2489,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       if (!xtreamCodesService.isConfigured()) {
         return res.status(404).send('IPTV not configured');
+      }
+
+      // Update the shared stream's lastAccessed time to keep it alive
+      const sharedStream = sharedStreams.get(streamId);
+      if (sharedStream) {
+        sharedStream.lastAccessed = new Date();
       }
 
       // Get the base URL from the global cache

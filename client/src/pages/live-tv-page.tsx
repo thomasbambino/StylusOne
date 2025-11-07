@@ -2109,11 +2109,6 @@ export default function LiveTVPage() {
             <Card className="bg-card border">
               <CardHeader className="pb-3">
                 <div className="flex flex-col gap-3">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <Badge variant="outline">{availableChannels.length} channels</Badge>
-                    </div>
-                  </div>
                   <div className="relative">
                     <input
                       type="text"
