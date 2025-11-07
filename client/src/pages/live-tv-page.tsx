@@ -826,12 +826,13 @@ export default function LiveTVPage() {
   };
 
   // Fetch current program for selected channel - MUST be before any early returns
+  const selectedChannelKey = selectedChannel?.iptvId || selectedChannel?.GuideNumber;
   const { data: selectedChannelProgram, isLoading: selectedChannelProgramLoading } = useQuery({
-    queryKey: ['epg', 'current', selectedChannel?.GuideName],
+    queryKey: ['epg', 'current', selectedChannelKey],
     queryFn: async () => {
-      if (!selectedChannel) return null;
-      console.log('[CurrentProgram] Fetching program for channel:', selectedChannel.GuideName);
-      const response = await fetch(`/api/epg/current/${encodeURIComponent(selectedChannel.GuideName)}`);
+      if (!selectedChannel || !selectedChannelKey) return null;
+      console.log('[CurrentProgram] Fetching program for channel:', selectedChannelKey);
+      const response = await fetch(`/api/epg/current/${encodeURIComponent(selectedChannelKey)}`);
       if (!response.ok) {
         console.error('[CurrentProgram] Failed to fetch program data:', response.status);
         throw new Error('Failed to fetch program data');
@@ -842,7 +843,7 @@ export default function LiveTVPage() {
     },
     staleTime: 5 * 60 * 1000, // 5 minutes
     refetchInterval: 5 * 60 * 1000, // Refetch every 5 minutes
-    enabled: !!selectedChannel
+    enabled: !!selectedChannel && !!selectedChannelKey
   });
 
   // State for HDHomeRun channel visibility and search - MUST be before early returns
