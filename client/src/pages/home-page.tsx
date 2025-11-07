@@ -669,7 +669,7 @@ export default function HomePage() {
                   </div>
                   <div>
                     <CardTitle>Live TV</CardTitle>
-                    <CardDescription>Live Television (SAN)</CardDescription>
+                    <CardDescription>IPTV Streaming</CardDescription>
                   </div>
                 </div>
                 <Badge className="bg-blue-500/10 text-blue-500 border-blue-500/20">
