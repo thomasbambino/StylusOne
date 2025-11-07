@@ -3,6 +3,7 @@ import { IService } from './interfaces';
 import * as xml2js from 'xml2js';
 import * as fs from 'fs';
 import * as path from 'path';
+import fetch from 'node-fetch';
 
 /**
  * Interface for TV program/episode information
@@ -66,17 +67,16 @@ export class EPGService implements IService {
    */
   async initialize(): Promise<void> {
     try {
-      // Only load real XMLTV data if available
+      // Load HDHomeRun XMLTV data if available
       if (this.xmltvPath && fs.existsSync(this.xmltvPath)) {
         await this.loadXMLTVData();
-        this.initialized = true;
-        console.log('EPG service initialized with real XMLTV data');
-      } else {
-        // No real data available - initialize with empty cache
-        this.programCache.clear();
-        this.initialized = true;
-        console.log('EPG service initialized with no data - channels will show blank');
       }
+
+      // Load IPTV EPG data from Xtream Codes
+      await this.loadIPTVEPGData();
+
+      this.initialized = true;
+      console.log(`EPG service initialized with ${this.programCache.size} channels`);
     } catch (error) {
       console.error('Failed to initialize EPG service:', error);
       this.initialized = false;
@@ -309,9 +309,72 @@ export class EPGService implements IService {
    * Refresh EPG data if stale
    */
   async refreshIfNeeded(): Promise<void> {
-    if (!this.lastFetch || 
+    if (!this.lastFetch ||
         new Date().getTime() - this.lastFetch.getTime() > 6 * 60 * 60 * 1000) { // 6 hours
       await this.reinitialize();
+    }
+  }
+
+  /**
+   * Load IPTV EPG data from Xtream Codes API
+   */
+  private async loadIPTVEPGData(): Promise<void> {
+    try {
+      const serverUrl = process.env.XTREAM_SERVER_URL;
+      const username = process.env.XTREAM_USERNAME;
+      const password = process.env.XTREAM_PASSWORD;
+
+      if (!serverUrl || !username || !password) {
+        console.log('IPTV credentials not configured, skipping IPTV EPG');
+        return;
+      }
+
+      // Fetch IPTV EPG in XMLTV format
+      const epgUrl = `${serverUrl}/portal/epg/${username}/${password}`;
+      console.log(`Fetching IPTV EPG from: ${epgUrl}`);
+
+      const response = await fetch(epgUrl);
+      if (!response.ok) {
+        console.error(`Failed to fetch IPTV EPG: ${response.status}`);
+        return;
+      }
+
+      const xmlData = await response.text();
+      const parser = new xml2js.Parser();
+      const result = await parser.parseStringPromise(xmlData);
+
+      if (result.tv && result.tv.programme) {
+        const programs: EPGProgram[] = [];
+
+        for (const prog of result.tv.programme) {
+          const program: EPGProgram = {
+            channelId: prog.$.channel,
+            channelName: prog.$.channel,
+            title: prog.title?.[0]?._ || prog.title?.[0] || 'Unknown',
+            episodeTitle: prog['sub-title']?.[0]?._ || prog['sub-title']?.[0],
+            description: prog.desc?.[0]?._ || prog.desc?.[0],
+            startTime: this.parseXMLTVDate(prog.$.start),
+            endTime: this.parseXMLTVDate(prog.$.stop),
+            thumbnail: prog.icon?.[0]?.$.src,
+            categories: prog.category?.map(c => c._ || c),
+            isLive: this.isCurrentTime(this.parseXMLTVDate(prog.$.start), this.parseXMLTVDate(prog.$.stop))
+          };
+
+          programs.push(program);
+        }
+
+        // Group programs by channel
+        for (const program of programs) {
+          const channelPrograms = this.programCache.get(program.channelId) || [];
+          channelPrograms.push(program);
+          this.programCache.set(program.channelId, channelPrograms);
+        }
+
+        console.log(`Loaded ${programs.length} IPTV programs for ${result.tv.programme.length > 0 ? 'multiple' : '0'} channels`);
+      }
+    } catch (error) {
+      console.error('Error loading IPTV EPG data:', error);
+      // Don't throw - EPG is optional
     }
   }
 }

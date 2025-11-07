@@ -161,6 +161,15 @@ export const books = pgTable("books", {
   updated_at: timestamp("updated_at").notNull().defaultNow(),
 });
 
+export const favoriteChannels = pgTable("favoriteChannels", {
+  id: serial("id").primaryKey(),
+  userId: integer("userId").notNull().references(() => users.id, { onDelete: 'cascade' }),
+  channelId: text("channelId").notNull(), // IPTV channel ID
+  channelName: text("channelName").notNull(),
+  channelLogo: text("channelLogo"),
+  createdAt: timestamp("createdAt").notNull().defaultNow(),
+});
+
 export const insertUserSchema = createInsertSchema(users);
 export const insertServiceSchema = createInsertSchema(services);
 export const insertGameServerSchema = createInsertSchema(gameServers);
@@ -171,6 +180,7 @@ export const insertEmailTemplateSchema = createInsertSchema(emailTemplates);
 export const insertSentNotificationSchema = createInsertSchema(sentNotifications);
 export const insertLoginAttemptSchema = createInsertSchema(loginAttempts);
 export const insertBookSchema = createInsertSchema(books);
+export const insertFavoriteChannelSchema = createInsertSchema(favoriteChannels);
 
 // Export the update schemas
 export const updateServiceSchema = insertServiceSchema.extend({
@@ -227,3 +237,5 @@ export type LoginAttempt = typeof loginAttempts.$inferSelect;
 export type InsertBook = z.infer<typeof insertBookSchema>;
 export type UpdateBook = z.infer<typeof updateBookSchema>;
 export type Book = typeof books.$inferSelect;
+export type InsertFavoriteChannel = z.infer<typeof insertFavoriteChannelSchema>;
+export type FavoriteChannel = typeof favoriteChannels.$inferSelect;

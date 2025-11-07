@@ -23,6 +23,7 @@ import { z } from "zod";
 import { spawn } from 'child_process';
 import fetch from 'node-fetch';
 import { db, pool } from './db';
+import { EPGService } from './services/epg-service';
 import { 
   apiRateLimiter, 
   authRateLimiter, 
@@ -47,6 +48,16 @@ import {
 import cors from 'cors';
 import helmet from 'helmet';
 
+// Singleton EPG service instance to prevent re-initialization on every request
+let epgServiceInstance: EPGService | null = null;
+async function getEPGService(): Promise<EPGService> {
+  if (!epgServiceInstance) {
+    epgServiceInstance = new EPGService();
+    await epgServiceInstance.initialize();
+    console.log('EPG service singleton initialized');
+  }
+  return epgServiceInstance;
+}
 
 const plexInviteSchema = z.object({
   email: z.string().email("Invalid email address"),
@@ -2197,6 +2208,74 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Favorite Channels API
+  app.get("/api/favorite-channels", async (req, res) => {
+    if (!req.isAuthenticated()) return res.sendStatus(401);
+
+    try {
+      const { favoriteChannels } = await import('@shared/schema');
+      const { eq } = await import('drizzle-orm');
+
+      const favorites = await db.select().from(favoriteChannels).where(eq(favoriteChannels.userId, req.user!.id));
+      res.json(favorites);
+    } catch (error) {
+      console.error('Error fetching favorite channels:', error);
+      res.status(500).json({
+        message: "Failed to fetch favorite channels",
+        error: error instanceof Error ? error.message : "Unknown error"
+      });
+    }
+  });
+
+  app.post("/api/favorite-channels", async (req, res) => {
+    if (!req.isAuthenticated()) return res.sendStatus(401);
+
+    try {
+      const { favoriteChannels, insertFavoriteChannelSchema } = await import('@shared/schema');
+      const { channelId, channelName, channelLogo } = req.body;
+
+      const newFavorite = await db.insert(favoriteChannels).values({
+        userId: req.user!.id,
+        channelId,
+        channelName,
+        channelLogo,
+      }).returning();
+
+      res.json(newFavorite[0]);
+    } catch (error) {
+      console.error('Error adding favorite channel:', error);
+      res.status(500).json({
+        message: "Failed to add favorite channel",
+        error: error instanceof Error ? error.message : "Unknown error"
+      });
+    }
+  });
+
+  app.delete("/api/favorite-channels/:channelId", async (req, res) => {
+    if (!req.isAuthenticated()) return res.sendStatus(401);
+
+    try {
+      const { favoriteChannels } = await import('@shared/schema');
+      const { eq, and } = await import('drizzle-orm');
+      const { channelId } = req.params;
+
+      await db.delete(favoriteChannels).where(
+        and(
+          eq(favoriteChannels.userId, req.user!.id),
+          eq(favoriteChannels.channelId, channelId)
+        )
+      );
+
+      res.json({ success: true });
+    } catch (error) {
+      console.error('Error removing favorite channel:', error);
+      res.status(500).json({
+        message: "Failed to remove favorite channel",
+        error: error instanceof Error ? error.message : "Unknown error"
+      });
+    }
+  });
+
   // IPTV Stream Proxy - bypass CORS restrictions
   app.get("/api/iptv/stream/:streamId.m3u8", async (req, res) => {
     if (!req.isAuthenticated()) return res.sendStatus(401);
@@ -2210,25 +2289,72 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       // Get the HLS manifest from Xtream server
-      const streamUrl = xtreamCodesService.getHLSStreamUrl(streamId);
-      const response = await fetch(streamUrl);
+      let streamUrl = xtreamCodesService.getHLSStreamUrl(streamId);
+      console.log(`Fetching HLS manifest from: ${streamUrl}`);
+      let response = await fetch(streamUrl);
 
       if (!response.ok) {
         console.error(`Failed to fetch stream ${streamId}: ${response.status}`);
+        console.error(`Stream URL was: ${streamUrl}`);
         return res.status(response.status).send('Stream not available');
       }
 
-      // Get the manifest content and rewrite URLs to point to our proxy
-      const manifestText = await response.text();
-      const baseUrl = xtreamCodesService.getServerUrl();
-      const username = xtreamCodesService.getUsername();
-      const password = xtreamCodesService.getPassword();
+      // Get the manifest content
+      let manifestText = await response.text();
 
-      // Rewrite relative URLs in the manifest to absolute URLs through our proxy
+      // Check if we got an HTML redirect instead of the manifest
+      if (manifestText.trim().startsWith('<!DOCTYPE') || manifestText.trim().startsWith('<html')) {
+        console.log('Received HTML redirect, extracting redirect URL');
+
+        // Extract the redirect URL from HTML meta refresh or href
+        const metaRefreshMatch = manifestText.match(/url='([^']+)'/);
+        const hrefMatch = manifestText.match(/href="([^"]+)"/);
+        const redirectUrl = metaRefreshMatch?.[1] || hrefMatch?.[1];
+
+        if (redirectUrl) {
+          console.log(`Following redirect to: ${redirectUrl}`);
+          response = await fetch(redirectUrl);
+
+          if (!response.ok) {
+            console.error(`Failed to fetch redirected stream: ${response.status}`);
+            return res.status(response.status).send('Stream not available after redirect');
+          }
+
+          manifestText = await response.text();
+          streamUrl = redirectUrl; // Update streamUrl for segment URL construction
+        } else {
+          console.error('Received HTML but could not extract redirect URL');
+          return res.status(500).send('Invalid stream response');
+        }
+      }
+
+      // Get the base URL for segments (directory of the manifest)
+      // Use response.url to get the final URL after all HTTP redirects (not just HTML redirects)
+      const finalManifestUrl = response.url;
+      const manifestUrl = new URL(finalManifestUrl);
+      const baseSegmentUrl = manifestUrl.origin + manifestUrl.pathname.substring(0, manifestUrl.pathname.lastIndexOf('/') + 1);
+
+      console.log(`Initial manifest URL: ${streamUrl}`);
+      console.log(`Final manifest URL (after redirects): ${finalManifestUrl}`);
+      console.log(`Base segment URL: ${baseSegmentUrl}`);
+
+      // Log the original manifest to debug segment URL format
+      console.log(`Original manifest for stream ${streamId}:`);
+      console.log(manifestText.substring(0, 1000)); // First 1000 chars
+
+      // Store the base URL in a map so the segment proxy can look it up
+      (global as any).iptvSegmentBaseUrls = (global as any).iptvSegmentBaseUrls || new Map();
+      (global as any).iptvSegmentBaseUrls.set(streamId, baseSegmentUrl);
+      console.log(`Stored base URL for stream ${streamId} (type: ${typeof streamId}) in cache`);
+
+      // Rewrite segment URLs to go through our proxy
       const rewrittenManifest = manifestText.replace(
         /^([^#\n].+\.ts)$/gm,
-        (match) => `/api/iptv/segment/${streamId}/${encodeURIComponent(match)}`
+        (match) => `/api/iptv/segment/${streamId}/${match.trim()}`
       );
+
+      console.log(`Rewritten manifest for stream ${streamId}:`);
+      console.log(rewrittenManifest.substring(0, 1000));
 
       res.set({
         'Content-Type': 'application/vnd.apple.mpegurl',
@@ -2243,41 +2369,140 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // IPTV Segment Proxy - proxy the actual video segments
-  app.get("/api/iptv/segment/:streamId/:segmentPath", async (req, res) => {
+  // IPTV TS Stream Proxy - proxy direct MPEG-TS streams
+  app.get("/api/iptv/stream/:streamId.ts", async (req, res) => {
     if (!req.isAuthenticated()) return res.sendStatus(401);
 
     try {
-      const { streamId, segmentPath } = req.params;
+      const { streamId } = req.params;
       const { xtreamCodesService } = await import('./services/xtream-codes-service');
 
       if (!xtreamCodesService.isConfigured()) {
         return res.status(404).send('IPTV not configured');
       }
 
-      // Build the full segment URL
+      // Get the direct TS stream URL
       const baseUrl = xtreamCodesService.getServerUrl();
       const username = xtreamCodesService.getUsername();
       const password = xtreamCodesService.getPassword();
-      const decodedPath = decodeURIComponent(segmentPath);
-      const segmentUrl = `${baseUrl}/live/${username}/${password}/${decodedPath}`;
+      const streamUrl = `${baseUrl}/live/${username}/${password}/${streamId}.ts`;
 
-      // Proxy the segment
-      const response = await fetch(segmentUrl);
+      console.log(`Proxying TS stream ${streamId} from: ${streamUrl}`);
+
+      // Proxy the stream directly
+      const response = await fetch(streamUrl);
 
       if (!response.ok) {
-        console.error(`Failed to fetch segment ${decodedPath}: ${response.status}`);
-        return res.status(response.status).send('Segment not available');
+        console.error(`Failed to fetch TS stream ${streamId}: ${response.status}`);
+        return res.status(response.status).send('Stream not available');
       }
 
+      // Set appropriate headers for MPEG-TS stream
+      res.set({
+        'Content-Type': 'video/MP2T',
+        'Access-Control-Allow-Origin': '*',
+        'Cache-Control': 'no-cache, no-store, must-revalidate'
+      });
+
+      // Stream the response body
+      const buffer = await response.arrayBuffer();
+      res.send(Buffer.from(buffer));
+    } catch (error) {
+      console.error('Error proxying IPTV TS stream:', error);
+      if (!res.headersSent) {
+        res.status(500).send('Failed to proxy stream');
+      }
+    }
+  });
+
+  // IPTV Segment Proxy - proxy the actual video segments
+  app.get("/api/iptv/segment/:streamId/*", async (req, res) => {
+    if (!req.isAuthenticated()) return res.sendStatus(401);
+
+    try {
+      const { streamId } = req.params;
+      const fullPath = req.params[0]; // Get the wildcard path
+      const { xtreamCodesService } = await import('./services/xtream-codes-service');
+
+      if (!xtreamCodesService.isConfigured()) {
+        return res.status(404).send('IPTV not configured');
+      }
+
+      // Get the base URL from the global cache
+      const iptvSegmentBaseUrls = (global as any).iptvSegmentBaseUrls || new Map();
+
+      // Try both string and number keys since JavaScript Map uses strict equality
+      let baseUrl = iptvSegmentBaseUrls.get(streamId) || iptvSegmentBaseUrls.get(parseInt(streamId)) || iptvSegmentBaseUrls.get(streamId.toString());
+
+      if (!baseUrl) {
+        console.error(`No base URL found for stream ${streamId} (type: ${typeof streamId})`);
+        console.error(`Cache contains ${iptvSegmentBaseUrls.size} entries:`);
+        for (const [key, value] of iptvSegmentBaseUrls.entries()) {
+          console.error(`  - Key: ${key} (type: ${typeof key}) => ${value.substring(0, 50)}...`);
+        }
+        return res.status(404).send('Stream not found or expired. Please reload the channel.');
+      }
+
+      // The fullPath is the segment filename/path (e.g., "2025/11/02/05/24/25-06006.ts")
+      const segmentPath = fullPath;
+      console.log(`Fetching segment for stream ${streamId}: ${segmentPath}`);
+
+      // Build the full segment URL by combining base URL with relative segment path
+      const segmentUrl = `${baseUrl}${segmentPath}`;
+
+      console.log(`Fetching segment: ${segmentPath}`);
+      console.log(`Base URL: ${baseUrl}`);
+      console.log(`Full segment URL: ${segmentUrl}`);
+
+      // Set response headers immediately
       res.set({
         'Content-Type': 'video/MP2T',
         'Access-Control-Allow-Origin': '*',
         'Cache-Control': 'public, max-age=31536000' // Segments can be cached
       });
 
-      const buffer = await response.arrayBuffer();
-      res.send(Buffer.from(buffer));
+      // Stream the segment directly without buffering
+      const response = await fetch(segmentUrl);
+
+      if (!response.ok) {
+        console.error(`Failed to fetch segment ${segmentPath}: ${response.status}`);
+        return res.status(response.status).send('Segment not available');
+      }
+
+      // Check content type - if HTML, we might need to follow a redirect
+      const contentType = response.headers.get('content-type') || '';
+      if (contentType.includes('text/html')) {
+        console.log('Segment returned HTML, checking for redirect');
+        const htmlText = await response.text();
+        const metaRefreshMatch = htmlText.match(/url='([^']+)'/);
+        const hrefMatch = htmlText.match(/href="([^"]+)"/);
+        const redirectUrl = metaRefreshMatch?.[1] || hrefMatch?.[1];
+
+        if (redirectUrl) {
+          console.log(`Following segment redirect to: ${redirectUrl}`);
+          const redirectResponse = await fetch(redirectUrl);
+
+          if (!redirectResponse.ok || !redirectResponse.body) {
+            console.error(`Failed to fetch redirected segment: ${redirectResponse.status}`);
+            return res.status(redirectResponse.status).send('Segment not available');
+          }
+
+          // Stream the redirected response using Node.js streams
+          redirectResponse.body.pipe(res);
+          return;
+        } else {
+          console.error('Received HTML but could not extract redirect URL');
+          return res.status(404).send('Segment not available');
+        }
+      }
+
+      // Stream the response body directly to the client using Node.js streams
+      if (!response.body) {
+        return res.status(500).send('No response body');
+      }
+
+      // Node.js fetch returns a Node.js ReadableStream, pipe it directly
+      response.body.pipe(res);
     } catch (error) {
       console.error('Error proxying IPTV segment:', error);
       res.status(500).send('Failed to proxy segment');
@@ -2524,16 +2749,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // EPG (Electronic Program Guide) API routes
   app.get("/api/epg/channels", async (req, res) => {
     if (!req.isAuthenticated()) return res.sendStatus(401);
-    
+
     try {
-      const { EPGService } = await import('./services/epg-service');
-      const epgService = new EPGService();
-      await epgService.initialize();
-      
+      const epgService = await getEPGService();
+
       if (!epgService.isInitialized()) {
         return res.json({ channels: [] });
       }
-      
+
       const channels = epgService.getChannels();
       res.json({ channels });
     } catch (error) {
@@ -2572,13 +2795,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get("/api/epg/current/:channelId", async (req, res) => {
     if (!req.isAuthenticated()) return res.sendStatus(401);
-    
+
     try {
       const { channelId } = req.params;
-      const { EPGService } = await import('./services/epg-service');
-      const epgService = new EPGService();
-      await epgService.initialize();
-      
+      const epgService = await getEPGService();
+
       const currentProgram = epgService.getCurrentProgram(channelId);
       res.json({ program: currentProgram });
     } catch (error) {
@@ -2592,14 +2813,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get("/api/epg/upcoming/:channelId", async (req, res) => {
     if (!req.isAuthenticated()) return res.sendStatus(401);
-    
+
     try {
       const { channelId } = req.params;
       const hours = parseInt(req.query.hours as string) || 3;
-      const { EPGService } = await import('./services/epg-service');
-      const epgService = new EPGService();
-      await epgService.initialize();
-      
+      const epgService = await getEPGService();
+
       const upcomingPrograms = epgService.getUpcomingPrograms(channelId, hours);
       res.json({ programs: upcomingPrograms });
     } catch (error) {
@@ -2704,13 +2923,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // EPG (Electronic Program Guide) endpoints
   app.get("/api/epg/current/:channelId", async (req, res) => {
     if (!req.isAuthenticated()) return res.sendStatus(401);
-    
+
     try {
-      const { EPGService } = await import('./services/epg-service');
-      const epgService = new EPGService();
-      
-      await epgService.initialize();
-      
+      const epgService = await getEPGService();
+
       const program = epgService.getCurrentProgram(req.params.channelId);
       res.json({ program });
     } catch (error) {
@@ -2724,13 +2940,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get("/api/epg/upcoming/:channelId", async (req, res) => {
     if (!req.isAuthenticated()) return res.sendStatus(401);
-    
+
     try {
-      const { EPGService } = await import('./services/epg-service');
-      const epgService = new EPGService();
-      
-      await epgService.initialize();
-      
+      const epgService = await getEPGService();
+
       const hours = parseInt(req.query.hours as string) || 3;
       const programs = epgService.getUpcomingPrograms(req.params.channelId, hours);
       res.json({ programs });
@@ -2745,13 +2958,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get("/api/epg/channels", async (req, res) => {
     if (!req.isAuthenticated()) return res.sendStatus(401);
-    
+
     try {
-      const { EPGService } = await import('./services/epg-service');
-      const epgService = new EPGService();
-      
-      await epgService.initialize();
-      
+      const epgService = await getEPGService();
+
       const channels = epgService.getChannels();
       res.json({ channels });
     } catch (error) {

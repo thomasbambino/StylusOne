@@ -86,7 +86,7 @@ export class XtreamCodesService implements IService {
   private categoriesCache: XtreamCategory[] | null = null;
   private channelsCache: IPTVChannel[] | null = null;
   private cacheTimestamp: number = 0;
-  private cacheExpirationMs: number = 30 * 60 * 1000; // 30 minutes
+  private cacheExpirationMs: number = 1; // Force immediate cache refresh
 
   constructor() {
     this.serverUrl = process.env.XTREAM_SERVER_URL || '';
@@ -206,7 +206,7 @@ export class XtreamCodesService implements IService {
         id: stream.stream_id.toString(),
         number: stream.num ? stream.num.toString() : stream.stream_id.toString(),
         name: stream.name,
-        streamUrl: `/api/iptv/stream/${stream.stream_id}.m3u8`, // Use proxy endpoint to bypass CORS
+        streamUrl: `/api/iptv/stream/${stream.stream_id}.m3u8`, // HLS manifest proxy endpoint
         logo: stream.stream_icon || '',
         epgId: stream.epg_channel_id || '',
         categoryName: stream.category_name || 'Unknown',

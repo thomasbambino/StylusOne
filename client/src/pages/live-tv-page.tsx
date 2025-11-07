@@ -1,13 +1,27 @@
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueries, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Settings } from "@shared/schema";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { Tv, Signal, AlertTriangle, Wifi, WifiOff, Play, Pause, Volume2, VolumeX, Maximize } from "lucide-react";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Tv, Signal, AlertTriangle, Wifi, WifiOff, Play, Pause, Volume2, VolumeX, Maximize, Star, StarOff, Loader2 } from "lucide-react";
 import { useState, useRef, useEffect } from "react";
 import { cn } from "@/lib/utils";
 import Hls from "hls.js";
 import { motion } from "framer-motion";
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuTrigger,
+} from "@/components/ui/context-menu";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+import { useToast } from "@/hooks/use-toast";
 
 interface HDHomeRunDevice {
   DeviceID: string;
@@ -116,10 +130,9 @@ interface UnifiedChannel {
   categoryName?: string;
 }
 
-// Channel logos mapping based on Zap2it data  
+// Channel logos mapping based on Zap2it data
 const CHANNEL_LOGOS: Record<string, string> = {
   // Major networks
-  'CBS8SANDIEGO': 'https://zap2it.tmsimg.com/h3/NowShowing/21212/s28711_ll_h15_ab.png', // CBS 8 San Diego (same as KFMB)
   'XHJKTDT': 'https://zap2it.tmsimg.com/h3/NowShowing/68084/s116153_ll_h15_ab.png',
   'XHJKTDT2': 'https://zap2it.tmsimg.com/h3/NowShowing/88217/s15384_ll_h15_ad.png',
   'XHCTTITDT': 'https://zap2it.tmsimg.com/h3/NowShowing/107888/s101096_ll_h15_aa.png',
@@ -203,16 +216,224 @@ const CHANNEL_LOGOS: Record<string, string> = {
   'KSWBDT4': 'https://zap2it.tmsimg.com/h3/NowShowing/106580/s18633_ll_h15_ad.png'
 };
 
+// Channel Guide Row Component
+interface ChannelGuideRowProps {
+  channel: UnifiedChannel;
+  selectedChannel: UnifiedChannel | null;
+  onChannelSelect: (channel: UnifiedChannel) => void;
+  programs?: EPGProgram[];
+  isLoading?: boolean;
+  error?: any;
+  onToggleFavorite?: (channelId: string, channelName: string, channelLogo: string | undefined, isFavorite: boolean) => void;
+  isFavorite?: boolean;
+}
+
+function ChannelGuideRow({ channel, selectedChannel, onChannelSelect, programs = [], isLoading = false, error, onToggleFavorite, isFavorite = false }: ChannelGuideRowProps) {
+  // Programs are now passed as props instead of fetched via hook
+
+  // Timeline configuration: Show next 4 hours
+  const now = new Date();
+  const timelineStart = new Date(now);
+  // Round to nearest 15-minute increment
+  const minutes = timelineStart.getMinutes();
+  const roundedMinutes = Math.floor(minutes / 15) * 15;
+  timelineStart.setMinutes(roundedMinutes, 0, 0);
+  const timelineEnd = new Date(timelineStart);
+  timelineEnd.setHours(timelineEnd.getHours() + 4); // 4 hours ahead
+
+  // Calculate total minutes in timeline (240 minutes = 4 hours)
+  const totalMinutes = 240;
+
+  // Get current program (first one that's currently airing)
+  const currentProgram = programs.find(p =>
+    new Date(p.startTime) <= now && new Date(p.endTime) > now
+  );
+
+  // Filter programs that fall within our timeline window
+  const visiblePrograms = programs.filter(p => {
+    const start = new Date(p.startTime);
+    const end = new Date(p.endTime);
+    return end > timelineStart && start < timelineEnd;
+  });
+
+  // Get channel logo
+  let channelLogo = channel.logo;
+  if (!channelLogo && channel.source === 'hdhomerun') {
+    const getChannelLogo = (guideNumber: string, guideName: string) => {
+      const channelToLogoMapping: Record<string, string> = {
+        '10.1': 'KGTVDT', '10.2': 'KGTVDT2', '10.3': 'KGTVDT3', '10.4': 'KGTVDT4',
+        '15.1': 'KPBSDT', '15.2': 'KPBSDT2', '15.3': 'KPBSDT3', '15.4': 'KPBSDT4',
+        '39.1': 'KNSDDT', '39.2': 'KNSDDT2', '39.3': 'KNSDDT3', '39.4': 'KNSDDT4',
+        '51.1': 'KFMBDT', '51.2': 'KFMBDT2', '51.3': 'KFMBDT3', '51.4': 'KFMBDT4',
+        '69.1': 'KSWBDT', '69.2': 'KSWBDT2', '69.3': 'KSWBDT3', '69.4': 'KSWBDT4'
+      };
+      return channelToLogoMapping[guideNumber] || guideName.split('-')[0].replace(/[^A-Z0-9]/g, '');
+    };
+    const logoKey = getChannelLogo(channel.GuideNumber, channel.GuideName);
+    channelLogo = CHANNEL_LOGOS[logoKey];
+  }
+
+  const handleToggleFavorite = () => {
+    if (onToggleFavorite && channel.source === 'iptv') {
+      onToggleFavorite(channel.id || channel.GuideNumber, channel.GuideName, channelLogo, isFavorite);
+    }
+  };
+
+  // Calculate program position and width as percentages
+  const getProgramStyle = (prog: EPGProgram) => {
+    const start = new Date(prog.startTime);
+    const end = new Date(prog.endTime);
+
+    // Clamp to timeline bounds
+    const clampedStart = start < timelineStart ? timelineStart : start;
+    const clampedEnd = end > timelineEnd ? timelineEnd : end;
+
+    // Calculate offset from timeline start as percentage
+    const offsetMinutes = (clampedStart.getTime() - timelineStart.getTime()) / (1000 * 60);
+    const durationMinutes = (clampedEnd.getTime() - clampedStart.getTime()) / (1000 * 60);
+
+    const leftPercent = (offsetMinutes / totalMinutes) * 100;
+    const widthPercent = (durationMinutes / totalMinutes) * 100;
+
+    return {
+      left: `${leftPercent}%`,
+      width: `${widthPercent}%`
+    };
+  };
+
+  const content = (
+    <div
+      className={cn(
+        "flex border-b border-border hover:bg-accent/50 cursor-pointer transition-colors",
+        selectedChannel?.GuideNumber === channel.GuideNumber && "bg-blue-500/10"
+      )}
+      onClick={() => onChannelSelect(channel)}
+    >
+      {/* Channel Info Column */}
+      <div className="w-40 flex-shrink-0 p-2 border-r border-border flex items-center gap-2">
+        <div className="w-8 h-8 rounded flex items-center justify-center overflow-hidden flex-shrink-0">
+          {channelLogo ? (
+            <img
+              src={channelLogo}
+              alt={channel.GuideName}
+              className="w-full h-full object-contain"
+              loading="lazy"
+              onError={(e) => {
+                e.currentTarget.style.display = 'none';
+              }}
+            />
+          ) : (
+            <Tv className="w-4 h-4 text-blue-500" />
+          )}
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="text-xs font-bold truncate flex items-center gap-1">
+            {channel.GuideNumber}
+            {isFavorite && <Star className="w-3 h-3 fill-yellow-500 text-yellow-500" />}
+          </div>
+          <div className="text-[10px] text-muted-foreground truncate">{channel.GuideName}</div>
+        </div>
+      </div>
+
+      {/* Program Timeline */}
+      <div className="flex-1 p-2">
+        {isLoading ? (
+          <div className="text-xs text-muted-foreground">Loading...</div>
+        ) : error ? (
+          <div className="text-xs text-red-500">Error loading</div>
+        ) : visiblePrograms.length > 0 ? (
+          <div className="relative h-14 w-full min-w-full">
+            {visiblePrograms.map((prog, idx) => {
+              const isCurrentlyPlaying = currentProgram && prog.title === currentProgram.title && prog.startTime === currentProgram.startTime;
+              const style = getProgramStyle(prog);
+              return (
+                <Tooltip key={idx}>
+                  <TooltipTrigger asChild>
+                    <div
+                      className={cn(
+                        "absolute top-0 h-full p-1.5 rounded border overflow-hidden cursor-pointer",
+                        isCurrentlyPlaying
+                          ? "bg-blue-500/10 border-blue-500/30"
+                          : "bg-card border-border"
+                      )}
+                      style={style}
+                    >
+                      <div className="text-xs font-medium truncate">{prog.title}</div>
+                      {prog.episodeTitle && (
+                        <div className="text-[10px] text-muted-foreground truncate">{prog.episodeTitle}</div>
+                      )}
+                      <div className="text-[9px] text-muted-foreground mt-0.5 truncate">
+                        {new Date(prog.startTime).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })} -
+                        {new Date(prog.endTime).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })}
+                      </div>
+                    </div>
+                  </TooltipTrigger>
+                  <TooltipContent side="top" className="max-w-sm z-50">
+                    <div className="space-y-1">
+                      <div className="font-semibold">{prog.title}</div>
+                      {prog.episodeTitle && (
+                        <div className="text-sm text-muted-foreground">{prog.episodeTitle}</div>
+                      )}
+                      <div className="text-xs text-muted-foreground">
+                        {new Date(prog.startTime).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })} -
+                        {new Date(prog.endTime).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })}
+                      </div>
+                      {prog.description && (
+                        <div className="text-sm mt-2 pt-2 border-t">{prog.description}</div>
+                      )}
+                    </div>
+                  </TooltipContent>
+                </Tooltip>
+              );
+            })}
+          </div>
+        ) : (
+          <div className="text-xs text-muted-foreground">No program info</div>
+        )}
+      </div>
+    </div>
+  );
+
+  // Only wrap IPTV channels with context menu
+  if (channel.source === 'iptv' && onToggleFavorite) {
+    return (
+      <ContextMenu>
+        <ContextMenuTrigger asChild>
+          {content}
+        </ContextMenuTrigger>
+        <ContextMenuContent>
+          <ContextMenuItem onClick={handleToggleFavorite}>
+            {isFavorite ? (
+              <>
+                <StarOff className="mr-2 h-4 w-4" />
+                Remove from Favorites
+              </>
+            ) : (
+              <>
+                <Star className="mr-2 h-4 w-4" />
+                Add to Favorites
+              </>
+            )}
+          </ContextMenuItem>
+        </ContextMenuContent>
+      </ContextMenu>
+    );
+  }
+
+  return content;
+}
+
 // Channel List Item Component
 interface ChannelListItemProps {
   channel: UnifiedChannel;
   selectedChannel: UnifiedChannel | null;
   onChannelSelect: (channel: UnifiedChannel) => void;
-  useChannelProgram: (channelName: string, source: 'hdhomerun' | 'iptv' | 'static') => any;
+  program?: EPGProgram | null;
+  isLoading?: boolean;
 }
 
-function ChannelListItem({ channel, selectedChannel, onChannelSelect, useChannelProgram }: ChannelListItemProps) {
-  const { data: program, isLoading } = useChannelProgram(channel.GuideName, channel.source);
+function ChannelListItem({ channel, selectedChannel, onChannelSelect, program, isLoading = false }: ChannelListItemProps) {
+  // Program is now passed as a prop instead of fetched via hook
   
   const formatTime = (startTime: Date, endTime: Date) => {
     const start = new Date(startTime).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
@@ -226,9 +447,6 @@ function ChannelListItem({ channel, selectedChannel, onChannelSelect, useChannel
   const getChannelLogo = (guideNumber: string, guideName: string) => {
     // Primary mapping: HDHomeRun channel number to Zap2it logo key
     const channelToLogoMapping: Record<string, string> = {
-      // CBS 8 San Diego (static channel)
-      '8.1': 'CBS8SANDIEGO',  // CBS 8 San Diego
-      
       // Channel 10 - ABC San Diego (KGTV/KZSDLD)
       '10.1': 'KGTVDT',     // ABC San Diego
       '10.2': 'KGTVDT2',    // Bounce TV
@@ -320,7 +538,7 @@ function ChannelListItem({ channel, selectedChannel, onChannelSelect, useChannel
       )}
     >
       <div className={cn(
-        "flex-shrink-0 w-10 h-10 rounded border flex items-center justify-center overflow-hidden bg-white",
+        "flex-shrink-0 w-10 h-10 rounded border flex items-center justify-center overflow-hidden",
         isSelected
           ? "border-white/30"
           : "border-border"
@@ -467,6 +685,7 @@ interface TunerStatus {
 export default function LiveTVPage() {
   const [selectedChannel, setSelectedChannel] = useState<UnifiedChannel | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [isBuffering, setIsBuffering] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
   const [volume, setVolume] = useState(1);
@@ -556,6 +775,131 @@ export default function LiveTVPage() {
     refetchInterval: 300000 // 5 minutes
   });
 
+  // Favorite channels query
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+
+  const { data: favoriteChannels = [] } = useQuery<Array<{id: number, channelId: string, channelName: string, channelLogo: string | null}>>({
+    queryKey: ["/api/favorite-channels"],
+    queryFn: async () => {
+      const res = await fetch("/api/favorite-channels");
+      if (!res.ok) throw new Error("Failed to fetch favorite channels");
+      return res.json();
+    },
+    refetchInterval: 60000
+  });
+
+  const addFavoriteMutation = useMutation({
+    mutationFn: async ({ channelId, channelName, channelLogo }: { channelId: string, channelName: string, channelLogo: string | undefined }) => {
+      const res = await fetch("/api/favorite-channels", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ channelId, channelName, channelLogo: channelLogo || null })
+      });
+      if (!res.ok) throw new Error("Failed to add favorite");
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/favorite-channels"] });
+      toast({ title: "Added to favorites" });
+    }
+  });
+
+  const removeFavoriteMutation = useMutation({
+    mutationFn: async (channelId: string) => {
+      const res = await fetch(`/api/favorite-channels/${channelId}`, { method: "DELETE" });
+      if (!res.ok) throw new Error("Failed to remove favorite");
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/favorite-channels"] });
+      toast({ title: "Removed from favorites" });
+    }
+  });
+
+  const handleToggleFavorite = (channelId: string, channelName: string, channelLogo: string | undefined, isFavorite: boolean) => {
+    if (isFavorite) {
+      removeFavoriteMutation.mutate(channelId);
+    } else {
+      addFavoriteMutation.mutate({ channelId, channelName, channelLogo });
+    }
+  };
+
+  // Fetch current program for selected channel - MUST be before any early returns
+  const { data: selectedChannelProgram, isLoading: selectedChannelProgramLoading } = useQuery({
+    queryKey: ['epg', 'current', selectedChannel?.GuideName],
+    queryFn: async () => {
+      if (!selectedChannel) return null;
+      console.log('[CurrentProgram] Fetching program for channel:', selectedChannel.GuideName);
+      const response = await fetch(`/api/epg/current/${encodeURIComponent(selectedChannel.GuideName)}`);
+      if (!response.ok) {
+        console.error('[CurrentProgram] Failed to fetch program data:', response.status);
+        throw new Error('Failed to fetch program data');
+      }
+      const data = await response.json();
+      console.log('[CurrentProgram] Received program data:', data);
+      return data.program as EPGProgram | null;
+    },
+    staleTime: 5 * 60 * 1000, // 5 minutes
+    refetchInterval: 5 * 60 * 1000, // Refetch every 5 minutes
+    enabled: !!selectedChannel
+  });
+
+  // State for HDHomeRun channel visibility and search - MUST be before early returns
+  const [showHDHomeRun, setShowHDHomeRun] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+
+  // Prepare channel list for EPG queries (before early returns)
+  // Convert HDHomeRun channels to unified format
+  const hdHomeRunChannels: UnifiedChannel[] = (channelsData?.channels?.filter(ch => !ch.DRM) || []).map(ch => ({
+    source: 'hdhomerun' as const,
+    GuideNumber: ch.GuideNumber,
+    GuideName: ch.GuideName,
+    URL: ch.URL,
+    HD: ch.HD,
+    Favorite: ch.Favorite,
+    DRM: ch.DRM
+  }));
+
+  // Convert IPTV channels to unified format
+  const iptvChannels: UnifiedChannel[] = (iptvChannelsData?.channels || []).map(ch => ({
+    source: 'iptv' as const,
+    GuideNumber: ch.number,
+    GuideName: ch.name,
+    URL: ch.streamUrl,
+    HD: true, // Assume IPTV channels are HD
+    Favorite: false,
+    DRM: false,
+    logo: ch.logo,
+    iptvId: ch.id,
+    categoryName: ch.categoryName
+  }));
+
+  const allChannels = [...hdHomeRunChannels, ...iptvChannels];
+
+  // Fetch EPG data for all channels using useQueries - MUST be before early returns
+  const epgQueries = useQueries({
+    queries: allChannels.map((channel) => ({
+      queryKey: ['epg', 'upcoming', channel.iptvId || channel.GuideNumber],
+      queryFn: async () => {
+        const channelKey = channel.iptvId || channel.GuideNumber;
+        const response = await fetch(`/api/epg/upcoming/${encodeURIComponent(channelKey)}`);
+        if (!response.ok) return [];
+        const data = await response.json();
+        return data.programs as EPGProgram[];
+      },
+      staleTime: 5 * 60 * 1000, // 5 minutes
+      refetchInterval: 5 * 60 * 1000,
+    }))
+  });
+
+  // Create a map of channel ID/number to EPG data
+  const epgDataMap = new Map<string, EPGProgram[]>();
+  allChannels.forEach((channel, index) => {
+    const channelKey = channel.iptvId || channel.GuideNumber;
+    epgDataMap.set(channelKey, epgQueries[index]?.data || []);
+  });
+
   // Auto-select first channel on load is disabled - users must manually select a channel
 
   // Fullscreen change event listener
@@ -618,6 +962,67 @@ export default function LiveTVPage() {
         hlsRef.current.destroy();
       }
     };
+  }, []);
+
+  // Cleanup on unmount and page unload - MOVED HERE BEFORE EARLY RETURNS
+  useEffect(() => {
+    const handleBeforeUnload = () => {
+      if (currentSession) {
+        const data = JSON.stringify({ sessionId: currentSession.id });
+        if (navigator.sendBeacon) {
+          navigator.sendBeacon('/api/tuner/release-session', data);
+        } else {
+          fetch('/api/tuner/release-session', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: data,
+            keepalive: true
+          }).catch(console.error);
+        }
+      }
+    };
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'hidden' && currentSession) {
+        if (heartbeatIntervalRef.current) {
+          clearInterval(heartbeatIntervalRef.current);
+          heartbeatIntervalRef.current = null;
+        }
+      } else if (document.visibilityState === 'visible' && currentSession) {
+        startHeartbeat(currentSession.id);
+      }
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+
+      if (hlsRef.current) {
+        console.log('💀 FOUND IT! About to destroy HLS in session release');
+        console.log('💀 releaseCurrentSession execution stack:', new Error().stack);
+        console.log('Destroying HLS instance during session release');
+        hlsRef.current.destroy();
+      }
+
+      if (currentSession) {
+        releaseCurrentSession();
+      }
+    };
+  }, []);
+
+  // Keyboard shortcut: Ctrl+H to toggle HDHomeRun channels - MOVED HERE BEFORE EARLY RETURNS
+  useEffect(() => {
+    const handleKeyPress = (e: KeyboardEvent) => {
+      if (e.ctrlKey && e.key === 'h') {
+        e.preventDefault();
+        setShowHDHomeRun(prev => !prev);
+      }
+    };
+    window.addEventListener('keydown', handleKeyPress);
+    return () => window.removeEventListener('keydown', handleKeyPress);
   }, []);
 
   // Handle custom video controls
@@ -743,42 +1148,86 @@ export default function LiveTVPage() {
     console.log('Loading direct stream:', streamUrl);
     
     if (Hls.isSupported()) {
-      // Use HLS.js for browsers that support it  
+      // Use HLS.js for browsers that support it
       const hls = new Hls({
+        debug: false,
         enableWorker: true,
         lowLatencyMode: false,
+        // Increase buffer lengths to handle slow segment loading (1-3 seconds per segment)
         backBufferLength: 90,
-        liveSyncDurationCount: 1,
-        liveMaxLatencyDurationCount: 3,
-        maxBufferLength: 20,
-        maxMaxBufferLength: 30,
-        maxBufferSize: 60 * 1000 * 1000, // 60MB
-        maxBufferHole: 0.5,
-        fragLoadingTimeOut: 20000,
-        manifestLoadingTimeOut: 15000,
-        debug: true,
-        fragLoadingMaxRetry: 4,
-        fragLoadingRetryDelay: 500,
-        startFragPrefetch: true,
-        testBandwidth: false,
-        progressive: true,
+        maxBufferLength: 60, // Increased from 30 to 60 seconds
+        maxMaxBufferLength: 600,
+        maxBufferSize: 120 * 1000 * 1000, // Increased to 120MB
+        maxBufferHole: 1.0, // Increased tolerance for buffer holes
+        highBufferWatchdogPeriod: 3, // Increased from 2 to 3 seconds
+        nudgeOffset: 0.5, // Increased for better stall recovery
+        nudgeMaxRetry: 5, // More retries
+        maxFragLookUpTolerance: 0.5,
+        liveSyncDurationCount: 5, // Keep more segments in buffer
+        liveMaxLatencyDurationCount: Infinity,
+        liveDurationInfinity: true,
+        // Increase timeouts for slow segments
+        fragLoadingTimeOut: 30000, // 30 second timeout (increased from default 20s)
+        fragLoadingMaxRetry: 6,
+        fragLoadingRetryDelay: 1000,
+        manifestLoadingTimeOut: 20000,
+        xhrSetup: function(xhr: XMLHttpRequest) {
+          // Include credentials (cookies) with all HLS requests for authentication
+          xhr.withCredentials = true;
+        },
       });
       
       hlsRef.current = hls;
-      
+
+      hls.on(Hls.Events.MEDIA_ATTACHED, () => {
+        console.log('Direct stream HLS media attached to video element');
+      });
+
+      hls.on(Hls.Events.MANIFEST_LOADING, () => {
+        console.log('Direct stream HLS manifest loading started');
+        setIsLoading(true);
+      });
+
+      hls.on(Hls.Events.MANIFEST_LOADED, (event, data) => {
+        console.log('Direct stream HLS manifest loaded:', data);
+      });
+
       hls.on(Hls.Events.MANIFEST_PARSED, () => {
-        console.log('Direct stream HLS manifest parsed, starting playback');
-        setIsLoading(false);
-        
+        console.log('Direct stream HLS manifest parsed, attempting playback');
+        // Manually start loading and playing
         video.play().then(() => {
-          console.log('Direct stream started playing successfully');
+          console.log('Direct stream play() called successfully');
           setIsPlaying(true);
+          setIsLoading(false);
         }).catch(error => {
           console.error('Direct stream play error:', error);
-          setIsLoading(false);
+          // Try again with muted autoplay as fallback
+          video.muted = true;
+          video.play().then(() => {
+            console.log('Direct stream playing muted');
+            setIsPlaying(true);
+            setIsLoading(false);
+          }).catch(err => {
+            console.error('Direct stream muted play also failed:', err);
+            setIsLoading(false);
+          });
         });
       });
-      
+
+      hls.on(Hls.Events.FRAG_BUFFERED, () => {
+        console.log('First fragment buffered, starting playback');
+        if (!isPlaying) {
+          video.play().then(() => {
+            console.log('Direct stream started playing successfully');
+            setIsPlaying(true);
+            setIsLoading(false);
+          }).catch(error => {
+            console.error('Direct stream play error:', error);
+            setIsLoading(false);
+          });
+        }
+      });
+
       hls.on(Hls.Events.ERROR, (event, data) => {
         console.error('Direct stream HLS error:', data);
         if (data.fatal) {
@@ -793,9 +1242,30 @@ export default function LiveTVPage() {
         console.log('Direct stream video play event');
         setIsPlaying(true);
       });
+
+      video.addEventListener('waiting', () => {
+        console.log('Video buffering started');
+        setIsBuffering(true);
+      });
+
+      video.addEventListener('playing', () => {
+        console.log('Video playing after buffering');
+        setIsBuffering(false);
+      });
+
+      video.addEventListener('canplay', () => {
+        console.log('Video can play');
+        setIsBuffering(false);
+      });
       video.addEventListener('pause', () => {
         console.log('Direct stream video pause event');
         setIsPlaying(false);
+      });
+      video.addEventListener('waiting', () => {
+        console.log('Direct stream video waiting/buffering');
+      });
+      video.addEventListener('canplay', () => {
+        console.log('Direct stream video can play');
       });
       video.addEventListener('error', (e) => {
         console.error('Direct stream video error:', e);
@@ -852,7 +1322,7 @@ export default function LiveTVPage() {
         // Static channels and IPTV don't need tuner manager, play directly
         console.log(`Playing ${channel.source} channel: ${channel.GuideName} directly`);
         playStreamDirectly(channel.URL);
-        setIsLoading(false);
+        // Don't set isLoading to false here - let HLS events handle it
         return;
       }
 
@@ -1080,6 +1550,16 @@ export default function LiveTVPage() {
             console.error('Video error message:', video.error?.message);
           });
 
+          video.addEventListener('waiting', () => {
+            console.log('IPTV video buffering started');
+            setIsBuffering(true);
+          });
+
+          video.addEventListener('playing', () => {
+            console.log('IPTV video playing after buffering');
+            setIsBuffering(false);
+          });
+
 
           console.log('Loading HLS source:', session.streamUrl);
           
@@ -1197,73 +1677,6 @@ export default function LiveTVPage() {
     }
   };
 
-  // Cleanup on unmount and page unload
-  useEffect(() => {
-    const handleBeforeUnload = () => {
-      if (currentSession) {
-        // Use sendBeacon for reliable cleanup on page unload
-        const data = JSON.stringify({ sessionId: currentSession.id });
-        if (navigator.sendBeacon) {
-          navigator.sendBeacon('/api/tuner/release-session', data);
-        } else {
-          // Fallback for older browsers
-          fetch('/api/tuner/release-session', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: data,
-            keepalive: true
-          }).catch(console.error);
-        }
-      }
-    };
-
-    const handleVisibilityChange = () => {
-      if (document.visibilityState === 'hidden' && currentSession) {
-        // Page is being hidden, stop heartbeat to trigger cleanup
-        if (heartbeatIntervalRef.current) {
-          clearInterval(heartbeatIntervalRef.current);
-          heartbeatIntervalRef.current = null;
-        }
-      } else if (document.visibilityState === 'visible' && currentSession) {
-        // Page is visible again, restart heartbeat
-        startHeartbeat(currentSession.id);
-      }
-    };
-
-    // Add event listeners
-    window.addEventListener('beforeunload', handleBeforeUnload);
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-
-    return () => {
-      // Remove event listeners
-      window.removeEventListener('beforeunload', handleBeforeUnload);
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
-      
-      // Cleanup resources
-      if (hlsRef.current) {
-        console.log('💀 FOUND IT! About to destroy HLS in session release');
-        console.log('💀 releaseCurrentSession execution stack:', new Error().stack);
-        console.log('Destroying HLS instance during session release');
-        hlsRef.current.destroy();
-      }
-      if (heartbeatIntervalRef.current) {
-        clearInterval(heartbeatIntervalRef.current);
-      }
-      if (playbackTimeoutRef.current) {
-        console.log('Clearing playback timeout during session release');
-        clearTimeout(playbackTimeoutRef.current);
-        playbackTimeoutRef.current = null;
-      }
-      if (currentSession) {
-        fetch('/api/tuner/release-session', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ sessionId: currentSession.id })
-        }).catch(console.error);
-      }
-    };
-  }, []); // Only run on mount/unmount, not when currentSession changes!
-
   // Check if at least one source is configured
   const hasHDHomeRun = deviceInfo?.configured === true;
   const hasIPTV = iptvStatus?.configured === true;
@@ -1304,11 +1717,6 @@ export default function LiveTVPage() {
     return useQuery({
       queryKey: ['epg', 'current', channelName, source],
       queryFn: async () => {
-        // Skip EPG for IPTV channels to avoid API rate limits
-        if (source === 'iptv') {
-          return null;
-        }
-
         const response = await fetch(`/api/epg/current/${encodeURIComponent(channelName)}`);
         if (!response.ok) {
           throw new Error('Failed to fetch program data');
@@ -1318,14 +1726,30 @@ export default function LiveTVPage() {
       },
       staleTime: 5 * 60 * 1000, // 5 minutes
       refetchInterval: 5 * 60 * 1000, // Refetch every 5 minutes
-      enabled: !!channelName && source !== 'iptv' // Disable for IPTV channels
+      enabled: !!channelName
     });
   };
 
-  // Current Program component
-  function CurrentProgram({ channelName }: { channelName: string }) {
-    const { data: program, isLoading } = useChannelProgram(channelName);
+  // Custom hook to fetch upcoming programs for timeline
+  const useUpcomingPrograms = (channelName: string, hours: number = 6) => {
+    return useQuery({
+      queryKey: ['epg', 'upcoming', channelName, hours],
+      queryFn: async () => {
+        const response = await fetch(`/api/epg/upcoming/${encodeURIComponent(channelName)}?hours=${hours}`);
+        if (!response.ok) {
+          throw new Error('Failed to fetch program data');
+        }
+        const data = await response.json();
+        return data.programs as EPGProgram[] || [];
+      },
+      staleTime: 5 * 60 * 1000, // 5 minutes
+      refetchInterval: 5 * 60 * 1000, // Refetch every 5 minutes
+      enabled: !!channelName
+    });
+  };
 
+  // Current Program component - now receives data as props
+  function CurrentProgram({ program, isLoading }: { program?: EPGProgram | null, isLoading?: boolean }) {
     if (isLoading) {
       return <div className="text-sm text-muted-foreground">Loading current show...</div>;
     }
@@ -1335,160 +1759,83 @@ export default function LiveTVPage() {
     }
 
     const formatTime = (startTime: Date, endTime: Date) => {
-      const start = new Date(startTime).toLocaleTimeString('en-US', { 
-        hour: 'numeric', 
+      const start = new Date(startTime).toLocaleTimeString('en-US', {
+        hour: 'numeric',
         minute: '2-digit',
-        hour12: true 
+        hour12: true
       });
-      const end = new Date(endTime).toLocaleTimeString('en-US', { 
-        hour: 'numeric', 
+      const end = new Date(endTime).toLocaleTimeString('en-US', {
+        hour: 'numeric',
         minute: '2-digit',
-        hour12: true 
+        hour12: true
       });
       return `${start} - ${end}`;
     };
 
     return (
-      <div className="text-sm text-muted-foreground">
-        <span className="font-medium">{program.title}</span>
-        {program.episodeTitle && <span> • {program.episodeTitle}</span>}
-        <span className="text-xs ml-2">({formatTime(program.startTime, program.endTime)})</span>
+      <div className="text-sm">
+        <div className="font-medium text-foreground">{program.title}</div>
+        {program.episodeTitle && <div className="text-muted-foreground">{program.episodeTitle}</div>}
+        <div className="text-xs text-muted-foreground">{formatTime(program.startTime, program.endTime)}</div>
       </div>
     );
   }
 
-  // Add CBS 8 San Diego as a static channel
-  const cbs8Channel: UnifiedChannel = {
-    source: 'static',
-    GuideNumber: "8.1",
-    GuideName: "CBS 8 San Diego",
-    URL: "https://video.tegnaone.com/kfmb/live/v1/master/f9c1bf9ffd6ac86b6173a7c169ff6e3f4efbd693/KFMB-Production/live/index.m3u8",
-    HD: true,
-    Favorite: false,
-    DRM: false
-  };
+  // Keyboard shortcut: Ctrl+H to toggle HDHomeRun channels
+  // Use allChannels from before early returns
+  let availableChannels = [...allChannels];
 
-  // Convert HDHomeRun channels to unified format
-  const hdHomeRunChannels: UnifiedChannel[] = (channelsData?.channels?.filter(ch => !ch.DRM) || []).map(ch => ({
-    source: 'hdhomerun' as const,
-    GuideNumber: ch.GuideNumber,
-    GuideName: ch.GuideName,
-    URL: ch.URL,
-    HD: ch.HD,
-    Favorite: ch.Favorite,
-    DRM: ch.DRM
-  }));
+  // Filter out HDHomeRun channels if hidden
+  if (!showHDHomeRun) {
+    availableChannels = availableChannels.filter(ch => ch.source !== 'hdhomerun');
+  }
 
-  // Convert IPTV channels to unified format
-  const iptvChannels: UnifiedChannel[] = (iptvChannelsData?.channels || []).map(ch => ({
-    source: 'iptv' as const,
-    GuideNumber: ch.number,
-    GuideName: ch.name,
-    URL: ch.streamUrl,
-    HD: true, // Assume IPTV channels are HD
-    Favorite: false,
-    DRM: false,
-    logo: ch.logo,
-    iptvId: ch.id,
-    categoryName: ch.categoryName
-  }));
-
-  // Combine all channels: Static CBS 8, HDHomeRun, and IPTV
-  const availableChannels = [cbs8Channel, ...hdHomeRunChannels, ...iptvChannels];
+  // Apply search filter
+  if (searchQuery.trim()) {
+    const query = searchQuery.toLowerCase();
+    availableChannels = availableChannels.filter(ch => {
+      // Search by channel number
+      if (ch.GuideNumber.toLowerCase().includes(query)) return true;
+      // Search by channel name
+      if (ch.GuideName.toLowerCase().includes(query)) return true;
+      return false;
+    });
+  }
 
   return (
-    <motion.div 
-      className="min-h-screen bg-background"
-      initial={{ opacity: 0, y: 20 }}
-      animate={{ opacity: 1, y: 0 }}
-      exit={{ opacity: 0, y: -20 }}
-      transition={{ duration: 0.3, ease: "easeInOut" }}
-    >
-      <motion.div 
-        className="container mx-auto px-4 "
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        transition={{ duration: 0.4, delay: 0.1 }}
+    <TooltipProvider delayDuration={0}>
+      <motion.div
+        className="min-h-screen bg-background"
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        exit={{ opacity: 0, y: -20 }}
+        transition={{ duration: 0.3, ease: "easeInOut" }}
       >
-        <div className="max-w-7xl mx-auto space-y-6">
+        <motion.div
+          className="container mx-auto px-4 "
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ duration: 0.4, delay: 0.1 }}
+        >
+          <div className="max-w-7xl mx-auto space-y-6">
 
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            {/* Video Player Section */}
-            <motion.div 
-              className="lg:col-span-2"
-              initial={{ opacity: 0, x: -20 }}
-              animate={{ opacity: 1, x: 0 }}
-              transition={{ duration: 0.5, delay: 0.2 }}
-            >
-              {/* Current Channel Info */}
+          {/* Video Player Section - Full Width */}
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.5, delay: 0.2 }}
+          >
+              {/* Video Player */}
               <Card className="bg-card border">
-                <CardHeader className="pb-2 pt-3">
-                  {selectedChannel ? (
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-3">
-                        <div className="flex items-center gap-2">
-                          <span className="text-xl font-bold text-blue-500">{selectedChannel.GuideNumber}</span>
-                          {(() => {
-                            const getChannelLogo = (guideNumber: string, guideName: string) => {
-                              const channelToLogoMapping: Record<string, string> = {
-                                '8.1': 'CBS8SANDIEGO',
-                                '10.1': 'KGTVDT', '10.2': 'KGTVDT2', '10.3': 'KGTVDT3', '10.4': 'KGTVDT4', '10.5': 'KGTVDT5', '10.6': 'KGTVDT6', '10.7': 'KGTVDT7',
-                                '15.1': 'KPBSDT', '15.2': 'KPBSDT2', '15.3': 'KPBSDT3', '15.4': 'KPBSDT4',
-                                '39.1': 'KNSDDT', '39.2': 'KNSDDT2', '39.3': 'KNSDDT3', '39.4': 'KNSDDT4',
-                                '51.1': 'KFMBDT', '51.2': 'KFMBDT2', '51.3': 'KFMBDT3', '51.4': 'KFMBDT4', '51.5': 'KFMBDT5', '51.6': 'KFMBDT6',
-                                '69.1': 'KSWBDT', '69.2': 'KSWBDT2', '69.3': 'KSWBDT3', '69.4': 'KSWBDT4'
-                              };
-                              if (channelToLogoMapping[guideNumber]) {
-                                return channelToLogoMapping[guideNumber];
-                              }
-                              return guideName.split('-')[0].replace(/[^A-Z0-9]/g, '');
-                            };
-                            const logoKey = getChannelLogo(selectedChannel.GuideNumber, selectedChannel.GuideName);
-                            const channelLogo = CHANNEL_LOGOS[logoKey];
-                            return (
-                              <div className="h-12 w-12 bg-white rounded flex items-center justify-center overflow-hidden flex-shrink-0">
-                                {channelLogo ? (
-                                  <img 
-                                    src={channelLogo}
-                                    alt={selectedChannel.GuideName}
-                                    className="w-full h-full object-contain p-1"
-                                    loading="eager"
-                                    onError={(e) => {
-                                      e.currentTarget.style.display = 'none';
-                                      e.currentTarget.nextElementSibling?.classList.remove('hidden');
-                                    }}
-                                  />
-                                ) : null}
-                                <div className={`p-1.5 rounded bg-gradient-to-br from-blue-500 to-blue-600 ${channelLogo ? 'hidden' : 'flex'}`}>
-                                  <Tv className="h-5 w-5 text-white" />
-                                </div>
-                              </div>
-                            );
-                          })()}
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <div className="text-lg font-bold truncate">{selectedChannel.GuideName}</div>
-                          <CurrentProgram channelName={selectedChannel.GuideName} />
-                        </div>
-                      </div>
-                      {currentSession && (
-                        <div className="flex items-center gap-1 px-2 py-1 rounded-full bg-green-500/10 border border-green-500/20 flex-shrink-0">
-                          <div className="h-1.5 w-1.5 bg-green-500 rounded-full animate-pulse"></div>
-                          <span className="text-xs font-medium text-green-700 dark:text-green-400">Live</span>
-                        </div>
-                      )}
-                    </div>
-                  ) : (
-                    <div className="text-lg font-bold text-muted-foreground">Select a channel to start watching</div>
-                  )}
-                </CardHeader>
                 <CardContent className="p-0">
-                  <div 
+                  <div
                     ref={fullscreenContainerRef}
                     className={cn(
                       "relative bg-black overflow-hidden cursor-pointer",
-                      isFullscreen ? "w-full h-full flex items-center justify-center" : "aspect-video rounded-b-lg"
+                      isFullscreen ? "w-full h-full flex items-center justify-center" : "w-full rounded-b-lg",
+                      !isFullscreen && "min-h-[400px] max-h-[calc(100vh-400px)]"
                     )}
+                    style={!isFullscreen ? { height: 'calc(100vh - 350px)' } : undefined}
                     onMouseMove={showControlsTemporarily}
                     onMouseEnter={() => setShowControls(true)}
                     onMouseLeave={() => !isFullscreen && setShowControls(false)}
@@ -1515,6 +1862,104 @@ export default function LiveTVPage() {
                     >
                       Your browser does not support the video tag.
                     </video>
+
+                    {/* Buffering Indicator */}
+                    {(isBuffering || isLoading) && (
+                      <div className="absolute inset-0 flex items-center justify-center bg-black/40 backdrop-blur-sm">
+                        <div className="flex flex-col items-center gap-3">
+                          <Loader2 className="h-12 w-12 animate-spin text-white" />
+                          <p className="text-white text-sm font-medium">
+                            {isLoading ? 'Loading stream...' : 'Buffering...'}
+                          </p>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Channel Info Overlay - Shows on hover */}
+                    {selectedChannel && (
+                      <div className={cn(
+                        "absolute top-0 left-0 right-0 bg-gradient-to-b from-black/80 via-black/40 to-transparent",
+                        "transition-opacity duration-300 pointer-events-none",
+                        showControls || !isPlaying ? "opacity-100" : "opacity-0"
+                      )}>
+                        <div className={cn(
+                          "flex items-center justify-between p-4",
+                          isFullscreen && "p-6"
+                        )}>
+                          <div className="flex items-center gap-3">
+                            <div className="flex items-center gap-2">
+                              <span className="text-xl font-bold text-blue-400">{selectedChannel.GuideNumber}</span>
+                              {(() => {
+                                // For IPTV channels, use the logo property directly
+                                let channelLogo = selectedChannel.logo;
+
+                                // For HDHomeRun channels, use the mapping
+                                if (!channelLogo && selectedChannel.source === 'hdhomerun') {
+                                  const getChannelLogo = (guideNumber: string, guideName: string) => {
+                                    const channelToLogoMapping: Record<string, string> = {
+                                      '10.1': 'KGTVDT', '10.2': 'KGTVDT2', '10.3': 'KGTVDT3', '10.4': 'KGTVDT4', '10.5': 'KGTVDT5', '10.6': 'KGTVDT6', '10.7': 'KGTVDT7',
+                                      '15.1': 'KPBSDT', '15.2': 'KPBSDT2', '15.3': 'KPBSDT3', '15.4': 'KPBSDT4',
+                                      '39.1': 'KNSDDT', '39.2': 'KNSDDT2', '39.3': 'KNSDDT3', '39.4': 'KNSDDT4',
+                                      '51.1': 'KFMBDT', '51.2': 'KFMBDT2', '51.3': 'KFMBDT3', '51.4': 'KFMBDT4', '51.5': 'KFMBDT5', '51.6': 'KFMBDT6',
+                                      '69.1': 'KSWBDT', '69.2': 'KSWBDT2', '69.3': 'KSWBDT3', '69.4': 'KSWBDT4'
+                                    };
+                                    if (channelToLogoMapping[guideNumber]) {
+                                      return channelToLogoMapping[guideNumber];
+                                    }
+                                    return guideName.split('-')[0].replace(/[^A-Z0-9]/g, '');
+                                  };
+                                  const logoKey = getChannelLogo(selectedChannel.GuideNumber, selectedChannel.GuideName);
+                                  channelLogo = CHANNEL_LOGOS[logoKey];
+                                }
+
+                                return (
+                                  <div className="h-12 w-12 rounded flex items-center justify-center overflow-hidden flex-shrink-0 bg-black/30">
+                                    {channelLogo ? (
+                                      <img
+                                        src={channelLogo}
+                                        alt={selectedChannel.GuideName}
+                                        className="w-full h-full object-contain"
+                                        loading="eager"
+                                        onError={(e) => {
+                                          e.currentTarget.style.display = 'none';
+                                          e.currentTarget.nextElementSibling?.classList.remove('hidden');
+                                        }}
+                                      />
+                                    ) : null}
+                                    <div className={`p-1.5 rounded bg-gradient-to-br from-blue-500 to-blue-600 ${channelLogo ? 'hidden' : 'flex'}`}>
+                                      <Tv className="h-5 w-5 text-white" />
+                                    </div>
+                                  </div>
+                                );
+                              })()}
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <div className="text-lg font-bold text-white truncate">{selectedChannel.GuideName}</div>
+                              <div className="text-sm text-white/80">
+                                {selectedChannelProgramLoading ? (
+                                  "Loading current show..."
+                                ) : selectedChannelProgram ? (
+                                  <div>
+                                    <div className="font-medium">{selectedChannelProgram.title}</div>
+                                    {selectedChannelProgram.episodeTitle && (
+                                      <div className="text-xs text-white/60">{selectedChannelProgram.episodeTitle}</div>
+                                    )}
+                                  </div>
+                                ) : (
+                                  "Live Television"
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                          {currentSession && (
+                            <div className="flex items-center gap-1 px-3 py-1.5 rounded-full bg-green-500/20 border border-green-500/40 flex-shrink-0">
+                              <div className="h-2 w-2 bg-green-400 rounded-full animate-pulse"></div>
+                              <span className="text-sm font-medium text-green-300">Live</span>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    )}
 
                     {/* Custom Video Controls */}
                     {selectedChannel && (
@@ -1610,187 +2055,102 @@ export default function LiveTVPage() {
                   </div>
                 </CardContent>
               </Card>
+          </motion.div>
 
-            </motion.div>
-
-            {/* Channel Lineup */}
-            <motion.div 
-              className="lg:col-span-1"
-              initial={{ opacity: 0, x: 20 }}
-              animate={{ opacity: 1, x: 0 }}
-              transition={{ duration: 0.5, delay: 0.3 }}
-            >
-              <Card className="bg-card border flex flex-col" style={{ height: '520px' }}>
-                <CardHeader className="pb-3">
-                  <div className="flex items-center justify-between">
-                    <CardTitle className="text-lg flex items-center gap-2">
-                      <Tv className="h-5 w-5 text-blue-500" />
-                      Channel Lineup
-                    </CardTitle>
-                    <Badge variant="outline">{availableChannels.length} available channels</Badge>
-                  </div>
-                </CardHeader>
-                <CardContent className="p-3 flex flex-col flex-1 min-h-0">
-                  {(channelsLoading || iptvChannelsLoading) ? (
-                    <div className="flex-1 flex items-center justify-center text-muted-foreground">
-                      <div className="text-center">
-                        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto mb-2"></div>
-                        Loading channels...
-                      </div>
-                    </div>
-                  ) : availableChannels.length === 0 ? (
-                    <div className="flex-1 flex items-center justify-center text-muted-foreground">
-                      No channels available
-                    </div>
-                  ) : (
-                    <div className="flex-1 flex flex-col gap-1.5 overflow-y-auto">
-                      {availableChannels.map((channel, index) => (
-                        <motion.div
-                          key={`${channel.source}-${channel.GuideNumber}`}
-                          initial={{ opacity: 0, x: -10 }}
-                          animate={{ opacity: 1, x: 0 }}
-                          transition={{ duration: 0.3, delay: 0.5 + (index * 0.02) }}
-                        >
-                          <ChannelListItem
-                            channel={channel}
-                            selectedChannel={selectedChannel}
-                            onChannelSelect={handleChannelSelect}
-                            useChannelProgram={useChannelProgram}
-                          />
-                        </motion.div>
-                      ))}
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
-            </motion.div>
-          </div>
-          
-          {/* Tuner Status - Compact Row Below */}
+          {/* Channel Guide - EPG Style Timeline */}
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.5, delay: 0.4 }}
           >
             <Card className="bg-card border">
-            <CardHeader className="pb-2">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <Signal className="h-4 w-4 text-blue-500" />
-                  <CardTitle className="text-base">TV Tuners</CardTitle>
+              <CardHeader className="pb-3">
+                <div className="flex flex-col gap-3">
+                  <div className="flex items-center justify-between">
+                    <CardTitle className="text-lg flex items-center gap-2">
+                      <Tv className="h-5 w-5 text-blue-500" />
+                      Channel Guide
+                    </CardTitle>
+                    <div className="flex items-center gap-2">
+                      <Badge variant="outline">{availableChannels.length} channels</Badge>
+                    </div>
+                  </div>
+                  <div className="relative">
+                    <input
+                      type="text"
+                      placeholder="Search by channel number or name..."
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      className="w-full px-3 py-2 pl-9 rounded-md border border-border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                    <Tv className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
+                  </div>
                 </div>
-                <Badge variant="outline" className="text-xs">
-                  {tunersData?.tuners.length || 0}/{deviceInfo?.device?.TunerCount || 0} tuners
-                </Badge>
-              </div>
-            </CardHeader>
-            <CardContent className="pt-0">
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                {tunersData?.tuners?.map((tuner, index) => {
-                  const isInUse = tuner.InUse || 
-                                  tuner.VctNumber || 
-                                  tuner.VctName || 
-                                  tuner.Frequency > 0 ||
-                                  tuner.TargetIP;
-                  
-                  return (
-                    <motion.div 
-                      key={tuner.Resource}
-                      initial={{ opacity: 0, y: 10 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      transition={{ duration: 0.3, delay: 0.6 + (index * 0.1) }}
-                      className={cn(
-                        "p-3 rounded-lg border transition-all duration-300 hover:shadow-sm",
-                        isInUse 
-                          ? "bg-gradient-to-r from-orange-50 to-red-50 border-orange-200 dark:from-orange-950/20 dark:to-red-950/20 dark:border-orange-800" 
-                          : "bg-gradient-to-r from-green-50 to-emerald-50 border-green-200 dark:from-green-950/20 dark:to-emerald-950/20 dark:border-green-800"
-                      )}
-                    >
-                      <div className="flex items-center justify-between mb-2">
-                        <div className="flex items-center gap-2">
-                          <Tv className={cn(
-                            "h-4 w-4",
-                            isInUse ? "text-orange-600 dark:text-orange-400" : "text-green-600 dark:text-green-400"
-                          )} />
-                          <span className="font-semibold text-sm">
-                            Tuner {tuner.Resource?.replace('tuner', '')}
-                          </span>
+              </CardHeader>
+              <CardContent className="pt-0">
+                {/* Time Header */}
+                <div className="sticky top-0 z-10 bg-background border-b-2 border-border flex overflow-x-auto">
+                  <div className="w-40 flex-shrink-0 p-2 border-r border-border">
+                    <div className="text-xs font-bold">Channel</div>
+                  </div>
+                  <div className="flex-1 p-2">
+                    <div className="relative h-8 flex w-full">
+                      {[0, 1, 2, 3].map((hour) => {
+                        const time = new Date();
+                        time.setMinutes(0, 0, 0);
+                        time.setHours(time.getHours() + hour);
+                        return (
+                          <div
+                            key={hour}
+                            className="border-r border-border flex items-center justify-center text-xs font-semibold flex-1 min-w-[180px]"
+                          >
+                            {time.toLocaleTimeString('en-US', { hour: 'numeric', hour12: true })}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </div>
+                {/* Channel Rows */}
+                <div className="max-h-[600px] overflow-y-auto overflow-x-auto">
+                  {(channelsLoading || iptvChannelsLoading) ? (
+                    // Loading skeleton
+                    Array.from({ length: 10 }).map((_, index) => (
+                      <div key={index} className="flex items-center gap-3 p-3 border-b border-border">
+                        <Skeleton className="h-12 w-12 rounded" />
+                        <div className="flex-1">
+                          <Skeleton className="h-4 w-32 mb-2" />
+                          <Skeleton className="h-3 w-24" />
                         </div>
-                        <Badge 
-                          variant="outline" 
-                          className={cn(
-                            "font-semibold text-xs px-2 py-0.5",
-                            isInUse 
-                              ? "bg-orange-100 text-orange-700 border-orange-300 dark:bg-orange-900/50 dark:text-orange-300 dark:border-orange-700" 
-                              : "bg-green-100 text-green-700 border-green-300 dark:bg-green-900/50 dark:text-green-300 dark:border-green-700"
-                          )}
-                        >
-                          {isInUse ? "Active" : "Free"}
-                        </Badge>
+                        <Skeleton className="h-8 flex-1 max-w-[800px]" />
                       </div>
-                      
-                      {isInUse ? (
-                        <div className="space-y-2">
-                          <div className="text-sm font-medium truncate">
-                            {tuner.VctNumber ? `Ch ${tuner.VctNumber}` : 'Active'} • {tuner.VctName || 'Unknown'}
-                          </div>
-                          
-                          <div className="flex gap-3 text-xs">
-                            {tuner.SignalStrengthPercent > 0 && (
-                              <div className="flex-1">
-                                <div className="flex items-center justify-between mb-1">
-                                  <span className="text-muted-foreground font-medium">Signal</span>
-                                  <span className="font-semibold">{tuner.SignalStrengthPercent}%</span>
-                                </div>
-                                <div className="w-full bg-muted rounded-full h-1.5">
-                                  <div 
-                                    className={cn(
-                                      "h-1.5 rounded-full transition-all duration-300",
-                                      tuner.SignalStrengthPercent >= 80 ? "bg-green-500" :
-                                      tuner.SignalStrengthPercent >= 60 ? "bg-yellow-500" : 
-                                      tuner.SignalStrengthPercent >= 40 ? "bg-orange-500" : "bg-red-500"
-                                    )}
-                                    style={{ width: `${Math.max(tuner.SignalStrengthPercent, 8)}%` }}
-                                  />
-                                </div>
-                              </div>
-                            )}
-                            
-                            {tuner.SignalQualityPercent > 0 && (
-                              <div className="flex-1">
-                                <div className="flex items-center justify-between mb-1">
-                                  <span className="text-muted-foreground font-medium">Quality</span>
-                                  <span className="font-semibold">{tuner.SignalQualityPercent}%</span>
-                                </div>
-                                <div className="w-full bg-muted rounded-full h-1.5">
-                                  <div 
-                                    className={cn(
-                                      "h-1.5 rounded-full transition-all duration-300",
-                                      tuner.SignalQualityPercent >= 80 ? "bg-green-500" :
-                                      tuner.SignalQualityPercent >= 60 ? "bg-yellow-500" : 
-                                      tuner.SignalQualityPercent >= 40 ? "bg-orange-500" : "bg-red-500"
-                                    )}
-                                    style={{ width: `${Math.max(tuner.SignalQualityPercent, 8)}%` }}
-                                  />
-                                </div>
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                      ) : (
-                        <div className="text-xs text-muted-foreground font-medium">
-                          Available for streaming
-                        </div>
-                      )}
-                    </motion.div>
-                  );
-                })}
-              </div>
-            </CardContent>
-          </Card>
+                    ))
+                  ) : (
+                    availableChannels.map((channel) => {
+                      const isFavorite = favoriteChannels.some(fav => fav.channelId === (channel.iptvId || channel.GuideNumber));
+                      const channelKey = channel.iptvId || channel.GuideNumber;
+                      const programs = epgDataMap.get(channelKey) || [];
+                      return (
+                        <ChannelGuideRow
+                          key={`${channel.source}-${channel.GuideNumber}`}
+                          channel={channel}
+                          selectedChannel={selectedChannel}
+                          onChannelSelect={handleChannelSelect}
+                          programs={programs}
+                          isLoading={false}
+                          onToggleFavorite={handleToggleFavorite}
+                          isFavorite={isFavorite}
+                        />
+                      );
+                    })
+                  )}
+                </div>
+              </CardContent>
+            </Card>
           </motion.div>
         </div>
       </motion.div>
     </motion.div>
+    </TooltipProvider>
   );
 }
