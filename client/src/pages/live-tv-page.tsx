@@ -81,6 +81,7 @@ interface EPGProgram {
   description?: string;
   startTime: Date;
   endTime: Date;
+  isNew?: boolean;
   isLive?: boolean;
 }
 
@@ -359,7 +360,14 @@ function ChannelGuideRow({ channel, selectedChannel, onChannelSelect, programs =
                       )}
                       style={style}
                     >
-                      <div className="text-xs font-medium truncate">{prog.title}</div>
+                      <div className="flex items-center gap-1 mb-0.5">
+                        <div className="text-xs font-medium truncate">{prog.title}</div>
+                        {prog.isNew && (
+                          <span className="text-[9px] px-1 py-0.5 rounded bg-orange-500/20 text-orange-400 font-medium flex-shrink-0 leading-none">
+                            New
+                          </span>
+                        )}
+                      </div>
                       {prog.episodeTitle && (
                         <div className="text-[10px] text-muted-foreground truncate">{prog.episodeTitle}</div>
                       )}
@@ -371,7 +379,14 @@ function ChannelGuideRow({ channel, selectedChannel, onChannelSelect, programs =
                   </TooltipTrigger>
                   <TooltipContent side="top" className="max-w-sm z-50">
                     <div className="space-y-1">
-                      <div className="font-semibold">{prog.title}</div>
+                      <div className="flex items-center gap-2">
+                        <div className="font-semibold">{prog.title}</div>
+                        {prog.isNew && (
+                          <span className="text-[10px] px-1.5 py-0.5 rounded bg-orange-500/20 text-orange-400 font-medium leading-none">
+                            New
+                          </span>
+                        )}
+                      </div>
                       {prog.episodeTitle && (
                         <div className="text-sm text-muted-foreground">{prog.episodeTitle}</div>
                       )}
@@ -637,12 +652,19 @@ function ChannelListItem({ channel, selectedChannel, onChannelSelect, program, i
           </div>
         ) : program ? (
           <>
-            <div className={cn(
-              "text-xs mt-0.5 truncate",
-              isSelected ? "text-white/80" : "text-muted-foreground"
-            )}>
-              {program.title}
-              {program.episodeTitle && ` • ${program.episodeTitle}`}
+            <div className="flex items-center gap-1.5 mt-0.5">
+              <div className={cn(
+                "text-xs truncate",
+                isSelected ? "text-white/80" : "text-muted-foreground"
+              )}>
+                {program.title}
+                {program.episodeTitle && ` • ${program.episodeTitle}`}
+              </div>
+              {program.isNew && (
+                <span className="text-[9px] px-1 py-0.5 rounded bg-orange-500/20 text-orange-400 font-medium flex-shrink-0 leading-none">
+                  New
+                </span>
+              )}
             </div>
             <div className={cn(
               "text-[10px] mt-0.5",
@@ -1954,7 +1976,14 @@ export default function LiveTVPage() {
                                   "Loading current show..."
                                 ) : selectedChannelProgram ? (
                                   <div>
-                                    <div className="font-medium">{selectedChannelProgram.title}</div>
+                                    <div className="flex items-center gap-2">
+                                      <div className="font-medium">{selectedChannelProgram.title}</div>
+                                      {selectedChannelProgram.isNew && (
+                                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-orange-500/20 text-orange-400 font-medium leading-none">
+                                          New
+                                        </span>
+                                      )}
+                                    </div>
                                     {selectedChannelProgram.episodeTitle && (
                                       <div className="text-xs text-white/60">{selectedChannelProgram.episodeTitle}</div>
                                     )}
