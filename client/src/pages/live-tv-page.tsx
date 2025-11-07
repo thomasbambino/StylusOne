@@ -998,10 +998,16 @@ export default function LiveTVPage() {
   useEffect(() => {
     let pollInterval: NodeJS.Timeout | null = null;
     let attempts = 0;
-    const maxAttempts = 50; // Try for 5 seconds (50 * 100ms)
+    const maxAttempts = 150; // Try for 15 seconds (150 * 100ms)
 
     const initializeCast = () => {
       const cast = (window as any).chrome?.cast;
+
+      // Debug logging every 50 attempts (every 5 seconds)
+      if (attempts % 50 === 0 && attempts > 0) {
+        console.log(`🔍 Cast SDK check (${attempts/10}s): chrome.cast=${!!cast}, chrome.cast.framework=${!!cast?.framework}`);
+      }
+
       if (!cast || !cast.framework) {
         return false;
       }
@@ -1075,7 +1081,9 @@ export default function LiveTVPage() {
         }
       } else if (attempts >= maxAttempts) {
         // Timeout - give up
-        console.warn('⚠️ Cast SDK did not load after 5 seconds');
+        const cast = (window as any).chrome?.cast;
+        console.warn('⚠️ Cast SDK did not load after 15 seconds');
+        console.warn(`   chrome.cast: ${!!cast}, chrome.cast.framework: ${!!cast?.framework}`);
         if (pollInterval) {
           clearInterval(pollInterval);
           pollInterval = null;
