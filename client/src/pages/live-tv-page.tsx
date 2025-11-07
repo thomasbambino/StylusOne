@@ -127,6 +127,7 @@ interface UnifiedChannel {
   DRM: boolean;
   logo?: string;
   iptvId?: string;
+  epgId?: string;
   categoryName?: string;
 }
 
@@ -826,12 +827,15 @@ export default function LiveTVPage() {
   };
 
   // Fetch current program for selected channel - MUST be before any early returns
-  const selectedChannelKey = selectedChannel?.iptvId || selectedChannel?.GuideNumber;
+  // For IPTV channels, use epgId (the XMLTV channel ID), for HDHomeRun use GuideNumber
+  const selectedChannelKey = selectedChannel?.source === 'iptv'
+    ? selectedChannel?.epgId
+    : selectedChannel?.GuideNumber;
   const { data: selectedChannelProgram, isLoading: selectedChannelProgramLoading } = useQuery({
     queryKey: ['epg', 'current', selectedChannelKey],
     queryFn: async () => {
       if (!selectedChannel || !selectedChannelKey) return null;
-      console.log('[CurrentProgram] Fetching program for channel:', selectedChannelKey);
+      console.log('[CurrentProgram] Fetching program for channel:', selectedChannelKey, 'source:', selectedChannel.source);
       const response = await fetch(`/api/epg/current/${encodeURIComponent(selectedChannelKey)}`);
       if (!response.ok) {
         console.error('[CurrentProgram] Failed to fetch program data:', response.status);
@@ -873,6 +877,7 @@ export default function LiveTVPage() {
     DRM: false,
     logo: ch.logo,
     iptvId: ch.id,
+    epgId: ch.epgId,
     categoryName: ch.categoryName
   }));
 
@@ -881,9 +886,11 @@ export default function LiveTVPage() {
   // Fetch EPG data for all channels using useQueries - MUST be before early returns
   const epgQueries = useQueries({
     queries: allChannels.map((channel) => ({
-      queryKey: ['epg', 'upcoming', channel.iptvId || channel.GuideNumber],
+      queryKey: ['epg', 'upcoming', channel.source === 'iptv' ? channel.epgId : channel.GuideNumber],
       queryFn: async () => {
-        const channelKey = channel.iptvId || channel.GuideNumber;
+        // For IPTV channels, use epgId (XMLTV channel ID), for HDHomeRun use GuideNumber
+        const channelKey = channel.source === 'iptv' ? channel.epgId : channel.GuideNumber;
+        if (!channelKey) return [];
         const response = await fetch(`/api/epg/upcoming/${encodeURIComponent(channelKey)}`);
         if (!response.ok) return [];
         const data = await response.json();
@@ -897,8 +904,11 @@ export default function LiveTVPage() {
   // Create a map of channel ID/number to EPG data
   const epgDataMap = new Map<string, EPGProgram[]>();
   allChannels.forEach((channel, index) => {
-    const channelKey = channel.iptvId || channel.GuideNumber;
-    epgDataMap.set(channelKey, epgQueries[index]?.data || []);
+    // Use epgId for IPTV channels, GuideNumber for HDHomeRun
+    const channelKey = channel.source === 'iptv' ? channel.epgId : channel.GuideNumber;
+    if (channelKey) {
+      epgDataMap.set(channelKey, epgQueries[index]?.data || []);
+    }
   });
 
   // Auto-select first channel on load is disabled - users must manually select a channel
