@@ -55,7 +55,7 @@ const FavoriteChannelItem = React.memo(function FavoriteChannelItem({
   program
 }: {
   favorite: { id: number, channelId: string, channelName: string, channelLogo: string | null },
-  program?: { title?: string, startTime?: string, endTime?: string } | null
+  program?: { title?: string, startTime?: string, endTime?: string, isNew?: boolean } | null
 }) {
   return (
     <div className="bg-accent/10 rounded-lg p-3 border border-border/50">
@@ -78,8 +78,15 @@ const FavoriteChannelItem = React.memo(function FavoriteChannelItem({
         </div>
         <div className="flex-1 min-w-0">
           <div className="text-xs font-bold truncate" style={{ lineHeight: '1', display: 'block' }}>{favorite.channelName}</div>
-          <div className="text-xs text-muted-foreground truncate mt-1" style={{ lineHeight: '1', display: 'block' }}>
-            {program?.title || 'Loading...'}
+          <div className="flex items-center gap-1.5 mt-1">
+            <div className="text-xs text-muted-foreground truncate" style={{ lineHeight: '1', display: 'block' }}>
+              {program?.title || 'Loading...'}
+            </div>
+            {program?.isNew && (
+              <span className="text-[10px] px-1.5 py-0.5 rounded bg-orange-500/20 text-orange-400 font-medium flex-shrink-0" style={{ lineHeight: '1' }}>
+                New
+              </span>
+            )}
           </div>
           {program?.startTime && program?.endTime && (
             <div className="text-[10px] text-muted-foreground mt-1" style={{ lineHeight: '1', display: 'block' }}>

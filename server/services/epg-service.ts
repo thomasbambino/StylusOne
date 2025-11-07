@@ -113,8 +113,9 @@ export class EPGService implements IService {
         const programs: EPGProgram[] = [];
         
         for (const prog of result.tv.programme) {
-          // Clean title by removing superscript Unicode characters (ᴺᵉʷ, etc.)
+          // Clean title by removing superscript Unicode characters (ᴺᵉʷ, etc.) but detect them first
           const rawTitle = prog.title?.[0]?._ || prog.title?.[0] || 'Unknown';
+          const hasSuperscriptNew = /[\u1D2C-\u1D6A\u02B0-\u02FF]+/.test(rawTitle);
           const cleanTitle = rawTitle
             .replace(/[\u1D2C-\u1D6A\u02B0-\u02FF]/g, '') // Remove superscript characters
             .trim();
@@ -129,6 +130,7 @@ export class EPGService implements IService {
             endTime: this.parseXMLTVDate(prog.$.stop),
             thumbnail: prog.icon?.[0]?.$.src,
             categories: prog.category?.map(c => c._ || c),
+            isNew: hasSuperscriptNew,
             isLive: this.isCurrentTime(this.parseXMLTVDate(prog.$.start), this.parseXMLTVDate(prog.$.stop))
           };
 
@@ -354,8 +356,9 @@ export class EPGService implements IService {
         const programs: EPGProgram[] = [];
 
         for (const prog of result.tv.programme) {
-          // Clean title by removing superscript Unicode characters (ᴺᵉʷ, etc.)
+          // Clean title by removing superscript Unicode characters (ᴺᵉʷ, etc.) but detect them first
           const rawTitle = prog.title?.[0]?._ || prog.title?.[0] || 'Unknown';
+          const hasSuperscriptNew = /[\u1D2C-\u1D6A\u02B0-\u02FF]+/.test(rawTitle);
           const cleanTitle = rawTitle
             .replace(/[\u1D2C-\u1D6A\u02B0-\u02FF]/g, '') // Remove superscript characters
             .trim();
@@ -370,6 +373,7 @@ export class EPGService implements IService {
             endTime: this.parseXMLTVDate(prog.$.stop),
             thumbnail: prog.icon?.[0]?.$.src,
             categories: prog.category?.map(c => c._ || c),
+            isNew: hasSuperscriptNew,
             isLive: this.isCurrentTime(this.parseXMLTVDate(prog.$.start), this.parseXMLTVDate(prog.$.stop))
           };
 
