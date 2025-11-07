@@ -12,6 +12,19 @@ export function ProtectedRoute({
 }) {
   const { user, isLoading } = useAuth();
 
+  // IMPORTANT: All hooks must be called before any conditional returns
+  const { data: settings } = useQuery({
+    queryKey: ["/api/settings"],
+    queryFn: async () => {
+      const response = await fetch("/api/settings");
+      if (!response.ok) {
+        throw new Error("Failed to fetch settings");
+      }
+      return response.json();
+    },
+    enabled: !!user?.approved, // Only fetch when user is approved
+  });
+
   if (isLoading) {
     return (
       <div className="flex items-center justify-center min-h-screen">
@@ -27,17 +40,6 @@ export function ProtectedRoute({
   if (!user.approved) {
     return <Redirect to="/pending" />;
   }
-
-  const { data: settings } = useQuery({
-    queryKey: ["/api/settings"],
-    queryFn: async () => {
-      const response = await fetch("/api/settings");
-      if (!response.ok) {
-        throw new Error("Failed to fetch settings");
-      }
-      return response.json();
-    },
-  });
 
   return (
     <>
