@@ -2213,10 +2213,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
     if (!req.isAuthenticated()) return res.sendStatus(401);
 
     try {
-      const { favoriteChannels } = await import('@shared/schema');
+      const { favoriteChannels, users } = await import('@shared/schema');
       const { eq } = await import('drizzle-orm');
 
-      const favorites = await db.select().from(favoriteChannels).where(eq(favoriteChannels.userId, req.user!.id));
+      // First, try to get the user's own favorites
+      let favorites = await db.select().from(favoriteChannels).where(eq(favoriteChannels.userId, req.user!.id));
+
+      // If the user has no favorites, fall back to the superadmin's favorites
+      if (favorites.length === 0) {
+        const superadmin = await db.select().from(users).where(eq(users.role, 'superadmin')).limit(1);
+        if (superadmin.length > 0) {
+          favorites = await db.select().from(favoriteChannels).where(eq(favoriteChannels.userId, superadmin[0].id));
+        }
+      }
+
       res.json(favorites);
     } catch (error) {
       console.error('Error fetching favorite channels:', error);
