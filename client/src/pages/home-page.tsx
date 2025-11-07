@@ -77,12 +77,12 @@ const FavoriteChannelItem = React.memo(function FavoriteChannelItem({
           </div>
         </div>
         <div className="flex-1 min-w-0">
-          <div className="text-xs font-bold truncate">{favorite.channelName}</div>
-          <div className="text-xs text-muted-foreground truncate">
+          <div className="text-xs font-bold truncate leading-none">{favorite.channelName}</div>
+          <div className="text-xs text-muted-foreground truncate leading-none mt-1">
             {program?.title || 'Loading...'}
           </div>
           {program?.startTime && program?.endTime && (
-            <div className="text-[10px] text-muted-foreground">
+            <div className="text-[10px] text-muted-foreground leading-none mt-1">
               {new Date(program.startTime).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })} -
               {new Date(program.endTime).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })}
             </div>
