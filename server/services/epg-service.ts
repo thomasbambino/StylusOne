@@ -216,15 +216,15 @@ export class EPGService implements IService {
   }
 
   /**
-   * Get upcoming programs for a channel
+   * Get upcoming programs for a channel (includes currently playing program)
    */
   getUpcomingPrograms(channelId: string, hours: number = 3): EPGProgram[] {
     const now = new Date();
     const endTime = new Date(now.getTime() + hours * 60 * 60 * 1000);
-    
+
     // Try direct lookup first
     let programs = this.programCache.get(channelId) || [];
-    
+
     // If no programs found, try using channel mapping
     if (programs.length === 0) {
       const mappedChannelId = this.mapChannel(channelId);
@@ -232,9 +232,10 @@ export class EPGService implements IService {
         programs = this.programCache.get(mappedChannelId) || [];
       }
     }
-    
-    return programs.filter(p => 
-      p.startTime >= now && p.startTime < endTime
+
+    // Include currently playing program (endTime > now) plus upcoming programs (startTime < endTime)
+    return programs.filter(p =>
+      p.endTime > now && p.startTime < endTime
     ).sort((a, b) => a.startTime.getTime() - b.startTime.getTime());
   }
 
