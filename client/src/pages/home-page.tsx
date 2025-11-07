@@ -677,21 +677,57 @@ export default function HomePage() {
                 </Badge>
               </div>
             </CardHeader>
-            <CardContent>
+            <CardContent className="flex flex-col flex-1">
               <div className="flex-1 space-y-4">
                 {liveTVChannels && liveTVChannels.length > 0 ? (
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="text-center">
-                      <div className="text-2xl font-bold">{liveTVChannels.length}</div>
-                      <div className="text-xs text-muted-foreground">Channels</div>
-                    </div>
-                    <div className="text-center">
-                      <div className="text-2xl font-bold">
-                        {liveTVChannels.filter((ch: any) => ch.HD).length}
+                  <>
+                    <div className="grid grid-cols-3 gap-4">
+                      <div className="text-center">
+                        <div className="text-2xl font-bold">{liveTVChannels.length}</div>
+                        <div className="text-xs text-muted-foreground">Channels</div>
                       </div>
-                      <div className="text-xs text-muted-foreground">HD Channels</div>
+                      <div className="text-center">
+                        <div className="text-2xl font-bold">{favoriteChannels.length}</div>
+                        <div className="text-xs text-muted-foreground">Favorites</div>
+                      </div>
+                      <div className="text-center">
+                        <div className="text-2xl font-bold">
+                          {iptvStatus?.userInfo?.status === 'Active' ? 'Active' : 'Inactive'}
+                        </div>
+                        <div className="text-xs text-muted-foreground">Status</div>
+                      </div>
                     </div>
-                  </div>
+
+                    {/* Favorite Channels Now Playing - Show up to 3 like Game Servers */}
+                    {favoriteChannels.length > 0 && (
+                      <div className="space-y-2 flex-1">
+                        <p className="text-xs text-muted-foreground">Now Playing (Favorites)</p>
+                        <div className="space-y-2 min-h-[180px]">
+                          {[0, 1, 2].map((index) => {
+                            const fav = favoriteChannels[index];
+                            if (!fav) {
+                              return (
+                                <div key={`empty-${index}`} className="bg-accent/5 rounded-lg p-3 border border-dashed border-border/30 min-h-[60px] flex items-center justify-center">
+                                  {index === 0 && (
+                                    <div className="text-center text-muted-foreground">
+                                      <p className="text-xs">Add more favorites</p>
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            }
+                            return (
+                              <FavoriteChannelItem
+                                key={fav.id}
+                                favorite={fav}
+                                program={favoriteProgramsData[fav.channelId]}
+                              />
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
+                  </>
                 ) : (
                   <div className="text-center py-4 text-muted-foreground">
                     <Tv className="h-8 w-8 mx-auto mb-2 opacity-50" />
@@ -699,36 +735,6 @@ export default function HomePage() {
                     <p className="text-xs mt-1">Check IPTV connection</p>
                   </div>
                 )}
-
-                {/* Favorite Channels Now Playing - Always render to maintain consistent hook calls */}
-                <div className="space-y-3">
-                  <p className="text-xs text-muted-foreground font-medium">Now Playing (Favorites)</p>
-                  <div className="grid grid-cols-1 gap-2">
-                    {[0, 1, 2, 3, 4].map((index) => {
-                      const fav = favoriteChannels[index];
-                      if (!fav) {
-                        // Empty slot - always render to maintain consistent component count
-                        return (
-                          <div key={`empty-${index}`} className="bg-accent/5 rounded-lg p-3 border border-dashed border-border/30 min-h-[60px] flex items-center justify-center">
-                            {index === 0 && favoriteChannels.length === 0 && (
-                              <div className="text-center text-muted-foreground">
-                                <p className="text-xs">No favorite channels</p>
-                                <p className="text-[10px] mt-1">Right-click IPTV channels to add favorites</p>
-                              </div>
-                            )}
-                          </div>
-                        );
-                      }
-                      return (
-                        <FavoriteChannelItem
-                          key={fav.id}
-                          favorite={fav}
-                          program={favoriteProgramsData[fav.channelId]}
-                        />
-                      );
-                    })}
-                  </div>
-                </div>
               </div>
 
               {/* Action Buttons */}
