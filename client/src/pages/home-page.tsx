@@ -669,7 +669,7 @@ export default function HomePage() {
                   </div>
                   <div>
                     <CardTitle>Live TV</CardTitle>
-                    <CardDescription>IPTV Streaming</CardDescription>
+                    <CardDescription>Live Television</CardDescription>
                   </div>
                 </div>
                 <Badge className="bg-blue-500/10 text-blue-500 border-blue-500/20">
@@ -681,6 +681,23 @@ export default function HomePage() {
               <div className="flex-1 space-y-4">
                 {liveTVChannels && liveTVChannels.length > 0 ? (
                   <>
+                    <div className="grid grid-cols-3 gap-4">
+                      <div className="text-center">
+                        <div className="text-2xl font-bold">{liveTVChannels.length}</div>
+                        <div className="text-xs text-muted-foreground">Channels</div>
+                      </div>
+                      <div className="text-center">
+                        <div className="text-2xl font-bold">
+                          {new Set(liveTVChannels.map((ch: any) => ch.categoryName)).size}
+                        </div>
+                        <div className="text-xs text-muted-foreground">Categories</div>
+                      </div>
+                      <div className="text-center">
+                        <div className="text-2xl font-bold">{favoriteChannels.length}</div>
+                        <div className="text-xs text-muted-foreground">Favorites</div>
+                      </div>
+                    </div>
+
                     {/* Favorite Channels - Show up to 3 */}
                     {favoriteChannels.length > 0 && (
                       <div className="space-y-2 flex-1">
