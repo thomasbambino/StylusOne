@@ -996,15 +996,18 @@ export default function LiveTVPage() {
 
   // Initialize Cast API
   useEffect(() => {
+    let pollInterval: NodeJS.Timeout | null = null;
+    let attempts = 0;
+    const maxAttempts = 50; // Try for 5 seconds (50 * 100ms)
+
     const initializeCast = () => {
       const cast = (window as any).chrome?.cast;
-      if (!cast) {
-        console.log('Cast API not available yet - waiting for SDK to load');
+      if (!cast || !cast.framework) {
         return false;
       }
 
       try {
-        console.log('Attempting to initialize Cast API...');
+        console.log('✅ Cast SDK is now available, initializing...');
         const castContext = cast.framework.CastContext.getInstance();
 
         castContext.setOptions({
@@ -1048,6 +1051,10 @@ export default function LiveTVPage() {
         );
 
         console.log('✅ Cast API initialized successfully');
+        if (pollInterval) {
+          clearInterval(pollInterval);
+          pollInterval = null;
+        }
         return true;
       } catch (error) {
         console.error('❌ Error initializing cast:', error);
@@ -1055,21 +1062,46 @@ export default function LiveTVPage() {
       }
     };
 
-    // Try to initialize immediately
-    console.log('Starting Cast API initialization...');
-    if (!initializeCast()) {
-      // If not available, wait for __onGCastApiAvailable callback
-      console.log('Waiting for Cast SDK to become available...');
-      (window as any).__onGCastApiAvailable = (isAvailable: boolean) => {
-        console.log('Cast SDK availability callback:', isAvailable);
-        if (isAvailable) {
-          setTimeout(() => initializeCast(), 100);
+    // Poll for Cast SDK availability
+    console.log('🔄 Polling for Cast SDK...');
+    pollInterval = setInterval(() => {
+      attempts++;
+
+      if (initializeCast()) {
+        // Success! Clear interval
+        if (pollInterval) {
+          clearInterval(pollInterval);
+          pollInterval = null;
         }
-      };
-    }
+      } else if (attempts >= maxAttempts) {
+        // Timeout - give up
+        console.warn('⚠️ Cast SDK did not load after 5 seconds');
+        if (pollInterval) {
+          clearInterval(pollInterval);
+          pollInterval = null;
+        }
+      }
+    }, 100); // Check every 100ms
+
+    // Also set up the callback as fallback
+    (window as any).__onGCastApiAvailable = (isAvailable: boolean) => {
+      console.log('📢 Cast SDK availability callback fired:', isAvailable);
+      if (isAvailable) {
+        setTimeout(() => {
+          if (initializeCast() && pollInterval) {
+            clearInterval(pollInterval);
+            pollInterval = null;
+          }
+        }, 100);
+      }
+    };
 
     return () => {
       // Cleanup
+      if (pollInterval) {
+        clearInterval(pollInterval);
+      }
+
       const cast = (window as any).chrome?.cast;
       if (cast) {
         try {
