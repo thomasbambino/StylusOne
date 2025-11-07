@@ -227,7 +227,7 @@ export default function HomePage() {
       if (!response.ok) return [];
       return response.json();
     },
-    refetchInterval: 60000,
+    refetchInterval: 5000, // Refetch every 5 seconds to quickly show new favorites
   });
 
   // Extract channels from the response
