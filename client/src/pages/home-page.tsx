@@ -682,7 +682,7 @@ export default function HomePage() {
                 {favoriteChannels.length > 0 ? (
                   <div className="space-y-2 flex-1">
                     <p className="text-xs text-muted-foreground">Favorite Channels</p>
-                    <div className="space-y-2 min-h-[260px]">
+                    <div className="space-y-2 min-h-[280px]">
                       {[0, 1, 2].map((index) => {
                         const fav = favoriteChannels[index];
                         if (!fav) return null;
@@ -697,7 +697,7 @@ export default function HomePage() {
                     </div>
                   </div>
                 ) : (
-                  <div className="flex items-center justify-center text-center text-muted-foreground" style={{ minHeight: '260px' }}>
+                  <div className="flex items-center justify-center text-center text-muted-foreground" style={{ minHeight: '280px' }}>
                     <div>
                       <p className="text-sm">No favorite channels</p>
                       <p className="text-xs mt-1">Right-click channels in Live TV to add favorites</p>
