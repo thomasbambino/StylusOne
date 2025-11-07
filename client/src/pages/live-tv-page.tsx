@@ -883,9 +883,11 @@ export default function LiveTVPage() {
 
   const allChannels = [...hdHomeRunChannels, ...iptvChannels];
 
-  // Fetch EPG data for all channels using useQueries - MUST be before early returns
+  // Fetch EPG data for LIMITED channels to improve performance - MUST be before early returns
+  // Only fetch for first 50 channels to avoid overwhelming the browser with thousands of requests
+  const channelsForEPG = allChannels.slice(0, 50);
   const epgQueries = useQueries({
-    queries: allChannels.map((channel) => ({
+    queries: channelsForEPG.map((channel) => ({
       queryKey: ['epg', 'upcoming', channel.source === 'iptv' ? channel.epgId : channel.GuideNumber],
       queryFn: async () => {
         // For IPTV channels, use epgId (XMLTV channel ID), for HDHomeRun use GuideNumber
@@ -903,7 +905,7 @@ export default function LiveTVPage() {
 
   // Create a map of channel ID/number to EPG data
   const epgDataMap = new Map<string, EPGProgram[]>();
-  allChannels.forEach((channel, index) => {
+  channelsForEPG.forEach((channel, index) => {
     // Use epgId for IPTV channels, GuideNumber for HDHomeRun
     const channelKey = channel.source === 'iptv' ? channel.epgId : channel.GuideNumber;
     if (channelKey) {
@@ -2080,7 +2082,6 @@ export default function LiveTVPage() {
                   <div className="flex items-center justify-between">
                     <CardTitle className="text-lg flex items-center gap-2">
                       <Tv className="h-5 w-5 text-blue-500" />
-                      Channel Guide
                     </CardTitle>
                     <div className="flex items-center gap-2">
                       <Badge variant="outline">{availableChannels.length} channels</Badge>
