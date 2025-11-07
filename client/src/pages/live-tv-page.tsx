@@ -1966,9 +1966,9 @@ export default function LiveTVPage() {
                             </div>
                           </div>
                           {currentSession && (
-                            <div className="flex items-center gap-1 px-3 py-1.5 rounded-full bg-green-500/20 border border-green-500/40 flex-shrink-0">
-                              <div className="h-2 w-2 bg-green-400 rounded-full animate-pulse"></div>
-                              <span className="text-sm font-medium text-green-300">Live</span>
+                            <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-green-500/20 border border-green-500/40 flex-shrink-0">
+                              <div className="h-2 w-2 bg-green-400 rounded-full animate-pulse flex-shrink-0"></div>
+                              <span className="text-sm font-medium text-green-300 leading-none">Live</span>
                             </div>
                           )}
                         </div>
@@ -2081,9 +2081,6 @@ export default function LiveTVPage() {
               <CardHeader className="pb-3">
                 <div className="flex flex-col gap-3">
                   <div className="flex items-center justify-between">
-                    <CardTitle className="text-lg flex items-center gap-2">
-                      <Tv className="h-5 w-5 text-blue-500" />
-                    </CardTitle>
                     <div className="flex items-center gap-2">
                       <Badge variant="outline">{availableChannels.length} channels</Badge>
                     </div>
