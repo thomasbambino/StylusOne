@@ -999,11 +999,12 @@ export default function LiveTVPage() {
     const initializeCast = () => {
       const cast = (window as any).chrome?.cast;
       if (!cast) {
-        console.log('Cast API not available yet');
+        console.log('Cast API not available yet - waiting for SDK to load');
         return false;
       }
 
       try {
+        console.log('Attempting to initialize Cast API...');
         const castContext = cast.framework.CastContext.getInstance();
 
         castContext.setOptions({
@@ -1015,13 +1016,16 @@ export default function LiveTVPage() {
         castContext.addEventListener(
           cast.framework.CastContextEventType.SESSION_STATE_CHANGED,
           (event: any) => {
+            console.log('Cast session state changed:', event);
             const session = castContext.getCurrentSession();
             setCastSession(session);
             setIsCasting(!!session);
 
             if (session && selectedChannel) {
+              console.log('Loading media to cast device for channel:', selectedChannel.GuideName);
               // Load media to cast device
               const streamUrl = `${window.location.origin}/api/iptv/stream/${selectedChannel.iptvId}.m3u8`;
+              console.log('Stream URL:', streamUrl);
               const mediaInfo = new cast.framework.messages.MediaInfo(streamUrl, 'application/x-mpegurl');
               mediaInfo.metadata = new cast.framework.messages.GenericMediaMetadata();
               mediaInfo.metadata.title = selectedChannel.GuideName;
@@ -1031,32 +1035,35 @@ export default function LiveTVPage() {
 
               session.loadMedia(request).then(
                 () => {
-                  console.log('Media loaded successfully to cast device');
+                  console.log('✅ Media loaded successfully to cast device');
                   // Pause local playback when casting
                   if (videoRef.current) {
                     videoRef.current.pause();
                   }
                 },
-                (error: any) => console.error('Error loading media:', error)
+                (error: any) => console.error('❌ Error loading media to cast device:', error)
               );
             }
           }
         );
 
-        console.log('Cast API initialized');
+        console.log('✅ Cast API initialized successfully');
         return true;
       } catch (error) {
-        console.error('Error initializing cast:', error);
+        console.error('❌ Error initializing cast:', error);
         return false;
       }
     };
 
     // Try to initialize immediately
+    console.log('Starting Cast API initialization...');
     if (!initializeCast()) {
       // If not available, wait for __onGCastApiAvailable callback
+      console.log('Waiting for Cast SDK to become available...');
       (window as any).__onGCastApiAvailable = (isAvailable: boolean) => {
+        console.log('Cast SDK availability callback:', isAvailable);
         if (isAvailable) {
-          initializeCast();
+          setTimeout(() => initializeCast(), 100);
         }
       };
     }
@@ -1065,10 +1072,15 @@ export default function LiveTVPage() {
       // Cleanup
       const cast = (window as any).chrome?.cast;
       if (cast) {
-        const castContext = cast.framework.CastContext.getInstance();
-        const session = castContext.getCurrentSession();
-        if (session) {
-          session.endSession(false);
+        try {
+          const castContext = cast.framework.CastContext.getInstance();
+          const session = castContext.getCurrentSession();
+          if (session) {
+            console.log('Cleaning up cast session');
+            session.endSession(false);
+          }
+        } catch (e) {
+          // Ignore cleanup errors
         }
       }
     };
@@ -1193,25 +1205,40 @@ export default function LiveTVPage() {
   };
 
   const handleCast = () => {
+    console.log('Cast button clicked');
+
     const cast = (window as any).chrome?.cast;
     if (!cast) {
-      console.error('Cast API not available');
+      console.error('Cast API not available - make sure you are using Chrome/Edge browser');
+      alert('Chromecast is only available in Chrome or Edge browsers. Please switch browsers to use this feature.');
       return;
     }
 
-    const session = cast.framework.CastContext.getInstance().getCurrentSession();
-
-    if (session) {
-      // Stop casting
-      session.endSession(true);
-    } else {
-      // Start casting
+    try {
       const castContext = cast.framework.CastContext.getInstance();
-      castContext.requestSession().then(() => {
-        console.log('Cast session requested');
-      }).catch((error: any) => {
-        console.error('Error starting cast:', error);
-      });
+      const session = castContext.getCurrentSession();
+
+      if (session) {
+        // Stop casting
+        console.log('Stopping cast session');
+        session.endSession(true);
+      } else {
+        // Start casting
+        console.log('Requesting cast session');
+        castContext.requestSession().then(() => {
+          console.log('Cast session started successfully');
+        }).catch((error: any) => {
+          console.error('Error starting cast:', error);
+          if (error === 'cancel') {
+            console.log('User cancelled cast session');
+          } else {
+            alert('Failed to connect to Chromecast device. Make sure your device is on the same network.');
+          }
+        });
+      }
+    } catch (error) {
+      console.error('Error in handleCast:', error);
+      alert('Chromecast is still initializing. Please wait a moment and try again.');
     }
   };
 
