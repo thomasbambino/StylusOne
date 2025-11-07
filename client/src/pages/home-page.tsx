@@ -681,26 +681,7 @@ export default function HomePage() {
               <div className="flex-1 space-y-4">
                 {liveTVChannels && liveTVChannels.length > 0 ? (
                   <>
-                    <div className="grid grid-cols-3 gap-4">
-                      <div className="text-center">
-                        <div className="text-2xl font-bold">{liveTVChannels.length}</div>
-                        <div className="text-xs text-muted-foreground">Channels</div>
-                      </div>
-                      <div className="text-center">
-                        <div className="text-2xl font-bold">
-                          {new Set(liveTVChannels.map((ch: any) => ch.categoryName)).size}
-                        </div>
-                        <div className="text-xs text-muted-foreground">Categories</div>
-                      </div>
-                      <div className="text-center">
-                        <div className="text-2xl font-bold">
-                          {iptvStatus?.userInfo?.activeConnections || 0}/{iptvStatus?.userInfo?.maxConnections || 1}
-                        </div>
-                        <div className="text-xs text-muted-foreground">Connections</div>
-                      </div>
-                    </div>
-
-                    {/* Favorite Channels Now Playing - Show up to 3 */}
+                    {/* Favorite Channels - Show up to 3 */}
                     {favoriteChannels.length > 0 && (
                       <div className="space-y-2 flex-1">
                         <p className="text-xs text-muted-foreground">Favorites</p>
