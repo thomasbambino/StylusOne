@@ -687,35 +687,27 @@ export default function HomePage() {
                         <div className="text-xs text-muted-foreground">Channels</div>
                       </div>
                       <div className="text-center">
-                        <div className="text-2xl font-bold">{favoriteChannels.length}</div>
-                        <div className="text-xs text-muted-foreground">Favorites</div>
+                        <div className="text-2xl font-bold">
+                          {new Set(liveTVChannels.map((ch: any) => ch.categoryName)).size}
+                        </div>
+                        <div className="text-xs text-muted-foreground">Categories</div>
                       </div>
                       <div className="text-center">
                         <div className="text-2xl font-bold">
-                          {iptvStatus?.userInfo?.status === 'Active' ? 'Active' : 'Inactive'}
+                          {iptvStatus?.userInfo?.activeConnections || 0}/{iptvStatus?.userInfo?.maxConnections || 1}
                         </div>
-                        <div className="text-xs text-muted-foreground">Status</div>
+                        <div className="text-xs text-muted-foreground">Connections</div>
                       </div>
                     </div>
 
-                    {/* Favorite Channels Now Playing - Show up to 3 like Game Servers */}
+                    {/* Favorite Channels Now Playing - Show up to 3 */}
                     {favoriteChannels.length > 0 && (
                       <div className="space-y-2 flex-1">
-                        <p className="text-xs text-muted-foreground">Now Playing (Favorites)</p>
+                        <p className="text-xs text-muted-foreground">Favorites</p>
                         <div className="space-y-2 min-h-[180px]">
                           {[0, 1, 2].map((index) => {
                             const fav = favoriteChannels[index];
-                            if (!fav) {
-                              return (
-                                <div key={`empty-${index}`} className="bg-accent/5 rounded-lg p-3 border border-dashed border-border/30 min-h-[60px] flex items-center justify-center">
-                                  {index === 0 && (
-                                    <div className="text-center text-muted-foreground">
-                                      <p className="text-xs">Add more favorites</p>
-                                    </div>
-                                  )}
-                                </div>
-                              );
-                            }
+                            if (!fav) return null;
                             return (
                               <FavoriteChannelItem
                                 key={fav.id}
