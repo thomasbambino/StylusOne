@@ -35,4 +35,10 @@ export default defineConfig({
     minify: true,
     sourcemap: true,
   },
+  server: {
+    headers: {
+      // Allow Cast SDK to load from both HTTP and HTTPS gstatic.com
+      'Content-Security-Policy': "script-src 'self' 'unsafe-inline' 'unsafe-eval' http://www.gstatic.com https://www.gstatic.com; connect-src 'self' http://www.gstatic.com https://www.gstatic.com ws: wss:; img-src 'self' data: https:; style-src 'self' 'unsafe-inline';"
+    }
+  },
 });

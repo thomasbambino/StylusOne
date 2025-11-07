@@ -20,11 +20,11 @@ app.use(helmet({
     useDefaults: false,
     directives: {
       defaultSrc: ["'self'"],
-      scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'", "https://www.gstatic.com"],
+      scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'", "https://www.gstatic.com", "http://www.gstatic.com"],
       styleSrc: ["'self'", "'unsafe-inline'"],
       imgSrc: ["'self'", "data:", "blob:", "https:", "http:"],
       fontSrc: ["'self'", "data:"],
-      connectSrc: isLocalDocker 
+      connectSrc: isLocalDocker
         ? ["'self'", "https:", "wss:", "ws:", "http:"]  // Allow HTTP for local
         : ["'self'", "https:", "wss:"],  // HTTPS only for production
       mediaSrc: ["'self'", "blob:", "https:", "http:"],
@@ -35,7 +35,7 @@ app.use(helmet({
       formAction: ["'self'"],
       frameAncestors: ["'self'"],
       baseUri: ["'self'"],
-      scriptSrcAttr: ["'none'"],
+      scriptSrcAttr: ["'unsafe-inline'"], // Allow inline event handlers for Cast SDK
       // Add upgrade-insecure-requests for production only
       ...(isLocalDocker ? {} : { upgradeInsecureRequests: [] }),
     },
