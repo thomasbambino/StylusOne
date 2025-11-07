@@ -26,10 +26,10 @@ app.use(helmet({
       fontSrc: ["'self'", "data:"],
       connectSrc: isLocalDocker
         ? ["'self'", "https:", "wss:", "ws:", "http:"]  // Allow HTTP for local
-        : ["'self'", "https:", "wss:", "*.gstatic.com", "https://www.gstatic.com"],  // Allow Cast SDK connections
+        : ["'self'", "https:", "wss:", "https://*.gstatic.com"],  // Allow Cast SDK connections
       mediaSrc: ["'self'", "blob:", "https:", "http:"],
       objectSrc: ["'none'"],
-      frameSrc: ["'self'", "*.gstatic.com", "https://www.gstatic.com"],  // Allow Cast SDK iframes
+      frameSrc: ["'self'", "https://*.gstatic.com"],  // Allow Cast SDK iframes
       workerSrc: ["'self'", "blob:"],
       childSrc: ["'self'", "blob:"],
       formAction: ["'self'"],
