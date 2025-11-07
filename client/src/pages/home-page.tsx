@@ -679,40 +679,39 @@ export default function HomePage() {
             </CardHeader>
             <CardContent className="flex flex-col flex-1">
               <div className="flex-1 space-y-4">
-                {liveTVChannels && liveTVChannels.length > 0 ? (
-                  <>
-                    {/* Favorite Channels - Show up to 3 */}
-                    <div className="space-y-2 flex-1">
-                      <p className="text-xs text-muted-foreground">Favorite Channels</p>
-                      <div className="space-y-2" style={{ minHeight: '260px' }}>
-                        {favoriteChannels.length > 0 ? (
-                          [0, 1, 2].map((index) => {
-                            const fav = favoriteChannels[index];
-                            if (!fav) return null;
-                            return (
-                              <FavoriteChannelItem
-                                key={fav.id}
-                                favorite={fav}
-                                program={favoriteProgramsData[fav.channelId]}
-                              />
-                            );
-                          })
-                        ) : (
-                          <div className="flex items-center justify-center h-full">
-                            <div className="text-center text-muted-foreground">
-                              <p className="text-sm">No favorite channels</p>
-                              <p className="text-xs mt-1">Right-click channels in Live TV to add favorites</p>
-                            </div>
-                          </div>
-                        )}
-                      </div>
+                <div className="grid grid-cols-3 gap-4">
+                  <div className="text-center">
+                    <div className="text-2xl font-bold">{liveTVChannels?.length || 0}</div>
+                    <div className="text-xs text-muted-foreground">Channels</div>
+                  </div>
+                  <div className="text-center">
+                    <div className="text-2xl font-bold">
+                      {liveTVChannels ? new Set(liveTVChannels.map((ch: any) => ch.categoryName)).size : 0}
                     </div>
-                  </>
-                ) : (
-                  <div className="text-center py-4 text-muted-foreground">
-                    <Tv className="h-8 w-8 mx-auto mb-2 opacity-50" />
-                    <p className="text-sm">No channels available</p>
-                    <p className="text-xs mt-1">Check IPTV connection</p>
+                    <div className="text-xs text-muted-foreground">Categories</div>
+                  </div>
+                  <div className="text-center">
+                    <div className="text-2xl font-bold">{favoriteChannels.length}</div>
+                    <div className="text-xs text-muted-foreground">Favorites</div>
+                  </div>
+                </div>
+
+                {favoriteChannels.length > 0 && (
+                  <div className="space-y-2 flex-1">
+                    <p className="text-xs text-muted-foreground">Favorite Channels</p>
+                    <div className="space-y-2 min-h-[180px]">
+                      {[0, 1, 2].map((index) => {
+                        const fav = favoriteChannels[index];
+                        if (!fav) return null;
+                        return (
+                          <FavoriteChannelItem
+                            key={fav.id}
+                            favorite={fav}
+                            program={favoriteProgramsData[fav.channelId]}
+                          />
+                        );
+                      })}
+                    </div>
                   </div>
                 )}
               </div>
