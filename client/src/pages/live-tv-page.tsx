@@ -1206,11 +1206,35 @@ export default function LiveTVPage() {
 
   const handleCast = () => {
     console.log('Cast button clicked');
+    console.log('Checking Cast SDK status...');
+    console.log('window.chrome exists:', !!(window as any).chrome);
+    console.log('window.chrome.cast exists:', !!(window as any).chrome?.cast);
+    console.log('SDK load error:', (window as any).__castSdkLoadError);
 
     const cast = (window as any).chrome?.cast;
     if (!cast) {
-      console.error('Cast API not available - make sure you are using Chrome/Edge browser');
-      alert('Chromecast is only available in Chrome or Edge browsers. Please switch browsers to use this feature.');
+      const loadError = (window as any).__castSdkLoadError;
+      console.error('❌ Cast API not available');
+
+      if (loadError === 'CDN Error') {
+        alert('Failed to load Chromecast SDK from Google. Check your internet connection or firewall settings.');
+      } else if (loadError === 'SDK not loaded') {
+        alert('Chromecast SDK failed to initialize. Try refreshing the page or check browser console for errors.');
+      } else {
+        // Check if this is actually Chrome/Edge
+        const userAgent = navigator.userAgent;
+        const isChrome = /Chrome/.test(userAgent) && /Google Inc/.test(navigator.vendor);
+        const isEdge = /Edg/.test(userAgent);
+
+        console.log('Browser detection - Chrome:', isChrome, 'Edge:', isEdge);
+        console.log('User Agent:', userAgent);
+
+        if (!isChrome && !isEdge) {
+          alert('Chromecast is only available in Chrome or Microsoft Edge browsers.');
+        } else {
+          alert('Chromecast SDK not loaded. The page may still be loading - please wait a few seconds and try again. If the problem persists, check if Google services are blocked by your firewall.');
+        }
+      }
       return;
     }
 
@@ -1226,9 +1250,9 @@ export default function LiveTVPage() {
         // Start casting
         console.log('Requesting cast session');
         castContext.requestSession().then(() => {
-          console.log('Cast session started successfully');
+          console.log('✅ Cast session started successfully');
         }).catch((error: any) => {
-          console.error('Error starting cast:', error);
+          console.error('❌ Error starting cast:', error);
           if (error === 'cancel') {
             console.log('User cancelled cast session');
           } else {
@@ -1237,7 +1261,7 @@ export default function LiveTVPage() {
         });
       }
     } catch (error) {
-      console.error('Error in handleCast:', error);
+      console.error('❌ Error in handleCast:', error);
       alert('Chromecast is still initializing. Please wait a moment and try again.');
     }
   };

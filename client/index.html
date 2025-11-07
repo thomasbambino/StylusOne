@@ -23,7 +23,27 @@
     <link rel="stylesheet" href="/src/index.css" />
 
     <!-- Google Cast SDK -->
-    <script src="https://www.gstatic.com/cv/js/sender/v1/cast_sender.js?loadCastFramework=1"></script>
+    <script>
+      // Debug Cast SDK loading
+      window.__castSdkLoadAttempted = true;
+      window.__castSdkLoadError = null;
+
+      window.addEventListener('load', () => {
+        setTimeout(() => {
+          if (!window.chrome || !window.chrome.cast) {
+            console.error('❌ Cast SDK failed to load after page load');
+            window.__castSdkLoadError = 'SDK not loaded';
+          } else {
+            console.log('✅ Cast SDK loaded successfully');
+          }
+        }, 2000);
+      });
+    </script>
+    <script
+      src="https://www.gstatic.com/cv/js/sender/v1/cast_sender.js?loadCastFramework=1"
+      onerror="console.error('❌ Failed to load Cast SDK from Google CDN'); window.__castSdkLoadError = 'CDN Error';"
+      onload="console.log('✅ Cast SDK script loaded from CDN');"
+    ></script>
 
     <title>StylusOne Dashboard</title>
   </head>
