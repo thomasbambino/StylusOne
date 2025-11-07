@@ -11,26 +11,8 @@ if ! pg_isready -h db -p 5432 -U postgres; then
     echo "WARNING: Database connection check failed, but continuing..."
 fi
 
-# Run database migrations with retry
-echo "Running database migrations..."
-MAX_RETRIES=3
-RETRY_COUNT=0
-
-while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
-    if npm run db:push; then
-        echo "Database migrations completed successfully"
-        break
-    else
-        RETRY_COUNT=$((RETRY_COUNT + 1))
-        echo "Database migration attempt $RETRY_COUNT failed. Retrying in 5 seconds..."
-        if [ $RETRY_COUNT -lt $MAX_RETRIES ]; then
-            sleep 5
-        else
-            echo "Database migrations failed after $MAX_RETRIES attempts. Continuing with application startup..."
-            break
-        fi
-    fi
-done
+# Skip database migrations for now (schema hasn't changed)
+echo "Skipping database migrations (schema unchanged)..."
 
 # Verify environment configuration
 echo "Verifying configuration..."
