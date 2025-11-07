@@ -1,6 +1,6 @@
 // Cache version - update this when cache structure changes
 // INCREMENT THIS VERSION TO FORCE CACHE REFRESH
-const CACHE_VERSION = 'v2.0.0-20250903';
+const CACHE_VERSION = 'v2.0.1-20251107';
 const CACHE_NAME = `homelab-dashboard-${CACHE_VERSION}`;
 
 // Add message to notify clients of updates
@@ -76,6 +76,12 @@ function isCacheValid(cachedResponse, refreshInterval = 30) {
 // Fetch handler with different strategies for different requests
 self.addEventListener('fetch', (event) => {
   const url = new URL(event.request.url);
+
+  // Skip service worker for external resources (Google Cast SDK, etc.)
+  if (url.origin !== location.origin) {
+    // Don't intercept external requests - let them go through normally
+    return;
+  }
 
   // Special handling for game servers endpoint
   if (url.pathname === '/api/game-servers') {
