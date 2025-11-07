@@ -4,7 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Tv, Signal, AlertTriangle, Wifi, WifiOff, Play, Pause, Volume2, VolumeX, Maximize, Star, StarOff, Loader2 } from "lucide-react";
+import { Tv, Signal, AlertTriangle, Wifi, WifiOff, Play, Pause, Volume2, VolumeX, Maximize, Star, StarOff, Loader2, Cast } from "lucide-react";
 import { useState, useRef, useEffect } from "react";
 import { cn } from "@/lib/utils";
 import Hls from "hls.js";
@@ -716,6 +716,8 @@ export default function LiveTVPage() {
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [currentSession, setCurrentSession] = useState<TunerSession | null>(null);
   const [queuePosition, setQueuePosition] = useState<number | null>(null);
+  const [isCasting, setIsCasting] = useState(false);
+  const [castSession, setCastSession] = useState<any>(null);
   const fullscreenContainerRef = useRef<HTMLDivElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const hlsRef = useRef<Hls | null>(null);
@@ -992,6 +994,86 @@ export default function LiveTVPage() {
     };
   }, []);
 
+  // Initialize Cast API
+  useEffect(() => {
+    const initializeCast = () => {
+      const cast = (window as any).chrome?.cast;
+      if (!cast) {
+        console.log('Cast API not available yet');
+        return false;
+      }
+
+      try {
+        const castContext = cast.framework.CastContext.getInstance();
+
+        castContext.setOptions({
+          receiverApplicationId: cast.framework.CastContext.DEFAULT_MEDIA_RECEIVER_APP_ID,
+          autoJoinPolicy: cast.framework.AutoJoinPolicy.ORIGIN_SCOPED
+        });
+
+        // Listen for cast session changes
+        castContext.addEventListener(
+          cast.framework.CastContextEventType.SESSION_STATE_CHANGED,
+          (event: any) => {
+            const session = castContext.getCurrentSession();
+            setCastSession(session);
+            setIsCasting(!!session);
+
+            if (session && selectedChannel) {
+              // Load media to cast device
+              const streamUrl = `${window.location.origin}/api/iptv/stream/${selectedChannel.iptvId}.m3u8`;
+              const mediaInfo = new cast.framework.messages.MediaInfo(streamUrl, 'application/x-mpegurl');
+              mediaInfo.metadata = new cast.framework.messages.GenericMediaMetadata();
+              mediaInfo.metadata.title = selectedChannel.GuideName;
+              mediaInfo.metadata.subtitle = selectedChannelProgram?.title || 'Live TV';
+
+              const request = new cast.framework.messages.LoadRequest(mediaInfo);
+
+              session.loadMedia(request).then(
+                () => {
+                  console.log('Media loaded successfully to cast device');
+                  // Pause local playback when casting
+                  if (videoRef.current) {
+                    videoRef.current.pause();
+                  }
+                },
+                (error: any) => console.error('Error loading media:', error)
+              );
+            }
+          }
+        );
+
+        console.log('Cast API initialized');
+        return true;
+      } catch (error) {
+        console.error('Error initializing cast:', error);
+        return false;
+      }
+    };
+
+    // Try to initialize immediately
+    if (!initializeCast()) {
+      // If not available, wait for __onGCastApiAvailable callback
+      (window as any).__onGCastApiAvailable = (isAvailable: boolean) => {
+        if (isAvailable) {
+          initializeCast();
+        }
+      };
+    }
+
+    return () => {
+      // Cleanup
+      const cast = (window as any).chrome?.cast;
+      if (cast) {
+        const castContext = cast.framework.CastContext.getInstance();
+        const session = castContext.getCurrentSession();
+        if (session) {
+          session.endSession(false);
+        }
+      }
+    };
+  }, [selectedChannel, selectedChannelProgram]);
+
   // Aggressively disable video controls
   useEffect(() => {
     const interval = setInterval(() => {
@@ -1107,6 +1189,29 @@ export default function LiveTVPage() {
       videoRef.current.volume = newVolume;
       setVolume(newVolume);
       setIsMuted(newVolume === 0);
+    }
+  };
+
+  const handleCast = () => {
+    const cast = (window as any).chrome?.cast;
+    if (!cast) {
+      console.error('Cast API not available');
+      return;
+    }
+
+    const session = cast.framework.CastContext.getInstance().getCurrentSession();
+
+    if (session) {
+      // Stop casting
+      session.endSession(true);
+    } else {
+      // Start casting
+      const castContext = cast.framework.CastContext.getInstance();
+      castContext.requestSession().then(() => {
+        console.log('Cast session requested');
+      }).catch((error: any) => {
+        console.error('Error starting cast:', error);
+      });
     }
   };
 
@@ -2064,6 +2169,19 @@ export default function LiveTVPage() {
                           </div>
 
                           <div className="flex-1" />
+
+                          {/* Cast Button */}
+                          <button
+                            onClick={(e) => { e.stopPropagation(); handleCast(); }}
+                            className={cn(
+                              "flex items-center justify-center bg-white/20 hover:bg-white/30 rounded-full backdrop-blur-sm transition-colors",
+                              isFullscreen ? "w-12 h-12" : "w-10 h-10",
+                              isCasting && "bg-blue-500/40"
+                            )}
+                            title={isCasting ? "Stop casting" : "Cast to device"}
+                          >
+                            <Cast className={cn("text-white", isFullscreen ? "w-6 h-6" : "w-5 h-5")} />
+                          </button>
 
                           {/* Fullscreen Button */}
                           <button
