@@ -883,9 +883,27 @@ export default function LiveTVPage() {
 
   const allChannels = [...hdHomeRunChannels, ...iptvChannels];
 
-  // Fetch EPG data for LIMITED channels to improve performance - MUST be before early returns
-  // Only fetch for first 50 channels to avoid overwhelming the browser with thousands of requests
-  const channelsForEPG = allChannels.slice(0, 50);
+  // Calculate filtered channels early to determine which channels to fetch EPG for
+  let filteredChannels = [...allChannels];
+
+  // Filter out HDHomeRun channels if hidden
+  if (!showHDHomeRun) {
+    filteredChannels = filteredChannels.filter(ch => ch.source !== 'hdhomerun');
+  }
+
+  // Apply search filter
+  if (searchQuery.trim()) {
+    const query = searchQuery.toLowerCase();
+    filteredChannels = filteredChannels.filter(ch => {
+      if (ch.GuideNumber.toLowerCase().includes(query)) return true;
+      if (ch.GuideName.toLowerCase().includes(query)) return true;
+      return false;
+    });
+  }
+
+  // Fetch EPG data for visible channels only (first 100 of filtered results)
+  // This improves performance while supporting search/filter
+  const channelsForEPG = filteredChannels.slice(0, 100);
   const epgQueries = useQueries({
     queries: channelsForEPG.map((channel) => ({
       queryKey: ['epg', 'upcoming', channel.source === 'iptv' ? channel.epgId : channel.GuideNumber],
@@ -1795,25 +1813,8 @@ export default function LiveTVPage() {
   }
 
   // Keyboard shortcut: Ctrl+H to toggle HDHomeRun channels
-  // Use allChannels from before early returns
-  let availableChannels = [...allChannels];
-
-  // Filter out HDHomeRun channels if hidden
-  if (!showHDHomeRun) {
-    availableChannels = availableChannels.filter(ch => ch.source !== 'hdhomerun');
-  }
-
-  // Apply search filter
-  if (searchQuery.trim()) {
-    const query = searchQuery.toLowerCase();
-    availableChannels = availableChannels.filter(ch => {
-      // Search by channel number
-      if (ch.GuideNumber.toLowerCase().includes(query)) return true;
-      // Search by channel name
-      if (ch.GuideName.toLowerCase().includes(query)) return true;
-      return false;
-    });
-  }
+  // Use filteredChannels calculated earlier (already filtered by search and HDHomeRun toggle)
+  const availableChannels = filteredChannels;
 
   return (
     <TooltipProvider delayDuration={0}>
