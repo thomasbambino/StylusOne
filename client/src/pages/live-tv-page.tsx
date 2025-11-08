@@ -1030,7 +1030,8 @@ export default function LiveTVPage() {
             setCastSession(session);
             setIsCasting(!!session);
 
-            if (session && selectedChannel) {
+            // Only load media when session is starting/started, not when ending
+            if (session && selectedChannel && event.sessionState === 'SESSION_STARTED') {
               console.log('Loading media to cast device for channel:', selectedChannel.GuideName);
               // Load media to cast device
               const streamUrl = `${window.location.origin}/api/iptv/stream/${selectedChannel.iptvId}.m3u8`;
