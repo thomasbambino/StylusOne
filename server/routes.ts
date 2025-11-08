@@ -2446,19 +2446,27 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const existingStream = sharedStreams.get(streamId);
 
       if (existingStream && !token) {
-        // Only use cached stream for session-based auth (not token-based)
-        // Token-based requests need fresh manifests with token-embedded URLs
-        existingStream.users.add(userIdString);
-        existingStream.lastAccessed = new Date();
-        console.log(`📺 Sharing stream ${streamId} with user ${userIdString} (${existingStream.users.size} total users)`);
+        // Browser streaming: Check if manifest is still fresh for live streams
+        const manifestAge = Date.now() - existingStream.manifestFetchedAt.getTime();
+        const needsFreshManifest = manifestAge > 20000; // Browser: Refresh after 20 seconds
 
-        res.set({
-          'Content-Type': 'application/vnd.apple.mpegurl',
-          'Access-Control-Allow-Origin': '*',
-          'Cache-Control': 'no-cache, no-store, must-revalidate'
-        });
+        if (!needsFreshManifest) {
+          // Manifest is fresh enough, share it
+          existingStream.users.add(userIdString);
+          existingStream.lastAccessed = new Date();
+          console.log(`📺 Sharing cached stream (${Math.round(manifestAge / 1000)}s old) ${streamId} with user ${userIdString} (${existingStream.users.size} total users)`);
 
-        return res.send(existingStream.manifest);
+          res.set({
+            'Content-Type': 'application/vnd.apple.mpegurl',
+            'Access-Control-Allow-Origin': '*',
+            'Cache-Control': 'no-cache, no-store, must-revalidate'
+          });
+
+          return res.send(existingStream.manifest);
+        }
+
+        // Manifest too old, fetch fresh one below
+        console.log(`🔄 Browser manifest too old (${Math.round(manifestAge / 1000)}s), fetching fresh for stream ${streamId}`);
       } else if (existingStream && token) {
         // For token-based auth (Chromecast), use more aggressive refresh
         // Chromecast needs fresher manifests due to network hop and segment expiry
