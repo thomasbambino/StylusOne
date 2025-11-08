@@ -2298,9 +2298,76 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   const sharedStreams = new Map<string, SharedStream>();
 
-  // Clean up streams that haven't been accessed in 30 seconds
+  // Stream Token Manager - for Chromecast and other stateless devices
+  interface StreamToken {
+    token: string;
+    userId: number;
+    streamId: string;
+    expiresAt: Date;
+    createdAt: Date;
+  }
+
+  const streamTokens = new Map<string, StreamToken>();
+
+  // Generate a stream access token
+  function generateStreamToken(userId: number, streamId: string): string {
+    const { randomBytes } = require('crypto');
+    const token = randomBytes(32).toString('hex');
+    const expiresAt = new Date(Date.now() + 3600000); // 1 hour expiry
+
+    streamTokens.set(token, {
+      token,
+      userId,
+      streamId,
+      expiresAt,
+      createdAt: new Date()
+    });
+
+    console.log(`🔑 Generated stream token for user ${userId}, stream ${streamId}`);
+    return token;
+  }
+
+  // Validate a stream token
+  function validateStreamToken(token: string, streamId: string): number | null {
+    const tokenData = streamTokens.get(token);
+
+    if (!tokenData) {
+      console.log(`❌ Invalid token: ${token}`);
+      return null;
+    }
+
+    if (tokenData.expiresAt < new Date()) {
+      console.log(`⏰ Expired token: ${token}`);
+      streamTokens.delete(token);
+      return null;
+    }
+
+    if (tokenData.streamId !== streamId) {
+      console.log(`❌ Token stream mismatch: expected ${streamId}, got ${tokenData.streamId}`);
+      return null;
+    }
+
+    // Sliding expiration: extend token lifetime by 1 hour on each use
+    // This allows long-running streams (>1 hour) to continue playing
+    tokenData.expiresAt = new Date(Date.now() + 3600000);
+    console.log(`✅ Valid token for user ${tokenData.userId}, stream ${streamId} (expiry extended)`);
+
+    return tokenData.userId;
+  }
+
+  // Clean up expired tokens and inactive streams
   setInterval(() => {
     const now = new Date();
+
+    // Clean up expired tokens
+    for (const [token, tokenData] of streamTokens.entries()) {
+      if (tokenData.expiresAt < now) {
+        console.log(`🧹 Cleaning up expired token for stream ${tokenData.streamId}`);
+        streamTokens.delete(token);
+      }
+    }
+
+    // Clean up inactive streams
     for (const [streamId, stream] of sharedStreams.entries()) {
       const timeSinceAccess = now.getTime() - stream.lastAccessed.getTime();
       if (timeSinceAccess > 30000) { // 30 seconds
@@ -2314,13 +2381,55 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   }, 10000); // Check every 10 seconds
 
-  // IPTV Stream Proxy - bypass CORS restrictions with stream sharing
-  app.get("/api/iptv/stream/:streamId.m3u8", async (req, res) => {
+  // Generate stream token for authenticated users (for Chromecast, etc.)
+  app.post("/api/iptv/generate-token", async (req, res) => {
     if (!req.isAuthenticated()) return res.sendStatus(401);
 
     try {
-      const { streamId } = req.params;
-      const userId = req.user!.id.toString();
+      const { streamId } = req.body;
+
+      if (!streamId) {
+        return res.status(400).json({ message: "streamId is required" });
+      }
+
+      const token = generateStreamToken(req.user!.id, streamId);
+
+      res.json({
+        token,
+        expiresIn: 3600 // seconds
+      });
+    } catch (error) {
+      console.error('Error generating stream token:', error);
+      res.status(500).json({ message: "Failed to generate stream token" });
+    }
+  });
+
+  // IPTV Stream Proxy - bypass CORS restrictions with stream sharing
+  app.get("/api/iptv/stream/:streamId.m3u8", async (req, res) => {
+    // Check for token-based authentication (for Chromecast) or session authentication
+    const { token } = req.query;
+    const { streamId } = req.params;
+
+    let userId: number | null = null;
+
+    if (token && typeof token === 'string') {
+      // Token-based authentication
+      userId = validateStreamToken(token, streamId);
+      if (!userId) {
+        console.log(`❌ Invalid or expired token for stream ${streamId}`);
+        return res.sendStatus(401);
+      }
+    } else if (req.isAuthenticated()) {
+      // Session-based authentication
+      userId = req.user!.id;
+    } else {
+      // No valid authentication
+      console.log(`❌ No authentication provided for stream ${streamId}`);
+      return res.sendStatus(401);
+    }
+
+    try {
+      const userIdString = userId.toString();
       const { xtreamCodesService } = await import('./services/xtream-codes-service');
 
       if (!xtreamCodesService.isConfigured()) {
@@ -2332,8 +2441,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       if (existingStream) {
         // Use existing shared stream
-        console.log(`📺 Sharing stream ${streamId} with user ${userId} (${existingStream.users.size + 1} total users)`);
-        existingStream.users.add(userId);
+        console.log(`📺 Sharing stream ${streamId} with user ${userIdString} (${existingStream.users.size + 1} total users)`);
+        existingStream.users.add(userIdString);
         existingStream.lastAccessed = new Date();
 
         res.set({
@@ -2346,7 +2455,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       // No existing stream, fetch from provider
-      console.log(`🆕 Creating new stream ${streamId} for user ${userId}`);
+      console.log(`🆕 Creating new stream ${streamId} for user ${userIdString}`);
       let streamUrl = xtreamCodesService.getHLSStreamUrl(streamId);
       console.log(`Fetching HLS manifest from: ${streamUrl}`);
       let response = await fetch(streamUrl);
@@ -2402,9 +2511,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
       console.log(`Stored base URL for stream ${streamId} (type: ${typeof streamId}) in cache`);
 
       // Rewrite segment URLs to go through our proxy
+      // Include token in segment URLs if token authentication is being used
+      const tokenParam = token ? `?token=${token}` : '';
       const rewrittenManifest = manifestText.replace(
         /^([^#\n].+\.ts)$/gm,
-        (match) => `/api/iptv/segment/${streamId}/${match.trim()}`
+        (match) => `/api/iptv/segment/${streamId}/${match.trim()}${tokenParam}`
       );
 
       // Cache this stream for sharing
@@ -2412,7 +2523,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         streamId,
         manifest: rewrittenManifest,
         baseSegmentUrl,
-        users: new Set([userId]),
+        users: new Set([userIdString]),
         lastAccessed: new Date(),
         manifestUrl: finalManifestUrl
       });
@@ -2434,10 +2545,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // IPTV TS Stream Proxy - proxy direct MPEG-TS streams
   app.get("/api/iptv/stream/:streamId.ts", async (req, res) => {
-    if (!req.isAuthenticated()) return res.sendStatus(401);
+    // Check for token-based authentication (for Chromecast) or session authentication
+    const { token } = req.query;
+    const { streamId } = req.params;
+
+    if (token && typeof token === 'string') {
+      // Token-based authentication
+      const userId = validateStreamToken(token, streamId);
+      if (!userId) {
+        console.log(`❌ Invalid or expired token for TS stream ${streamId}`);
+        return res.sendStatus(401);
+      }
+    } else if (!req.isAuthenticated()) {
+      // No valid authentication
+      console.log(`❌ No authentication provided for TS stream ${streamId}`);
+      return res.sendStatus(401);
+    }
 
     try {
-      const { streamId } = req.params;
       const { xtreamCodesService } = await import('./services/xtream-codes-service');
 
       if (!xtreamCodesService.isConfigured()) {
@@ -2480,10 +2605,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // IPTV Segment Proxy - proxy the actual video segments
   app.get("/api/iptv/segment/:streamId/*", async (req, res) => {
-    if (!req.isAuthenticated()) return res.sendStatus(401);
+    // Check for token-based authentication (for Chromecast) or session authentication
+    const { token } = req.query;
+    const { streamId } = req.params;
+
+    if (token && typeof token === 'string') {
+      // Token-based authentication
+      const userId = validateStreamToken(token, streamId);
+      if (!userId) {
+        console.log(`❌ Invalid or expired token for segment ${streamId}`);
+        return res.sendStatus(401);
+      }
+    } else if (!req.isAuthenticated()) {
+      // No valid authentication
+      console.log(`❌ No authentication provided for segment ${streamId}`);
+      return res.sendStatus(401);
+    }
 
     try {
-      const { streamId } = req.params;
       const fullPath = req.params[0]; // Get the wildcard path
       const { xtreamCodesService } = await import('./services/xtream-codes-service');
 

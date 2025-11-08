@@ -1033,58 +1033,83 @@ export default function LiveTVPage() {
             // Only load media when session is starting/started, not when ending
             if (session && selectedChannel && event.sessionState === 'SESSION_STARTED') {
               console.log('Loading media to cast device for channel:', selectedChannel.GuideName);
-              // Load media to cast device
-              const streamUrl = `${window.location.origin}/api/iptv/stream/${selectedChannel.iptvId}.m3u8`;
-              console.log('Stream URL:', streamUrl);
 
-              const chromecast = (window as any).chrome.cast;
-              const mediaInfo = new chromecast.media.MediaInfo(streamUrl, 'application/x-mpegurl');
+              // Request a stream token for Chromecast authentication
+              (async () => {
+                try {
+                  console.log('🔑 Requesting stream token for Chromecast...');
+                  const tokenResponse = await fetch('/api/iptv/generate-token', {
+                    method: 'POST',
+                    headers: {
+                      'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ streamId: selectedChannel.iptvId }),
+                    credentials: 'include',
+                  });
 
-              // Configure for live HLS streaming
-              mediaInfo.streamType = chromecast.media.StreamType.LIVE;
+                  if (!tokenResponse.ok) {
+                    throw new Error(`Failed to generate token: ${tokenResponse.status}`);
+                  }
 
-              const metadata = new chromecast.media.GenericMediaMetadata();
-              metadata.title = selectedChannel.GuideName;
-              metadata.subtitle = selectedChannelProgram?.title || 'Live TV';
-              if (selectedChannel.channelLogo) {
-                metadata.images = [new chromecast.media.Image(selectedChannel.channelLogo)];
-              }
-              mediaInfo.metadata = metadata;
+                  const { token } = await tokenResponse.json();
+                  console.log('✅ Stream token received');
 
-              const request = new chromecast.media.LoadRequest(mediaInfo);
-              request.autoplay = true;
+                  // Load media to cast device with token
+                  const streamUrl = `${window.location.origin}/api/iptv/stream/${selectedChannel.iptvId}.m3u8?token=${token}`;
+                  console.log('Stream URL with token:', streamUrl.replace(/token=[^&]+/, 'token=***'));
 
-              session.loadMedia(request).then(
-                () => {
-                  console.log('✅ Media loaded successfully to cast device');
+                  const chromecast = (window as any).chrome.cast;
+                  const mediaInfo = new chromecast.media.MediaInfo(streamUrl, 'application/x-mpegurl');
 
-                  // Listen for media status updates
-                  const media = session.getMediaSession();
-                  if (media) {
-                    media.addUpdateListener((isAlive: boolean) => {
-                      if (!isAlive) {
-                        console.log('Media session ended');
-                      } else {
-                        console.log('Media status:', {
-                          playerState: media.playerState,
-                          idleReason: media.idleReason,
-                          currentTime: media.getEstimatedTime()
+                  // Configure for live HLS streaming
+                  mediaInfo.streamType = chromecast.media.StreamType.LIVE;
+
+                  const metadata = new chromecast.media.GenericMediaMetadata();
+                  metadata.title = selectedChannel.GuideName;
+                  metadata.subtitle = selectedChannelProgram?.title || 'Live TV';
+                  if (selectedChannel.channelLogo) {
+                    metadata.images = [new chromecast.media.Image(selectedChannel.channelLogo)];
+                  }
+                  mediaInfo.metadata = metadata;
+
+                  const request = new chromecast.media.LoadRequest(mediaInfo);
+                  request.autoplay = true;
+
+                  session.loadMedia(request).then(
+                    () => {
+                      console.log('✅ Media loaded successfully to cast device');
+
+                      // Listen for media status updates
+                      const media = session.getMediaSession();
+                      if (media) {
+                        media.addUpdateListener((isAlive: boolean) => {
+                          if (!isAlive) {
+                            console.log('Media session ended');
+                          } else {
+                            console.log('Media status:', {
+                              playerState: media.playerState,
+                              idleReason: media.idleReason,
+                              currentTime: media.getEstimatedTime()
+                            });
+                          }
                         });
                       }
-                    });
-                  }
 
-                  // Pause local playback when casting
-                  if (videoRef.current) {
-                    videoRef.current.pause();
-                  }
-                },
-                (error: any) => {
-                  console.error('❌ Error loading media to cast device:', error);
-                  console.error('Error code:', error?.code);
-                  console.error('Error details:', error?.description || error?.message);
+                      // Pause local playback when casting
+                      if (videoRef.current) {
+                        videoRef.current.pause();
+                      }
+                    },
+                    (error: any) => {
+                      console.error('❌ Error loading media to cast device:', error);
+                      console.error('Error code:', error?.code);
+                      console.error('Error details:', error?.description || error?.message);
+                    }
+                  );
+                } catch (error) {
+                  console.error('❌ Error generating stream token:', error);
                 }
-              );
+              })();
             }
           }
         );
