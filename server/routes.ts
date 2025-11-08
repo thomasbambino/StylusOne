@@ -2462,7 +2462,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       } else if (existingStream && token) {
         // For token-based auth (Chromecast), check if we need a fresh manifest
         const manifestAge = Date.now() - existingStream.manifestFetchedAt.getTime();
-        const needsFreshManifest = manifestAge > 5000; // Refresh if > 5 seconds old (more aggressive to avoid segment expiry)
+        const needsFreshManifest = manifestAge > 8000; // Refresh if > 8 seconds old (balanced between freshness and performance)
 
         if (!needsFreshManifest) {
           // Manifest is still fresh, use cached version with tokens
@@ -2792,8 +2792,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Stream the segment with retry logic and timeout
       let response;
       let retries = 0;
-      const maxRetries = 2;
-      const timeout = 8000; // 8 second timeout
+      const maxRetries = 1; // Only 1 retry to avoid long delays
+      const timeout = 5000; // 5 second timeout for faster failure
 
       while (retries <= maxRetries) {
         try {
@@ -2816,7 +2816,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           retries++;
 
           if (retries <= maxRetries) {
-            await new Promise(resolve => setTimeout(resolve, 200 * retries)); // Exponential backoff
+            await new Promise(resolve => setTimeout(resolve, 100)); // Fast retry without exponential backoff
           }
         } catch (error: any) {
           if (error.name === 'AbortError') {
@@ -2827,7 +2827,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           retries++;
 
           if (retries <= maxRetries) {
-            await new Promise(resolve => setTimeout(resolve, 200 * retries));
+            await new Promise(resolve => setTimeout(resolve, 100)); // Fast retry
           }
         }
       }
