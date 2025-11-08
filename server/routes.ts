@@ -2772,18 +2772,33 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // The fullPath is the segment filename/path (e.g., "2025/11/02/05/24/25-06006.ts")
       const segmentPath = fullPath;
 
-      // Build the full segment URL
-      // If baseUrl has query params (e.g., "http://iptv.com/stream/?token=abc"), we need to:
-      // 1. Insert segment path BEFORE the query string
-      // 2. Result: "http://iptv.com/stream/segment.ts?token=abc"
+      // Extract segment-specific query parameters from the request
+      // The manifest might have: segment.ts?wmsAuthSign=xyz
+      // After proxying through our server, Express parses it into req.query
+      const segmentQueryParams = { ...req.query };
+      delete segmentQueryParams.token; // Remove our authentication token
+
+      // Build the full segment URL combining:
+      // 1. Base URL (with its query params from manifest URL)
+      // 2. Segment path
+      // 3. Segment-specific query params (from the manifest's segment URLs)
       let segmentUrl;
       if (baseUrl.includes('?')) {
-        // Split base URL into path and query parts
+        // Base URL has query params
         const [basePath, baseQuery] = baseUrl.split('?');
-        segmentUrl = `${basePath}${segmentPath}?${baseQuery}`;
+
+        // Combine base query params with segment query params
+        const combinedParams = new URLSearchParams(baseQuery);
+        Object.entries(segmentQueryParams).forEach(([key, value]) => {
+          combinedParams.set(key, value as string);
+        });
+
+        const queryString = combinedParams.toString();
+        segmentUrl = `${basePath}${segmentPath}${queryString ? '?' + queryString : ''}`;
       } else {
-        // No query params in base URL, simple concatenation
-        segmentUrl = `${baseUrl}${segmentPath}`;
+        // No base query params, just add segment params if any
+        const queryString = new URLSearchParams(segmentQueryParams as any).toString();
+        segmentUrl = `${baseUrl}${segmentPath}${queryString ? '?' + queryString : ''}`;
       }
 
       console.log(`Fetching segment for stream ${streamId}: ${segmentPath}`);
