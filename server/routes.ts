@@ -2528,11 +2528,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
         existingStream.manifest = freshBaseManifest;
         existingStream.manifestFetchedAt = new Date();
 
-        // Add tokens to segment URLs
-        const tokenParam = `?token=${token}`;
+        // Add tokens to segment URLs (use & if query params already exist, else ?)
         const tokenizedManifest = freshBaseManifest.replace(
           /\/api\/iptv\/segment\/(\d+)\/([^\s\n]+)/g,
-          (match, sid, path) => `/api/iptv/segment/${sid}/${path}${tokenParam}`
+          (match, sid, path) => {
+            const separator = path.includes('?') ? '&' : '?';
+            return `/api/iptv/segment/${sid}/${path}${separator}token=${token}`;
+          }
         );
 
         res.set({
@@ -2764,11 +2766,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       // The fullPath is the segment filename/path (e.g., "2025/11/02/05/24/25-06006.ts")
+      // We need to preserve any query parameters from the original IPTV URL
       const segmentPath = fullPath;
-      console.log(`Fetching segment for stream ${streamId}: ${segmentPath}`);
 
-      // Build the full segment URL by combining base URL with relative segment path
-      const segmentUrl = `${baseUrl}${segmentPath}`;
+      // Check if there are any query parameters from the original IPTV URL stored in the request
+      const originalQueryParams = req.query;
+      delete originalQueryParams.token; // Remove our auth token
+
+      // Build query string from remaining parameters (IPTV provider tokens/expires)
+      const queryString = Object.keys(originalQueryParams).length > 0
+        ? '?' + new URLSearchParams(originalQueryParams as any).toString()
+        : '';
+
+      console.log(`Fetching segment for stream ${streamId}: ${segmentPath}${queryString}`);
+
+      // Build the full segment URL by combining base URL with relative segment path and query params
+      const segmentUrl = `${baseUrl}${segmentPath}${queryString}`;
 
       console.log(`Fetching segment: ${segmentPath}`);
       console.log(`Base URL: ${baseUrl}`);
