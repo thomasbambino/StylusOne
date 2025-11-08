@@ -1017,8 +1017,8 @@ export default function LiveTVPage() {
         const castContext = cast.framework.CastContext.getInstance();
 
         castContext.setOptions({
-          receiverApplicationId: cast.framework.CastContext.DEFAULT_MEDIA_RECEIVER_APP_ID,
-          autoJoinPolicy: cast.framework.AutoJoinPolicy.ORIGIN_SCOPED
+          receiverApplicationId: (window as any).chrome.cast.media.DEFAULT_MEDIA_RECEIVER_APP_ID,
+          autoJoinPolicy: (window as any).chrome.cast.AutoJoinPolicy.ORIGIN_SCOPED
         });
 
         // Listen for cast session changes
