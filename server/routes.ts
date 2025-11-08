@@ -2468,10 +2468,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
         // Manifest too old, fetch fresh one below
         console.log(`🔄 Browser manifest too old (${Math.round(manifestAge / 1000)}s), fetching fresh for stream ${streamId}`);
       } else if (existingStream && token) {
-        // For token-based auth (Chromecast), use more aggressive refresh
-        // Chromecast needs fresher manifests due to network hop and segment expiry
+        // For token-based auth (Chromecast), use moderate refresh
+        // Balance between freshness and avoiding fetch overhead
         const manifestAge = Date.now() - existingStream.manifestFetchedAt.getTime();
-        const needsFreshManifest = manifestAge > 6000; // Chromecast: 6 seconds (prevents segment expiry)
+        const needsFreshManifest = manifestAge > 12000; // Chromecast: 12 seconds (balanced)
 
         if (!needsFreshManifest) {
           // Manifest is still fresh, use cached version with tokens
