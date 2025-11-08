@@ -925,9 +925,9 @@ export default function LiveTVPage() {
     });
   }
 
-  // Fetch EPG data for visible channels only (first 100 of filtered results)
-  // This improves performance while supporting search/filter
-  const channelsForEPG = filteredChannels.slice(0, 100);
+  // Fetch EPG data for all filtered channels
+  // Performance: React Query will handle batching and caching
+  const channelsForEPG = filteredChannels;
   const epgQueries = useQueries({
     queries: channelsForEPG.map((channel) => ({
       queryKey: ['epg', 'upcoming', channel.source === 'iptv' ? channel.epgId : channel.GuideNumber],
@@ -2197,7 +2197,6 @@ export default function LiveTVPage() {
                         )}>
                           <div className="flex items-center gap-3">
                             <div className="flex items-center gap-2">
-                              <span className="text-xl font-bold text-blue-400">{selectedChannel.GuideNumber}</span>
                               {(() => {
                                 // For IPTV channels, use the logo property directly
                                 let channelLogo = selectedChannel.logo;
