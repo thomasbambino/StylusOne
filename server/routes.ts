@@ -2507,7 +2507,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
         // Update cached base URL
         const freshManifestUrl = new URL(freshResponse.url);
-        const freshBaseSegmentUrl = freshManifestUrl.origin + freshManifestUrl.pathname.substring(0, freshManifestUrl.pathname.lastIndexOf('/') + 1);
+        // IMPORTANT: Preserve query parameters from manifest URL for segment requests
+        const freshBaseSegmentUrl = freshManifestUrl.origin + freshManifestUrl.pathname.substring(0, freshManifestUrl.pathname.lastIndexOf('/') + 1) + freshManifestUrl.search;
         (global as any).iptvSegmentBaseUrls.set(streamId, freshBaseSegmentUrl);
         existingStream.baseSegmentUrl = freshBaseSegmentUrl;
 
@@ -2592,7 +2593,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Use response.url to get the final URL after all HTTP redirects (not just HTML redirects)
       const finalManifestUrl = response.url;
       const manifestUrl = new URL(finalManifestUrl);
-      const baseSegmentUrl = manifestUrl.origin + manifestUrl.pathname.substring(0, manifestUrl.pathname.lastIndexOf('/') + 1);
+
+      // IMPORTANT: Preserve query parameters from manifest URL for segment requests
+      // Many IPTV providers embed auth tokens in the URL that are needed for all requests
+      const baseSegmentUrl = manifestUrl.origin + manifestUrl.pathname.substring(0, manifestUrl.pathname.lastIndexOf('/') + 1) + manifestUrl.search;
 
       console.log(`Initial manifest URL: ${streamUrl}`);
       console.log(`Final manifest URL (after redirects): ${finalManifestUrl}`);
@@ -2766,22 +2770,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       // The fullPath is the segment filename/path (e.g., "2025/11/02/05/24/25-06006.ts")
-      // We need to preserve any query parameters from the original IPTV URL
       const segmentPath = fullPath;
 
-      // Check if there are any query parameters from the original IPTV URL stored in the request
-      const originalQueryParams = req.query;
-      delete originalQueryParams.token; // Remove our auth token
+      // Build the full segment URL
+      // If baseUrl has query params (e.g., "http://iptv.com/stream/?token=abc"), we need to:
+      // 1. Insert segment path BEFORE the query string
+      // 2. Result: "http://iptv.com/stream/segment.ts?token=abc"
+      let segmentUrl;
+      if (baseUrl.includes('?')) {
+        // Split base URL into path and query parts
+        const [basePath, baseQuery] = baseUrl.split('?');
+        segmentUrl = `${basePath}${segmentPath}?${baseQuery}`;
+      } else {
+        // No query params in base URL, simple concatenation
+        segmentUrl = `${baseUrl}${segmentPath}`;
+      }
 
-      // Build query string from remaining parameters (IPTV provider tokens/expires)
-      const queryString = Object.keys(originalQueryParams).length > 0
-        ? '?' + new URLSearchParams(originalQueryParams as any).toString()
-        : '';
-
-      console.log(`Fetching segment for stream ${streamId}: ${segmentPath}${queryString}`);
-
-      // Build the full segment URL by combining base URL with relative segment path and query params
-      const segmentUrl = `${baseUrl}${segmentPath}${queryString}`;
+      console.log(`Fetching segment for stream ${streamId}: ${segmentPath}`);
 
       console.log(`Fetching segment: ${segmentPath}`);
       console.log(`Base URL: ${baseUrl}`);
