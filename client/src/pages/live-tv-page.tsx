@@ -1057,12 +1057,33 @@ export default function LiveTVPage() {
               session.loadMedia(request).then(
                 () => {
                   console.log('✅ Media loaded successfully to cast device');
+
+                  // Listen for media status updates
+                  const media = session.getMediaSession();
+                  if (media) {
+                    media.addUpdateListener((isAlive: boolean) => {
+                      if (!isAlive) {
+                        console.log('Media session ended');
+                      } else {
+                        console.log('Media status:', {
+                          playerState: media.playerState,
+                          idleReason: media.idleReason,
+                          currentTime: media.getEstimatedTime()
+                        });
+                      }
+                    });
+                  }
+
                   // Pause local playback when casting
                   if (videoRef.current) {
                     videoRef.current.pause();
                   }
                 },
-                (error: any) => console.error('❌ Error loading media to cast device:', error)
+                (error: any) => {
+                  console.error('❌ Error loading media to cast device:', error);
+                  console.error('Error code:', error?.code);
+                  console.error('Error details:', error?.description || error?.message);
+                }
               );
             }
           }
