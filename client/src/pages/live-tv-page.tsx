@@ -2136,8 +2136,8 @@ export default function LiveTVPage() {
   }
 
   // Keyboard shortcut: Ctrl+H to toggle HDHomeRun channels
-  // Use filteredChannels calculated earlier (already filtered by search and HDHomeRun toggle)
-  const availableChannels = filteredChannels;
+  // Only show channels that we've loaded EPG data for (infinite scroll)
+  const availableChannels = filteredChannels.slice(0, visibleChannelCount);
 
   return (
     <TooltipProvider delayDuration={0}>

@@ -496,11 +496,11 @@ export default function HomePage() {
               </div>
               
               {/* Action Buttons */}
-              <div className="mt-4" style={{ paddingBottom: '16px' }}>
-                  <div className="grid grid-cols-2 gap-6">
+              <div className="mt-4 space-y-4 pb-4">
+                  <div className="grid grid-cols-2 gap-4">
                     <Dialog open={showPlexDialog} onOpenChange={setShowPlexDialog}>
                       <DialogTrigger asChild>
-                        <Button variant="outline" size="sm" className="w-full">
+                        <Button variant="outline" size="sm" className="w-full justify-start">
                           <UserPlus className="h-4 w-4 mr-2" />
                           Join Plex
                         </Button>
@@ -539,21 +539,21 @@ export default function HomePage() {
                       </DialogContent>
                     </Dialog>
 
-                    <Button variant="outline" size="sm" className="w-full" onClick={() => window.open('https://overseerr.stylus.services/login', '_blank')}>
+                    <Button variant="outline" size="sm" className="w-full justify-start" onClick={() => window.open('https://overseerr.stylus.services/login', '_blank')}>
                       <Search className="h-4 w-4 mr-2" />
                       Request Content
                     </Button>
                   </div>
 
-                  <div className="grid grid-cols-2 gap-6" style={{ paddingTop: '16px' }}>
-                    <Button variant="outline" size="sm" className="w-full" onClick={() => window.open('https://app.plex.tv/desktop/#!/', '_blank')}>
+                  <div className="grid grid-cols-2 gap-4">
+                    <Button variant="outline" size="sm" className="w-full justify-start" onClick={() => window.open('https://app.plex.tv/desktop/#!/', '_blank')}>
                       <ExternalLink className="h-4 w-4 mr-2" />
                       Launch Plex
                     </Button>
                     <Link href="/plex" className="w-full">
-                      <Button className="w-full" variant="outline" size="sm">
+                      <Button variant="outline" size="sm" className="w-full justify-start">
+                        <Film className="h-4 w-4 mr-2" />
                         View Plex Dashboard
-                        <ChevronRight className="h-4 w-4 ml-2" />
                       </Button>
                     </Link>
                   </div>
