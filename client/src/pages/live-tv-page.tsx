@@ -1003,10 +1003,15 @@ export default function LiveTVPage() {
 
       const { scrollTop, scrollHeight, clientHeight } = channelListRef.current;
       const scrollPercentage = (scrollTop + clientHeight) / scrollHeight;
+      const remainingChannels = filteredChannels.length - visibleChannelCount;
 
-      // Load more when scrolled 80% down and there are more channels to load
-      if (scrollPercentage > 0.8 && visibleChannelCount < filteredChannels.length) {
-        setVisibleChannelCount(prev => Math.min(prev + 50, filteredChannels.length));
+      console.log(`📊 Scroll: ${Math.round(scrollPercentage * 100)}%, visible: ${visibleChannelCount}/${filteredChannels.length}`);
+
+      // Load more when scrolled 70% down and there are more channels to load
+      if (scrollPercentage > 0.7 && remainingChannels > 0) {
+        const newCount = Math.min(visibleChannelCount + 50, filteredChannels.length);
+        console.log(`📺 Loading more channels: ${visibleChannelCount} → ${newCount}`);
+        setVisibleChannelCount(newCount);
       }
     };
 

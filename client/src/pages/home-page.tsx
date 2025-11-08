@@ -553,7 +553,7 @@ export default function HomePage() {
                     <Link href="/plex" className="w-full">
                       <Button variant="outline" size="sm" className="w-full justify-start">
                         <Film className="h-4 w-4 mr-2" />
-                        View Plex Dashboard
+                        Plex Dashboard
                       </Button>
                     </Link>
                   </div>
