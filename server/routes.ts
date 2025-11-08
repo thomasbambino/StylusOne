@@ -2460,9 +2460,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
         return res.send(existingStream.manifest);
       } else if (existingStream && token) {
-        // For token-based auth (Chromecast), check if we need a fresh manifest
+        // For token-based auth (Chromecast), use more aggressive refresh
+        // Chromecast needs fresher manifests due to network hop and segment expiry
         const manifestAge = Date.now() - existingStream.manifestFetchedAt.getTime();
-        const needsFreshManifest = manifestAge > 8000; // Refresh if > 8 seconds old (balanced between freshness and performance)
+        const needsFreshManifest = manifestAge > 6000; // Chromecast: 6 seconds (prevents segment expiry)
 
         if (!needsFreshManifest) {
           // Manifest is still fresh, use cached version with tokens
@@ -2790,10 +2791,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
       });
 
       // Stream the segment with retry logic and timeout
+      // Separate configs for browser (session) vs Chromecast (token)
+      const isChromecast = !!token;
+      const maxRetries = isChromecast ? 1 : 2; // Chromecast: 1 retry, Browser: 2 retries
+      const timeout = isChromecast ? 6000 : 10000; // Chromecast: 6s, Browser: 10s
+      const retryDelay = isChromecast ? 100 : 50; // Chromecast: 100ms, Browser: 50ms
+
       let response;
       let retries = 0;
-      const maxRetries = 1; // Only 1 retry to avoid long delays
-      const timeout = 5000; // 5 second timeout for faster failure
 
       while (retries <= maxRetries) {
         try {
@@ -2816,18 +2821,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
           retries++;
 
           if (retries <= maxRetries) {
-            await new Promise(resolve => setTimeout(resolve, 100)); // Fast retry without exponential backoff
+            await new Promise(resolve => setTimeout(resolve, retryDelay));
           }
         } catch (error: any) {
           if (error.name === 'AbortError') {
-            console.error(`Segment fetch timeout on attempt ${retries + 1}`);
+            console.error(`Segment fetch timeout on attempt ${retries + 1} (${isChromecast ? 'Chromecast' : 'Browser'})`);
           } else {
             console.error(`Segment fetch error on attempt ${retries + 1}:`, error.message);
           }
           retries++;
 
           if (retries <= maxRetries) {
-            await new Promise(resolve => setTimeout(resolve, 100)); // Fast retry
+            await new Promise(resolve => setTimeout(resolve, retryDelay));
           }
         }
       }
