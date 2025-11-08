@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Stylus One Cast Receiver</title>
+  <style>
+    body {
+      margin: 0;
+      padding: 0;
+      background-color: #000;
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      overflow: hidden;
+    }
+
+    #player {
+      width: 100%;
+      height: 100%;
+      position: absolute;
+      top: 0;
+      left: 0;
+    }
+
+    .splash {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+      z-index: 1000;
+    }
+
+    .splash h1 {
+      color: #fff;
+      font-size: 72px;
+      font-weight: bold;
+      margin: 0;
+      text-shadow: 0 4px 8px rgba(0,0,0,0.5);
+    }
+
+    .splash p {
+      color: #aaa;
+      font-size: 24px;
+      margin-top: 20px;
+    }
+
+    .loading {
+      display: none;
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      color: #fff;
+      font-size: 32px;
+      text-align: center;
+      z-index: 999;
+    }
+
+    .spinner {
+      border: 4px solid rgba(255, 255, 255, 0.3);
+      border-radius: 50%;
+      border-top: 4px solid #fff;
+      width: 60px;
+      height: 60px;
+      animation: spin 1s linear infinite;
+      margin: 0 auto 20px;
+    }
+
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+  </style>
+</head>
+<body>
+  <div class="splash" id="splash">
+    <h1>Stylus One</h1>
+    <p>Ready to Cast</p>
+  </div>
+
+  <div class="loading" id="loading">
+    <div class="spinner"></div>
+    <p>Loading...</p>
+  </div>
+
+  <cast-media-player id="player"></cast-media-player>
+
+  <script src="//www.gstatic.com/cast/sdk/libs/caf_receiver/v3/cast_receiver_framework.js"></script>
+
+  <script>
+    const context = cast.framework.CastReceiverContext.getInstance();
+    const playerManager = context.getPlayerManager();
+
+    const playbackConfig = new cast.framework.PlaybackConfig();
+
+    // Configure playback for better HLS streaming
+    playbackConfig.manifestRequestHandler = function(requestInfo) {
+      console.log('Manifest request:', requestInfo.url);
+      return requestInfo;
+    };
+
+    // Handle segment requests
+    playbackConfig.segmentRequestHandler = function(requestInfo) {
+      console.log('Segment request:', requestInfo.url);
+      return requestInfo;
+    };
+
+    // Listen to player events
+    playerManager.addEventListener(
+      cast.framework.events.EventType.PLAYER_LOAD_COMPLETE,
+      () => {
+        console.log('Player loaded');
+        document.getElementById('splash').style.display = 'none';
+        document.getElementById('loading').style.display = 'none';
+      }
+    );
+
+    playerManager.addEventListener(
+      cast.framework.events.EventType.PLAYER_LOADING,
+      () => {
+        console.log('Player loading');
+        document.getElementById('splash').style.display = 'none';
+        document.getElementById('loading').style.display = 'block';
+      }
+    );
+
+    playerManager.addEventListener(
+      cast.framework.events.EventType.ERROR,
+      (event) => {
+        console.error('Player error:', event);
+      }
+    );
+
+    const options = new cast.framework.CastReceiverOptions();
+    options.disableIdleTimeout = false;
+    options.maxInactivity = 3600; // 1 hour
+
+    // Set custom styling
+    options.customNamespaces = {};
+
+    // Update playback config
+    context.start(options);
+
+    console.log('Stylus One Cast Receiver started');
+  </script>
+</body>
+</html>

@@ -1049,8 +1049,16 @@ export default function LiveTVPage() {
         console.log('✅ Cast SDK is now available, initializing...');
         const castContext = cast.framework.CastContext.getInstance();
 
+        // Use custom receiver app ID if configured, otherwise use default
+        // To use custom receiver: Set VITE_CAST_RECEIVER_APP_ID in .env file
+        // See CAST_RECEIVER_SETUP.md for instructions on registering custom receiver
+        const customAppId = import.meta.env.VITE_CAST_RECEIVER_APP_ID;
+        const receiverAppId = customAppId || (window as any).chrome.cast.media.DEFAULT_MEDIA_RECEIVER_APP_ID;
+
+        console.log(`Using Cast receiver: ${customAppId ? 'Custom (Stylus One)' : 'Default'}`);
+
         castContext.setOptions({
-          receiverApplicationId: (window as any).chrome.cast.media.DEFAULT_MEDIA_RECEIVER_APP_ID,
+          receiverApplicationId: receiverAppId,
           autoJoinPolicy: (window as any).chrome.cast.AutoJoinPolicy.ORIGIN_SCOPED
         });
 
