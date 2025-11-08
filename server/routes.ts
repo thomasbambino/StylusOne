@@ -2462,7 +2462,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       } else if (existingStream && token) {
         // For token-based auth (Chromecast), check if we need a fresh manifest
         const manifestAge = Date.now() - existingStream.manifestFetchedAt.getTime();
-        const needsFreshManifest = manifestAge > 30000; // Refresh if > 30 seconds old
+        const needsFreshManifest = manifestAge > 10000; // Refresh if > 10 seconds old (before HLS segments expire)
 
         if (!needsFreshManifest) {
           // Manifest is still fresh, use cached version with tokens
