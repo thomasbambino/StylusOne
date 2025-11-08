@@ -135,6 +135,9 @@
       }
     );
 
+    // Apply playback config to player manager
+    playerManager.setPlaybackConfig(playbackConfig);
+
     const options = new cast.framework.CastReceiverOptions();
     options.disableIdleTimeout = false;
     options.maxInactivity = 3600; // 1 hour
@@ -142,10 +145,10 @@
     // Set custom styling
     options.customNamespaces = {};
 
-    // Update playback config
+    // Start the receiver
     context.start(options);
 
-    console.log('Stylus One Cast Receiver started');
+    console.log('Stylus One Cast Receiver started with HLS support');
   </script>
 </body>
 </html>
