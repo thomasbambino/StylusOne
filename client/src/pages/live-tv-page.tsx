@@ -1030,6 +1030,17 @@ export default function LiveTVPage() {
             setCastSession(session);
             setIsCasting(!!session);
 
+            // Resume local playback when casting ends
+            if (!session && event.sessionState === 'SESSION_ENDED' && selectedChannel) {
+              console.log('🔄 Resuming local playback after cast ended');
+              // Reload the channel in the browser
+              if (selectedChannel.source === 'iptv') {
+                handlePlayIPTVChannel(selectedChannel);
+              } else {
+                handlePlayChannel(selectedChannel);
+              }
+            }
+
             // Only load media when session is starting/started, not when ending
             if (session && selectedChannel && event.sessionState === 'SESSION_STARTED') {
               console.log('Loading media to cast device for channel:', selectedChannel.GuideName);
@@ -1095,9 +1106,17 @@ export default function LiveTVPage() {
                         });
                       }
 
-                      // Pause local playback when casting
+                      // Stop local playback when casting
+                      console.log('🛑 Stopping local playback for Chromecast');
                       if (videoRef.current) {
                         videoRef.current.pause();
+                        videoRef.current.src = ''; // Clear the source
+                      }
+                      // Also destroy HLS instance if using HLS
+                      if (hlsRef.current) {
+                        console.log('🛑 Destroying HLS instance');
+                        hlsRef.current.destroy();
+                        hlsRef.current = null;
                       }
                     },
                     (error: any) => {
