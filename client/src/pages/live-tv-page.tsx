@@ -1035,12 +1035,15 @@ export default function LiveTVPage() {
               // Load media to cast device
               const streamUrl = `${window.location.origin}/api/iptv/stream/${selectedChannel.iptvId}.m3u8`;
               console.log('Stream URL:', streamUrl);
-              const mediaInfo = new cast.framework.messages.MediaInfo(streamUrl, 'application/x-mpegurl');
-              mediaInfo.metadata = new cast.framework.messages.GenericMediaMetadata();
-              mediaInfo.metadata.title = selectedChannel.GuideName;
-              mediaInfo.metadata.subtitle = selectedChannelProgram?.title || 'Live TV';
 
-              const request = new cast.framework.messages.LoadRequest(mediaInfo);
+              const chromecast = (window as any).chrome.cast;
+              const mediaInfo = new chromecast.media.MediaInfo(streamUrl, 'application/x-mpegurl');
+              const metadata = new chromecast.media.GenericMediaMetadata();
+              metadata.title = selectedChannel.GuideName;
+              metadata.subtitle = selectedChannelProgram?.title || 'Live TV';
+              mediaInfo.metadata = metadata;
+
+              const request = new chromecast.media.LoadRequest(mediaInfo);
 
               session.loadMedia(request).then(
                 () => {
