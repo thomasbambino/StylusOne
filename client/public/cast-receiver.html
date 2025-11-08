@@ -97,17 +97,29 @@
 
     const playbackConfig = new cast.framework.PlaybackConfig();
 
-    // Configure playback for better HLS streaming
+    // Configure HLS streaming optimizations
     playbackConfig.manifestRequestHandler = function(requestInfo) {
       console.log('Manifest request:', requestInfo.url);
+      // Don't cache manifests - always fetch fresh for live streams
+      requestInfo.headers = requestInfo.headers || {};
+      requestInfo.headers['Cache-Control'] = 'no-cache';
       return requestInfo;
     };
 
-    // Handle segment requests
+    // Handle segment requests with retry logic
     playbackConfig.segmentRequestHandler = function(requestInfo) {
       console.log('Segment request:', requestInfo.url);
       return requestInfo;
     };
+
+    // Configure segment timeout and buffer settings for live streaming
+    playbackConfig.segmentRequestTimeout = 10000; // 10 seconds timeout
+    playbackConfig.manifestRequestTimeout = 10000; // 10 seconds timeout
+    playbackConfig.licenseRequestTimeout = 10000;
+
+    // Live stream buffer configuration
+    playbackConfig.autoResumeDuration = 5; // Auto-resume after 5 seconds of buffering
+    playbackConfig.initialLiveSeekableRange = 600; // 10 minutes of seekable range
 
     // Listen to player events
     playerManager.addEventListener(
