@@ -2468,36 +2468,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
         // Manifest too old, fetch fresh one below
         console.log(`🔄 Browser manifest too old (${Math.round(manifestAge / 1000)}s), fetching fresh for stream ${streamId}`);
       } else if (existingStream && token) {
-        // For token-based auth (Chromecast), keep manifests fresh to prevent segment expiry
-        // 7 seconds works best - tested range from 5s (fails) to 15s (fails)
-        const manifestAge = Date.now() - existingStream.manifestFetchedAt.getTime();
-        const needsFreshManifest = manifestAge > 7000; // Chromecast: 7 seconds (sweet spot)
-
-        if (!needsFreshManifest) {
-          // Manifest is still fresh, use cached version with tokens
-          existingStream.users.add(userIdString);
-          existingStream.lastAccessed = new Date();
-          console.log(`📺 Using cached manifest (${Math.round(manifestAge / 1000)}s old) with token for stream ${streamId} (${existingStream.users.size} users)`);
-
-          const tokenParam = `?token=${token}`;
-          const tokenizedManifest = existingStream.manifest.replace(
-            /\/api\/iptv\/segment\/(\d+)\/([^\s\n]+)/g,
-            (match, sid, path) => `/api/iptv/segment/${sid}/${path}${tokenParam}`
-          );
-
-          res.set({
-            'Content-Type': 'application/vnd.apple.mpegurl',
-            'Access-Control-Allow-Origin': '*',
-            'Cache-Control': 'no-cache, no-store, must-revalidate'
-          });
-
-          return res.send(tokenizedManifest);
-        }
-
-        // Manifest is stale, fetch a fresh one
+        // For token-based auth (Chromecast), always fetch fresh manifest
+        // Chromecast needs fresh segments - caching causes failures
         existingStream.users.add(userIdString);
         existingStream.lastAccessed = new Date();
-        console.log(`🔄 Fetching fresh manifest (cached was ${Math.round(manifestAge / 1000)}s old) for stream ${streamId} (${existingStream.users.size} users)`);
+        console.log(`🔄 Fetching fresh manifest for Chromecast stream ${streamId} (${existingStream.users.size} users)`);
 
         // Fetch fresh manifest from source
         let freshStreamUrl = xtreamCodesService.getHLSStreamUrl(streamId);
