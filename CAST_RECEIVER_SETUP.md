@@ -27,20 +27,19 @@ To change "Default Media Receiver" to "Stylus One", you need to register a custo
 - After saving, you'll get an **Application ID** (looks like: `12345678`)
 - Copy this ID
 
-### 5. Update the Code
-Open `/Users/tommyshorez/Projects/HomelabDashboard/client/src/pages/live-tv-page.tsx`
+## Current Configuration
 
-Find this line (around line 1053):
-```typescript
-receiverApplicationId: (window as any).chrome.cast.media.DEFAULT_MEDIA_RECEIVER_APP_ID,
+**✅ Already Configured!**
+- Application ID: **5EAB1492**
+- Application Name: **Stylus One**
+- Receiver URL: **https://stylus.services/cast-receiver.html**
+
+This has been configured in `.env` and `.env.production`:
+```bash
+VITE_CAST_RECEIVER_APP_ID=5EAB1492
 ```
 
-Replace it with your custom app ID:
-```typescript
-receiverApplicationId: 'YOUR_APP_ID_HERE',  // e.g., '12345678'
-```
-
-### 6. Rebuild and Deploy
+### 5. Rebuild and Deploy
 ```bash
 npm run build
 # Deploy to your server
