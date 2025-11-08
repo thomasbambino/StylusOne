@@ -1,15 +1,17 @@
 # Build stage
 FROM node:20-slim AS builder
 
-# Accept build arguments for Firebase configuration
+# Accept build arguments for Firebase configuration and Google Cast
 ARG VITE_FIREBASE_API_KEY
 ARG VITE_FIREBASE_PROJECT_ID
 ARG VITE_FIREBASE_APP_ID
+ARG VITE_CAST_RECEIVER_APP_ID
 
 # Set them as environment variables for the build
 ENV VITE_FIREBASE_API_KEY=$VITE_FIREBASE_API_KEY
 ENV VITE_FIREBASE_PROJECT_ID=$VITE_FIREBASE_PROJECT_ID
 ENV VITE_FIREBASE_APP_ID=$VITE_FIREBASE_APP_ID
+ENV VITE_CAST_RECEIVER_APP_ID=$VITE_CAST_RECEIVER_APP_ID
 
 WORKDIR /app
 
