@@ -1001,11 +1001,11 @@ export default function LiveTVPage() {
     const maxAttempts = 150; // Try for 15 seconds (150 * 100ms)
 
     const initializeCast = () => {
-      const cast = (window as any).chrome?.cast;
+      const cast = (window as any).cast;
 
       // Debug logging every 50 attempts (every 5 seconds)
       if (attempts % 50 === 0 && attempts > 0) {
-        console.log(`🔍 Cast SDK check (${attempts/10}s): chrome.cast=${!!cast}, chrome.cast.framework=${!!cast?.framework}`);
+        console.log(`🔍 Cast SDK check (${attempts/10}s): cast=${!!cast}, cast.framework=${!!cast?.framework}`);
       }
 
       if (!cast || !cast.framework) {
@@ -1081,9 +1081,9 @@ export default function LiveTVPage() {
         }
       } else if (attempts >= maxAttempts) {
         // Timeout - give up
-        const cast = (window as any).chrome?.cast;
+        const cast = (window as any).cast;
         console.warn('⚠️ Cast SDK did not load after 15 seconds');
-        console.warn(`   chrome.cast: ${!!cast}, chrome.cast.framework: ${!!cast?.framework}`);
+        console.warn(`   cast: ${!!cast}, cast.framework: ${!!cast?.framework}`);
         if (pollInterval) {
           clearInterval(pollInterval);
           pollInterval = null;
@@ -1247,12 +1247,12 @@ export default function LiveTVPage() {
   const handleCast = () => {
     console.log('Cast button clicked');
     console.log('Checking Cast SDK status...');
-    console.log('window.chrome exists:', !!(window as any).chrome);
-    console.log('window.chrome.cast exists:', !!(window as any).chrome?.cast);
+    console.log('window.cast exists:', !!(window as any).cast);
+    console.log('window.cast.framework exists:', !!(window as any).cast?.framework);
     console.log('SDK load error:', (window as any).__castSdkLoadError);
 
-    const cast = (window as any).chrome?.cast;
-    if (!cast) {
+    const cast = (window as any).cast;
+    if (!cast || !cast.framework) {
       const loadError = (window as any).__castSdkLoadError;
       console.error('❌ Cast API not available');
 
