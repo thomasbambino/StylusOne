@@ -2295,6 +2295,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     users: Set<string>; // Track user IDs watching this stream
     lastAccessed: Date;
     manifestUrl: string;
+    manifestFetchedAt: Date; // Track when manifest was last fetched
   }
 
   const sharedStreams = new Map<string, SharedStream>();
@@ -2459,9 +2460,33 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
         return res.send(existingStream.manifest);
       } else if (existingStream && token) {
-        // For token-based auth (Chromecast), fetch a FRESH manifest
-        // Cached manifests have stale segment URLs that cause 404s
-        console.log(`🔄 Fetching fresh manifest with token for stream ${streamId} (Chromecast)`);
+        // For token-based auth (Chromecast), check if we need a fresh manifest
+        const manifestAge = Date.now() - existingStream.manifestFetchedAt.getTime();
+        const needsFreshManifest = manifestAge > 30000; // Refresh if > 30 seconds old
+
+        if (!needsFreshManifest) {
+          // Manifest is still fresh, use cached version with tokens
+          console.log(`📺 Using cached manifest (${Math.round(manifestAge / 1000)}s old) with token for stream ${streamId}`);
+          existingStream.users.add(userIdString);
+          existingStream.lastAccessed = new Date();
+
+          const tokenParam = `?token=${token}`;
+          const tokenizedManifest = existingStream.manifest.replace(
+            /\/api\/iptv\/segment\/(\d+)\/([^\s\n]+)/g,
+            (match, sid, path) => `/api/iptv/segment/${sid}/${path}${tokenParam}`
+          );
+
+          res.set({
+            'Content-Type': 'application/vnd.apple.mpegurl',
+            'Access-Control-Allow-Origin': '*',
+            'Cache-Control': 'no-cache, no-store, must-revalidate'
+          });
+
+          return res.send(tokenizedManifest);
+        }
+
+        // Manifest is stale, fetch a fresh one
+        console.log(`🔄 Fetching fresh manifest (cached was ${Math.round(manifestAge / 1000)}s old) for stream ${streamId}`);
         existingStream.users.add(userIdString);
         existingStream.lastAccessed = new Date();
 
@@ -2510,6 +2535,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
         // Update cache with fresh manifest
         existingStream.manifest = freshBaseManifest;
+        existingStream.manifestFetchedAt = new Date();
 
         // Add tokens to segment URLs
         const tokenParam = `?token=${token}`;
@@ -2597,7 +2623,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         baseSegmentUrl,
         users: new Set([userIdString]),
         lastAccessed: new Date(),
-        manifestUrl: finalManifestUrl
+        manifestUrl: finalManifestUrl,
+        manifestFetchedAt: new Date()
       });
 
       console.log(`💾 Cached stream ${streamId} for sharing (1 user)`);
