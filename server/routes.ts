@@ -2459,14 +2459,61 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
         return res.send(existingStream.manifest);
       } else if (existingStream && token) {
-        // For token-based auth, regenerate manifest with token-embedded URLs
-        console.log(`🔄 Regenerating manifest with token for stream ${streamId}`);
+        // For token-based auth (Chromecast), fetch a FRESH manifest
+        // Cached manifests have stale segment URLs that cause 404s
+        console.log(`🔄 Fetching fresh manifest with token for stream ${streamId} (Chromecast)`);
         existingStream.users.add(userIdString);
         existingStream.lastAccessed = new Date();
 
-        // Rewrite the cached manifest to include tokens in segment URLs
+        // Fetch fresh manifest from source
+        let freshStreamUrl = xtreamCodesService.getHLSStreamUrl(streamId);
+        console.log(`Fetching fresh HLS manifest from: ${freshStreamUrl}`);
+        let freshResponse = await fetch(freshStreamUrl);
+
+        if (!freshResponse.ok) {
+          console.error(`Failed to fetch fresh stream ${streamId}: ${freshResponse.status}`);
+          // Fallback to cached manifest with tokens
+          const tokenParam = `?token=${token}`;
+          const tokenizedManifest = existingStream.manifest.replace(
+            /\/api\/iptv\/segment\/(\d+)\/([^\s\n]+)/g,
+            (match, sid, path) => `/api/iptv/segment/${sid}/${path}${tokenParam}`
+          );
+          return res.send(tokenizedManifest);
+        }
+
+        let freshManifestText = await freshResponse.text();
+
+        // Handle HTML redirects
+        if (freshManifestText.trim().startsWith('<!DOCTYPE') || freshManifestText.trim().startsWith('<html')) {
+          const metaRefreshMatch = freshManifestText.match(/url='([^']+)'/);
+          const hrefMatch = freshManifestText.match(/href="([^"]+)"/);
+          const redirectUrl = metaRefreshMatch?.[1] || hrefMatch?.[1];
+
+          if (redirectUrl) {
+            freshResponse = await fetch(redirectUrl);
+            freshManifestText = await freshResponse.text();
+            freshStreamUrl = redirectUrl;
+          }
+        }
+
+        // Update cached base URL
+        const freshManifestUrl = new URL(freshResponse.url);
+        const freshBaseSegmentUrl = freshManifestUrl.origin + freshManifestUrl.pathname.substring(0, freshManifestUrl.pathname.lastIndexOf('/') + 1);
+        (global as any).iptvSegmentBaseUrls.set(streamId, freshBaseSegmentUrl);
+        existingStream.baseSegmentUrl = freshBaseSegmentUrl;
+
+        // Rewrite fresh manifest segments
+        const freshBaseManifest = freshManifestText.replace(
+          /^([^#\n].+\.ts)$/gm,
+          (match) => `/api/iptv/segment/${streamId}/${match.trim()}`
+        );
+
+        // Update cache with fresh manifest
+        existingStream.manifest = freshBaseManifest;
+
+        // Add tokens to segment URLs
         const tokenParam = `?token=${token}`;
-        const tokenizedManifest = existingStream.manifest.replace(
+        const tokenizedManifest = freshBaseManifest.replace(
           /\/api\/iptv\/segment\/(\d+)\/([^\s\n]+)/g,
           (match, sid, path) => `/api/iptv/segment/${sid}/${path}${tokenParam}`
         );
