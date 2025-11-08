@@ -24,6 +24,7 @@ import { spawn } from 'child_process';
 import fetch from 'node-fetch';
 import { db, pool } from './db';
 import { EPGService } from './services/epg-service';
+import { randomBytes } from 'crypto';
 import { 
   apiRateLimiter, 
   authRateLimiter, 
@@ -2311,7 +2312,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // Generate a stream access token
   function generateStreamToken(userId: number, streamId: string): string {
-    const { randomBytes } = require('crypto');
     const token = randomBytes(32).toString('hex');
     const expiresAt = new Date(Date.now() + 3600000); // 1 hour expiry
 
