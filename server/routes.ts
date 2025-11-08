@@ -2468,11 +2468,35 @@ export async function registerRoutes(app: Express): Promise<Server> {
         // Manifest too old, fetch fresh one below
         console.log(`🔄 Browser manifest too old (${Math.round(manifestAge / 1000)}s), fetching fresh for stream ${streamId}`);
       } else if (existingStream && token) {
-        // For token-based auth (Chromecast), always fetch fresh manifest
-        // Chromecast needs fresh segments - caching causes failures
+        // For token-based auth (Chromecast), use moderate refresh
+        const manifestAge = Date.now() - existingStream.manifestFetchedAt.getTime();
+        const needsFreshManifest = manifestAge > 8000; // 8 seconds
+
+        if (!needsFreshManifest) {
+          // Manifest is still fresh, use cached version with tokens
+          existingStream.users.add(userIdString);
+          existingStream.lastAccessed = new Date();
+          console.log(`📺 Using cached manifest (${Math.round(manifestAge / 1000)}s old) with token for stream ${streamId} (${existingStream.users.size} users)`);
+
+          const tokenParam = `?token=${token}`;
+          const tokenizedManifest = existingStream.manifest.replace(
+            /\/api\/iptv\/segment\/(\d+)\/([^\s\n]+)/g,
+            (match, sid, path) => `/api/iptv/segment/${sid}/${path}${tokenParam}`
+          );
+
+          res.set({
+            'Content-Type': 'application/vnd.apple.mpegurl',
+            'Access-Control-Allow-Origin': '*',
+            'Cache-Control': 'no-cache, no-store, must-revalidate'
+          });
+
+          return res.send(tokenizedManifest);
+        }
+
+        // Manifest is stale, fetch a fresh one
         existingStream.users.add(userIdString);
         existingStream.lastAccessed = new Date();
-        console.log(`🔄 Fetching fresh manifest for Chromecast stream ${streamId} (${existingStream.users.size} users)`);
+        console.log(`🔄 Fetching fresh manifest (cached was ${Math.round(manifestAge / 1000)}s old) for stream ${streamId} (${existingStream.users.size} users)`);
 
         // Fetch fresh manifest from source
         let freshStreamUrl = xtreamCodesService.getHLSStreamUrl(streamId);
@@ -2507,42 +2531,31 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
         // Update cached base URL
         const freshManifestUrl = new URL(freshResponse.url);
-        // IMPORTANT: Preserve query parameters from manifest URL for segment requests
-        const freshBaseSegmentUrl = freshManifestUrl.origin + freshManifestUrl.pathname.substring(0, freshManifestUrl.pathname.lastIndexOf('/') + 1) + freshManifestUrl.search;
+        const freshBaseSegmentUrl = freshManifestUrl.origin + freshManifestUrl.pathname.substring(0, freshManifestUrl.pathname.lastIndexOf('/') + 1);
         (global as any).iptvSegmentBaseUrls.set(streamId, freshBaseSegmentUrl);
         existingStream.baseSegmentUrl = freshBaseSegmentUrl;
 
         // Rewrite fresh manifest segments
-        let freshBaseManifest = freshManifestText.replace(
+        const freshBaseManifest = freshManifestText.replace(
           /^([^#\n].+\.ts)$/gm,
           (match) => `/api/iptv/segment/${streamId}/${match.trim()}`
-        );
-
-        // Force Chromecast to refresh manifest more frequently by reducing target duration
-        // This prevents using stale segment URLs that expire after 6-10 seconds
-        freshBaseManifest = freshBaseManifest.replace(
-          /#EXT-X-TARGETDURATION:\d+/,
-          '#EXT-X-TARGETDURATION:4'
         );
 
         // Update cache with fresh manifest
         existingStream.manifest = freshBaseManifest;
         existingStream.manifestFetchedAt = new Date();
 
-        // Add tokens to segment URLs (use & if query params already exist, else ?)
+        // Add tokens to segment URLs
+        const tokenParam = `?token=${token}`;
         const tokenizedManifest = freshBaseManifest.replace(
           /\/api\/iptv\/segment\/(\d+)\/([^\s\n]+)/g,
-          (match, sid, path) => {
-            const separator = path.includes('?') ? '&' : '?';
-            return `/api/iptv/segment/${sid}/${path}${separator}token=${token}`;
-          }
+          (match, sid, path) => `/api/iptv/segment/${sid}/${path}${tokenParam}`
         );
 
         res.set({
           'Content-Type': 'application/vnd.apple.mpegurl',
           'Access-Control-Allow-Origin': '*',
-          'Cache-Control': 'no-cache, no-store, must-revalidate',
-          'Expires': '0'
+          'Cache-Control': 'no-cache, no-store, must-revalidate'
         });
 
         return res.send(tokenizedManifest);
@@ -2593,10 +2606,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Use response.url to get the final URL after all HTTP redirects (not just HTML redirects)
       const finalManifestUrl = response.url;
       const manifestUrl = new URL(finalManifestUrl);
-
-      // IMPORTANT: Preserve query parameters from manifest URL for segment requests
-      // Many IPTV providers embed auth tokens in the URL that are needed for all requests
-      const baseSegmentUrl = manifestUrl.origin + manifestUrl.pathname.substring(0, manifestUrl.pathname.lastIndexOf('/') + 1) + manifestUrl.search;
+      const baseSegmentUrl = manifestUrl.origin + manifestUrl.pathname.substring(0, manifestUrl.pathname.lastIndexOf('/') + 1);
 
       console.log(`Initial manifest URL: ${streamUrl}`);
       console.log(`Final manifest URL (after redirects): ${finalManifestUrl}`);
@@ -2771,37 +2781,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // The fullPath is the segment filename/path (e.g., "2025/11/02/05/24/25-06006.ts")
       const segmentPath = fullPath;
-
-      // Extract segment-specific query parameters from the request
-      // The manifest might have: segment.ts?wmsAuthSign=xyz
-      // After proxying through our server, Express parses it into req.query
-      const segmentQueryParams = { ...req.query };
-      delete segmentQueryParams.token; // Remove our authentication token
-
-      // Build the full segment URL combining:
-      // 1. Base URL (with its query params from manifest URL)
-      // 2. Segment path
-      // 3. Segment-specific query params (from the manifest's segment URLs)
-      let segmentUrl;
-      if (baseUrl.includes('?')) {
-        // Base URL has query params
-        const [basePath, baseQuery] = baseUrl.split('?');
-
-        // Combine base query params with segment query params
-        const combinedParams = new URLSearchParams(baseQuery);
-        Object.entries(segmentQueryParams).forEach(([key, value]) => {
-          combinedParams.set(key, value as string);
-        });
-
-        const queryString = combinedParams.toString();
-        segmentUrl = `${basePath}${segmentPath}${queryString ? '?' + queryString : ''}`;
-      } else {
-        // No base query params, just add segment params if any
-        const queryString = new URLSearchParams(segmentQueryParams as any).toString();
-        segmentUrl = `${baseUrl}${segmentPath}${queryString ? '?' + queryString : ''}`;
-      }
-
       console.log(`Fetching segment for stream ${streamId}: ${segmentPath}`);
+
+      // Build the full segment URL by combining base URL with relative segment path
+      const segmentUrl = `${baseUrl}${segmentPath}`;
 
       console.log(`Fetching segment: ${segmentPath}`);
       console.log(`Base URL: ${baseUrl}`);
