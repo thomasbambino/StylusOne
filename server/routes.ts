@@ -2462,7 +2462,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       } else if (existingStream && token) {
         // For token-based auth (Chromecast), check if we need a fresh manifest
         const manifestAge = Date.now() - existingStream.manifestFetchedAt.getTime();
-        const needsFreshManifest = manifestAge > 10000; // Refresh if > 10 seconds old (before HLS segments expire)
+        const needsFreshManifest = manifestAge > 5000; // Refresh if > 5 seconds old (more aggressive to avoid segment expiry)
 
         if (!needsFreshManifest) {
           // Manifest is still fresh, use cached version with tokens
@@ -2789,12 +2789,52 @@ export async function registerRoutes(app: Express): Promise<Server> {
         'Cache-Control': 'public, max-age=31536000' // Segments can be cached
       });
 
-      // Stream the segment directly without buffering
-      const response = await fetch(segmentUrl);
+      // Stream the segment with retry logic and timeout
+      let response;
+      let retries = 0;
+      const maxRetries = 2;
+      const timeout = 8000; // 8 second timeout
 
-      if (!response.ok) {
-        console.error(`Failed to fetch segment ${segmentPath}: ${response.status}`);
-        return res.status(response.status).send('Segment not available');
+      while (retries <= maxRetries) {
+        try {
+          const controller = new AbortController();
+          const timeoutId = setTimeout(() => controller.abort(), timeout);
+
+          response = await fetch(segmentUrl, {
+            signal: controller.signal,
+            headers: {
+              'Connection': 'keep-alive'
+            }
+          });
+          clearTimeout(timeoutId);
+
+          if (response.ok) {
+            break; // Success!
+          }
+
+          console.error(`Segment fetch attempt ${retries + 1} failed: ${response.status}`);
+          retries++;
+
+          if (retries <= maxRetries) {
+            await new Promise(resolve => setTimeout(resolve, 200 * retries)); // Exponential backoff
+          }
+        } catch (error: any) {
+          if (error.name === 'AbortError') {
+            console.error(`Segment fetch timeout on attempt ${retries + 1}`);
+          } else {
+            console.error(`Segment fetch error on attempt ${retries + 1}:`, error.message);
+          }
+          retries++;
+
+          if (retries <= maxRetries) {
+            await new Promise(resolve => setTimeout(resolve, 200 * retries));
+          }
+        }
+      }
+
+      if (!response || !response.ok) {
+        console.error(`Failed to fetch segment ${segmentPath} after ${maxRetries + 1} attempts: ${response?.status || 'no response'}`);
+        return res.status(response?.status || 503).send('Segment not available');
       }
 
       // Check content type - if HTML, we might need to follow a redirect

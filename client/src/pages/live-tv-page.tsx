@@ -1126,15 +1126,43 @@ export default function LiveTVPage() {
                       // Listen for media status updates
                       const media = session.getMediaSession();
                       if (media) {
+                        let bufferingTimeout: NodeJS.Timeout | null = null;
+                        let lastBufferingState = false;
+
                         media.addUpdateListener((isAlive: boolean) => {
                           if (!isAlive) {
                             console.log('Media session ended');
+                            if (bufferingTimeout) {
+                              clearTimeout(bufferingTimeout);
+                              bufferingTimeout = null;
+                            }
                           } else {
+                            const playerState = media.playerState;
+                            const isBuffering = playerState === 'BUFFERING';
+
                             console.log('Media status:', {
-                              playerState: media.playerState,
+                              playerState: playerState,
                               idleReason: media.idleReason,
                               currentTime: media.getEstimatedTime()
                             });
+
+                            // Detect stuck buffering
+                            if (isBuffering && !lastBufferingState) {
+                              console.log('⏳ Started buffering...');
+                              // Set timeout to detect if buffering too long
+                              bufferingTimeout = setTimeout(() => {
+                                console.error('❌ Buffering timeout - stream may be stuck');
+                                // Could potentially try to reload here, but for now just log
+                              }, 15000); // 15 second buffering timeout
+                            } else if (!isBuffering && lastBufferingState) {
+                              console.log('✅ Buffering complete');
+                              if (bufferingTimeout) {
+                                clearTimeout(bufferingTimeout);
+                                bufferingTimeout = null;
+                              }
+                            }
+
+                            lastBufferingState = isBuffering;
                           }
                         });
                       }
