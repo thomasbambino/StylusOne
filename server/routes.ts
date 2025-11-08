@@ -2468,10 +2468,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
         // Manifest too old, fetch fresh one below
         console.log(`🔄 Browser manifest too old (${Math.round(manifestAge / 1000)}s), fetching fresh for stream ${streamId}`);
       } else if (existingStream && token) {
-        // For token-based auth (Chromecast), use moderate refresh
-        // Balance between freshness and avoiding fetch overhead
+        // For token-based auth (Chromecast), aggressive refresh to prevent segment expiry
+        // HLS segments typically expire after 6-10s, so refresh frequently
         const manifestAge = Date.now() - existingStream.manifestFetchedAt.getTime();
-        const needsFreshManifest = manifestAge > 8000; // Chromecast: 8 seconds (fresh but not too aggressive)
+        const needsFreshManifest = manifestAge > 5000; // Chromecast: 5 seconds (aggressive refresh)
 
         if (!needsFreshManifest) {
           // Manifest is still fresh, use cached version with tokens
@@ -2802,8 +2802,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Separate configs for browser (session) vs Chromecast (token)
       const isChromecast = !!token;
       const maxRetries = isChromecast ? 2 : 2; // Chromecast: 2 retries, Browser: 2 retries
-      const timeout = isChromecast ? 8000 : 10000; // Chromecast: 8s, Browser: 10s
-      const retryDelay = isChromecast ? 100 : 50; // Chromecast: 100ms, Browser: 50ms
+      const timeout = isChromecast ? 10000 : 10000; // Chromecast: 10s, Browser: 10s
+      const retryDelay = isChromecast ? 50 : 50; // Chromecast: 50ms, Browser: 50ms
 
       let response;
       let retries = 0;
