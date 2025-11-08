@@ -2410,18 +2410,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
     const { token } = req.query;
     const { streamId } = req.params;
 
+    console.log(`📺 Stream request for ${streamId}, token: ${token ? 'present' : 'none'}, session: ${req.isAuthenticated() ? 'yes' : 'no'}, User-Agent: ${req.headers['user-agent']?.substring(0, 50)}`);
+
     let userId: number | null = null;
 
     if (token && typeof token === 'string') {
       // Token-based authentication
+      console.log(`🔐 Attempting token authentication for stream ${streamId}`);
       userId = validateStreamToken(token, streamId);
       if (!userId) {
         console.log(`❌ Invalid or expired token for stream ${streamId}`);
         return res.sendStatus(401);
       }
+      console.log(`✅ Token authentication successful for user ${userId}, stream ${streamId}`);
     } else if (req.isAuthenticated()) {
       // Session-based authentication
       userId = req.user!.id;
+      console.log(`✅ Session authentication successful for user ${userId}, stream ${streamId}`);
     } else {
       // No valid authentication
       console.log(`❌ No authentication provided for stream ${streamId}`);
@@ -2608,6 +2613,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
     // Check for token-based authentication (for Chromecast) or session authentication
     const { token } = req.query;
     const { streamId } = req.params;
+    const segmentPath = req.params[0];
+
+    console.log(`📦 Segment request for ${streamId}/${segmentPath?.substring(0, 30)}, token: ${token ? 'present' : 'none'}`);
 
     if (token && typeof token === 'string') {
       // Token-based authentication
@@ -2616,6 +2624,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         console.log(`❌ Invalid or expired token for segment ${streamId}`);
         return res.sendStatus(401);
       }
+      console.log(`✅ Token auth OK for segment`);
     } else if (!req.isAuthenticated()) {
       // No valid authentication
       console.log(`❌ No authentication provided for segment ${streamId}`);
