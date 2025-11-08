@@ -1020,7 +1020,7 @@ export default function LiveTVPage() {
   // Reset visible channel count when filters change
   useEffect(() => {
     setVisibleChannelCount(100);
-  }, [searchQuery, showFavoritesOnly, showHDHomeRun]);
+  }, [searchQuery, showHDHomeRun]);
 
   // Initialize Cast API
   useEffect(() => {

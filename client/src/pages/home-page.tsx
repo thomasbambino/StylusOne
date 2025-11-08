@@ -497,7 +497,7 @@ export default function HomePage() {
               
               {/* Action Buttons */}
               <div className="mt-4" style={{ paddingBottom: '16px' }}>
-                  <div className="grid grid-cols-3 gap-6">
+                  <div className="grid grid-cols-2 gap-6">
                     <Dialog open={showPlexDialog} onOpenChange={setShowPlexDialog}>
                       <DialogTrigger asChild>
                         <Button variant="outline" size="sm" className="w-full">
@@ -539,20 +539,19 @@ export default function HomePage() {
                       </DialogContent>
                     </Dialog>
 
-                    <Button variant="outline" size="sm" className="w-full" onClick={() => window.open('https://app.plex.tv/desktop/#!/', '_blank')}>
-                      <ExternalLink className="h-4 w-4 mr-2" />
-                      Launch Plex
-                    </Button>
-
                     <Button variant="outline" size="sm" className="w-full" onClick={() => window.open('https://overseerr.stylus.services/login', '_blank')}>
                       <Search className="h-4 w-4 mr-2" />
                       Request Content
                     </Button>
                   </div>
-                  
-                  <div style={{ paddingTop: '16px' }}>
-                    <Link href="/plex">
-                      <Button className="w-full" variant="outline">
+
+                  <div className="grid grid-cols-2 gap-6" style={{ paddingTop: '16px' }}>
+                    <Button variant="outline" size="sm" className="w-full" onClick={() => window.open('https://app.plex.tv/desktop/#!/', '_blank')}>
+                      <ExternalLink className="h-4 w-4 mr-2" />
+                      Launch Plex
+                    </Button>
+                    <Link href="/plex" className="w-full">
+                      <Button className="w-full" variant="outline" size="sm">
                         View Plex Dashboard
                         <ChevronRight className="h-4 w-4 ml-2" />
                       </Button>
