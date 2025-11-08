@@ -497,7 +497,7 @@ export default function HomePage() {
               
               {/* Action Buttons */}
               <div className="mt-4" style={{ paddingBottom: '16px' }}>
-                  <div className="grid grid-cols-2 gap-6">
+                  <div className="grid grid-cols-3 gap-6">
                     <Dialog open={showPlexDialog} onOpenChange={setShowPlexDialog}>
                       <DialogTrigger asChild>
                         <Button variant="outline" size="sm" className="w-full">
@@ -538,7 +538,12 @@ export default function HomePage() {
                         </form>
                       </DialogContent>
                     </Dialog>
-                    
+
+                    <Button variant="outline" size="sm" className="w-full" onClick={() => window.open('https://app.plex.tv/desktop/#!/', '_blank')}>
+                      <ExternalLink className="h-4 w-4 mr-2" />
+                      Launch Plex
+                    </Button>
+
                     <Button variant="outline" size="sm" className="w-full" onClick={() => window.open('https://overseerr.stylus.services/login', '_blank')}>
                       <Search className="h-4 w-4 mr-2" />
                       Request Content
