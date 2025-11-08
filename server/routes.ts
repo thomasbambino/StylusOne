@@ -2512,9 +2512,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
         existingStream.baseSegmentUrl = freshBaseSegmentUrl;
 
         // Rewrite fresh manifest segments
-        const freshBaseManifest = freshManifestText.replace(
+        let freshBaseManifest = freshManifestText.replace(
           /^([^#\n].+\.ts)$/gm,
           (match) => `/api/iptv/segment/${streamId}/${match.trim()}`
+        );
+
+        // Force Chromecast to refresh manifest more frequently by reducing target duration
+        // This prevents using stale segment URLs that expire after 6-10 seconds
+        freshBaseManifest = freshBaseManifest.replace(
+          /#EXT-X-TARGETDURATION:\d+/,
+          '#EXT-X-TARGETDURATION:4'
         );
 
         // Update cache with fresh manifest
@@ -2531,7 +2538,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         res.set({
           'Content-Type': 'application/vnd.apple.mpegurl',
           'Access-Control-Allow-Origin': '*',
-          'Cache-Control': 'no-cache, no-store, must-revalidate'
+          'Cache-Control': 'no-cache, no-store, must-revalidate',
+          'Expires': '0'
         });
 
         return res.send(tokenizedManifest);
