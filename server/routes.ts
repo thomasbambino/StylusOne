@@ -2471,7 +2471,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         // For token-based auth (Chromecast), use moderate refresh
         // Balance between freshness and avoiding fetch overhead
         const manifestAge = Date.now() - existingStream.manifestFetchedAt.getTime();
-        const needsFreshManifest = manifestAge > 12000; // Chromecast: 12 seconds (balanced)
+        const needsFreshManifest = manifestAge > 8000; // Chromecast: 8 seconds (fresh but not too aggressive)
 
         if (!needsFreshManifest) {
           // Manifest is still fresh, use cached version with tokens
@@ -2801,8 +2801,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Stream the segment with retry logic and timeout
       // Separate configs for browser (session) vs Chromecast (token)
       const isChromecast = !!token;
-      const maxRetries = isChromecast ? 1 : 2; // Chromecast: 1 retry, Browser: 2 retries
-      const timeout = isChromecast ? 6000 : 10000; // Chromecast: 6s, Browser: 10s
+      const maxRetries = isChromecast ? 2 : 2; // Chromecast: 2 retries, Browser: 2 retries
+      const timeout = isChromecast ? 8000 : 10000; // Chromecast: 8s, Browser: 10s
       const retryDelay = isChromecast ? 100 : 50; // Chromecast: 100ms, Browser: 50ms
 
       let response;
