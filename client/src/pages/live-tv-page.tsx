@@ -1039,12 +1039,20 @@ export default function LiveTVPage() {
 
               const chromecast = (window as any).chrome.cast;
               const mediaInfo = new chromecast.media.MediaInfo(streamUrl, 'application/x-mpegurl');
+
+              // Configure for live HLS streaming
+              mediaInfo.streamType = chromecast.media.StreamType.LIVE;
+
               const metadata = new chromecast.media.GenericMediaMetadata();
               metadata.title = selectedChannel.GuideName;
               metadata.subtitle = selectedChannelProgram?.title || 'Live TV';
+              if (selectedChannel.channelLogo) {
+                metadata.images = [new chromecast.media.Image(selectedChannel.channelLogo)];
+              }
               mediaInfo.metadata = metadata;
 
               const request = new chromecast.media.LoadRequest(mediaInfo);
+              request.autoplay = true;
 
               session.loadMedia(request).then(
                 () => {
