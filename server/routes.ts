@@ -2444,8 +2444,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Check if we have a shared stream for this channel
       const existingStream = sharedStreams.get(streamId);
 
-      if (existingStream) {
-        // Use existing shared stream
+      if (existingStream && !token) {
+        // Only use cached stream for session-based auth (not token-based)
+        // Token-based requests need fresh manifests with token-embedded URLs
         console.log(`📺 Sharing stream ${streamId} with user ${userIdString} (${existingStream.users.size + 1} total users)`);
         existingStream.users.add(userIdString);
         existingStream.lastAccessed = new Date();
@@ -2457,6 +2458,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
 
         return res.send(existingStream.manifest);
+      } else if (existingStream && token) {
+        // For token-based auth, regenerate manifest with token-embedded URLs
+        console.log(`🔄 Regenerating manifest with token for stream ${streamId}`);
+        existingStream.users.add(userIdString);
+        existingStream.lastAccessed = new Date();
+
+        // Rewrite the cached manifest to include tokens in segment URLs
+        const tokenParam = `?token=${token}`;
+        const tokenizedManifest = existingStream.manifest.replace(
+          /\/api\/iptv\/segment\/(\d+)\/([^\s\n]+)/g,
+          (match, sid, path) => `/api/iptv/segment/${sid}/${path}${tokenParam}`
+        );
+
+        res.set({
+          'Content-Type': 'application/vnd.apple.mpegurl',
+          'Access-Control-Allow-Origin': '*',
+          'Cache-Control': 'no-cache, no-store, must-revalidate'
+        });
+
+        return res.send(tokenizedManifest);
       }
 
       // No existing stream, fetch from provider
@@ -2516,17 +2537,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
       console.log(`Stored base URL for stream ${streamId} (type: ${typeof streamId}) in cache`);
 
       // Rewrite segment URLs to go through our proxy
-      // Include token in segment URLs if token authentication is being used
-      const tokenParam = token ? `?token=${token}` : '';
-      const rewrittenManifest = manifestText.replace(
+      // Always cache manifest WITHOUT tokens for security and sharing
+      const baseManifest = manifestText.replace(
         /^([^#\n].+\.ts)$/gm,
-        (match) => `/api/iptv/segment/${streamId}/${match.trim()}${tokenParam}`
+        (match) => `/api/iptv/segment/${streamId}/${match.trim()}`
       );
 
-      // Cache this stream for sharing
+      // Cache this stream for sharing (WITHOUT tokens)
       sharedStreams.set(streamId, {
         streamId,
-        manifest: rewrittenManifest,
+        manifest: baseManifest,  // Cached without tokens
         baseSegmentUrl,
         users: new Set([userIdString]),
         lastAccessed: new Date(),
@@ -2535,13 +2555,30 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       console.log(`💾 Cached stream ${streamId} for sharing (1 user)`);
 
+      // If token authentication, add token to segment URLs dynamically
+      let finalManifest = baseManifest;
+      if (token) {
+        console.log(`🔧 Adding token to manifest for Chromecast`);
+        const tokenParam = `?token=${token}`;
+        finalManifest = baseManifest.replace(
+          /\/api\/iptv\/segment\/(\d+)\/([^\s\n]+)/g,
+          (match, sid, path) => `/api/iptv/segment/${sid}/${path}${tokenParam}`
+        );
+
+        // Log a sample segment URL to verify token inclusion
+        const sampleSegment = finalManifest.match(/\/api\/iptv\/segment\/[^\s?]+\?token=/);
+        if (sampleSegment) {
+          console.log(`📝 Sample segment URL with token: ${sampleSegment[0].substring(0, 80)}...`);
+        }
+      }
+
       res.set({
         'Content-Type': 'application/vnd.apple.mpegurl',
         'Access-Control-Allow-Origin': '*',
         'Cache-Control': 'no-cache, no-store, must-revalidate'
       });
 
-      res.send(rewrittenManifest);
+      res.send(finalManifest);
     } catch (error) {
       console.error('Error proxying IPTV manifest:', error);
       res.status(500).send('Failed to proxy manifest');
