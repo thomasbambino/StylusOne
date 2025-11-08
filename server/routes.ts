@@ -2448,9 +2448,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (existingStream && !token) {
         // Only use cached stream for session-based auth (not token-based)
         // Token-based requests need fresh manifests with token-embedded URLs
-        console.log(`📺 Sharing stream ${streamId} with user ${userIdString} (${existingStream.users.size + 1} total users)`);
         existingStream.users.add(userIdString);
         existingStream.lastAccessed = new Date();
+        console.log(`📺 Sharing stream ${streamId} with user ${userIdString} (${existingStream.users.size} total users)`);
 
         res.set({
           'Content-Type': 'application/vnd.apple.mpegurl',
@@ -2466,9 +2466,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
         if (!needsFreshManifest) {
           // Manifest is still fresh, use cached version with tokens
-          console.log(`📺 Using cached manifest (${Math.round(manifestAge / 1000)}s old) with token for stream ${streamId}`);
           existingStream.users.add(userIdString);
           existingStream.lastAccessed = new Date();
+          console.log(`📺 Using cached manifest (${Math.round(manifestAge / 1000)}s old) with token for stream ${streamId} (${existingStream.users.size} users)`);
 
           const tokenParam = `?token=${token}`;
           const tokenizedManifest = existingStream.manifest.replace(
@@ -2486,9 +2486,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
 
         // Manifest is stale, fetch a fresh one
-        console.log(`🔄 Fetching fresh manifest (cached was ${Math.round(manifestAge / 1000)}s old) for stream ${streamId}`);
         existingStream.users.add(userIdString);
         existingStream.lastAccessed = new Date();
+        console.log(`🔄 Fetching fresh manifest (cached was ${Math.round(manifestAge / 1000)}s old) for stream ${streamId} (${existingStream.users.size} users)`);
 
         // Fetch fresh manifest from source
         let freshStreamUrl = xtreamCodesService.getHLSStreamUrl(streamId);
