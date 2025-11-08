@@ -718,12 +718,14 @@ export default function LiveTVPage() {
   const [queuePosition, setQueuePosition] = useState<number | null>(null);
   const [isCasting, setIsCasting] = useState(false);
   const [castSession, setCastSession] = useState<any>(null);
+  const [visibleChannelCount, setVisibleChannelCount] = useState(100); // Start with 100 channels
   const fullscreenContainerRef = useRef<HTMLDivElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const hlsRef = useRef<Hls | null>(null);
   const controlsTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const heartbeatIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const playbackTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const channelListRef = useRef<HTMLDivElement>(null);
 
   const { data: settings } = useQuery<Settings>({
     queryKey: ["/api/settings"],
@@ -925,9 +927,9 @@ export default function LiveTVPage() {
     });
   }
 
-  // Fetch EPG data for all filtered channels
-  // Performance: React Query will handle batching and caching
-  const channelsForEPG = filteredChannels;
+  // Fetch EPG data for visible channels only (infinite scroll)
+  // Load EPG data in batches as user scrolls for better performance
+  const channelsForEPG = filteredChannels.slice(0, visibleChannelCount);
   const epgQueries = useQueries({
     queries: channelsForEPG.map((channel) => ({
       queryKey: ['epg', 'upcoming', channel.source === 'iptv' ? channel.epgId : channel.GuideNumber],
@@ -993,6 +995,32 @@ export default function LiveTVPage() {
       }
     };
   }, []);
+
+  // Infinite scroll for channel guide - load more EPG data as user scrolls
+  useEffect(() => {
+    const handleScroll = () => {
+      if (!channelListRef.current) return;
+
+      const { scrollTop, scrollHeight, clientHeight } = channelListRef.current;
+      const scrollPercentage = (scrollTop + clientHeight) / scrollHeight;
+
+      // Load more when scrolled 80% down and there are more channels to load
+      if (scrollPercentage > 0.8 && visibleChannelCount < filteredChannels.length) {
+        setVisibleChannelCount(prev => Math.min(prev + 50, filteredChannels.length));
+      }
+    };
+
+    const scrollContainer = channelListRef.current;
+    if (scrollContainer) {
+      scrollContainer.addEventListener('scroll', handleScroll);
+      return () => scrollContainer.removeEventListener('scroll', handleScroll);
+    }
+  }, [visibleChannelCount, filteredChannels.length]);
+
+  // Reset visible channel count when filters change
+  useEffect(() => {
+    setVisibleChannelCount(100);
+  }, [searchQuery, showFavoritesOnly, showHDHomeRun]);
 
   // Initialize Cast API
   useEffect(() => {
@@ -2431,7 +2459,7 @@ export default function LiveTVPage() {
                   </div>
                 </div>
                 {/* Channel Rows */}
-                <div className="max-h-[600px] overflow-y-auto overflow-x-auto">
+                <div ref={channelListRef} className="max-h-[600px] overflow-y-auto overflow-x-auto">
                   {(channelsLoading || iptvChannelsLoading) ? (
                     // Loading skeleton
                     Array.from({ length: 10 }).map((_, index) => (
