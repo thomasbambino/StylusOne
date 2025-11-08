@@ -1108,7 +1108,8 @@ export default function LiveTVPage() {
                   // Configure for live HLS streaming
                   mediaInfo.streamType = chromecast.media.StreamType.LIVE;
 
-                  const metadata = new chromecast.media.GenericMediaMetadata();
+                  const metadata = new chromecast.media.TvShowMediaMetadata();
+                  metadata.seriesTitle = 'Stylus One';
                   metadata.title = selectedChannel.GuideName;
                   metadata.subtitle = selectedChannelProgram?.title || 'Live TV';
                   if (selectedChannel.channelLogo) {
