@@ -338,8 +338,8 @@ export class EPGService implements IService {
         return;
       }
 
-      // Fetch IPTV EPG in XMLTV format
-      const epgUrl = `${serverUrl}/portal/epg/${username}/${password}`;
+      // Fetch IPTV EPG in XMLTV format using correct Xtream Codes API endpoint
+      const epgUrl = `${serverUrl}/xmltv.php?username=${username}&password=${password}`;
       console.log(`Fetching IPTV EPG from: ${epgUrl}`);
 
       const response = await fetch(epgUrl);
