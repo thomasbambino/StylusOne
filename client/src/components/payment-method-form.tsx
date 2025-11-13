@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { PaymentElement, useStripe, useElements } from '@stripe/react-stripe-js';
+import { CardElement, useStripe, useElements } from '@stripe/react-stripe-js';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/use-toast';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
@@ -54,17 +54,18 @@ export function PaymentMethodForm({ onSuccess, submitButtonText = 'Save Payment 
       return;
     }
 
+    const cardElement = elements.getElement(CardElement);
+    if (!cardElement) {
+      return;
+    }
+
     setIsProcessing(true);
 
     try {
-      const { error: submitError } = await elements.submit();
-      if (submitError) {
-        throw new Error(submitError.message);
-      }
-
-      // Create payment method
+      // Create payment method with card element
       const { error, paymentMethod } = await stripe.createPaymentMethod({
-        elements,
+        type: 'card',
+        card: cardElement,
       });
 
       if (error) {
@@ -93,9 +94,26 @@ export function PaymentMethodForm({ onSuccess, submitButtonText = 'Save Payment 
 
   const loading = isProcessing || externalLoading || false;
 
+  const cardElementOptions = {
+    style: {
+      base: {
+        fontSize: '16px',
+        color: 'hsl(var(--foreground))',
+        '::placeholder': {
+          color: 'hsl(var(--muted-foreground))',
+        },
+      },
+      invalid: {
+        color: 'hsl(var(--destructive))',
+      },
+    },
+  };
+
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
-      <PaymentElement />
+      <div className="p-3 border rounded-md bg-background">
+        <CardElement options={cardElementOptions} />
+      </div>
 
       <Button
         type="submit"
