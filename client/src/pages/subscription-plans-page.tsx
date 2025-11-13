@@ -220,146 +220,6 @@ export default function SubscriptionPlansPage() {
     }
   };
 
-  const PlanFormFields = () => (
-    <div className="space-y-4">
-      <div>
-        <Label htmlFor="name">Plan Name</Label>
-        <Input
-          id="name"
-          value={formData.name}
-          onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-          placeholder="e.g., Basic, Premium, Enterprise"
-          required
-        />
-      </div>
-
-      <div>
-        <Label htmlFor="description">Description</Label>
-        <Textarea
-          id="description"
-          value={formData.description}
-          onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-          placeholder="Describe what's included in this plan"
-          rows={3}
-        />
-      </div>
-
-      <div className="grid grid-cols-2 gap-4">
-        <div>
-          <Label htmlFor="price_monthly">Monthly Price ($)</Label>
-          <Input
-            id="price_monthly"
-            type="number"
-            step="0.01"
-            value={formData.price_monthly}
-            onChange={(e) => setFormData({ ...formData, price_monthly: e.target.value })}
-            placeholder="9.99"
-            required
-          />
-        </div>
-
-        <div>
-          <Label htmlFor="price_annual">Annual Price ($)</Label>
-          <Input
-            id="price_annual"
-            type="number"
-            step="0.01"
-            value={formData.price_annual}
-            onChange={(e) => setFormData({ ...formData, price_annual: e.target.value })}
-            placeholder="99.99"
-            required
-          />
-        </div>
-      </div>
-
-      <div className="space-y-3">
-        <Label>Features</Label>
-
-        <div className="flex items-center justify-between">
-          <Label htmlFor="plex_access" className="font-normal">Plex Access</Label>
-          <Switch
-            id="plex_access"
-            checked={formData.features.plex_access}
-            onCheckedChange={(checked) => setFormData({
-              ...formData,
-              features: { ...formData.features, plex_access: checked }
-            })}
-          />
-        </div>
-
-        <div className="flex items-center justify-between">
-          <Label htmlFor="live_tv_access" className="font-normal">Live TV Access</Label>
-          <Switch
-            id="live_tv_access"
-            checked={formData.features.live_tv_access}
-            onCheckedChange={(checked) => setFormData({
-              ...formData,
-              features: { ...formData.features, live_tv_access: checked }
-            })}
-          />
-        </div>
-
-        <div className="flex items-center justify-between">
-          <Label htmlFor="books_access" className="font-normal">Books Access</Label>
-          <Switch
-            id="books_access"
-            checked={formData.features.books_access}
-            onCheckedChange={(checked) => setFormData({
-              ...formData,
-              features: { ...formData.features, books_access: checked }
-            })}
-          />
-        </div>
-
-        <div className="flex items-center justify-between">
-          <Label htmlFor="game_servers_access" className="font-normal">Game Servers Access</Label>
-          <Switch
-            id="game_servers_access"
-            checked={formData.features.game_servers_access}
-            onCheckedChange={(checked) => setFormData({
-              ...formData,
-              features: { ...formData.features, game_servers_access: checked }
-            })}
-          />
-        </div>
-
-        <div>
-          <Label htmlFor="max_favorite_channels">Max Favorite Channels</Label>
-          <Input
-            id="max_favorite_channels"
-            type="number"
-            value={formData.features.max_favorite_channels}
-            onChange={(e) => setFormData({
-              ...formData,
-              features: { ...formData.features, max_favorite_channels: e.target.value }
-            })}
-            placeholder="10"
-          />
-        </div>
-      </div>
-
-      <div className="flex items-center justify-between">
-        <Label htmlFor="is_active" className="font-normal">Plan Active</Label>
-        <Switch
-          id="is_active"
-          checked={formData.is_active}
-          onCheckedChange={(checked) => setFormData({ ...formData, is_active: checked })}
-        />
-      </div>
-
-      <div>
-        <Label htmlFor="sort_order">Sort Order</Label>
-        <Input
-          id="sort_order"
-          type="number"
-          value={formData.sort_order}
-          onChange={(e) => setFormData({ ...formData, sort_order: e.target.value })}
-          placeholder="0"
-        />
-      </div>
-    </div>
-  );
-
   return (
     <div className="container mx-auto p-6 space-y-6">
       <div className="flex justify-between items-center">
@@ -496,8 +356,142 @@ export default function SubscriptionPlansPage() {
               </DialogDescription>
             </DialogHeader>
 
-            <div className="my-4">
-              <PlanFormFields />
+            <div className="my-4 space-y-4">
+              <div>
+                <Label htmlFor="name">Plan Name</Label>
+                <Input
+                  id="name"
+                  value={formData.name}
+                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                  placeholder="e.g., Basic, Premium, Enterprise"
+                  required
+                />
+              </div>
+
+              <div>
+                <Label htmlFor="description">Description</Label>
+                <Textarea
+                  id="description"
+                  value={formData.description}
+                  onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                  placeholder="Describe what's included in this plan"
+                  rows={3}
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <Label htmlFor="price_monthly">Monthly Price ($)</Label>
+                  <Input
+                    id="price_monthly"
+                    type="number"
+                    step="0.01"
+                    value={formData.price_monthly}
+                    onChange={(e) => setFormData({ ...formData, price_monthly: e.target.value })}
+                    placeholder="9.99"
+                    required
+                  />
+                </div>
+
+                <div>
+                  <Label htmlFor="price_annual">Annual Price ($)</Label>
+                  <Input
+                    id="price_annual"
+                    type="number"
+                    step="0.01"
+                    value={formData.price_annual}
+                    onChange={(e) => setFormData({ ...formData, price_annual: e.target.value })}
+                    placeholder="99.99"
+                    required
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-3">
+                <Label>Features</Label>
+
+                <div className="flex items-center justify-between">
+                  <Label htmlFor="plex_access" className="font-normal">Plex Access</Label>
+                  <Switch
+                    id="plex_access"
+                    checked={formData.features.plex_access}
+                    onCheckedChange={(checked) => setFormData({
+                      ...formData,
+                      features: { ...formData.features, plex_access: checked }
+                    })}
+                  />
+                </div>
+
+                <div className="flex items-center justify-between">
+                  <Label htmlFor="live_tv_access" className="font-normal">Live TV Access</Label>
+                  <Switch
+                    id="live_tv_access"
+                    checked={formData.features.live_tv_access}
+                    onCheckedChange={(checked) => setFormData({
+                      ...formData,
+                      features: { ...formData.features, live_tv_access: checked }
+                    })}
+                  />
+                </div>
+
+                <div className="flex items-center justify-between">
+                  <Label htmlFor="books_access" className="font-normal">Books Access</Label>
+                  <Switch
+                    id="books_access"
+                    checked={formData.features.books_access}
+                    onCheckedChange={(checked) => setFormData({
+                      ...formData,
+                      features: { ...formData.features, books_access: checked }
+                    })}
+                  />
+                </div>
+
+                <div className="flex items-center justify-between">
+                  <Label htmlFor="game_servers_access" className="font-normal">Game Servers Access</Label>
+                  <Switch
+                    id="game_servers_access"
+                    checked={formData.features.game_servers_access}
+                    onCheckedChange={(checked) => setFormData({
+                      ...formData,
+                      features: { ...formData.features, game_servers_access: checked }
+                    })}
+                  />
+                </div>
+
+                <div>
+                  <Label htmlFor="max_favorite_channels">Max Favorite Channels</Label>
+                  <Input
+                    id="max_favorite_channels"
+                    type="number"
+                    value={formData.features.max_favorite_channels}
+                    onChange={(e) => setFormData({
+                      ...formData,
+                      features: { ...formData.features, max_favorite_channels: e.target.value }
+                    })}
+                    placeholder="10"
+                  />
+                </div>
+              </div>
+
+              <div className="flex items-center justify-between">
+                <Label htmlFor="is_active" className="font-normal">Plan Active</Label>
+                <Switch
+                  id="is_active"
+                  checked={formData.is_active}
+                  onCheckedChange={(checked) => setFormData({ ...formData, is_active: checked })}
+                />
+              </div>
+
+              <div>
+                <Label htmlFor="sort_order">Sort Order</Label>
+                <Input
+                  id="sort_order"
+                  type="number"
+                  value={formData.sort_order}
+                  onChange={(e) => setFormData({ ...formData, sort_order: e.target.value })}
+                  placeholder="0"
+                />
+              </div>
             </div>
 
             <DialogFooter>
@@ -523,8 +517,142 @@ export default function SubscriptionPlansPage() {
               </DialogDescription>
             </DialogHeader>
 
-            <div className="my-4">
-              <PlanFormFields />
+            <div className="my-4 space-y-4">
+              <div>
+                <Label htmlFor="edit-name">Plan Name</Label>
+                <Input
+                  id="edit-name"
+                  value={formData.name}
+                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                  placeholder="e.g., Basic, Premium, Enterprise"
+                  required
+                />
+              </div>
+
+              <div>
+                <Label htmlFor="edit-description">Description</Label>
+                <Textarea
+                  id="edit-description"
+                  value={formData.description}
+                  onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                  placeholder="Describe what's included in this plan"
+                  rows={3}
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <Label htmlFor="edit-price_monthly">Monthly Price ($)</Label>
+                  <Input
+                    id="edit-price_monthly"
+                    type="number"
+                    step="0.01"
+                    value={formData.price_monthly}
+                    onChange={(e) => setFormData({ ...formData, price_monthly: e.target.value })}
+                    placeholder="9.99"
+                    required
+                  />
+                </div>
+
+                <div>
+                  <Label htmlFor="edit-price_annual">Annual Price ($)</Label>
+                  <Input
+                    id="edit-price_annual"
+                    type="number"
+                    step="0.01"
+                    value={formData.price_annual}
+                    onChange={(e) => setFormData({ ...formData, price_annual: e.target.value })}
+                    placeholder="99.99"
+                    required
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-3">
+                <Label>Features</Label>
+
+                <div className="flex items-center justify-between">
+                  <Label htmlFor="edit-plex_access" className="font-normal">Plex Access</Label>
+                  <Switch
+                    id="edit-plex_access"
+                    checked={formData.features.plex_access}
+                    onCheckedChange={(checked) => setFormData({
+                      ...formData,
+                      features: { ...formData.features, plex_access: checked }
+                    })}
+                  />
+                </div>
+
+                <div className="flex items-center justify-between">
+                  <Label htmlFor="edit-live_tv_access" className="font-normal">Live TV Access</Label>
+                  <Switch
+                    id="edit-live_tv_access"
+                    checked={formData.features.live_tv_access}
+                    onCheckedChange={(checked) => setFormData({
+                      ...formData,
+                      features: { ...formData.features, live_tv_access: checked }
+                    })}
+                  />
+                </div>
+
+                <div className="flex items-center justify-between">
+                  <Label htmlFor="edit-books_access" className="font-normal">Books Access</Label>
+                  <Switch
+                    id="edit-books_access"
+                    checked={formData.features.books_access}
+                    onCheckedChange={(checked) => setFormData({
+                      ...formData,
+                      features: { ...formData.features, books_access: checked }
+                    })}
+                  />
+                </div>
+
+                <div className="flex items-center justify-between">
+                  <Label htmlFor="edit-game_servers_access" className="font-normal">Game Servers Access</Label>
+                  <Switch
+                    id="edit-game_servers_access"
+                    checked={formData.features.game_servers_access}
+                    onCheckedChange={(checked) => setFormData({
+                      ...formData,
+                      features: { ...formData.features, game_servers_access: checked }
+                    })}
+                  />
+                </div>
+
+                <div>
+                  <Label htmlFor="edit-max_favorite_channels">Max Favorite Channels</Label>
+                  <Input
+                    id="edit-max_favorite_channels"
+                    type="number"
+                    value={formData.features.max_favorite_channels}
+                    onChange={(e) => setFormData({
+                      ...formData,
+                      features: { ...formData.features, max_favorite_channels: e.target.value }
+                    })}
+                    placeholder="10"
+                  />
+                </div>
+              </div>
+
+              <div className="flex items-center justify-between">
+                <Label htmlFor="edit-is_active" className="font-normal">Plan Active</Label>
+                <Switch
+                  id="edit-is_active"
+                  checked={formData.is_active}
+                  onCheckedChange={(checked) => setFormData({ ...formData, is_active: checked })}
+                />
+              </div>
+
+              <div>
+                <Label htmlFor="edit-sort_order">Sort Order</Label>
+                <Input
+                  id="edit-sort_order"
+                  type="number"
+                  value={formData.sort_order}
+                  onChange={(e) => setFormData({ ...formData, sort_order: e.target.value })}
+                  placeholder="0"
+                />
+              </div>
             </div>
 
             <DialogFooter>
