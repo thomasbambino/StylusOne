@@ -144,6 +144,41 @@ export default function MySubscriptionPage() {
     },
   });
 
+  // Create subscription mutation
+  const createSubscriptionMutation = useMutation({
+    mutationFn: async ({ planId, period, paymentMethodId }: { planId: number; period: 'monthly' | 'annual'; paymentMethodId: string }) => {
+      const res = await fetch('/api/subscriptions/create', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          plan_id: planId,
+          billing_period: period,
+          payment_method_id: paymentMethodId,
+        }),
+      });
+      if (!res.ok) {
+        const error = await res.json();
+        throw new Error(error.error || 'Failed to create subscription');
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/subscriptions/current'] });
+      setIsUpgradeDialogOpen(false);
+      toast({
+        title: 'Subscription Created',
+        description: 'Your subscription has been created successfully.',
+      });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: 'Error',
+        description: error.message,
+        variant: 'destructive',
+      });
+    },
+  });
+
   // Upgrade/downgrade mutation
   const upgradeMutation = useMutation({
     mutationFn: async ({ planId, period }: { planId: number; period: 'monthly' | 'annual' }) => {
@@ -495,7 +530,7 @@ export default function MySubscriptionPage() {
 
       {/* Upgrade/Change Plan Dialog */}
       <Dialog open={isUpgradeDialogOpen} onOpenChange={setIsUpgradeDialogOpen}>
-        <DialogContent>
+        <DialogContent className="max-w-2xl">
           <DialogHeader>
             <DialogTitle>
               {currentSubscription ? 'Change Plan' : 'Subscribe'}
@@ -535,16 +570,39 @@ export default function MySubscriptionPage() {
                 </Button>
               </div>
             </div>
+
+            {/* Show payment form for new subscriptions */}
+            {!currentSubscription && selectedPlan && (
+              <div>
+                <label className="text-sm font-medium mb-2 block">Payment Information</label>
+                <Elements stripe={getStripe()}>
+                  <PaymentMethodForm
+                    onSuccess={(paymentMethodId) => {
+                      createSubscriptionMutation.mutate({
+                        planId: selectedPlan.id,
+                        period: billingPeriod,
+                        paymentMethodId,
+                      });
+                    }}
+                    submitButtonText="Subscribe"
+                    isLoading={createSubscriptionMutation.isPending}
+                  />
+                </Elements>
+              </div>
+            )}
           </div>
 
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setIsUpgradeDialogOpen(false)}>
-              Cancel
-            </Button>
-            <Button onClick={handleUpgradeConfirm} disabled={upgradeMutation.isPending}>
-              {upgradeMutation.isPending ? 'Processing...' : 'Confirm'}
-            </Button>
-          </DialogFooter>
+          {/* Only show confirm button for existing subscriptions (upgrades) */}
+          {currentSubscription && (
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setIsUpgradeDialogOpen(false)}>
+                Cancel
+              </Button>
+              <Button onClick={handleUpgradeConfirm} disabled={upgradeMutation.isPending}>
+                {upgradeMutation.isPending ? 'Processing...' : 'Confirm'}
+              </Button>
+            </DialogFooter>
+          )}
         </DialogContent>
       </Dialog>
 

@@ -6,10 +6,12 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Loader2 } from 'lucide-react';
 
 interface PaymentMethodFormProps {
-  onSuccess?: () => void;
+  onSuccess?: ((paymentMethodId: string) => void) | (() => void);
+  submitButtonText?: string;
+  isLoading?: boolean;
 }
 
-export function PaymentMethodForm({ onSuccess }: PaymentMethodFormProps) {
+export function PaymentMethodForm({ onSuccess, submitButtonText = 'Save Payment Method', isLoading: externalLoading }: PaymentMethodFormProps) {
   const stripe = useStripe();
   const elements = useElements();
   const { toast } = useToast();
@@ -32,7 +34,9 @@ export function PaymentMethodForm({ onSuccess }: PaymentMethodFormProps) {
         title: 'Success',
         description: 'Payment method updated successfully',
       });
-      onSuccess?.();
+      if (onSuccess) {
+        onSuccess();
+      }
     },
     onError: (error: Error) => {
       toast({
@@ -68,7 +72,13 @@ export function PaymentMethodForm({ onSuccess }: PaymentMethodFormProps) {
       }
 
       if (paymentMethod) {
-        await updatePaymentMethodMutation.mutateAsync(paymentMethod.id);
+        // If onSuccess accepts a parameter, call it with payment method ID (for new subscriptions)
+        // Otherwise, call the update endpoint (for updating existing payment methods)
+        if (onSuccess && onSuccess.length > 0) {
+          onSuccess(paymentMethod.id);
+        } else {
+          await updatePaymentMethodMutation.mutateAsync(paymentMethod.id);
+        }
       }
     } catch (error) {
       toast({
@@ -81,17 +91,19 @@ export function PaymentMethodForm({ onSuccess }: PaymentMethodFormProps) {
     }
   };
 
+  const loading = isProcessing || externalLoading || false;
+
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
       <PaymentElement />
 
       <Button
         type="submit"
-        disabled={!stripe || isProcessing}
+        disabled={!stripe || loading}
         className="w-full"
       >
-        {isProcessing && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-        {isProcessing ? 'Processing...' : 'Save Payment Method'}
+        {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+        {loading ? 'Processing...' : submitButtonText}
       </Button>
     </form>
   );
