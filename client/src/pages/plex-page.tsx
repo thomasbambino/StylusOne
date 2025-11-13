@@ -327,16 +327,16 @@ export default function PlexPage() {
                             {/* Glass overlay */}
                             <div className="absolute inset-0"
                               style={{
-                                background: 'rgba(255, 255, 255, 0.1)',
+                                background: 'rgba(0, 0, 0, 0.3)',
                                 backdropFilter: 'saturate(180%) blur(10px)',
                                 WebkitBackdropFilter: 'saturate(180%) blur(10px)',
                                 borderRadius: '16px',
                                 border: '1px solid rgba(255, 255, 255, 0.2)',
                               }}
                             />
-                            
+
                             {/* Dark gradient overlay for better text readability */}
-                            <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/20 to-transparent rounded-2xl" />
+                            <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/40 to-black/30 rounded-2xl" />
                             
                             {/* Content */}
                             <div className="relative h-full p-4 flex flex-col justify-between">
