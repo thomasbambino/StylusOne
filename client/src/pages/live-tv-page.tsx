@@ -1703,15 +1703,15 @@ export default function LiveTVPage() {
     }
 
     try {
+      // Set loading state and selected channel immediately for instant feedback
       setIsLoading(true);
       setQueuePosition(null);
-
-      // Release current session if exists
-      if (currentSession) {
-        await releaseCurrentSession();
-      }
-
       setSelectedChannel(channel);
+
+      // Release current session in background (don't await - let it happen async)
+      if (currentSession) {
+        releaseCurrentSession().catch(err => console.error('Error releasing session:', err));
+      }
 
       // Check if this is a static channel or IPTV channel
       if (channel.source === 'static' || channel.source === 'iptv') {
