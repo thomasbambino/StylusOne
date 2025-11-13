@@ -1566,7 +1566,7 @@ export default function LiveTVPage() {
         fragLoadingTimeOut: 30000, // 30 second timeout (increased from default 20s)
         fragLoadingMaxRetry: 6,
         fragLoadingRetryDelay: 1000,
-        manifestLoadingTimeOut: 20000,
+        manifestLoadingTimeOut: 10000, // 10 seconds - faster feedback on load issues
         xhrSetup: function(xhr: XMLHttpRequest) {
           // Include credentials (cookies) with all HLS requests for authentication
           xhr.withCredentials = true;
@@ -2120,8 +2120,8 @@ export default function LiveTVPage() {
         const data = await response.json();
         return data.program as EPGProgram | null;
       },
-      staleTime: 5 * 60 * 1000, // 5 minutes
-      refetchInterval: 5 * 60 * 1000, // Refetch every 5 minutes
+      staleTime: 30 * 1000, // 30 seconds - keep data fresh
+      refetchInterval: 30 * 1000, // Refetch every 30 seconds to catch program changes
       enabled: !!channelName
     });
   };
@@ -2138,8 +2138,8 @@ export default function LiveTVPage() {
         const data = await response.json();
         return data.programs as EPGProgram[] || [];
       },
-      staleTime: 5 * 60 * 1000, // 5 minutes
-      refetchInterval: 5 * 60 * 1000, // Refetch every 5 minutes
+      staleTime: 60 * 1000, // 1 minute - refresh timeline more frequently
+      refetchInterval: 60 * 1000, // Refetch every minute to keep timeline current
       enabled: !!channelName
     });
   };
