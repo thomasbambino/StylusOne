@@ -2242,7 +2242,7 @@ export default function LiveTVPage() {
                       Your browser does not support the video tag.
                     </video>
 
-                    {/* Buffering Indicator - Always visible when loading */}
+                    {/* Buffering Indicator */}
                     {(isBuffering || isLoading) && (
                       <div className="absolute inset-0 flex items-center justify-center bg-black/60 backdrop-blur-sm z-50">
                         <div className="flex flex-col items-center gap-3">
@@ -2250,16 +2250,6 @@ export default function LiveTVPage() {
                           <p className="text-white text-sm font-medium">
                             {isLoading ? 'Loading stream...' : 'Buffering...'}
                           </p>
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Placeholder when no channel selected */}
-                    {!selectedChannel && !isLoading && (
-                      <div className="absolute inset-0 flex items-center justify-center bg-black/80">
-                        <div className="flex flex-col items-center gap-3 text-muted-foreground">
-                          <Tv className="h-16 w-16" />
-                          <p className="text-lg font-medium">Select a channel to start watching</p>
                         </div>
                       </div>
                     )}
