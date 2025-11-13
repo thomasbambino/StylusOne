@@ -1,4 +1,4 @@
-import { pgTable, text, serial, integer, boolean, timestamp } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, integer, boolean, timestamp, jsonb, decimal } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 import { createInsertSchema } from "drizzle-zod";
 import * as z from "zod";
@@ -170,6 +170,71 @@ export const favoriteChannels = pgTable("favoriteChannels", {
   createdAt: timestamp("createdAt").notNull().defaultNow(),
 });
 
+// Subscription system tables
+export const subscriptionPlans = pgTable("subscriptionPlans", {
+  id: serial("id").primaryKey(),
+  name: text("name").notNull(), // e.g., "Basic", "Premium", "Enterprise"
+  description: text("description"),
+  price_monthly: integer("price_monthly").notNull(), // Price in cents
+  price_annual: integer("price_annual").notNull(), // Price in cents
+  stripe_price_id_monthly: text("stripe_price_id_monthly"), // Stripe price ID
+  stripe_price_id_annual: text("stripe_price_id_annual"), // Stripe price ID
+  stripe_product_id: text("stripe_product_id"), // Stripe product ID
+  features: jsonb("features").notNull().$type<{
+    plex_access: boolean;
+    live_tv_access: boolean;
+    books_access: boolean;
+    game_servers_access: boolean;
+    max_favorite_channels: number;
+  }>(), // Feature flags
+  is_active: boolean("is_active").notNull().default(true), // Whether plan is available
+  sort_order: integer("sort_order").notNull().default(0), // Display order
+  created_at: timestamp("created_at").notNull().defaultNow(),
+  updated_at: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const userSubscriptions = pgTable("userSubscriptions", {
+  id: serial("id").primaryKey(),
+  user_id: integer("user_id").notNull().references(() => users.id, { onDelete: 'cascade' }),
+  plan_id: integer("plan_id").notNull().references(() => subscriptionPlans.id, { onDelete: 'restrict' }),
+  stripe_customer_id: text("stripe_customer_id").notNull(),
+  stripe_subscription_id: text("stripe_subscription_id").notNull().unique(),
+  status: text("status", { enum: ['active', 'canceled', 'past_due', 'trialing', 'incomplete', 'incomplete_expired', 'unpaid'] }).notNull(),
+  billing_period: text("billing_period", { enum: ['monthly', 'annual'] }).notNull(),
+  current_period_start: timestamp("current_period_start").notNull(),
+  current_period_end: timestamp("current_period_end").notNull(),
+  cancel_at_period_end: boolean("cancel_at_period_end").notNull().default(false),
+  canceled_at: timestamp("canceled_at"),
+  created_at: timestamp("created_at").notNull().defaultNow(),
+  updated_at: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const invoices = pgTable("invoices", {
+  id: serial("id").primaryKey(),
+  user_id: integer("user_id").notNull().references(() => users.id, { onDelete: 'cascade' }),
+  subscription_id: integer("subscription_id").references(() => userSubscriptions.id, { onDelete: 'set null' }),
+  stripe_invoice_id: text("stripe_invoice_id").notNull().unique(),
+  amount: integer("amount").notNull(), // Amount in cents
+  status: text("status", { enum: ['paid', 'open', 'void', 'uncollectible', 'draft'] }).notNull(),
+  invoice_pdf_url: text("invoice_pdf_url"), // Stripe-hosted PDF URL
+  invoice_number: text("invoice_number"),
+  billing_period_start: timestamp("billing_period_start"),
+  billing_period_end: timestamp("billing_period_end"),
+  created_at: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const paymentMethods = pgTable("paymentMethods", {
+  id: serial("id").primaryKey(),
+  user_id: integer("user_id").notNull().references(() => users.id, { onDelete: 'cascade' }),
+  stripe_payment_method_id: text("stripe_payment_method_id").notNull().unique(),
+  card_brand: text("card_brand"), // visa, mastercard, amex, etc.
+  card_last4: text("card_last4"),
+  card_exp_month: integer("card_exp_month"),
+  card_exp_year: integer("card_exp_year"),
+  is_default: boolean("is_default").notNull().default(false),
+  created_at: timestamp("created_at").notNull().defaultNow(),
+});
+
 export const insertUserSchema = createInsertSchema(users);
 export const insertServiceSchema = createInsertSchema(services);
 export const insertGameServerSchema = createInsertSchema(gameServers);
@@ -181,6 +246,10 @@ export const insertSentNotificationSchema = createInsertSchema(sentNotifications
 export const insertLoginAttemptSchema = createInsertSchema(loginAttempts);
 export const insertBookSchema = createInsertSchema(books);
 export const insertFavoriteChannelSchema = createInsertSchema(favoriteChannels);
+export const insertSubscriptionPlanSchema = createInsertSchema(subscriptionPlans);
+export const insertUserSubscriptionSchema = createInsertSchema(userSubscriptions);
+export const insertInvoiceSchema = createInsertSchema(invoices);
+export const insertPaymentMethodSchema = createInsertSchema(paymentMethods);
 
 // Export the update schemas
 export const updateServiceSchema = insertServiceSchema.extend({
@@ -215,6 +284,22 @@ export const updateBookSchema = insertBookSchema.extend({
   id: z.number(),
 }).partial().required({ id: true });
 
+export const updateSubscriptionPlanSchema = insertSubscriptionPlanSchema.extend({
+  id: z.number(),
+}).partial().required({ id: true });
+
+export const updateUserSubscriptionSchema = insertUserSubscriptionSchema.extend({
+  id: z.number(),
+}).partial().required({ id: true });
+
+export const updateInvoiceSchema = insertInvoiceSchema.extend({
+  id: z.number(),
+}).partial().required({ id: true });
+
+export const updatePaymentMethodSchema = insertPaymentMethodSchema.extend({
+  id: z.number(),
+}).partial().required({ id: true });
+
 // Export types
 export type InsertUser = z.infer<typeof insertUserSchema>;
 export type InsertService = z.infer<typeof insertServiceSchema>;
@@ -239,3 +324,15 @@ export type UpdateBook = z.infer<typeof updateBookSchema>;
 export type Book = typeof books.$inferSelect;
 export type InsertFavoriteChannel = z.infer<typeof insertFavoriteChannelSchema>;
 export type FavoriteChannel = typeof favoriteChannels.$inferSelect;
+export type InsertSubscriptionPlan = z.infer<typeof insertSubscriptionPlanSchema>;
+export type UpdateSubscriptionPlan = z.infer<typeof updateSubscriptionPlanSchema>;
+export type SubscriptionPlan = typeof subscriptionPlans.$inferSelect;
+export type InsertUserSubscription = z.infer<typeof insertUserSubscriptionSchema>;
+export type UpdateUserSubscription = z.infer<typeof updateUserSubscriptionSchema>;
+export type UserSubscription = typeof userSubscriptions.$inferSelect;
+export type InsertInvoice = z.infer<typeof insertInvoiceSchema>;
+export type UpdateInvoice = z.infer<typeof updateInvoiceSchema>;
+export type Invoice = typeof invoices.$inferSelect;
+export type InsertPaymentMethod = z.infer<typeof insertPaymentMethodSchema>;
+export type UpdatePaymentMethod = z.infer<typeof updatePaymentMethodSchema>;
+export type PaymentMethod = typeof paymentMethods.$inferSelect;

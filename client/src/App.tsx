@@ -15,7 +15,10 @@ import PlexPage from "@/pages/plex-page";
 import LiveTVPage from "@/pages/live-tv-page";
 import BooksPage from "@/pages/books-page";
 import ServerSharePage from "@/pages/server-share-page";
+import SubscriptionPlansPage from "@/pages/subscription-plans-page";
+import MySubscriptionPage from "@/pages/my-subscription-page";
 import { ProtectedRoute } from "./lib/protected-route";
+import { FeatureProtectedRoute } from "./lib/feature-protected-route";
 import { ThemeProvider } from "@/components/theme-provider";
 import { DiscordButton } from "@/components/discord-button";
 import { FaviconUpdater } from "@/components/favicon-updater";
@@ -26,12 +29,14 @@ function Router() {
     <Switch>
       <ProtectedRoute path="/" component={HomePage} />
       <ProtectedRoute path="/dashboard" component={Dashboard} />
-      <ProtectedRoute path="/plex" component={PlexPage} />
-      <ProtectedRoute path="/game-servers" component={GameServersPage} />
-      <ProtectedRoute path="/live-tv" component={LiveTVPage} />
-      <ProtectedRoute path="/books" component={BooksPage} />
+      <FeatureProtectedRoute path="/plex" component={PlexPage} feature="plex_access" />
+      <FeatureProtectedRoute path="/game-servers" component={GameServersPage} feature="game_servers_access" />
+      <FeatureProtectedRoute path="/live-tv" component={LiveTVPage} feature="live_tv_access" />
+      <FeatureProtectedRoute path="/books" component={BooksPage} feature="books_access" />
       <ProtectedRoute path="/users" component={UsersPage} />
       <ProtectedRoute path="/settings" component={SettingsPage} />
+      <ProtectedRoute path="/subscription-plans" component={SubscriptionPlansPage} />
+      <ProtectedRoute path="/my-subscription" component={MySubscriptionPage} />
       <Route path="/server/:serverId" component={ServerSharePage} />
       <Route path="/auth" component={AuthPage} />
       <Route path="/pending" component={PendingPage} />

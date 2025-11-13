@@ -381,13 +381,16 @@ export class EPGService implements IService {
         }
 
         // Group programs by channel
+        const channelIds = new Set<string>();
         for (const program of programs) {
+          channelIds.add(program.channelId);
           const channelPrograms = this.programCache.get(program.channelId) || [];
           channelPrograms.push(program);
           this.programCache.set(program.channelId, channelPrograms);
         }
 
-        console.log(`Loaded ${programs.length} IPTV programs for ${result.tv.programme.length > 0 ? 'multiple' : '0'} channels`);
+        console.log(`Loaded ${programs.length} IPTV programs for ${channelIds.size} channels`);
+        console.log(`Sample IPTV channel IDs:`, Array.from(channelIds).slice(0, 10).join(', '));
       }
     } catch (error) {
       console.error('Error loading IPTV EPG data:', error);

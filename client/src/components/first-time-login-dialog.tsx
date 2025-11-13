@@ -3,9 +3,10 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
-import { Check, ServerCog } from "lucide-react";
+import { Check, ServerCog, CreditCard } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
-import { Settings } from "@shared/schema";
+import { Settings, SubscriptionPlan } from "@shared/schema";
+import { Link } from "wouter";
 
 interface FirstTimeLoginDialogProps {
   open: boolean;
@@ -20,6 +21,15 @@ export function FirstTimeLoginDialog({ open, onOpenChange }: FirstTimeLoginDialo
   
   const { data: settings } = useQuery<Settings>({
     queryKey: ["/api/settings"],
+  });
+
+  const { data: plans = [] } = useQuery<SubscriptionPlan[]>({
+    queryKey: ["/api/subscriptions/plans"],
+    queryFn: async () => {
+      const res = await fetch('/api/subscriptions/plans');
+      if (!res.ok) return [];
+      return res.json();
+    },
   });
 
   useEffect(() => {
@@ -66,6 +76,64 @@ export function FirstTimeLoginDialog({ open, onOpenChange }: FirstTimeLoginDialo
       ) : (
         <ServerCog className="h-8 w-8 text-primary" />
       ),
+    },
+    {
+      title: "Choose Your Subscription Plan",
+      description: (
+        <div className="space-y-4">
+          <p>
+            Select a subscription plan to unlock premium features like Plex, Live TV, Books, and Game Servers.
+          </p>
+          {plans.length > 0 ? (
+            <div className="grid gap-3 max-h-[300px] overflow-y-auto">
+              {plans.map((plan) => (
+                <div
+                  key={plan.id}
+                  className="border rounded-lg p-4 hover:border-primary transition-colors cursor-pointer"
+                  onClick={() => {
+                    // Close dialog and navigate to subscription page
+                    handleClose();
+                    window.location.href = '/my-subscription';
+                  }}
+                >
+                  <div className="flex justify-between items-start mb-2">
+                    <div>
+                      <h4 className="font-semibold">{plan.name}</h4>
+                      <p className="text-sm text-muted-foreground">{plan.description}</p>
+                    </div>
+                    <div className="text-right">
+                      <div className="font-bold">${(plan.price_monthly / 100).toFixed(2)}/mo</div>
+                      <div className="text-xs text-muted-foreground">${(plan.price_annual / 100).toFixed(2)}/yr</div>
+                    </div>
+                  </div>
+                  <div className="flex flex-wrap gap-2 mt-2">
+                    {plan.features.plex_access && (
+                      <span className="text-xs bg-primary/10 text-primary px-2 py-1 rounded">Plex</span>
+                    )}
+                    {plan.features.live_tv_access && (
+                      <span className="text-xs bg-primary/10 text-primary px-2 py-1 rounded">Live TV</span>
+                    )}
+                    {plan.features.books_access && (
+                      <span className="text-xs bg-primary/10 text-primary px-2 py-1 rounded">Books</span>
+                    )}
+                    {plan.features.game_servers_access && (
+                      <span className="text-xs bg-primary/10 text-primary px-2 py-1 rounded">Game Servers</span>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="text-sm text-muted-foreground text-center py-4">
+              No subscription plans available at this time. You can browse features and subscribe later.
+            </p>
+          )}
+          <p className="text-xs text-muted-foreground text-center">
+            You can also subscribe later from the "My Subscription" page
+          </p>
+        </div>
+      ),
+      icon: <CreditCard className="h-8 w-8 text-primary" />,
     },
     {
       title: "Connecting to Plex Media Server",

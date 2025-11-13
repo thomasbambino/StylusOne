@@ -1,4 +1,4 @@
-import { Users, Settings as SettingsIcon, LogOut, Menu, Search } from "lucide-react"
+import { Users, Settings as SettingsIcon, LogOut, Menu, Search, CreditCard } from "lucide-react"
 import { Link, useLocation } from "wouter"
 import { Settings } from "@shared/schema"
 import { motion } from "framer-motion"
@@ -142,6 +142,14 @@ export function NavigationBar({ settings, pageTitle }: NavigationBarProps) {
                         Settings
                       </DropdownMenuItem>
                     </Link>
+                    {isSuperAdmin && (
+                      <Link href="/subscription-plans">
+                        <DropdownMenuItem className="cursor-pointer">
+                          <CreditCard className="h-4 w-4 mr-2" />
+                          Subscription Plans
+                        </DropdownMenuItem>
+                      </Link>
+                    )}
                     <Separator className="my-1" />
                   </>
                 )}
@@ -157,7 +165,15 @@ export function NavigationBar({ settings, pageTitle }: NavigationBarProps) {
                   ))}
                   <Separator className="my-1" />
                 </div>
-                
+
+                {/* User subscription link */}
+                <Link href="/my-subscription">
+                  <DropdownMenuItem className="cursor-pointer">
+                    <CreditCard className="h-4 w-4 mr-2" />
+                    My Subscription
+                  </DropdownMenuItem>
+                </Link>
+
                 <DropdownMenuItem
                   className="cursor-pointer"
                   onSelect={() => logoutMutation.mutate()}

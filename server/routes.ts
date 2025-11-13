@@ -19,6 +19,9 @@ import { sendEmail } from './email';
 import { ampService } from './services/amp-service';
 import { epubService } from './services/epub-service';
 import booksRouter from './routes/books';
+import subscriptionsRouter from './routes/subscriptions';
+import adminSubscriptionsRouter from './routes/admin-subscriptions';
+import stripeWebhooksRouter from './routes/stripe-webhooks';
 import { z } from "zod";
 import { spawn } from 'child_process';
 import fetch from 'node-fetch';
@@ -481,6 +484,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   setupAuth(app);
 
+  // Stripe webhooks - MUST be before JSON body parser
+  // Stripe requires raw body for signature verification
+  app.use('/api/webhooks', express.raw({ type: 'application/json' }), stripeWebhooksRouter);
+
   // Uploads are served in serve-static.ts for production
 
   // Apply rate limiting to all API routes (disabled for development/testing)
@@ -493,6 +500,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // Books routes
   app.use("/api/books", booksRouter);
+
+  // Subscription routes
+  app.use("/api/subscriptions", subscriptionsRouter);
+  app.use("/api/admin", adminSubscriptionsRouter);
 
   app.get("/api/services", async (req, res) => {
     if (!req.isAuthenticated()) return res.sendStatus(401);

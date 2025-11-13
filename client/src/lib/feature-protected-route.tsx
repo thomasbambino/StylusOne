@@ -4,16 +4,23 @@ import { Redirect, Route } from "wouter";
 import { PageTransition } from "@/components/page-transition";
 import { NavigationBar } from "@/components/navigation-bar";
 import { useQuery } from "@tanstack/react-query";
+import { FeatureGate } from "./feature-gate";
 
-interface ProtectedRouteProps {
+interface FeatureProtectedRouteProps {
   path: string;
   component: React.ComponentType;
+  feature?: 'plex_access' | 'live_tv_access' | 'books_access' | 'game_servers_access';
 }
 
-export function ProtectedRoute({
+/**
+ * Protected Route with optional feature gate
+ * Requires authentication, approval, and optionally a subscription feature
+ */
+export function FeatureProtectedRoute({
   path,
   component: Component,
-}: ProtectedRouteProps) {
+  feature,
+}: FeatureProtectedRouteProps) {
   const ProtectedContent = () => {
     const { user, isLoading } = useAuth();
 
@@ -46,12 +53,20 @@ export function ProtectedRoute({
       return <Redirect to="/pending" />;
     }
 
+    const content = feature ? (
+      <FeatureGate feature={feature}>
+        <Component />
+      </FeatureGate>
+    ) : (
+      <Component />
+    );
+
     return (
       <>
         <NavigationBar settings={settings} />
         <div className="pt-20">
           <PageTransition>
-            <Component />
+            {content}
           </PageTransition>
         </div>
       </>
