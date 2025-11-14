@@ -1,8 +1,9 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Elements } from '@stripe/react-stripe-js';
 import { getStripe } from '@/lib/stripe';
 import { Button } from '@/components/ui/button';
+import type { Stripe } from '@stripe/stripe-js';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { useToast } from '@/hooks/use-toast';
@@ -61,6 +62,12 @@ export default function MySubscriptionPage() {
   const [isPaymentDialogOpen, setIsPaymentDialogOpen] = useState(false);
   const [selectedPlan, setSelectedPlan] = useState<SubscriptionPlan | null>(null);
   const [billingPeriod, setBillingPeriod] = useState<'monthly' | 'annual'>('monthly');
+  const [stripePromise, setStripePromise] = useState<Promise<Stripe | null> | null>(null);
+
+  // Initialize Stripe
+  useEffect(() => {
+    setStripePromise(getStripe());
+  }, []);
 
   // Fetch current subscription
   const { data: currentSubscription, isLoading: subscriptionLoading } = useQuery<CurrentSubscription | null>({
@@ -575,19 +582,25 @@ export default function MySubscriptionPage() {
             {!currentSubscription && selectedPlan && (
               <div>
                 <label className="text-sm font-medium mb-2 block">Payment Information</label>
-                <Elements stripe={getStripe()}>
-                  <PaymentMethodForm
-                    onSuccess={(paymentMethodId) => {
-                      createSubscriptionMutation.mutate({
-                        planId: selectedPlan.id,
-                        period: billingPeriod,
-                        paymentMethodId,
-                      });
-                    }}
-                    submitButtonText="Subscribe"
-                    isLoading={createSubscriptionMutation.isPending}
-                  />
-                </Elements>
+                {stripePromise ? (
+                  <Elements stripe={stripePromise}>
+                    <PaymentMethodForm
+                      onSuccess={(paymentMethodId) => {
+                        createSubscriptionMutation.mutate({
+                          planId: selectedPlan.id,
+                          period: billingPeriod,
+                          paymentMethodId,
+                        });
+                      }}
+                      submitButtonText="Subscribe"
+                      isLoading={createSubscriptionMutation.isPending}
+                    />
+                  </Elements>
+                ) : (
+                  <div className="p-4 text-center text-muted-foreground">
+                    Loading payment form...
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -616,9 +629,15 @@ export default function MySubscriptionPage() {
             </DialogDescription>
           </DialogHeader>
 
-          <Elements stripe={getStripe()}>
-            <PaymentMethodForm onSuccess={() => setIsPaymentDialogOpen(false)} />
-          </Elements>
+          {stripePromise ? (
+            <Elements stripe={stripePromise}>
+              <PaymentMethodForm onSuccess={() => setIsPaymentDialogOpen(false)} />
+            </Elements>
+          ) : (
+            <div className="p-4 text-center text-muted-foreground">
+              Loading payment form...
+            </div>
+          )}
         </DialogContent>
       </Dialog>
     </div>
