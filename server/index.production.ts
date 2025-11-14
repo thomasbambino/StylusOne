@@ -3,6 +3,7 @@ import helmet from "helmet";
 import { registerRoutes } from "./routes";
 import { initializeServices } from "./services";
 import { log, serveStatic } from "./static";
+import webhookRoutes from "./routes/webhooks";
 
 const app = express();
 
@@ -20,16 +21,16 @@ app.use(helmet({
     useDefaults: false,
     directives: {
       defaultSrc: ["'self'"],
-      scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'", "https://*.gstatic.com"],
+      scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'", "https://*.gstatic.com", "https://js.stripe.com"],
       styleSrc: ["'self'", "'unsafe-inline'"],
       imgSrc: ["'self'", "data:", "blob:", "https:", "http:"],
       fontSrc: ["'self'", "data:"],
       connectSrc: isLocalDocker
-        ? ["'self'", "https:", "wss:", "ws:", "http:"]  // Allow HTTP for local
-        : ["'self'", "https:", "wss:", "https://*.gstatic.com"],  // Allow Cast SDK connections
+        ? ["'self'", "https:", "wss:", "ws:", "http:"]  // Allow HTTP for local, includes Stripe API
+        : ["'self'", "https:", "wss:", "https://*.gstatic.com", "https://api.stripe.com"],  // Allow Cast SDK and Stripe API connections
       mediaSrc: ["'self'", "blob:", "https:", "http:"],
       objectSrc: ["'none'"],
-      frameSrc: ["'self'", "https://*.gstatic.com"],  // Allow Cast SDK iframes
+      frameSrc: ["'self'", "https://*.gstatic.com", "https://js.stripe.com"],  // Allow Cast SDK iframes and Stripe 3DS
       workerSrc: ["'self'", "blob:"],
       childSrc: ["'self'", "blob:"],
       formAction: ["'self'"],
@@ -48,6 +49,10 @@ app.use(helmet({
   },
   crossOriginEmbedderPolicy: false, // Disable for video streaming compatibility
 }));
+
+// Stripe webhooks need raw body for signature verification
+// Must be registered BEFORE express.json() middleware
+app.use('/api/webhooks', express.raw({ type: 'application/json' }), webhookRoutes);
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));

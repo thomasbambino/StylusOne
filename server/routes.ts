@@ -28,12 +28,13 @@ import fetch from 'node-fetch';
 import { db, pool } from './db';
 import { EPGService } from './services/epg-service';
 import { randomBytes } from 'crypto';
-import { 
-  apiRateLimiter, 
-  authRateLimiter, 
+import {
+  apiRateLimiter,
+  authRateLimiter,
   gameServerRateLimiter,
-  adminRateLimiter 
+  adminRateLimiter
 } from './middleware/rateLimiter';
+import { requireFeature } from './middleware/feature-gate';
 import { 
   handleValidationErrors,
   validateInstanceId,
@@ -498,8 +499,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/upload/service", upload.single('image'), (req, res) => handleUpload(req, res, 'service'));
   app.post("/api/upload/game", upload.single('image'), (req, res) => handleUpload(req, res, 'game'));
 
-  // Books routes
-  app.use("/api/books", booksRouter);
+  // Books routes - require books_access feature
+  app.use("/api/books", requireFeature('books_access'), booksRouter);
 
   // Subscription routes
   app.use("/api/subscriptions", subscriptionsRouter);
@@ -616,7 +617,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get("/api/game-servers", async (req, res) => {
+  app.get("/api/game-servers", requireFeature('game_servers_access'), async (req, res) => {
     if (!req.isAuthenticated()) return res.sendStatus(401);
     try {
       // Get all AMP instances
@@ -745,7 +746,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/game-servers/:instanceId/hide", async (req, res) => {
+  app.post("/api/game-servers/:instanceId/hide", requireFeature('game_servers_access'), async (req, res) => {
     if (!req.isAuthenticated()) return res.sendStatus(401);
     try {
       const { instanceId } = req.params;
@@ -774,7 +775,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/game-servers/:instanceId/start", gameServerRateLimiter, validateInstanceId, handleValidationErrors, async (req, res) => {
+  app.post("/api/game-servers/:instanceId/start", requireFeature('game_servers_access'), gameServerRateLimiter, validateInstanceId, handleValidationErrors, async (req, res) => {
     console.log(`Start request received - Auth check: ${req.isAuthenticated()}, User: ${req.user?.email || 'none'}`);
     
     if (!req.isAuthenticated()) {
@@ -815,7 +816,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/game-servers/:instanceId/stop", gameServerRateLimiter, validateInstanceId, handleValidationErrors, async (req, res) => {
+  app.post("/api/game-servers/:instanceId/stop", requireFeature('game_servers_access'), gameServerRateLimiter, validateInstanceId, handleValidationErrors, async (req, res) => {
     console.log(`Stop request received - Auth check: ${req.isAuthenticated()}, User: ${req.user?.email || 'none'}`);
     
     if (!req.isAuthenticated()) {
@@ -855,7 +856,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/game-servers/:instanceId/restart", async (req, res) => {
+  app.post("/api/game-servers/:instanceId/restart", requireFeature('game_servers_access'), async (req, res) => {
     if (!req.isAuthenticated()) return res.sendStatus(401);
     try {
       const { instanceId } = req.params;
@@ -889,7 +890,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/game-servers/:instanceId/kill", async (req, res) => {
+  app.post("/api/game-servers/:instanceId/kill", requireFeature('game_servers_access'), async (req, res) => {
     if (!req.isAuthenticated()) return res.sendStatus(401);
     try {
       const { instanceId } = req.params;
@@ -924,7 +925,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/game-servers/:instanceId/console", gameServerRateLimiter, validateInstanceId, validateConsoleCommand, handleValidationErrors, async (req, res) => {
+  app.post("/api/game-servers/:instanceId/console", requireFeature('game_servers_access'), gameServerRateLimiter, validateInstanceId, validateConsoleCommand, handleValidationErrors, async (req, res) => {
     if (!req.isAuthenticated()) return res.sendStatus(401);
     try {
       const { instanceId } = req.params;
@@ -952,7 +953,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
   
-  app.post("/api/game-servers/:instanceId/update", async (req, res) => {
+  app.post("/api/game-servers/:instanceId/update", requireFeature('game_servers_access'), async (req, res) => {
     if (!req.isAuthenticated()) return res.sendStatus(401);
     try {
       const { instanceId } = req.params;
@@ -984,7 +985,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
   
-  app.post("/api/game-servers/:instanceId/backup", async (req, res) => {
+  app.post("/api/game-servers/:instanceId/backup", requireFeature('game_servers_access'), async (req, res) => {
     if (!req.isAuthenticated()) return res.sendStatus(401);
     try {
       const { instanceId } = req.params;
@@ -1024,7 +1025,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
   
-  app.get("/api/game-servers/:instanceId/backups", async (req, res) => {
+  app.get("/api/game-servers/:instanceId/backups", requireFeature('game_servers_access'), async (req, res) => {
     if (!req.isAuthenticated()) return res.sendStatus(401);
     try {
       const { instanceId } = req.params;
@@ -1041,7 +1042,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
   
-  app.post("/api/game-servers/:instanceId/restore", async (req, res) => {
+  app.post("/api/game-servers/:instanceId/restore", requireFeature('game_servers_access'), async (req, res) => {
     if (!req.isAuthenticated()) return res.sendStatus(401);
     try {
       const { instanceId } = req.params;
@@ -1068,7 +1069,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
   
-  app.get("/api/game-servers/:instanceId/console-output", async (req, res) => {
+  app.get("/api/game-servers/:instanceId/console-output", requireFeature('game_servers_access'), async (req, res) => {
     if (!req.isAuthenticated()) return res.sendStatus(401);
     try {
       const { instanceId } = req.params;
@@ -1085,7 +1086,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
   
-  app.get("/api/game-servers/:instanceId/scheduled-tasks", async (req, res) => {
+  app.get("/api/game-servers/:instanceId/scheduled-tasks", requireFeature('game_servers_access'), async (req, res) => {
     if (!req.isAuthenticated()) return res.sendStatus(401);
     try {
       const { instanceId } = req.params;
@@ -1101,7 +1102,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/game-servers", async (req, res) => {
+  app.post("/api/game-servers", requireFeature('game_servers_access'), async (req, res) => {
     if (!req.isAuthenticated()) return res.sendStatus(401);
     try {
       const data = insertGameServerSchema.parse(req.body);
@@ -1187,7 +1188,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/game-servers/request", async (req, res) => {
+  app.post("/api/game-servers/request", requireFeature('game_servers_access'), async (req, res) => {
     if (!req.isAuthenticated()) return res.sendStatus(401);
     try {
       const { game } = req.body;
@@ -1327,7 +1328,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get("/api/game-servers/:instanceId/metrics", async (req, res) => {
+  app.get("/api/game-servers/:instanceId/metrics", requireFeature('game_servers_access'), async (req, res) => {
     if (!req.isAuthenticated()) return res.sendStatus(401);
     try {
       const { instanceId } = req.params;
@@ -1388,7 +1389,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Add new debug endpoint for game server player count
-  app.get("/api/game-servers/:instanceId/debug", async (req, res) => {
+  app.get("/api/game-servers/:instanceId/debug", requireFeature('game_servers_access'), async (req, res) => {
     if (!req.isAuthenticated()) return res.sendStatus(401);
     try {
       const { instanceId } = req.params;
@@ -1649,8 +1650,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Tautulli API routes
-  app.get("/api/tautulli/activity", async (req, res) => {
+  // Tautulli API routes - require plex_access feature
+  app.get("/api/tautulli/activity", requireFeature('plex_access'), async (req, res) => {
     if (!req.isAuthenticated()) return res.sendStatus(401);
     
     try {
@@ -1666,7 +1667,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get("/api/tautulli/users", async (req, res) => {
+  app.get("/api/tautulli/users", requireFeature('plex_access'), async (req, res) => {
     if (!req.isAuthenticated()) return res.sendStatus(401);
     
     try {
@@ -1726,7 +1727,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get("/api/tautulli/libraries", async (req, res) => {
+  app.get("/api/tautulli/libraries", requireFeature('plex_access'), async (req, res) => {
     if (!req.isAuthenticated()) return res.sendStatus(401);
     
     try {
@@ -1742,7 +1743,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get("/api/tautulli/history", async (req, res) => {
+  app.get("/api/tautulli/history", requireFeature('plex_access'), async (req, res) => {
     if (!req.isAuthenticated()) return res.sendStatus(401);
     
     try {
@@ -1758,9 +1759,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Note: No feature gate on this endpoint - used for promotional display on homepage
   app.get("/api/tautulli/recently-added", async (req, res) => {
     if (!req.isAuthenticated()) return res.sendStatus(401);
-    
+
     try {
       const { tautulliService } = await import('./services/tautulli-service');
       const count = req.query.count ? parseInt(req.query.count as string) : 10;
@@ -1775,7 +1777,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get("/api/tautulli/analytics/plays-by-date", async (req, res) => {
+  app.get("/api/tautulli/analytics/plays-by-date", requireFeature('plex_access'), async (req, res) => {
     if (!req.isAuthenticated()) return res.sendStatus(401);
     
     try {
@@ -1792,7 +1794,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get("/api/tautulli/server-info", async (req, res) => {
+  app.get("/api/tautulli/server-info", requireFeature('plex_access'), async (req, res) => {
     if (!req.isAuthenticated()) return res.sendStatus(401);
     
     try {
@@ -1808,7 +1810,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get("/api/tautulli/test", async (req, res) => {
+  app.get("/api/tautulli/test", requireFeature('plex_access'), async (req, res) => {
     if (!req.isAuthenticated()) return res.sendStatus(401);
     
     try {
@@ -1829,6 +1831,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Note: No feature gate on this endpoint - used for promotional image display on homepage
   app.get("/api/tautulli/proxy-image", async (req, res) => {
     if (!req.isAuthenticated()) return res.sendStatus(401);
     
@@ -1886,7 +1889,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // HD HomeRun API routes
-  app.get("/api/hdhomerun/devices", async (req, res) => {
+  app.get("/api/hdhomerun/devices", requireFeature('live_tv_access'), async (req, res) => {
     if (!req.isAuthenticated()) return res.sendStatus(401);
     
     try {
@@ -1913,7 +1916,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get("/api/hdhomerun/channels", async (req, res) => {
+  app.get("/api/hdhomerun/channels", requireFeature('live_tv_access'), async (req, res) => {
     if (!req.isAuthenticated()) return res.sendStatus(401);
     
     try {
@@ -1940,7 +1943,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get("/api/hdhomerun/tuners", async (req, res) => {
+  app.get("/api/hdhomerun/tuners", requireFeature('live_tv_access'), async (req, res) => {
     if (!req.isAuthenticated()) return res.sendStatus(401);
     
     try {
@@ -1967,7 +1970,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get("/api/hdhomerun/stream/:channel", async (req, res) => {
+  app.get("/api/hdhomerun/stream/:channel", requireFeature('live_tv_access'), async (req, res) => {
     if (!req.isAuthenticated()) return res.sendStatus(401);
     
     try {
@@ -2005,7 +2008,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get("/api/hdhomerun/test", async (req, res) => {
+  app.get("/api/hdhomerun/test", requireFeature('live_tv_access'), async (req, res) => {
     if (!req.isAuthenticated()) return res.sendStatus(401);
     
     try {
@@ -2104,6 +2107,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Note: No feature gate on this endpoint - used for promotional channel display on homepage
   app.get("/api/iptv/channels", async (req, res) => {
     if (!req.isAuthenticated()) return res.sendStatus(401);
 
@@ -2133,7 +2137,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get("/api/iptv/epg/:streamId", async (req, res) => {
+  app.get("/api/iptv/epg/:streamId", requireFeature('live_tv_access'), async (req, res) => {
     if (!req.isAuthenticated()) return res.sendStatus(401);
 
     try {
@@ -2162,7 +2166,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get("/api/iptv/epg/short/:streamId", async (req, res) => {
+  app.get("/api/iptv/epg/short/:streamId", requireFeature('live_tv_access'), async (req, res) => {
     if (!req.isAuthenticated()) return res.sendStatus(401);
 
     try {
@@ -3138,7 +3142,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // EPG (Electronic Program Guide) API routes
-  app.get("/api/epg/channels", async (req, res) => {
+  app.get("/api/epg/channels", requireFeature('live_tv_access'), async (req, res) => {
     if (!req.isAuthenticated()) return res.sendStatus(401);
 
     try {
@@ -3160,7 +3164,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Manual EPG update endpoint
-  app.post("/api/epg/update", async (req, res) => {
+  app.post("/api/epg/update", requireFeature('live_tv_access'), async (req, res) => {
     if (!req.isAuthenticated()) return res.sendStatus(401);
     
     try {

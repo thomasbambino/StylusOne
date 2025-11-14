@@ -98,20 +98,21 @@ export function PaymentMethodForm({ onSuccess, submitButtonText = 'Save Payment 
     style: {
       base: {
         fontSize: '16px',
-        color: 'hsl(var(--foreground))',
+        color: '#000000',
+        fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
         '::placeholder': {
-          color: 'hsl(var(--muted-foreground))',
+          color: '#9CA3AF',
         },
       },
       invalid: {
-        color: 'hsl(var(--destructive))',
+        color: '#EF4444',
       },
     },
   };
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
-      <div className="p-3 border rounded-md bg-background">
+      <div className="p-4 border rounded-md bg-white" style={{ minHeight: '40px' }}>
         <CardElement options={cardElementOptions} />
       </div>
 

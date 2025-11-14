@@ -19,9 +19,9 @@ import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Progress } from "@/components/ui/progress";
-import { 
-  Play, 
-  Tv, 
+import {
+  Play,
+  Tv,
   Gamepad2,
   Users,
   Film,
@@ -35,19 +35,33 @@ import {
   AlertCircle,
   UserPlus,
   Search,
-  ExternalLink
+  ExternalLink,
+  Lock
 } from "lucide-react";
 import { Settings } from "@shared/schema";
 import { Link } from "wouter";
 import { cn } from "@/lib/utils";
 import { getGameArtwork } from "@/lib/game-artwork";
 import { motion } from "framer-motion";
+import { useFeatureAccess } from "@/lib/feature-gate";
 
 const plexInviteSchema = z.object({
   email: z.string().email("Please enter a valid email address"),
 });
 
 type PlexInviteForm = z.infer<typeof plexInviteSchema>;
+
+// Demo game types for promotional carousel
+const DEMO_GAMES = [
+  "Minecraft",
+  "Satisfactory",
+  "Valheim",
+  "Terraria",
+  "ARK: Survival Evolved",
+  "Palworld",
+  "7 Days to Die",
+  "Rust",
+];
 
 // Component for rendering individual favorite channel with EPG data (no hooks version)
 const FavoriteChannelItem = React.memo(function FavoriteChannelItem({
@@ -111,7 +125,12 @@ export default function HomePage() {
   });
   const { toast } = useToast();
   const [showPlexDialog, setShowPlexDialog] = useState(false);
-  
+
+  // Check feature access
+  const { hasAccess: hasPlexAccess } = useFeatureAccess('plex_access');
+  const { hasAccess: hasGameServersAccess } = useFeatureAccess('game_servers_access');
+  const { hasAccess: hasLiveTVAccess } = useFeatureAccess('live_tv_access');
+
   const form = useForm<PlexInviteForm>({
     resolver: zodResolver(plexInviteSchema),
     defaultValues: {
@@ -162,6 +181,7 @@ export default function HomePage() {
       return response.json();
     },
     refetchInterval: 30000,
+    enabled: hasPlexAccess,
   });
 
   // Fetch Plex libraries
@@ -173,9 +193,10 @@ export default function HomePage() {
       return response.json();
     },
     refetchInterval: 60000,
+    enabled: hasPlexAccess,
   });
 
-  // Fetch recently added
+  // Fetch recently added - available for all users (promotional display)
   const { data: recentlyAdded } = useQuery({
     queryKey: ['/api/tautulli/recently-added'],
     queryFn: async () => {
@@ -184,6 +205,7 @@ export default function HomePage() {
       return response.json();
     },
     refetchInterval: 60000,
+    // No 'enabled' check - available to all users for promotional purposes
   });
 
 
@@ -196,6 +218,7 @@ export default function HomePage() {
       return response.json();
     },
     refetchInterval: 30000,
+    enabled: hasGameServersAccess,
   });
 
   // Fetch IPTV channels instead of HDHomeRun
@@ -209,8 +232,10 @@ export default function HomePage() {
       return response.json();
     },
     refetchInterval: 60000,
+    enabled: hasLiveTVAccess,
   });
 
+  // Fetch IPTV channels - available for all users for promotional display
   const { data: iptvChannels } = useQuery({
     queryKey: ['/api/iptv/channels'],
     queryFn: async () => {
@@ -220,7 +245,7 @@ export default function HomePage() {
       if (!response.ok) return null;
       return response.json();
     },
-    enabled: iptvStatus?.configured === true,
+    // Note: No 'enabled' check - available to all users for promotional carousel
     refetchInterval: 60000,
   });
 
@@ -235,6 +260,7 @@ export default function HomePage() {
       return response.json();
     },
     refetchInterval: 5000, // Refetch every 5 seconds to quickly show new favorites
+    enabled: hasLiveTVAccess,
   });
 
   // Extract channels from the response
@@ -271,6 +297,7 @@ export default function HomePage() {
       return programs;
     },
     refetchInterval: 300000, // 5 minutes
+    enabled: hasLiveTVAccess && favoriteChannelIds.length > 0,
   });
 
 
@@ -283,6 +310,7 @@ export default function HomePage() {
       return response.json();
     },
     refetchInterval: 60000,
+    enabled: hasPlexAccess,
   });
 
   const runningServers = gameServers?.filter((s: any) => s.status === true) || [];
@@ -377,7 +405,12 @@ export default function HomePage() {
                     <CardDescription>Streaming & Entertainment</CardDescription>
                   </div>
                 </div>
-                {plexActivity ? (
+                {!hasPlexAccess ? (
+                  <Badge className="bg-yellow-500/10 text-yellow-500 border-yellow-500/20">
+                    <Lock className="h-3 w-3 mr-1" />
+                    Premium
+                  </Badge>
+                ) : plexActivity ? (
                   <Badge className="bg-green-500/10 text-green-500 border-green-500/20">
                     <Wifi className="h-3 w-3 mr-1" />
                     Online
@@ -391,8 +424,87 @@ export default function HomePage() {
               </div>
             </CardHeader>
             <CardContent className="flex flex-col flex-1">
-              <div className="flex-1 space-y-4">
-                {plexActivity ? (
+              {!hasPlexAccess ? (
+                // Show promotional content with real carousel when user doesn't have access
+                <div className="flex-1 flex flex-col justify-between">
+                    <div className="text-center py-3">
+                      <h3 className="font-semibold mb-2">Stream Your Media Library</h3>
+                      <p className="text-sm text-muted-foreground mb-3">
+                        Access thousands of movies and TV shows on demand
+                      </p>
+                      <Link href="/my-subscription">
+                        <Button className="w-full" variant="default">
+                          <Lock className="h-4 w-4 mr-2" />
+                          Unlock Plex Access
+                        </Button>
+                      </Link>
+                    </div>
+
+                    {/* Recently Added Carousel (same as subscribers see) */}
+                    {recentlyAddedItems && recentlyAddedItems.length > 0 && (
+                      <div className="flex-1 flex flex-col justify-center">
+                        <h4 className="text-xs font-medium text-muted-foreground mb-2 text-center">Recently Added Content</h4>
+                        <div className="relative overflow-hidden min-h-[100px] opacity-80 w-full flex items-center">
+                          <div
+                            className="flex gap-4 items-center"
+                            ref={(el) => {
+                              if (el && recentlyAddedItems?.length > 0) {
+                                el.style.animation = 'none';
+                                const itemWidth = 96;
+                                const baseItems = Math.min(recentlyAddedItems.length, 20);
+                                const totalItems = baseItems * 6;
+                                const totalWidth = totalItems * itemWidth;
+                                const oneLoopWidth = baseItems * itemWidth;
+                                let scrollPosition = 0;
+                                const scrollSpeed = 0.15;
+                                const animate = () => {
+                                  scrollPosition += scrollSpeed;
+                                  if (scrollPosition >= oneLoopWidth) {
+                                    scrollPosition = 0;
+                                  }
+                                  el.style.transform = `translateX(-${scrollPosition}px)`;
+                                  requestAnimationFrame(animate);
+                                };
+                                animate();
+                              }
+                            }}
+                          >
+                            {(() => {
+                              const baseItems = recentlyAddedItems.slice(0, Math.min(recentlyAddedItems.length, 20));
+                              const repeatedItems = [];
+                              for (let rep = 0; rep < 6; rep++) {
+                                baseItems.forEach(item => repeatedItems.push(item));
+                              }
+                              return repeatedItems;
+                            })().map((item: any, i: number) => (
+                              <div key={`${item.rating_key}-${i}`} className="flex-shrink-0 w-20 h-28 relative group">
+                                {getThumbnailUrl(item, 160, 224) ? (
+                                  <img
+                                    src={getThumbnailUrl(item, 160, 224)!}
+                                    alt={item.title}
+                                    className="w-full h-full object-cover rounded shadow-sm"
+                                    loading="lazy"
+                                    onError={(e) => {
+                                      (e.target as HTMLImageElement).src = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNjQiIGhlaWdodD0iOTYiIHZpZXdCb3g9IjAgMCA2NCA5NiIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHJlY3Qgd2lkdGg9IjY0IiBoZWlnaHQ9Ijk2IiBmaWxsPSIjMzczNzM3Ii8+CjxwYXRoIGQ9Ik0zMiA0OEwzMiA0OCIgc3Ryb2tlPSIjNzM3Mzc0IiBzdHJva2Utd2lkdGg9IjIiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIvPgo8L3N2Zz4K';
+                                    }}
+                                  />
+                                ) : (
+                                  <div className="w-full h-full bg-muted rounded flex items-center justify-center">
+                                    {item.media_type === 'movie' ? (
+                                      <Film className="h-6 w-6 text-muted-foreground" />
+                                    ) : (
+                                      <Tv className="h-6 w-6 text-muted-foreground" />
+                                    )}
+                                  </div>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                ) : plexActivity ? (
                   <>
                     <div className="grid grid-cols-3 gap-4">
                       <div className="text-center">
@@ -493,71 +605,72 @@ export default function HomePage() {
                     <p className="text-sm">Unable to connect to Plex server</p>
                   </div>
                 )}
-              </div>
-              
-              {/* Action Buttons */}
-              <div className="mt-4 space-y-4 pb-4">
-                  <div className="grid grid-cols-2 gap-4">
-                    <Dialog open={showPlexDialog} onOpenChange={setShowPlexDialog}>
-                      <DialogTrigger asChild>
-                        <Button variant="outline" size="sm" className="w-full justify-start">
-                          <UserPlus className="h-4 w-4 mr-2" />
-                          Join Plex
-                        </Button>
-                      </DialogTrigger>
-                      <DialogContent>
-                        <DialogHeader>
-                          <DialogTitle>Join Plex Server</DialogTitle>
-                          <DialogDescription>
-                            Enter your email address to receive an invitation to join the Plex server.
-                          </DialogDescription>
-                        </DialogHeader>
-                        <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
-                          <div className="space-y-2">
-                            <Label htmlFor="email">Email</Label>
-                            <Input
-                              id="email"
-                              type="email"
-                              {...form.register("email")}
-                              placeholder="your@email.com"
-                            />
-                            {form.formState.errors.email && (
-                              <p className="text-sm text-destructive">
-                                {form.formState.errors.email.message}
-                              </p>
-                            )}
-                          </div>
-                          <DialogFooter>
-                            <Button
-                              type="submit"
-                              disabled={createPlexAccountMutation.isPending}
-                            >
-                              {createPlexAccountMutation.isPending ? "Sending..." : "Send Invitation"}
-                            </Button>
-                          </DialogFooter>
-                        </form>
-                      </DialogContent>
-                    </Dialog>
 
-                    <Button variant="outline" size="sm" className="w-full justify-start" onClick={() => window.open('https://overseerr.stylus.services/login', '_blank')}>
-                      <Search className="h-4 w-4 mr-2" />
-                      Request Content
-                    </Button>
-                  </div>
+              {/* Action Buttons - Only show if user has access */}
+              {hasPlexAccess && (
+                <div className="mt-4 space-y-4 pb-4">
+                    <div className="grid grid-cols-2 gap-4">
+                      <Dialog open={showPlexDialog} onOpenChange={setShowPlexDialog}>
+                        <DialogTrigger asChild>
+                          <Button variant="outline" size="sm" className="w-full justify-start">
+                            <UserPlus className="h-4 w-4 mr-2" />
+                            Join Plex
+                          </Button>
+                        </DialogTrigger>
+                        <DialogContent>
+                          <DialogHeader>
+                            <DialogTitle>Join Plex Server</DialogTitle>
+                            <DialogDescription>
+                              Enter your email address to receive an invitation to join the Plex server.
+                            </DialogDescription>
+                          </DialogHeader>
+                          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+                            <div className="space-y-2">
+                              <Label htmlFor="email">Email</Label>
+                              <Input
+                                id="email"
+                                type="email"
+                                {...form.register("email")}
+                                placeholder="your@email.com"
+                              />
+                              {form.formState.errors.email && (
+                                <p className="text-sm text-destructive">
+                                  {form.formState.errors.email.message}
+                                </p>
+                              )}
+                            </div>
+                            <DialogFooter>
+                              <Button
+                                type="submit"
+                                disabled={createPlexAccountMutation.isPending}
+                              >
+                                {createPlexAccountMutation.isPending ? "Sending..." : "Send Invitation"}
+                              </Button>
+                            </DialogFooter>
+                          </form>
+                        </DialogContent>
+                      </Dialog>
 
-                  <div className="grid grid-cols-2 gap-4">
-                    <Button variant="outline" size="sm" className="w-full justify-start" onClick={() => window.open('https://app.plex.tv/desktop/#!/', '_blank')}>
-                      <ExternalLink className="h-4 w-4 mr-2" />
-                      Launch Plex
-                    </Button>
-                    <Link href="/plex" className="w-full">
-                      <Button variant="outline" size="sm" className="w-full justify-start">
-                        <Film className="h-4 w-4 mr-2" />
-                        Plex Dashboard
+                      <Button variant="outline" size="sm" className="w-full justify-start" onClick={() => window.open('https://overseerr.stylus.services/login', '_blank')}>
+                        <Search className="h-4 w-4 mr-2" />
+                        Request Content
                       </Button>
-                    </Link>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-4">
+                      <Button variant="outline" size="sm" className="w-full justify-start" onClick={() => window.open('https://app.plex.tv/desktop/#!/', '_blank')}>
+                        <ExternalLink className="h-4 w-4 mr-2" />
+                        Launch Plex
+                      </Button>
+                      <Link href="/plex" className="w-full">
+                        <Button variant="outline" size="sm" className="w-full justify-start">
+                          <Film className="h-4 w-4 mr-2" />
+                          Plex Dashboard
+                        </Button>
+                      </Link>
+                    </div>
                   </div>
-                </div>
+              )}
             </CardContent>
           </Card>
           </motion.div>
@@ -581,85 +694,171 @@ export default function HomePage() {
                     <CardDescription>AMP Management</CardDescription>
                   </div>
                 </div>
-                <Badge className="bg-purple-500/10 text-purple-500 border-purple-500/20">
-                  {runningServers.length} Active
-                </Badge>
+                {hasGameServersAccess ? (
+                  <Badge className="bg-purple-500/10 text-purple-500 border-purple-500/20">
+                    {runningServers.length} Active
+                  </Badge>
+                ) : (
+                  <Badge className="bg-yellow-500/10 text-yellow-500 border-yellow-500/20">
+                    <Lock className="h-3 w-3 mr-1" />
+                    Premium
+                  </Badge>
+                )}
               </div>
             </CardHeader>
             <CardContent className="flex flex-col flex-1">
-              <div className="flex-1 space-y-4">
-                <div className="grid grid-cols-3 gap-4">
-                  <div className="text-center">
-                    <div className="text-2xl font-bold">{runningServers.length}</div>
-                    <div className="text-xs text-muted-foreground">Running</div>
-                  </div>
-                  <div className="text-center">
-                    <div className="text-2xl font-bold">{totalPlayers}</div>
-                    <div className="text-xs text-muted-foreground">Players</div>
-                  </div>
-                  <div className="text-center">
-                    <div className="text-2xl font-bold">{gameServers?.length || 0}</div>
-                    <div className="text-xs text-muted-foreground">Total</div>
-                  </div>
-                </div>
-                
-                {runningServers.length > 0 && (
-                  <div className="space-y-2 flex-1">
-                    <p className="text-xs text-muted-foreground">Active Servers</p>
-                    <div className="space-y-2 min-h-[180px]">
-                    {runningServers.slice(0, 3).map((server: any) => (
-                      <div key={server.instanceId} className="bg-accent/10 rounded-lg p-3 border border-border/50">
-                        <div className="flex items-center gap-4">
-                          <div className="flex items-center justify-center bg-white rounded p-1 shadow-sm">
-                            <img
-                              src={getGameArtwork(server.type || 'GenericModule').logo}
-                              alt={`${server.type || 'Game'} logo`}
-                              className="w-12 h-8 object-contain"
-                              onError={(e) => {
-                                // Fallback to text badge - using safe DOM manipulation instead of innerHTML
-                                const parent = (e.target as HTMLImageElement).parentElement;
-                                if (parent) {
-                                  const gameType = server.type || 'Game';
-                                  // Create element safely without innerHTML
-                                  const fallbackDiv = document.createElement('div');
-                                  fallbackDiv.className = 'w-12 h-8 flex items-center justify-center text-gray-700 font-bold text-xs rounded bg-gray-200';
-                                  // Use textContent to safely set text (prevents XSS)
-                                  fallbackDiv.textContent = gameType.substring(0, 3).toUpperCase();
-                                  // Clear parent and append safe element
-                                  parent.innerHTML = '';
-                                  parent.appendChild(fallbackDiv);
+              {!hasGameServersAccess ? (
+                // Show promotional content with game carousel when user doesn't have access
+                <div className="flex-1 flex flex-col justify-between">
+                    <div className="text-center py-3">
+                      <h3 className="font-semibold mb-2">Host & Manage Game Servers</h3>
+                      <p className="text-sm text-muted-foreground mb-3">
+                        Run Minecraft, Satisfactory, and more with full control
+                      </p>
+                      <Link href="/my-subscription" className="w-full">
+                        <Button className="w-full" variant="default">
+                          <Lock className="h-4 w-4 mr-2" />
+                          Unlock Game Servers
+                        </Button>
+                      </Link>
+                    </div>
+
+                    {/* Game Types Carousel */}
+                    <div className="flex-1 flex flex-col justify-center">
+                      <h4 className="text-xs font-medium text-muted-foreground mb-2 text-center">Available Game Servers</h4>
+                      <div className="relative overflow-hidden min-h-[100px] w-full flex items-center">
+                        <div
+                          className="flex gap-3 items-center"
+                          ref={(el) => {
+                            if (el) {
+                              el.style.animation = 'none';
+                              const itemWidth = 176; // 160px + 16px gap
+                              const baseItems = DEMO_GAMES.length;
+                              const oneLoopWidth = baseItems * itemWidth;
+                              let scrollPosition = 0;
+                              const scrollSpeed = 0.3;
+                              const animate = () => {
+                                scrollPosition += scrollSpeed;
+                                if (scrollPosition >= oneLoopWidth) {
+                                  scrollPosition = 0;
                                 }
-                              }}
-                            />
-                          </div>
-                          <div className="flex-1">
-                            <div className="text-sm font-medium text-foreground">
-                              {server.name}
-                            </div>
-                            <div className="text-xs text-muted-foreground">
-                              {server.status ? 'Running' : 'Offline'}
-                            </div>
-                          </div>
-                          <div className="flex items-center justify-center w-12 h-6 bg-background rounded text-xs font-bold border">
-                            {server.playerCount || 0}/{server.maxPlayers || 4}
-                          </div>
+                                el.style.transform = `translateX(-${scrollPosition}px)`;
+                                requestAnimationFrame(animate);
+                              };
+                              animate();
+                            }
+                          }}
+                        >
+                          {/* Repeat games 4 times for seamless loop */}
+                          {[...Array(4)].flatMap(() => DEMO_GAMES).map((gameName, i) => {
+                            const artwork = getGameArtwork(gameName);
+                            return (
+                              <div key={`${gameName}-${i}`} className="flex-shrink-0 w-40 h-24 relative group">
+                                <div className="w-full h-full rounded-lg overflow-hidden shadow-md opacity-80 bg-gray-900">
+                                  <img
+                                    src={artwork.logo}
+                                    alt={gameName}
+                                    className="w-full h-full object-contain p-2"
+                                    onError={(e) => {
+                                      const img = e.target as HTMLImageElement;
+                                      img.style.display = 'none';
+                                      const parent = img.parentElement;
+                                      if (parent) {
+                                        const fallback = document.createElement('div');
+                                        fallback.className = 'w-full h-full flex flex-col items-center justify-center text-white p-2';
+                                        const icon = document.createElement('div');
+                                        icon.innerHTML = '<svg class="h-8 w-8 mb-1" fill="currentColor" viewBox="0 0 24 24"><path d="M14.5 2.134a1 1 0 0 1 1 0l6 3.464a1 1 0 0 1 .5.866V15.5a1 1 0 0 1-.5.866l-6 3.464a1 1 0 0 1-1 0l-6-3.464a1 1 0 0 1-.5-.866V6.464a1 1 0 0 1 .5-.866l6-3.464ZM16 17.155V12h-2v5.155l2 1.155 2-1.155V12h-2v5.155Z"/></svg>';
+                                        const text = document.createElement('span');
+                                        text.className = 'text-xs font-semibold text-center';
+                                        text.textContent = gameName;
+                                        fallback.appendChild(icon.firstChild!);
+                                        fallback.appendChild(text);
+                                        parent.appendChild(fallback);
+                                      }
+                                    }}
+                                  />
+                                </div>
+                              </div>
+                            );
+                          })}
                         </div>
                       </div>
-                    ))}
                     </div>
                   </div>
+                ) : (
+                  <>
+                    <div className="grid grid-cols-3 gap-4">
+                      <div className="text-center">
+                        <div className="text-2xl font-bold">{runningServers.length}</div>
+                        <div className="text-xs text-muted-foreground">Running</div>
+                      </div>
+                      <div className="text-center">
+                        <div className="text-2xl font-bold">{totalPlayers}</div>
+                        <div className="text-xs text-muted-foreground">Players</div>
+                      </div>
+                      <div className="text-center">
+                        <div className="text-2xl font-bold">{gameServers?.length || 0}</div>
+                        <div className="text-xs text-muted-foreground">Total</div>
+                      </div>
+                    </div>
+
+                    {runningServers.length > 0 && (
+                      <div className="space-y-2 flex-1 pt-4">
+                        <div className="space-y-2 min-h-[180px]">
+                        {runningServers.slice(0, 3).map((server: any) => (
+                          <div key={server.instanceId} className="bg-accent/10 rounded-lg p-3 border border-border/50">
+                            <div className="flex items-center gap-4">
+                              <div className="flex items-center justify-center bg-white rounded p-1 shadow-sm">
+                                <img
+                                  src={getGameArtwork(server.type || 'GenericModule').logo}
+                                  alt={`${server.type || 'Game'} logo`}
+                                  className="w-12 h-8 object-contain"
+                                  onError={(e) => {
+                                    // Fallback to text badge - using safe DOM manipulation instead of innerHTML
+                                    const parent = (e.target as HTMLImageElement).parentElement;
+                                    if (parent) {
+                                      const gameType = server.type || 'Game';
+                                      // Create element safely without innerHTML
+                                      const fallbackDiv = document.createElement('div');
+                                      fallbackDiv.className = 'w-12 h-8 flex items-center justify-center text-gray-700 font-bold text-xs rounded bg-gray-200';
+                                      // Use textContent to safely set text (prevents XSS)
+                                      fallbackDiv.textContent = gameType.substring(0, 3).toUpperCase();
+                                      // Clear parent and append safe element
+                                      parent.innerHTML = '';
+                                      parent.appendChild(fallbackDiv);
+                                    }
+                                  }}
+                                />
+                              </div>
+                              <div className="flex-1">
+                                <div className="text-sm font-medium text-foreground">
+                                  {server.name}
+                                </div>
+                                <div className="text-xs text-muted-foreground">
+                                  {server.status ? 'Running' : 'Offline'}
+                                </div>
+                              </div>
+                              <div className="flex items-center justify-center w-12 h-6 bg-background rounded text-xs font-bold border">
+                                {server.playerCount || 0}/{server.maxPlayers || 4}
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Action Button - Only show if user has access */}
+                    <div className="space-y-2 mt-4">
+                      <Link href="/game-servers">
+                        <Button className="w-full" variant="outline">
+                          Manage Game Servers
+                          <ChevronRight className="h-4 w-4 ml-2" />
+                        </Button>
+                      </Link>
+                    </div>
+                  </>
                 )}
-              </div>
-              
-              {/* Action Buttons */}
-              <div className="space-y-2 mt-4">
-                  <Link href="/game-servers">
-                    <Button className="w-full" variant="outline">
-                      Manage Game Servers
-                      <ChevronRight className="h-4 w-4 ml-2" />
-                    </Button>
-                  </Link>
-                </div>
             </CardContent>
           </Card>
           </motion.div>
@@ -683,14 +882,105 @@ export default function HomePage() {
                     <CardDescription>Live Television</CardDescription>
                   </div>
                 </div>
-                <Badge className="bg-blue-500/10 text-blue-500 border-blue-500/20">
-                  {liveTVChannels?.length || 0} Channels
-                </Badge>
+                {hasLiveTVAccess ? (
+                  <Badge className="bg-blue-500/10 text-blue-500 border-blue-500/20">
+                    {liveTVChannels?.length || 0} Channels
+                  </Badge>
+                ) : (
+                  <Badge className="bg-yellow-500/10 text-yellow-500 border-yellow-500/20">
+                    <Lock className="h-3 w-3 mr-1" />
+                    Premium
+                  </Badge>
+                )}
               </div>
             </CardHeader>
             <CardContent className="flex flex-col flex-1">
-              <div className="flex-1 space-y-4">
-                {favoriteChannels.length > 0 ? (
+              {!hasLiveTVAccess ? (
+                // Show promotional content with channel carousel when user doesn't have access
+                <div className="flex-1 flex flex-col justify-between">
+                    <div className="text-center py-3">
+                      <h3 className="font-semibold mb-2">Watch Live TV Channels</h3>
+                      <p className="text-sm text-muted-foreground mb-3">
+                        Stream thousands of live TV channels in HD quality
+                      </p>
+                      <Link href="/my-subscription">
+                        <Button className="w-full" variant="default">
+                          <Lock className="h-4 w-4 mr-2" />
+                          Unlock Live TV
+                        </Button>
+                      </Link>
+                    </div>
+
+                    {/* Channel Logos Carousel */}
+                    {liveTVChannels && liveTVChannels.length > 0 && (
+                      <div className="flex-1 flex flex-col justify-center">
+                        <h4 className="text-xs font-medium text-muted-foreground mb-2 text-center">Available Channels</h4>
+                        <div className="relative overflow-hidden min-h-[100px] w-full flex items-center opacity-80">
+                          <div
+                            className="flex gap-4 items-center"
+                            ref={(el) => {
+                              if (el && liveTVChannels?.length > 0) {
+                                el.style.animation = 'none';
+                                const itemWidth = 112; // 96px + 16px gap
+                                const baseItems = Math.min(liveTVChannels.length, 30);
+                                const oneLoopWidth = baseItems * itemWidth;
+                                let scrollPosition = 0;
+                                const scrollSpeed = 0.2;
+                                const animate = () => {
+                                  scrollPosition += scrollSpeed;
+                                  if (scrollPosition >= oneLoopWidth) {
+                                    scrollPosition = 0;
+                                  }
+                                  el.style.transform = `translateX(-${scrollPosition}px)`;
+                                  requestAnimationFrame(animate);
+                                };
+                                animate();
+                              }
+                            }}
+                          >
+                            {(() => {
+                              const baseItems = liveTVChannels.slice(0, Math.min(liveTVChannels.length, 30));
+                              const repeatedItems = [];
+                              for (let rep = 0; rep < 4; rep++) {
+                                baseItems.forEach(channel => repeatedItems.push(channel));
+                              }
+                              return repeatedItems;
+                            })().map((channel: any, i: number) => (
+                              <div key={`${channel.id}-${i}`} className="flex-shrink-0 w-24 h-24 relative group">
+                                {channel.logo ? (
+                                  <div className="w-full h-full rounded-lg bg-white/5 border border-white/10 p-2 flex items-center justify-center">
+                                    <img
+                                      src={channel.logo}
+                                      alt={channel.name}
+                                      className="max-w-full max-h-full object-contain"
+                                      loading="lazy"
+                                      onError={(e) => {
+                                        const img = e.target as HTMLImageElement;
+                                        img.style.display = 'none';
+                                        const parent = img.parentElement;
+                                        if (parent) {
+                                          const fallback = document.createElement('div');
+                                          fallback.className = 'w-full h-full flex flex-col items-center justify-center text-muted-foreground';
+                                          fallback.innerHTML = '<svg class="h-8 w-8 mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><rect width="20" height="15" x="2" y="7" rx="2" ry="2"></rect><polyline points="17 2 12 7 7 2"></polyline></svg><span class="text-xs text-center px-1" style="font-size: 0.65rem;">' + channel.name.substring(0, 15) + '</span>';
+                                          parent.appendChild(fallback);
+                                        }
+                                      }}
+                                    />
+                                  </div>
+                                ) : (
+                                  <div className="w-full h-full rounded-lg bg-white/5 border border-white/10 flex flex-col items-center justify-center text-muted-foreground p-2">
+                                    <Tv className="h-6 w-6 mb-1" />
+                                    <span className="text-xs text-center">{channel.name.substring(0, 10)}</span>
+                                  </div>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                ) : favoriteChannels.length > 0 ? (
                   <div className="space-y-2 flex-1">
                     <p className="text-xs text-muted-foreground">Favorite Channels</p>
                     <div className="space-y-2 min-h-[275px]">
@@ -715,10 +1005,10 @@ export default function HomePage() {
                     </div>
                   </div>
                 )}
-              </div>
 
-              {/* Action Buttons */}
-              <div className="space-y-2 mt-4">
+              {/* Action Button - Only show if user has access */}
+              {hasLiveTVAccess && (
+                <div className="space-y-2 mt-4">
                   <Link href="/live-tv">
                     <Button className="w-full" variant="outline">
                       Watch Live TV
@@ -726,6 +1016,7 @@ export default function HomePage() {
                     </Button>
                   </Link>
                 </div>
+              )}
             </CardContent>
           </Card>
           </motion.div>

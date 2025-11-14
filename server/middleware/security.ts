@@ -48,14 +48,33 @@ export const helmetConfig = helmet({
   contentSecurityPolicy: process.env.NODE_ENV === 'production' ? {
     directives: {
       defaultSrc: ["'self'"],
-      styleSrc: ["'self'", "'unsafe-inline'", "https:"],
-      scriptSrc: ["'self'"],
-      imgSrc: ["'self'", "data:", "https:"],
-      connectSrc: ["'self'"],
-      fontSrc: ["'self'", "https:", "data:"],
+      styleSrc: ["'self'", "'unsafe-inline'"],
+      scriptSrc: [
+        "'self'",
+        "'unsafe-inline'",
+        "'unsafe-eval'",
+        "https://*.gstatic.com",
+        "https://js.stripe.com"
+      ],
+      imgSrc: ["'self'", "data:", "blob:", "https:", "http:"],
+      connectSrc: [
+        "'self'",
+        "https:",
+        "wss:",
+        "ws:",
+        "http:",
+        "https://api.stripe.com"
+      ],
+      fontSrc: ["'self'", "data:"],
       objectSrc: ["'none'"],
-      mediaSrc: ["'self'"],
-      frameSrc: ["'none'"],
+      mediaSrc: ["'self'", "blob:", "https:", "http:"],
+      frameSrc: ["'self'", "https://*.gstatic.com"],
+      workerSrc: ["'self'", "blob:"],
+      childSrc: ["'self'", "blob:"],
+      formAction: ["'self'"],
+      frameAncestors: ["'self'"],
+      baseUri: ["'self'"],
+      scriptSrcAttr: ["'unsafe-inline'"],
     },
   } : false, // Disable CSP in development
   crossOriginEmbedderPolicy: false, // Disable for compatibility

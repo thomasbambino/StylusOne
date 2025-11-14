@@ -11,7 +11,7 @@ export const getStripe = (): Promise<Stripe | null> => {
     const publishableKey = import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY;
 
     if (!publishableKey) {
-      console.warn('VITE_STRIPE_PUBLISHABLE_KEY not configured');
+      console.error('VITE_STRIPE_PUBLISHABLE_KEY not configured');
       return Promise.resolve(null);
     }
 

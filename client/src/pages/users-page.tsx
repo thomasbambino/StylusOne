@@ -19,6 +19,7 @@ import { format } from 'date-fns';
 import { PageTransition } from "@/components/page-transition";
 import { Separator } from "@/components/ui/separator"; // Import Separator
 import { Copy, Check } from "lucide-react";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 
 
 export default function UsersPage() {
@@ -33,14 +34,26 @@ export default function UsersPage() {
     emailSent: false
   });
   const [copiedPassword, setCopiedPassword] = useState(false);
+  const [subscriptionDialog, setSubscriptionDialog] = useState<{ open: boolean; userId: number; username: string }>({
+    open: false,
+    userId: 0,
+    username: '',
+  });
+  const [selectedPlan, setSelectedPlan] = useState<number>(0);
+  const [billingPeriod, setBillingPeriod] = useState<'monthly' | 'annual'>('monthly');
+  const [durationMonths, setDurationMonths] = useState<number>(1);
   const isSuperAdmin = user?.role === 'superadmin';
 
-  const { data: users = [] } = useQuery<User[]>({
-    queryKey: ["/api/users"],
+  const { data: users = [] } = useQuery<any[]>({
+    queryKey: ["/api/subscriptions/admin/users"],
   });
 
   const { data: settings } = useQuery<Settings>({
     queryKey: ["/api/settings"],
+  });
+
+  const { data: subscriptionPlans = [] } = useQuery<any[]>({
+    queryKey: ["/api/subscriptions/plans"],
   });
 
   const updateUserMutation = useMutation({
@@ -139,6 +152,48 @@ export default function UsersPage() {
     },
   });
 
+  const assignSubscriptionMutation = useMutation({
+    mutationFn: async (data: { user_id: number; plan_id: number; billing_period: 'monthly' | 'annual'; duration_months: number }) => {
+      const res = await apiRequest("POST", "/api/subscriptions/admin/assign", data);
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/subscriptions/admin/users"] });
+      toast({
+        title: "Subscription assigned",
+        description: "User subscription has been updated successfully",
+      });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Failed to assign subscription",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+
+  const removeSubscriptionMutation = useMutation({
+    mutationFn: async (userId: number) => {
+      const res = await apiRequest("DELETE", `/api/subscriptions/admin/remove/${userId}`);
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/subscriptions/admin/users"] });
+      toast({
+        title: "Subscription removed",
+        description: "User subscription has been removed successfully",
+      });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Failed to remove subscription",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+
   const handleEmailChange = (userId: number, email: string) => {
     setEditingEmails(prev => ({ ...prev, [userId]: email }));
   };
@@ -153,6 +208,41 @@ export default function UsersPage() {
         return newState;
       });
     }
+  };
+
+  const openSubscriptionDialog = (userId: number, username: string) => {
+    // Set defaults from user's current subscription if they have one
+    const userWithSub = users.find(u => u.id === userId);
+    if (userWithSub?.subscription) {
+      setSelectedPlan(userWithSub.subscription.plan_id);
+      setBillingPeriod(userWithSub.subscription.billing_period || 'monthly');
+    } else {
+      // Reset to defaults if no subscription
+      setSelectedPlan(subscriptionPlans[0]?.id || 0);
+      setBillingPeriod('monthly');
+    }
+    setDurationMonths(1);
+    setSubscriptionDialog({ open: true, userId, username });
+  };
+
+  const handleAssignSubscription = async () => {
+    if (!selectedPlan) {
+      toast({
+        title: "Plan required",
+        description: "Please select a subscription plan",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    await assignSubscriptionMutation.mutateAsync({
+      user_id: subscriptionDialog.userId,
+      plan_id: selectedPlan,
+      billing_period: billingPeriod,
+      duration_months: durationMonths,
+    });
+
+    setSubscriptionDialog({ open: false, userId: 0, username: '' });
   };
 
   if (user?.role !== 'admin' && user?.role !== 'superadmin') {
@@ -239,6 +329,55 @@ export default function UsersPage() {
                               </p>
                             )}
                           </div>
+                        </div>
+                        <div className="flex items-center gap-4 mt-2">
+                          <p className="text-sm text-muted-foreground">Subscription:</p>
+                          {u.subscription ? (
+                            <div className="flex items-center gap-2">
+                              <p className="text-sm font-medium text-green-600">{u.subscription.plan_name}</p>
+                              <p className="text-xs text-muted-foreground">
+                                ({u.subscription.billing_period}) - Expires: {format(new Date(u.subscription.current_period_end), "PP")}
+                              </p>
+                              <p className={`text-xs font-medium ${u.subscription.status === 'active' ? 'text-green-600' : 'text-yellow-600'}`}>
+                                {u.subscription.status.toUpperCase()}
+                              </p>
+                            </div>
+                          ) : (
+                            <p className="text-sm text-muted-foreground">No active subscription</p>
+                          )}
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => openSubscriptionDialog(u.id, u.username)}
+                          >
+                            {u.subscription ? 'Update Plan' : 'Assign Plan'}
+                          </Button>
+                          {u.subscription && (
+                            <AlertDialog>
+                              <AlertDialogTrigger asChild>
+                                <Button variant="outline" size="sm" className="text-destructive">
+                                  Remove
+                                </Button>
+                              </AlertDialogTrigger>
+                              <AlertDialogContent>
+                                <AlertDialogHeader>
+                                  <AlertDialogTitle>Remove Subscription</AlertDialogTitle>
+                                  <AlertDialogDescription>
+                                    Are you sure you want to remove the subscription for {u.username}? This will immediately revoke their access to premium features.
+                                  </AlertDialogDescription>
+                                </AlertDialogHeader>
+                                <AlertDialogFooter>
+                                  <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                  <AlertDialogAction
+                                    onClick={() => removeSubscriptionMutation.mutate(u.id)}
+                                    className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                                  >
+                                    Remove
+                                  </AlertDialogAction>
+                                </AlertDialogFooter>
+                              </AlertDialogContent>
+                            </AlertDialog>
+                          )}
                         </div>
                         <div className="flex items-center gap-2">
                           <div className="flex items-center gap-2">
@@ -405,6 +544,102 @@ export default function UsersPage() {
           </div>
           <div className="text-sm text-muted-foreground">
             The user will be prompted to change this password on their next login.
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Subscription Assignment Dialog */}
+      <Dialog open={subscriptionDialog.open} onOpenChange={(open) => {
+        setSubscriptionDialog(prev => ({ ...prev, open }));
+      }}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>
+              {users.find(u => u.id === subscriptionDialog.userId)?.subscription
+                ? 'Update Subscription'
+                : 'Assign Subscription'}
+            </DialogTitle>
+            <DialogDescription>
+              Manage subscription for <strong>{subscriptionDialog.username}</strong>.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            {/* Plan Selection */}
+            <div className="space-y-2">
+              <Label htmlFor="plan">Subscription Plan</Label>
+              <Select
+                value={selectedPlan.toString()}
+                onValueChange={(value) => setSelectedPlan(parseInt(value))}
+              >
+                <SelectTrigger id="plan">
+                  <SelectValue placeholder="Select a plan" />
+                </SelectTrigger>
+                <SelectContent>
+                  {subscriptionPlans.map((plan) => (
+                    <SelectItem key={plan.id} value={plan.id.toString()}>
+                      {plan.name} - ${(billingPeriod === 'monthly' ? plan.price_monthly : plan.price_annual) / 100}/{billingPeriod === 'monthly' ? 'mo' : 'yr'}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Billing Period */}
+            <div className="space-y-2">
+              <Label>Billing Period</Label>
+              <RadioGroup
+                value={billingPeriod}
+                onValueChange={(value) => setBillingPeriod(value as 'monthly' | 'annual')}
+              >
+                <div className="flex items-center space-x-2">
+                  <RadioGroupItem value="monthly" id="monthly" />
+                  <Label htmlFor="monthly" className="cursor-pointer font-normal">Monthly</Label>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <RadioGroupItem value="annual" id="annual" />
+                  <Label htmlFor="annual" className="cursor-pointer font-normal">Annual</Label>
+                </div>
+              </RadioGroup>
+            </div>
+
+            {/* Duration */}
+            <div className="space-y-2">
+              <Label htmlFor="duration">Duration (months)</Label>
+              <Input
+                id="duration"
+                type="number"
+                min="1"
+                max="120"
+                value={durationMonths}
+                onChange={(e) => setDurationMonths(parseInt(e.target.value) || 1)}
+              />
+              <p className="text-xs text-muted-foreground">
+                Subscription will expire in {durationMonths} month{durationMonths !== 1 ? 's' : ''}
+              </p>
+            </div>
+
+            {/* Action Buttons */}
+            <div className="flex justify-end gap-2 pt-4">
+              <Button
+                variant="outline"
+                onClick={() => setSubscriptionDialog({ open: false, userId: 0, username: '' })}
+              >
+                Cancel
+              </Button>
+              <Button
+                onClick={handleAssignSubscription}
+                disabled={assignSubscriptionMutation.isPending || !selectedPlan}
+              >
+                {assignSubscriptionMutation.isPending ? (
+                  <>
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    Assigning...
+                  </>
+                ) : (
+                  <>Assign Subscription</>
+                )}
+              </Button>
+            </div>
           </div>
         </DialogContent>
       </Dialog>

@@ -66,7 +66,8 @@ export default function MySubscriptionPage() {
 
   // Initialize Stripe
   useEffect(() => {
-    setStripePromise(getStripe());
+    const promise = getStripe();
+    setStripePromise(promise);
   }, []);
 
   // Fetch current subscription

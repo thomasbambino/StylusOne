@@ -3,10 +3,12 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
-import { Check, ServerCog, CreditCard } from "lucide-react";
-import { useQuery } from "@tanstack/react-query";
+import { Check, ServerCog, CreditCard, Loader2 } from "lucide-react";
+import { useQuery, useMutation } from "@tanstack/react-query";
 import { Settings, SubscriptionPlan } from "@shared/schema";
 import { Link } from "wouter";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import { Label } from "@/components/ui/label";
 
 interface FirstTimeLoginDialogProps {
   open: boolean;
@@ -18,7 +20,9 @@ export function FirstTimeLoginDialog({ open, onOpenChange }: FirstTimeLoginDialo
   const [currentStep, setCurrentStep] = useState(1);
   const [hasSeenDialog, setHasSeenDialog] = useState(false);
   const [isInitialized, setIsInitialized] = useState(false);
-  
+  const [selectedPlanId, setSelectedPlanId] = useState<number | null>(null);
+  const [billingPeriod, setBillingPeriod] = useState<'monthly' | 'annual'>('monthly');
+
   const { data: settings } = useQuery<Settings>({
     queryKey: ["/api/settings"],
   });
@@ -29,6 +33,38 @@ export function FirstTimeLoginDialog({ open, onOpenChange }: FirstTimeLoginDialo
       const res = await fetch('/api/subscriptions/plans');
       if (!res.ok) return [];
       return res.json();
+    },
+  });
+
+  // Create checkout session mutation
+  const createCheckoutMutation = useMutation({
+    mutationFn: async ({ planId, period }: { planId: number; period: 'monthly' | 'annual' }) => {
+      const res = await fetch('/api/subscriptions/checkout', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          plan_id: planId,
+          billing_period: period,
+        }),
+      });
+      if (!res.ok) {
+        const error = await res.json();
+        throw new Error(error.message || 'Failed to create checkout session');
+      }
+      return res.json();
+    },
+    onSuccess: (data) => {
+      // Redirect to Stripe checkout
+      if (data.url) {
+        window.location.href = data.url;
+      }
+    },
+    onError: (error: Error) => {
+      toast({
+        title: 'Checkout Error',
+        description: error.message,
+        variant: 'destructive',
+      });
     },
   });
 
@@ -84,50 +120,104 @@ export function FirstTimeLoginDialog({ open, onOpenChange }: FirstTimeLoginDialo
           <p>
             Select a subscription plan to unlock premium features like Plex, Live TV, Books, and Game Servers.
           </p>
-          {plans.length > 0 ? (
-            <div className="grid gap-3 max-h-[300px] overflow-y-auto">
-              {plans.map((plan) => (
-                <div
-                  key={plan.id}
-                  className="border rounded-lg p-4 hover:border-primary transition-colors cursor-pointer"
-                  onClick={() => {
-                    // Close dialog and navigate to subscription page
-                    handleClose();
-                    window.location.href = '/my-subscription';
-                  }}
+
+          {plans.length > 0 && (
+            <div className="space-y-3">
+              {/* Billing Period Selection */}
+              <div className="flex items-center justify-center gap-4 p-3 bg-muted/50 rounded-lg">
+                <Label className="text-sm font-medium">Billing Period:</Label>
+                <RadioGroup
+                  value={billingPeriod}
+                  onValueChange={(value) => setBillingPeriod(value as 'monthly' | 'annual')}
+                  className="flex gap-4"
                 >
-                  <div className="flex justify-between items-start mb-2">
-                    <div>
-                      <h4 className="font-semibold">{plan.name}</h4>
-                      <p className="text-sm text-muted-foreground">{plan.description}</p>
-                    </div>
-                    <div className="text-right">
-                      <div className="font-bold">${(plan.price_monthly / 100).toFixed(2)}/mo</div>
-                      <div className="text-xs text-muted-foreground">${(plan.price_annual / 100).toFixed(2)}/yr</div>
-                    </div>
+                  <div className="flex items-center space-x-2">
+                    <RadioGroupItem value="monthly" id="monthly" />
+                    <Label htmlFor="monthly" className="cursor-pointer">Monthly</Label>
                   </div>
-                  <div className="flex flex-wrap gap-2 mt-2">
-                    {plan.features.plex_access && (
-                      <span className="text-xs bg-primary/10 text-primary px-2 py-1 rounded">Plex</span>
-                    )}
-                    {plan.features.live_tv_access && (
-                      <span className="text-xs bg-primary/10 text-primary px-2 py-1 rounded">Live TV</span>
-                    )}
-                    {plan.features.books_access && (
-                      <span className="text-xs bg-primary/10 text-primary px-2 py-1 rounded">Books</span>
-                    )}
-                    {plan.features.game_servers_access && (
-                      <span className="text-xs bg-primary/10 text-primary px-2 py-1 rounded">Game Servers</span>
-                    )}
+                  <div className="flex items-center space-x-2">
+                    <RadioGroupItem value="annual" id="annual" />
+                    <Label htmlFor="annual" className="cursor-pointer">Annual (Save $$$)</Label>
                   </div>
-                </div>
-              ))}
+                </RadioGroup>
+              </div>
+
+              {/* Plan Selection */}
+              <div className="grid gap-3 max-h-[250px] overflow-y-auto">
+                {plans.map((plan) => {
+                  const price = billingPeriod === 'monthly' ? plan.price_monthly : plan.price_annual;
+                  const priceDisplay = billingPeriod === 'monthly'
+                    ? `$${(price / 100).toFixed(2)}/mo`
+                    : `$${(price / 100).toFixed(2)}/yr`;
+
+                  return (
+                    <div
+                      key={plan.id}
+                      className={cn(
+                        "border rounded-lg p-4 hover:border-primary transition-colors cursor-pointer",
+                        selectedPlanId === plan.id && "border-primary bg-primary/5"
+                      )}
+                      onClick={() => setSelectedPlanId(plan.id)}
+                    >
+                      <div className="flex justify-between items-start mb-2">
+                        <div className="flex items-start gap-2">
+                          {selectedPlanId === plan.id && (
+                            <Check className="h-5 w-5 text-primary mt-0.5" />
+                          )}
+                          <div>
+                            <h4 className="font-semibold">{plan.name}</h4>
+                            <p className="text-sm text-muted-foreground">{plan.description}</p>
+                          </div>
+                        </div>
+                        <div className="text-right">
+                          <div className="font-bold">{priceDisplay}</div>
+                        </div>
+                      </div>
+                      <div className="flex flex-wrap gap-2 mt-2">
+                        {plan.features.plex_access && (
+                          <span className="text-xs bg-primary/10 text-primary px-2 py-1 rounded">Plex</span>
+                        )}
+                        {plan.features.live_tv_access && (
+                          <span className="text-xs bg-primary/10 text-primary px-2 py-1 rounded">Live TV</span>
+                        )}
+                        {plan.features.books_access && (
+                          <span className="text-xs bg-primary/10 text-primary px-2 py-1 rounded">Books</span>
+                        )}
+                        {plan.features.game_servers_access && (
+                          <span className="text-xs bg-primary/10 text-primary px-2 py-1 rounded">Game Servers</span>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* Subscribe Button */}
+              {selectedPlanId && (
+                <Button
+                  className="w-full"
+                  onClick={() => createCheckoutMutation.mutate({ planId: selectedPlanId, period: billingPeriod })}
+                  disabled={createCheckoutMutation.isPending}
+                >
+                  {createCheckoutMutation.isPending ? (
+                    <>
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                      Processing...
+                    </>
+                  ) : (
+                    <>Subscribe Now</>
+                  )}
+                </Button>
+              )}
             </div>
-          ) : (
+          )}
+
+          {plans.length === 0 && (
             <p className="text-sm text-muted-foreground text-center py-4">
               No subscription plans available at this time. You can browse features and subscribe later.
             </p>
           )}
+
           <p className="text-xs text-muted-foreground text-center">
             You can also subscribe later from the "My Subscription" page
           </p>

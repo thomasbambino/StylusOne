@@ -134,13 +134,19 @@ router.post('/create', requireAuth, async (req, res) => {
       return res.status(400).json({ error: 'User email is required' });
     }
 
+    // Sanitize email for Stripe (replace localhost with example.com for test environments)
+    let stripeEmail = user.email;
+    if (stripeEmail.endsWith('@localhost')) {
+      stripeEmail = stripeEmail.replace('@localhost', '@example.com');
+    }
+
     // Create subscription via Stripe
     const result = await stripeService.createSubscription({
       userId,
       planId: validatedData.plan_id,
       billingPeriod: validatedData.billing_period,
       paymentMethodId: validatedData.payment_method_id,
-      email: user.email,
+      email: stripeEmail,
     });
 
     res.status(201).json({
@@ -362,6 +368,212 @@ router.get('/has-feature/:feature', requireAuth, async (req, res) => {
   } catch (error) {
     console.error('Error checking feature access:', error);
     res.status(500).json({ error: 'Failed to check feature access' });
+  }
+});
+
+/**
+ * GET /api/subscriptions/admin/users
+ * Get all users with their subscription information (admin only)
+ */
+router.get('/admin/users', requireAuth, async (req, res) => {
+  try {
+    // Check if user is admin or superadmin
+    if (req.user.role !== 'admin' && req.user.role !== 'superadmin') {
+      return res.status(403).json({ error: 'Admin access required' });
+    }
+
+    const allUsers = await db.select().from(users);
+
+    const usersWithSubscriptions = await Promise.all(
+      allUsers.map(async (user) => {
+        const subscription = await db
+          .select({
+            id: userSubscriptions.id,
+            plan_id: userSubscriptions.plan_id,
+            status: userSubscriptions.status,
+            billing_period: userSubscriptions.billing_period,
+            current_period_end: userSubscriptions.current_period_end,
+            cancel_at_period_end: userSubscriptions.cancel_at_period_end,
+            plan_name: subscriptionPlans.name,
+            plan_features: subscriptionPlans.features,
+          })
+          .from(userSubscriptions)
+          .innerJoin(subscriptionPlans, eq(subscriptionPlans.id, userSubscriptions.plan_id))
+          .where(eq(userSubscriptions.user_id, user.id))
+          .orderBy(desc(userSubscriptions.created_at))
+          .limit(1);
+
+        return {
+          id: user.id,
+          username: user.username,
+          email: user.email,
+          role: user.role,
+          subscription: subscription.length > 0 ? subscription[0] : null,
+        };
+      })
+    );
+
+    res.json(usersWithSubscriptions);
+  } catch (error) {
+    console.error('Error fetching users with subscriptions:', error);
+    res.status(500).json({ error: 'Failed to fetch users' });
+  }
+});
+
+/**
+ * POST /api/subscriptions/admin/assign
+ * Manually assign a subscription to a user (admin only)
+ */
+router.post('/admin/assign', requireAuth, async (req, res) => {
+  try {
+    // Check if user is admin or superadmin
+    if (req.user.role !== 'admin' && req.user.role !== 'superadmin') {
+      return res.status(403).json({ error: 'Admin access required' });
+    }
+
+    const { user_id, plan_id, billing_period = 'monthly', duration_months = 1 } = req.body;
+
+    if (!user_id || !plan_id) {
+      return res.status(400).json({ error: 'user_id and plan_id are required' });
+    }
+
+    // Verify the plan exists
+    const plan = await db
+      .select()
+      .from(subscriptionPlans)
+      .where(eq(subscriptionPlans.id, plan_id))
+      .limit(1);
+
+    if (plan.length === 0) {
+      return res.status(404).json({ error: 'Subscription plan not found' });
+    }
+
+    // Verify the user exists
+    const targetUser = await db
+      .select()
+      .from(users)
+      .where(eq(users.id, user_id))
+      .limit(1);
+
+    if (targetUser.length === 0) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    // Check if user already has an active subscription
+    const existingSubscription = await db
+      .select()
+      .from(userSubscriptions)
+      .where(
+        and(
+          eq(userSubscriptions.user_id, user_id),
+          eq(userSubscriptions.status, 'active')
+        )
+      )
+      .limit(1);
+
+    const now = new Date();
+    const periodEnd = new Date(now);
+    periodEnd.setMonth(periodEnd.getMonth() + (duration_months || 1));
+
+    if (existingSubscription.length > 0) {
+      // Update existing subscription
+      await db
+        .update(userSubscriptions)
+        .set({
+          plan_id,
+          billing_period,
+          current_period_start: now,
+          current_period_end: periodEnd,
+          cancel_at_period_end: false,
+          canceled_at: null,
+          updated_at: now,
+        })
+        .where(eq(userSubscriptions.id, existingSubscription[0].id));
+
+      res.json({
+        message: 'Subscription updated successfully',
+        subscription_id: existingSubscription[0].id,
+      });
+    } else {
+      // Create new manual subscription
+      const manualCustomerId = `manual_${user_id}_${Date.now()}`;
+      const manualSubscriptionId = `manual_sub_${user_id}_${Date.now()}`;
+
+      const newSubscription = await db
+        .insert(userSubscriptions)
+        .values({
+          user_id,
+          plan_id,
+          stripe_customer_id: manualCustomerId,
+          stripe_subscription_id: manualSubscriptionId,
+          status: 'active',
+          billing_period,
+          current_period_start: now,
+          current_period_end: periodEnd,
+          cancel_at_period_end: false,
+          created_at: now,
+          updated_at: now,
+        })
+        .returning();
+
+      res.json({
+        message: 'Subscription assigned successfully',
+        subscription: newSubscription[0],
+      });
+    }
+  } catch (error) {
+    console.error('Error assigning subscription:', error);
+    res.status(500).json({ error: 'Failed to assign subscription' });
+  }
+});
+
+/**
+ * DELETE /api/subscriptions/admin/remove/:userId
+ * Remove a user's subscription (admin only)
+ */
+router.delete('/admin/remove/:userId', requireAuth, async (req, res) => {
+  try {
+    // Check if user is admin or superadmin
+    if (req.user.role !== 'admin' && req.user.role !== 'superadmin') {
+      return res.status(403).json({ error: 'Admin access required' });
+    }
+
+    const userId = parseInt(req.params.userId);
+
+    if (isNaN(userId)) {
+      return res.status(400).json({ error: 'Invalid user ID' });
+    }
+
+    // Find and update the subscription to canceled
+    const subscription = await db
+      .select()
+      .from(userSubscriptions)
+      .where(
+        and(
+          eq(userSubscriptions.user_id, userId),
+          eq(userSubscriptions.status, 'active')
+        )
+      )
+      .limit(1);
+
+    if (subscription.length === 0) {
+      return res.status(404).json({ error: 'No active subscription found for this user' });
+    }
+
+    await db
+      .update(userSubscriptions)
+      .set({
+        status: 'canceled',
+        cancel_at_period_end: false,
+        canceled_at: new Date(),
+        updated_at: new Date(),
+      })
+      .where(eq(userSubscriptions.id, subscription[0].id));
+
+    res.json({ message: 'Subscription removed successfully' });
+  } catch (error) {
+    console.error('Error removing subscription:', error);
+    res.status(500).json({ error: 'Failed to remove subscription' });
   }
 });
 

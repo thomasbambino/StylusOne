@@ -4,6 +4,7 @@ import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
 import { initializeServices } from "./services";
 import { epgScheduler } from "./services/epg-scheduler";
+import webhookRoutes from "./routes/webhooks";
 
 const app = express();
 
@@ -29,6 +30,10 @@ app.use(helmet({
   },
   crossOriginEmbedderPolicy: false, // Disable for video streaming compatibility
 }));
+
+// Stripe webhooks need raw body for signature verification
+// Must be registered BEFORE express.json() middleware
+app.use('/api/webhooks', express.raw({ type: 'application/json' }), webhookRoutes);
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));

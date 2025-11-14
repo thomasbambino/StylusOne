@@ -16,8 +16,20 @@ interface CurrentSubscription {
   status: string;
 }
 
+type Feature = 'plex_access' | 'live_tv_access' | 'books_access' | 'game_servers_access';
+
+/**
+ * Human-readable feature names for display
+ */
+const FEATURE_NAMES: Record<Feature, string> = {
+  plex_access: 'Plex',
+  live_tv_access: 'Live TV',
+  books_access: 'Books',
+  game_servers_access: 'Game Servers',
+};
+
 interface FeatureGateProps {
-  feature: 'plex_access' | 'live_tv_access' | 'books_access' | 'game_servers_access';
+  feature: Feature;
   children: React.ReactNode;
   redirectTo?: string;
   showUpgradePrompt?: boolean;
@@ -78,7 +90,7 @@ export function FeatureGate({
             </div>
             <CardTitle className="text-2xl">Upgrade Required</CardTitle>
             <CardDescription>
-              This feature requires a subscription with {feature.replace('_', ' ')} enabled.
+              This feature requires a subscription with {FEATURE_NAMES[feature]} access.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
@@ -106,7 +118,7 @@ export function FeatureGate({
  * Hook to check if user has access to a feature
  */
 export function useFeatureAccess(
-  feature: 'plex_access' | 'live_tv_access' | 'books_access' | 'game_servers_access'
+  feature: Feature
 ): { hasAccess: boolean; isLoading: boolean } {
   const { data: subscription, isLoading } = useQuery<CurrentSubscription | null>({
     queryKey: ['/api/subscriptions/current'],
