@@ -921,8 +921,27 @@ export default function LiveTVPage() {
   if (searchQuery.trim()) {
     const query = searchQuery.toLowerCase();
     filteredChannels = filteredChannels.filter(ch => {
+      // Search by channel number
       if (ch.GuideNumber.toLowerCase().includes(query)) return true;
+      // Search by channel name
       if (ch.GuideName.toLowerCase().includes(query)) return true;
+
+      // Search by program names in EPG data
+      const channelKey = ch.source === 'iptv' ? ch.epgId : ch.GuideNumber;
+      if (channelKey) {
+        const programs = epgDataMap.get(channelKey) || [];
+        const hasMatchingProgram = programs.some(program => {
+          // Check program title
+          if (program.title?.toLowerCase().includes(query)) return true;
+          // Check episode title
+          if (program.episodeTitle?.toLowerCase().includes(query)) return true;
+          // Check description
+          if (program.description?.toLowerCase().includes(query)) return true;
+          return false;
+        });
+        if (hasMatchingProgram) return true;
+      }
+
       return false;
     });
   }
@@ -2467,7 +2486,7 @@ export default function LiveTVPage() {
                   <div className="relative">
                     <input
                       type="text"
-                      placeholder="Search by channel number or name..."
+                      placeholder="Search by channel or program name..."
                       value={searchQuery}
                       onChange={(e) => setSearchQuery(e.target.value)}
                       className="w-full px-3 py-2 pl-9 rounded-md border border-border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
