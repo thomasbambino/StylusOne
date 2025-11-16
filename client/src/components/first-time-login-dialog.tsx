@@ -192,7 +192,23 @@ export function FirstTimeLoginDialog({ open, onOpenChange, forceShow = false }: 
           </div>
         </div>
       ),
-      icon: <ServerCog className="h-8 w-8 text-primary" />,
+      icon: settings?.logo_url ? (
+        <div className="h-8 w-8 flex items-center justify-center">
+          <img
+            src={settings.logo_url}
+            alt="Site Logo"
+            className="max-h-full max-w-full"
+            onError={(e) => {
+              const target = e.target as HTMLImageElement;
+              target.onerror = null;
+              target.style.display = 'none';
+              target.parentElement!.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-8 w-8 text-primary"><path d="M10 3H6a2 2 0 0 0-2 2v14c0 1.1.9 2 2 2h4M16 17l5-5-5-5M19.8 12H9"/><path d="M12 3c7.2 0 9 1.8 9 9s-1.8 9-9 9"/></svg>';
+            }}
+          />
+        </div>
+      ) : (
+        <ServerCog className="h-8 w-8 text-primary" />
+      ),
     },
     {
       title: "Choose Your Subscription Plan",

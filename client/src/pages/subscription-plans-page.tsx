@@ -8,7 +8,7 @@ import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
 import { useToast } from '@/hooks/use-toast';
-import { Plus, Edit2, Trash2, Users, DollarSign, TrendingUp, Package } from 'lucide-react';
+import { Plus, Edit2, Trash2, Users, DollarSign, TrendingUp, Package, ToggleLeft, ToggleRight } from 'lucide-react';
 import type { SubscriptionPlan } from '@shared/schema';
 
 interface PlanFormData {
@@ -185,6 +185,35 @@ export default function SubscriptionPlansPage() {
     },
   });
 
+  // Toggle plan active/inactive mutation
+  const togglePlanMutation = useMutation({
+    mutationFn: async (id: number) => {
+      const res = await fetch(`/api/subscriptions/admin/plans/${id}/toggle`, {
+        method: 'PATCH',
+      });
+      if (!res.ok) {
+        const error = await res.json();
+        throw new Error(error.error || 'Failed to toggle plan status');
+      }
+      return res.json();
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ['/api/admin/subscription-plans'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/subscriptions/plans'] });
+      toast({
+        title: 'Success',
+        description: data.message || 'Plan status updated successfully',
+      });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: 'Error',
+        description: error.message,
+        variant: 'destructive',
+      });
+    },
+  });
+
   const handleEdit = (plan: SubscriptionPlan) => {
     setSelectedPlan(plan);
     setFormData({
@@ -288,6 +317,18 @@ export default function SubscriptionPlansPage() {
                     <CardDescription className="mt-1">{plan.description}</CardDescription>
                   </div>
                   <div className="flex gap-1">
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => togglePlanMutation.mutate(plan.id)}
+                      title={plan.is_active ? 'Deactivate plan' : 'Activate plan'}
+                    >
+                      {plan.is_active ? (
+                        <ToggleRight className="h-4 w-4 text-green-500" />
+                      ) : (
+                        <ToggleLeft className="h-4 w-4 text-gray-400" />
+                      )}
+                    </Button>
                     <Button variant="ghost" size="icon" onClick={() => handleEdit(plan)}>
                       <Edit2 className="h-4 w-4" />
                     </Button>

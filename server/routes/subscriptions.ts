@@ -583,6 +583,77 @@ router.post('/admin/assign', requireAuth, async (req, res) => {
 });
 
 /**
+ * GET /api/subscriptions/admin/plans
+ * Get all subscription plans (including inactive) for admin management
+ */
+router.get('/admin/plans', requireAuth, async (req, res) => {
+  try {
+    // Check if user is admin or superadmin
+    if (req.user.role !== 'admin' && req.user.role !== 'superadmin') {
+      return res.status(403).json({ error: 'Admin access required' });
+    }
+
+    const plans = await db
+      .select()
+      .from(subscriptionPlans)
+      .orderBy(subscriptionPlans.sort_order, subscriptionPlans.price_monthly);
+
+    res.json(plans);
+  } catch (error) {
+    console.error('Error fetching all subscription plans:', error);
+    res.status(500).json({ error: 'Failed to fetch subscription plans' });
+  }
+});
+
+/**
+ * PATCH /api/subscriptions/admin/plans/:planId/toggle
+ * Toggle a plan's active status (admin only)
+ */
+router.patch('/admin/plans/:planId/toggle', requireAuth, async (req, res) => {
+  try {
+    // Check if user is admin or superadmin
+    if (req.user.role !== 'admin' && req.user.role !== 'superadmin') {
+      return res.status(403).json({ error: 'Admin access required' });
+    }
+
+    const planId = parseInt(req.params.planId);
+
+    if (isNaN(planId)) {
+      return res.status(400).json({ error: 'Invalid plan ID' });
+    }
+
+    // Get current plan status
+    const [plan] = await db
+      .select()
+      .from(subscriptionPlans)
+      .where(eq(subscriptionPlans.id, planId))
+      .limit(1);
+
+    if (!plan) {
+      return res.status(404).json({ error: 'Subscription plan not found' });
+    }
+
+    // Toggle the active status
+    const [updatedPlan] = await db
+      .update(subscriptionPlans)
+      .set({
+        is_active: !plan.is_active,
+        updated_at: new Date(),
+      })
+      .where(eq(subscriptionPlans.id, planId))
+      .returning();
+
+    res.json({
+      message: `Plan ${updatedPlan.is_active ? 'activated' : 'deactivated'} successfully`,
+      plan: updatedPlan,
+    });
+  } catch (error) {
+    console.error('Error toggling plan status:', error);
+    res.status(500).json({ error: 'Failed to toggle plan status' });
+  }
+});
+
+/**
  * DELETE /api/subscriptions/admin/remove/:userId
  * Remove a user's subscription (admin only)
  */
