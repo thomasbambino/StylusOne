@@ -70,6 +70,32 @@ export default function MySubscriptionPage() {
     setStripePromise(promise);
   }, []);
 
+  // Handle Stripe checkout redirect
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+
+    if (params.get('success') === 'true') {
+      toast({
+        title: 'Payment Successful!',
+        description: 'Your subscription has been activated. Thank you for subscribing!',
+      });
+      // Clear the query parameter
+      window.history.replaceState({}, '', '/my-subscription');
+      // Refresh subscription data
+      queryClient.invalidateQueries({ queryKey: ['/api/subscriptions/current'] });
+    }
+
+    if (params.get('canceled') === 'true') {
+      toast({
+        title: 'Payment Canceled',
+        description: 'Your checkout was canceled. You can try again anytime.',
+        variant: 'destructive',
+      });
+      // Clear the query parameter
+      window.history.replaceState({}, '', '/my-subscription');
+    }
+  }, [toast, queryClient]);
+
   // Fetch current subscription
   const { data: currentSubscription, isLoading: subscriptionLoading } = useQuery<CurrentSubscription | null>({
     queryKey: ['/api/subscriptions/current'],

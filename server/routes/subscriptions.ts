@@ -20,6 +20,11 @@ const createSubscriptionSchema = z.object({
   payment_method_id: z.string().min(1),
 });
 
+const createCheckoutSchema = z.object({
+  plan_id: z.number().int().positive(),
+  billing_period: z.enum(['monthly', 'annual']),
+});
+
 const updateSubscriptionSchema = z.object({
   plan_id: z.number().int().positive(),
   billing_period: z.enum(['monthly', 'annual']),
@@ -55,6 +60,52 @@ router.get('/plans', requireAuth, async (req, res) => {
   } catch (error) {
     console.error('Error fetching subscription plans:', error);
     res.status(500).json({ error: 'Failed to fetch subscription plans' });
+  }
+});
+
+/**
+ * POST /api/subscriptions/checkout
+ * Create a Stripe checkout session for subscribing to a plan
+ */
+router.post('/checkout', requireAuth, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const validatedData = createCheckoutSchema.parse(req.body);
+
+    // Get the plan details
+    const [plan] = await db
+      .select()
+      .from(subscriptionPlans)
+      .where(eq(subscriptionPlans.id, validatedData.plan_id))
+      .limit(1);
+
+    if (!plan) {
+      return res.status(404).json({ message: 'Subscription plan not found' });
+    }
+
+    // Get user details
+    const [user] = await db
+      .select()
+      .from(users)
+      .where(eq(users.id, userId))
+      .limit(1);
+
+    if (!user || !user.email) {
+      return res.status(400).json({ message: 'User email is required for checkout' });
+    }
+
+    // Create Stripe checkout session
+    const session = await stripeService.createCheckoutSession({
+      userId,
+      userEmail: user.email,
+      planId: validatedData.plan_id,
+      billingPeriod: validatedData.billing_period,
+    });
+
+    res.json({ url: session.url });
+  } catch (error: any) {
+    console.error('Error creating checkout session:', error);
+    res.status(500).json({ message: error.message || 'Failed to create checkout session' });
   }
 });
 

@@ -53,6 +53,10 @@ router.post('/stripe', async (req, res) => {
 
   try {
     switch (event.type) {
+      case 'checkout.session.completed':
+        await handleCheckoutSessionCompleted(event.data.object as Stripe.Checkout.Session);
+        break;
+
       case 'customer.subscription.created':
         await handleSubscriptionCreated(event.data.object as Stripe.Subscription);
         break;
@@ -91,6 +95,99 @@ router.post('/stripe', async (req, res) => {
     res.status(500).json({ error: 'Webhook processing failed' });
   }
 });
+
+/**
+ * Handle checkout.session.completed event
+ * This is triggered when a user completes a Stripe Checkout session
+ */
+async function handleCheckoutSessionCompleted(session: Stripe.Checkout.Session) {
+  console.log('Processing checkout session completed:', session.id);
+
+  if (session.mode !== 'subscription') {
+    console.log('Checkout session is not for subscription, skipping');
+    return;
+  }
+
+  if (!session.subscription) {
+    console.error('Checkout session has no subscription ID');
+    return;
+  }
+
+  const userId = parseInt(session.metadata?.user_id || session.client_reference_id || '0');
+  const planId = parseInt(session.metadata?.plan_id || '0');
+  const billingPeriod = session.metadata?.billing_period as 'monthly' | 'annual';
+
+  if (!userId || !planId || !billingPeriod) {
+    console.error('Missing required metadata in checkout session:', {
+      userId,
+      planId,
+      billingPeriod,
+    });
+    return;
+  }
+
+  // Get the subscription details from Stripe
+  const stripe = stripeService.getStripeInstance();
+  const subscription = await stripe.subscriptions.retrieve(session.subscription as string);
+
+  // Check if subscription already exists in database
+  const existingSubscription = await db
+    .select()
+    .from(userSubscriptions)
+    .where(eq(userSubscriptions.stripe_subscription_id, subscription.id))
+    .limit(1);
+
+  if (existingSubscription.length > 0) {
+    console.log('Subscription already exists in database, updating');
+    await db
+      .update(userSubscriptions)
+      .set({
+        status: subscription.status,
+        current_period_start: new Date(subscription.current_period_start * 1000),
+        current_period_end: new Date(subscription.current_period_end * 1000),
+        cancel_at_period_end: subscription.cancel_at_period_end || false,
+        updated_at: new Date(),
+      })
+      .where(eq(userSubscriptions.id, existingSubscription[0].id));
+    return;
+  }
+
+  // Create new subscription record
+  await db.insert(userSubscriptions).values({
+    user_id: userId,
+    plan_id: planId,
+    stripe_customer_id: session.customer as string,
+    stripe_subscription_id: subscription.id,
+    status: subscription.status,
+    billing_period: billingPeriod,
+    current_period_start: new Date(subscription.current_period_start * 1000),
+    current_period_end: new Date(subscription.current_period_end * 1000),
+    cancel_at_period_end: subscription.cancel_at_period_end || false,
+  });
+
+  console.log('Subscription created in database:', subscription.id);
+
+  // If the session has a default payment method, save it
+  if (subscription.default_payment_method) {
+    const paymentMethodId = typeof subscription.default_payment_method === 'string'
+      ? subscription.default_payment_method
+      : subscription.default_payment_method.id;
+
+    const paymentMethod = await stripe.paymentMethods.retrieve(paymentMethodId);
+
+    if (paymentMethod.card) {
+      await db.insert(paymentMethods).values({
+        user_id: userId,
+        stripe_payment_method_id: paymentMethodId,
+        card_brand: paymentMethod.card.brand,
+        card_last4: paymentMethod.card.last4,
+        card_exp_month: paymentMethod.card.exp_month,
+        card_exp_year: paymentMethod.card.exp_year,
+        is_default: true,
+      });
+    }
+  }
+}
 
 /**
  * Handle customer.subscription.created event

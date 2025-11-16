@@ -174,6 +174,70 @@ export class StripeService {
   }
 
   /**
+   * Create a Stripe Checkout session for subscription
+   */
+  async createCheckoutSession(params: {
+    userId: number;
+    userEmail: string;
+    planId: number;
+    billingPeriod: 'monthly' | 'annual';
+  }): Promise<{ url: string }> {
+    if (!this.isConfigured()) {
+      throw new Error('Stripe is not configured');
+    }
+
+    const { userId, userEmail, planId, billingPeriod } = params;
+
+    // Get the plan
+    const plan = await db
+      .select()
+      .from(subscriptionPlans)
+      .where(eq(subscriptionPlans.id, planId))
+      .limit(1);
+
+    if (plan.length === 0) {
+      throw new Error('Subscription plan not found');
+    }
+
+    const selectedPlan = plan[0];
+    const priceId = billingPeriod === 'monthly'
+      ? selectedPlan.stripe_price_id_monthly
+      : selectedPlan.stripe_price_id_annual;
+
+    if (!priceId) {
+      throw new Error(`Stripe price ID not configured for ${billingPeriod} billing`);
+    }
+
+    // Sanitize email for Stripe (replace localhost with example.com for test environments)
+    let stripeEmail = userEmail;
+    if (stripeEmail.endsWith('@localhost')) {
+      stripeEmail = stripeEmail.replace('@localhost', '@example.com');
+    }
+
+    // Create Stripe checkout session
+    const session = await this.stripe.checkout.sessions.create({
+      customer_email: stripeEmail,
+      client_reference_id: userId.toString(),
+      line_items: [
+        {
+          price: priceId,
+          quantity: 1,
+        },
+      ],
+      mode: 'subscription',
+      success_url: `${process.env.APP_URL || 'http://localhost:3000'}/my-subscription?success=true`,
+      cancel_url: `${process.env.APP_URL || 'http://localhost:3000'}/my-subscription?canceled=true`,
+      metadata: {
+        user_id: userId.toString(),
+        plan_id: planId.toString(),
+        billing_period: billingPeriod,
+      },
+    });
+
+    return { url: session.url! };
+  }
+
+  /**
    * Cancel a subscription
    */
   async cancelSubscription(userId: number, cancelImmediately: boolean = false): Promise<void> {

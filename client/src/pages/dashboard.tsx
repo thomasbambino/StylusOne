@@ -57,9 +57,9 @@ export default function Dashboard() {
 
   return (
     <div className="flex flex-col min-h-screen bg-background">
-      <FirstTimeLoginDialog 
-        open={showFirstTimeDialog} 
-        onOpenChange={setShowFirstTimeDialog} 
+      <FirstTimeLoginDialog
+        open={showFirstTimeDialog}
+        onOpenChange={setShowFirstTimeDialog}
       />
 
       <main className="flex-1 w-full max-w-[1400px] mx-auto px-4 md:px-8 pb-6 space-y-8">

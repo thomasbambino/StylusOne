@@ -380,6 +380,23 @@ export function setupAuth(app: Express) {
     res.json(req.user);
   });
 
+  app.post("/api/users/mark-first-time-dialog-seen", async (req, res) => {
+    if (!req.isAuthenticated()) return res.sendStatus(401);
+
+    try {
+      const userId = req.user!.id;
+      await storage.updateUser({
+        id: userId,
+        has_seen_first_time_dialog: true
+      });
+
+      res.json({ success: true });
+    } catch (error) {
+      console.error('Error marking first-time dialog as seen:', error);
+      res.status(500).json({ error: 'Failed to update user' });
+    }
+  });
+
   app.post("/api/admin/reset-user-password", isAdmin, async (req, res) => {
     const { userId } = req.body;
     const user = await storage.getUser(userId);

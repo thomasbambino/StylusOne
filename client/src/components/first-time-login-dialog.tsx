@@ -3,23 +3,25 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
-import { Check, ServerCog, CreditCard, Loader2 } from "lucide-react";
+import { Check, ServerCog, CreditCard, Loader2, Tv, BookOpen, Gamepad2, Film } from "lucide-react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Settings, SubscriptionPlan } from "@shared/schema";
 import { Link } from "wouter";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Label } from "@/components/ui/label";
+import { useAuth } from "@/hooks/use-auth";
+import { apiRequest, queryClient } from "@/lib/queryClient";
 
 interface FirstTimeLoginDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  forceShow?: boolean; // For testing by superadmin
 }
 
-export function FirstTimeLoginDialog({ open, onOpenChange }: FirstTimeLoginDialogProps) {
+export function FirstTimeLoginDialog({ open, onOpenChange, forceShow = false }: FirstTimeLoginDialogProps) {
   const { toast } = useToast();
+  const { user } = useAuth();
   const [currentStep, setCurrentStep] = useState(1);
-  const [hasSeenDialog, setHasSeenDialog] = useState(false);
-  const [isInitialized, setIsInitialized] = useState(false);
   const [selectedPlanId, setSelectedPlanId] = useState<number | null>(null);
   const [billingPeriod, setBillingPeriod] = useState<'monthly' | 'annual'>('monthly');
 
@@ -68,38 +70,44 @@ export function FirstTimeLoginDialog({ open, onOpenChange }: FirstTimeLoginDialo
     },
   });
 
-  useEffect(() => {
-    // Check if the user has seen this dialog before
-    const hasSeenFirstTimeDialog = localStorage.getItem("hasSeenFirstTimeDialog");
-    setHasSeenDialog(!!hasSeenFirstTimeDialog);
-    setIsInitialized(true);
-  }, []);
+  // Mutation to mark dialog as seen
+  const markAsSeenMutation = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("POST", "/api/users/mark-first-time-dialog-seen");
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/user"] });
+    },
+  });
 
   const handleClose = () => {
-    // Save that the user has seen this dialog
-    localStorage.setItem("hasSeenFirstTimeDialog", "true");
+    // Mark dialog as seen in database (unless it's a forced preview)
+    if (!forceShow) {
+      markAsSeenMutation.mutate();
+    }
     onOpenChange(false);
   };
 
   const steps = [
     {
-      title: "Welcome to the Homelab Dashboard!",
+      title: `Welcome to ${settings?.site_title || 'Our Platform'}!`,
       description: (
         <div className="space-y-4">
           <p>
-            This dashboard gives you access to monitor and control various homelab services, 
-            including game servers and media streaming services.
+            You've been invited to access our exclusive platform featuring premium media,
+            live TV, books, and gaming experiences.
           </p>
           <p>
-            Let's take a few moments to get you set up and familiar with some key features.
+            Let's take a few moments to get you set up and show you what's available.
           </p>
         </div>
       ),
       icon: settings?.logo_url ? (
         <div className="h-8 w-8 flex items-center justify-center">
-          <img 
-            src={settings.logo_url} 
-            alt="Site Logo" 
+          <img
+            src={settings.logo_url}
+            alt="Site Logo"
             className="max-h-full max-w-full"
             onError={(e) => {
               const target = e.target as HTMLImageElement;
@@ -114,11 +122,85 @@ export function FirstTimeLoginDialog({ open, onOpenChange }: FirstTimeLoginDialo
       ),
     },
     {
+      title: "Explore Our Content",
+      description: (
+        <div className="space-y-3">
+          <p className="text-sm text-muted-foreground">
+            Discover the premium content and services available to you:
+          </p>
+
+          <div className="grid gap-3">
+            {/* Plex Media */}
+            <div className="flex gap-3 p-3 rounded-lg border bg-card hover:bg-accent/50 transition-colors">
+              <div className="flex-shrink-0">
+                <div className="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center">
+                  <Film className="h-5 w-5 text-primary" />
+                </div>
+              </div>
+              <div className="flex-1">
+                <h4 className="font-semibold text-sm mb-1">Streaming Media</h4>
+                <p className="text-xs text-muted-foreground">
+                  Thousands of movies, TV shows, and music. Stream on any device, request new content.
+                </p>
+              </div>
+            </div>
+
+            {/* Live TV */}
+            <div className="flex gap-3 p-3 rounded-lg border bg-card hover:bg-accent/50 transition-colors">
+              <div className="flex-shrink-0">
+                <div className="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center">
+                  <Tv className="h-5 w-5 text-primary" />
+                </div>
+              </div>
+              <div className="flex-1">
+                <h4 className="font-semibold text-sm mb-1">Live TV</h4>
+                <p className="text-xs text-muted-foreground">
+                  Hundreds of live channels including sports, news, and entertainment.
+                </p>
+              </div>
+            </div>
+
+            {/* Books */}
+            <div className="flex gap-3 p-3 rounded-lg border bg-card hover:bg-accent/50 transition-colors">
+              <div className="flex-shrink-0">
+                <div className="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center">
+                  <BookOpen className="h-5 w-5 text-primary" />
+                </div>
+              </div>
+              <div className="flex-1">
+                <h4 className="font-semibold text-sm mb-1">Digital Library</h4>
+                <p className="text-xs text-muted-foreground">
+                  Browse thousands of ebooks, comics, and audiobooks. Organize with collections.
+                </p>
+              </div>
+            </div>
+
+            {/* Game Servers */}
+            <div className="flex gap-3 p-3 rounded-lg border bg-card hover:bg-accent/50 transition-colors">
+              <div className="flex-shrink-0">
+                <div className="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center">
+                  <Gamepad2 className="h-5 w-5 text-primary" />
+                </div>
+              </div>
+              <div className="flex-1">
+                <h4 className="font-semibold text-sm mb-1">Game Servers</h4>
+                <p className="text-xs text-muted-foreground">
+                  Join multiplayer servers for popular games with friends on dedicated hardware.
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+      ),
+      icon: <ServerCog className="h-8 w-8 text-primary" />,
+    },
+    {
       title: "Choose Your Subscription Plan",
       description: (
         <div className="space-y-4">
           <p>
-            Select a subscription plan to unlock premium features like Plex, Live TV, Books, and Game Servers.
+            Select a subscription plan to access premium content including streaming media, live TV,
+            ebooks, and multiplayer game servers.
           </p>
 
           {plans.length > 0 && (
@@ -225,85 +307,13 @@ export function FirstTimeLoginDialog({ open, onOpenChange }: FirstTimeLoginDialo
       ),
       icon: <CreditCard className="h-8 w-8 text-primary" />,
     },
-    {
-      title: "Connecting to Plex Media Server",
-      description: (
-        <div className="space-y-4">
-          <p>
-            Our Plex Media Server provides Movies, TV Shows, and other media content.
-            To access it, you'll need to be invited to our Plex server.
-          </p>
-          <p className="font-medium">To get access:</p>
-          <ol className="list-decimal pl-5 space-y-2">
-            <li>Click the "Invite Plex" button in the dashboard</li>
-            <li>Enter your email to receive a Plex invitation</li>
-            <li>Follow the instructions in the email to create your Plex account</li>
-            <li>Once accepted, you'll have access to all our media content</li>
-          </ol>
-        </div>
-      ),
-      icon: (
-        <div className="h-8 w-8 flex items-center justify-center">
-          <img 
-            src="/uploads/service_url-1740387234140-38463330.png" 
-            alt="Plex" 
-            className="max-h-full max-w-full"
-            onError={(e) => {
-              const target = e.target as HTMLImageElement;
-              target.onerror = null;
-              target.style.display = 'none';
-              target.parentElement!.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-8 w-8 text-primary"><path d="m22 8-6 4 6 4V8Z"/><rect width="14" height="12" x="2" y="6" rx="2"/></svg>';
-            }}
-          />
-        </div>
-      ),
-    },
-    {
-      title: "Using Overseer with Your Plex Account",
-      description: (
-        <div className="space-y-4">
-          <p>
-            <span className="font-medium">Overseer</span> is a request system that lets you request Movies and TV Shows to be added to our Plex server.
-          </p>
-          <p>
-            After you set up your Plex account:
-          </p>
-          <ol className="list-decimal pl-5 space-y-2">
-            <li>Visit the Overseer portal using your Plex login credentials</li>
-            <li>Browse available content or search for specific titles</li>
-            <li>Submit requests for new content you'd like to watch</li>
-            <li>Get notified when your requests are fulfilled</li>
-          </ol>
-          <p className="text-sm text-muted-foreground mt-4">
-            Note: The same Plex credentials you create will work for both Plex and Overseer!
-          </p>
-        </div>
-      ),
-      icon: (
-        <div className="h-8 w-8 flex items-center justify-center">
-          <img 
-            src="/uploads/service_url-1740381582556-21043011.png" 
-            alt="Overseer" 
-            className="max-h-full max-w-full"
-            onError={(e) => {
-              const target = e.target as HTMLImageElement;
-              target.onerror = null;
-              target.style.display = 'none';
-              target.parentElement!.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-8 w-8 text-primary"><rect width="7" height="9" x="3" y="3" rx="1"/><rect width="7" height="5" x="14" y="3" rx="1"/><rect width="7" height="9" x="14" y="12" rx="1"/><rect width="7" height="5" x="3" y="16" rx="1"/></svg>';
-            }}
-          />
-        </div>
-      ),
-    },
   ];
 
-  // Don't render anything until we've checked localStorage
-  if (!isInitialized) {
-    return null;
-  }
-  
+  // Don't show if user has already seen it (unless forced to show for testing)
+  const shouldShow = forceShow || (user && !user.has_seen_first_time_dialog);
+
   return (
-    <Dialog open={open && !hasSeenDialog} onOpenChange={onOpenChange}>
+    <Dialog open={open && shouldShow} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-[600px]">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2 text-xl">

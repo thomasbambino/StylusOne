@@ -62,6 +62,7 @@ interface ServiceCardProps {
 export function ServiceCard({ service, isDragging, showAdminControls = true }: ServiceCardProps) {
   const [showEdit, setShowEdit] = useState(false);
   const [showPlexDialog, setShowPlexDialog] = useState(false);
+  const [showPlexSetupDialog, setShowPlexSetupDialog] = useState(false);
   // Use adminUIVisible to control the visibility of admin details in sync with other admin elements
   const [showAdminDetails, setShowAdminDetails] = useState(() => {
     // Initialize from localStorage, using the shared adminUIVisible key
@@ -154,6 +155,7 @@ export function ServiceCard({ service, isDragging, showAdminControls = true }: S
         description: "Plex account invitation sent successfully",
       });
       setShowPlexDialog(false);
+      setShowPlexSetupDialog(true);
       form.reset();
     },
     onError: (error) => {
@@ -313,6 +315,62 @@ export function ServiceCard({ service, isDragging, showAdminControls = true }: S
               </DialogContent>
             </Dialog>
           )}
+
+          {/* Plex Setup Instructions Dialog */}
+          {service.name.toLowerCase().includes('plex') && (
+            <Dialog open={showPlexSetupDialog} onOpenChange={setShowPlexSetupDialog}>
+              <DialogContent className="max-w-2xl">
+                <DialogHeader>
+                  <DialogTitle>Getting Started with Plex</DialogTitle>
+                  <DialogDescriptionType>
+                    Follow these steps to access your Plex media library
+                  </DialogDescriptionType>
+                </DialogHeader>
+                <div className="space-y-6 py-4">
+                  <div className="space-y-4">
+                    <div>
+                      <h3 className="text-lg font-semibold mb-2">Step 1: Check Your Email</h3>
+                      <p className="text-sm text-muted-foreground">
+                        You'll receive an invitation email from Plex within a few minutes. Check your inbox and spam folder.
+                      </p>
+                    </div>
+
+                    <div>
+                      <h3 className="text-lg font-semibold mb-2">Step 2: Accept the Invitation</h3>
+                      <p className="text-sm text-muted-foreground">
+                        Click the link in the email to accept the invitation and create your Plex account (or sign in if you already have one).
+                      </p>
+                    </div>
+
+                    <div>
+                      <h3 className="text-lg font-semibold mb-2">Step 3: Start Streaming</h3>
+                      <p className="text-sm text-muted-foreground">
+                        Once you've accepted the invitation, you can access the Plex library on any device:
+                      </p>
+                      <ul className="list-disc list-inside text-sm text-muted-foreground mt-2 space-y-1 ml-4">
+                        <li>Web: Visit <a href="https://app.plex.tv" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">app.plex.tv</a></li>
+                        <li>Mobile: Download the Plex app from your app store</li>
+                        <li>TV: Install Plex on your Smart TV, Roku, Fire Stick, or Apple TV</li>
+                      </ul>
+                    </div>
+
+                    <div>
+                      <h3 className="text-lg font-semibold mb-2">Need More Content?</h3>
+                      <p className="text-sm text-muted-foreground">
+                        Use Overseerr to request movies and TV shows to be added to the library. Your Plex credentials work for both services!
+                      </p>
+                    </div>
+                  </div>
+                </div>
+                <DialogFooter>
+                  <Button onClick={() => setShowPlexSetupDialog(false)}>
+                    Got it!
+                  </Button>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
+          )}
+
           {isAdmin && showAdminDetails && (
             <>
               <Button variant="ghost" size="icon" onClick={() => setShowEdit(true)}>

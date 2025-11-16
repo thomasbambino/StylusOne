@@ -29,6 +29,7 @@ export const users = pgTable("users", {
   temp_password: boolean("temp_password").notNull().default(false),
   reset_token: text("reset_token"),
   kindle_email: text("kindle_email"),
+  has_seen_first_time_dialog: boolean("has_seen_first_time_dialog").notNull().default(false),
 });
 
 export const settings = pgTable("settings", {

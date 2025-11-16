@@ -1,4 +1,4 @@
-import { Users, Settings as SettingsIcon, LogOut, Menu, Search, CreditCard } from "lucide-react"
+import { Users, Settings as SettingsIcon, LogOut, Menu, Search, CreditCard, Eye } from "lucide-react"
 import { Link, useLocation } from "wouter"
 import { Settings } from "@shared/schema"
 import { motion } from "framer-motion"
@@ -13,6 +13,7 @@ import { useAuth } from "@/hooks/use-auth"
 import { ThemeToggle } from "./theme-toggle"
 import { useEffect, useState } from "react"
 import { cn } from "@/lib/utils"
+import { FirstTimeLoginDialog } from "./first-time-login-dialog"
 
 interface NavigationBarProps {
   settings?: Settings;
@@ -24,6 +25,7 @@ export function NavigationBar({ settings, pageTitle }: NavigationBarProps) {
   const [location] = useLocation();
   const isAdmin = user?.role === 'admin';
   const isSuperAdmin = user?.role === 'superadmin';
+  const [showTestDialog, setShowTestDialog] = useState(false);
 
   // Navigation links
   const navLinks = [
@@ -143,12 +145,21 @@ export function NavigationBar({ settings, pageTitle }: NavigationBarProps) {
                       </DropdownMenuItem>
                     </Link>
                     {isSuperAdmin && (
-                      <Link href="/subscription-plans">
-                        <DropdownMenuItem className="cursor-pointer">
-                          <CreditCard className="h-4 w-4 mr-2" />
-                          Subscription Plans
+                      <>
+                        <Link href="/subscription-plans">
+                          <DropdownMenuItem className="cursor-pointer">
+                            <CreditCard className="h-4 w-4 mr-2" />
+                            Subscription Plans
+                          </DropdownMenuItem>
+                        </Link>
+                        <DropdownMenuItem
+                          className="cursor-pointer"
+                          onSelect={() => setShowTestDialog(true)}
+                        >
+                          <Eye className="h-4 w-4 mr-2" />
+                          Preview Welcome Dialog
                         </DropdownMenuItem>
-                      </Link>
+                      </>
                     )}
                     <Separator className="my-1" />
                   </>
@@ -186,6 +197,13 @@ export function NavigationBar({ settings, pageTitle }: NavigationBarProps) {
           </div>
         </div>
       </div>
+
+      {/* Test Dialog for Superadmin */}
+      <FirstTimeLoginDialog
+        open={showTestDialog}
+        onOpenChange={setShowTestDialog}
+        forceShow={true}
+      />
     </nav>
   );
 }
