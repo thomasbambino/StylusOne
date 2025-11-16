@@ -58,7 +58,8 @@ COPY --from=builder /app/dist ./dist
 
 # Copy necessary configuration files
 COPY tsconfig.json ./
-COPY .env.production ./.env
+# Note: .env files are provided via docker-compose volumes/env_file
+# COPY .env.production ./.env
 
 # Copy server source files for services
 COPY server/ ./server/

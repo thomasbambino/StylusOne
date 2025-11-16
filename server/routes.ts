@@ -2463,7 +2463,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (existingStream && !token) {
         // Browser streaming: Check if manifest is still fresh for live streams
         const manifestAge = Date.now() - existingStream.manifestFetchedAt.getTime();
-        const needsFreshManifest = manifestAge > 20000; // Browser: Refresh after 20 seconds
+        const needsFreshManifest = manifestAge > 3000; // Browser: Refresh after 3 seconds (industry standard)
 
         if (!needsFreshManifest) {
           // Manifest is fresh enough, share it
@@ -2485,7 +2485,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       } else if (existingStream && token) {
         // For token-based auth (Chromecast), use moderate refresh
         const manifestAge = Date.now() - existingStream.manifestFetchedAt.getTime();
-        const needsFreshManifest = manifestAge > 8000; // 8 seconds
+        const needsFreshManifest = manifestAge > 4000; // 4 seconds for casting devices
 
         if (!needsFreshManifest) {
           // Manifest is still fresh, use cached version with tokens

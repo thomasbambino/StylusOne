@@ -917,34 +917,8 @@ export default function LiveTVPage() {
     filteredChannels = filteredChannels.filter(ch => ch.source !== 'hdhomerun');
   }
 
-  // Apply search filter
-  if (searchQuery.trim()) {
-    const query = searchQuery.toLowerCase();
-    filteredChannels = filteredChannels.filter(ch => {
-      // Search by channel number
-      if (ch.GuideNumber.toLowerCase().includes(query)) return true;
-      // Search by channel name
-      if (ch.GuideName.toLowerCase().includes(query)) return true;
-
-      // Search by program names in EPG data
-      const channelKey = ch.source === 'iptv' ? ch.epgId : ch.GuideNumber;
-      if (channelKey) {
-        const programs = epgDataMap.get(channelKey) || [];
-        const hasMatchingProgram = programs.some(program => {
-          // Check program title
-          if (program.title?.toLowerCase().includes(query)) return true;
-          // Check episode title
-          if (program.episodeTitle?.toLowerCase().includes(query)) return true;
-          // Check description
-          if (program.description?.toLowerCase().includes(query)) return true;
-          return false;
-        });
-        if (hasMatchingProgram) return true;
-      }
-
-      return false;
-    });
-  }
+  // Note: Search filtering happens AFTER EPG data loads (see availableChannels below)
+  // We need to load EPG first to search program titles
 
   // Fetch EPG data for visible channels only (infinite scroll)
   // Load EPG data in batches as user scrolls for better performance
@@ -1567,25 +1541,32 @@ export default function LiveTVPage() {
       const hls = new Hls({
         debug: false,
         enableWorker: true,
-        lowLatencyMode: false,
-        // Increase buffer lengths to handle slow segment loading (1-3 seconds per segment)
-        backBufferLength: 90,
-        maxBufferLength: 60, // Increased from 30 to 60 seconds
-        maxMaxBufferLength: 600,
-        maxBufferSize: 120 * 1000 * 1000, // Increased to 120MB
-        maxBufferHole: 1.0, // Increased tolerance for buffer holes
-        highBufferWatchdogPeriod: 3, // Increased from 2 to 3 seconds
-        nudgeOffset: 0.5, // Increased for better stall recovery
-        nudgeMaxRetry: 5, // More retries
+        lowLatencyMode: false, // Disabled - prioritize smooth playback over ultra-low latency
+        // Balanced buffer for smooth live streaming (Netflix prioritizes smoothness)
+        backBufferLength: 90, // Keep back buffer for seeking
+        maxBufferLength: 45, // 45 seconds forward buffer for stability
+        maxMaxBufferLength: 90, // Cap at 90 seconds
+        maxBufferSize: 80 * 1000 * 1000, // 80MB buffer size
+        maxBufferHole: 0.8, // Higher tolerance for buffer holes (prevents stalls)
+        highBufferWatchdogPeriod: 3, // Longer watchdog period for stability
+        nudgeOffset: 0.2, // Slightly higher for better stall recovery
+        nudgeMaxRetry: 5, // More retries for recovery
         maxFragLookUpTolerance: 0.5,
-        liveSyncDurationCount: 5, // Keep more segments in buffer
-        liveMaxLatencyDurationCount: Infinity,
+        liveSyncDurationCount: 5, // 5 segments (30s) - more buffer = smoother playback
+        liveMaxLatencyDurationCount: 15, // Max 90 seconds behind live (acceptable for smooth playback)
         liveDurationInfinity: true,
-        // Increase timeouts for slow segments
-        fragLoadingTimeOut: 30000, // 30 second timeout (increased from default 20s)
-        fragLoadingMaxRetry: 6,
-        fragLoadingRetryDelay: 1000,
-        manifestLoadingTimeOut: 10000, // 10 seconds - faster feedback on load issues
+        // Conservative timeouts for reliable streaming
+        fragLoadingTimeOut: 20000, // 20 second timeout
+        fragLoadingMaxRetry: 6, // More retries
+        fragLoadingRetryDelay: 1000, // Standard retry delay
+        manifestLoadingTimeOut: 10000, // 10 seconds
+        manifestLoadingMaxRetry: 4,
+        manifestLoadingRetryDelay: 1000,
+        startFragPrefetch: true, // Prefetch segments (Netflix/YouTube standard)
+        progressive: true, // Progressive streaming for faster startup
+        abrEwmaDefaultEstimate: 1000000, // 1 Mbps initial estimate for adaptive bitrate
+        abrBandWidthFactor: 0.95, // Conservative bandwidth factor
+        abrBandWidthUpFactor: 0.7, // Conservative upward adjustment
         xhrSetup: function(xhr: XMLHttpRequest) {
           // Include credentials (cookies) with all HLS requests for authentication
           xhr.withCredentials = true;
@@ -1614,6 +1595,7 @@ export default function LiveTVPage() {
           console.log('Direct stream play() called successfully');
           setIsPlaying(true);
           setIsLoading(false);
+          setIsBuffering(false);
         }).catch(error => {
           console.error('Direct stream play error:', error);
           // Try again with muted autoplay as fallback
@@ -1622,9 +1604,11 @@ export default function LiveTVPage() {
             console.log('Direct stream playing muted');
             setIsPlaying(true);
             setIsLoading(false);
+            setIsBuffering(false);
           }).catch(err => {
             console.error('Direct stream muted play also failed:', err);
             setIsLoading(false);
+            setIsBuffering(false);
           });
         });
       });
@@ -1636,9 +1620,11 @@ export default function LiveTVPage() {
             console.log('Direct stream started playing successfully');
             setIsPlaying(true);
             setIsLoading(false);
+            setIsBuffering(false);
           }).catch(error => {
             console.error('Direct stream play error:', error);
             setIsLoading(false);
+            setIsBuffering(false);
           });
         }
       });
@@ -1649,6 +1635,7 @@ export default function LiveTVPage() {
           console.log('Fatal direct stream error, destroying HLS instance');
           hls.destroy();
           setIsLoading(false);
+          setIsBuffering(false);
         }
       });
 
@@ -1666,11 +1653,13 @@ export default function LiveTVPage() {
       video.addEventListener('playing', () => {
         console.log('Video playing after buffering');
         setIsBuffering(false);
+        setIsLoading(false);
       });
 
       video.addEventListener('canplay', () => {
         console.log('Video can play');
         setIsBuffering(false);
+        setIsLoading(false);
       });
       video.addEventListener('pause', () => {
         console.log('Direct stream video pause event');
@@ -1698,19 +1687,23 @@ export default function LiveTVPage() {
         video.play().then(() => {
           setIsPlaying(true);
           setIsLoading(false);
+          setIsBuffering(false);
         }).catch(error => {
           console.error('Safari direct stream error:', error);
           setIsLoading(false);
+          setIsBuffering(false);
         });
       });
-      
+
       video.addEventListener('error', () => {
         console.error('Safari direct stream playback error');
         setIsLoading(false);
+        setIsBuffering(false);
       });
     } else {
       console.error('HLS is not supported in this browser for direct stream');
       setIsLoading(false);
+      setIsBuffering(false);
     }
   };
 
@@ -1724,6 +1717,7 @@ export default function LiveTVPage() {
     try {
       // Set loading state and selected channel immediately for instant feedback
       setIsLoading(true);
+      setIsBuffering(true);
       setQueuePosition(null);
       setSelectedChannel(channel);
 
@@ -1812,22 +1806,30 @@ export default function LiveTVPage() {
           // Use HLS.js for browsers that support it  
           const hls = new Hls({
             enableWorker: true,
-            lowLatencyMode: false,
+            lowLatencyMode: false, // Disabled - prioritize smooth playback
             backBufferLength: 90,
-            liveSyncDurationCount: 1,
-            liveMaxLatencyDurationCount: 3,
-            maxBufferLength: 20,
-            maxMaxBufferLength: 30,
-            maxBufferSize: 60 * 1000 * 1000, // 60MB
-            maxBufferHole: 0.5,
+            liveSyncDurationCount: 4, // 4 segments (24s) for smooth playback
+            liveMaxLatencyDurationCount: 12, // Max 72 seconds behind live
+            maxBufferLength: 36, // 36 seconds forward buffer for stability
+            maxMaxBufferLength: 72,
+            maxBufferSize: 80 * 1000 * 1000, // 80MB
+            maxBufferHole: 0.8, // Higher tolerance for buffer holes
+            nudgeOffset: 0.2, // Better stall recovery
+            nudgeMaxRetry: 5,
+            highBufferWatchdogPeriod: 3,
             fragLoadingTimeOut: 20000,
-            manifestLoadingTimeOut: 15000, // 15 second timeout for manifest loading
-            debug: true, // Enable HLS.js debug logging
-            fragLoadingMaxRetry: 4,
-            fragLoadingRetryDelay: 500,
+            manifestLoadingTimeOut: 10000,
+            manifestLoadingMaxRetry: 4,
+            manifestLoadingRetryDelay: 1000,
+            debug: false,
+            fragLoadingMaxRetry: 6,
+            fragLoadingRetryDelay: 1000,
             startFragPrefetch: true,
             testBandwidth: false,
             progressive: true,
+            abrEwmaDefaultEstimate: 1000000,
+            abrBandWidthFactor: 0.95,
+            abrBandWidthUpFactor: 0.7,
           });
           
           hlsRef.current = hls;
@@ -2198,7 +2200,36 @@ export default function LiveTVPage() {
 
   // Keyboard shortcut: Ctrl+H to toggle HDHomeRun channels
   // Only show channels that we've loaded EPG data for (infinite scroll)
-  const availableChannels = filteredChannels.slice(0, visibleChannelCount);
+  let availableChannels = filteredChannels.slice(0, visibleChannelCount);
+
+  // Apply program search filter if search query exists
+  // This happens AFTER EPG data is loaded so we can search program titles
+  if (searchQuery.trim()) {
+    const query = searchQuery.toLowerCase();
+    availableChannels = availableChannels.filter(ch => {
+      // If channel name/number already matched, keep it
+      if (ch.GuideNumber.toLowerCase().includes(query)) return true;
+      if (ch.GuideName.toLowerCase().includes(query)) return true;
+
+      // Search by program names in EPG data
+      const channelKey = ch.source === 'iptv' ? ch.epgId : ch.GuideNumber;
+      if (channelKey) {
+        const programs = epgDataMap.get(channelKey) || [];
+        const hasMatchingProgram = programs.some(program => {
+          // Check program title
+          if (program.title?.toLowerCase().includes(query)) return true;
+          // Check episode title
+          if (program.episodeTitle?.toLowerCase().includes(query)) return true;
+          // Check description
+          if (program.description?.toLowerCase().includes(query)) return true;
+          return false;
+        });
+        if (hasMatchingProgram) return true;
+      }
+
+      return false;
+    });
+  }
 
   return (
     <TooltipProvider delayDuration={0}>
