@@ -62,7 +62,7 @@ export default function UsersPage() {
       return res.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/users"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/subscriptions/admin/users"] });
       toast({
         title: "User updated",
         description: "User settings have been updated successfully",
@@ -83,7 +83,7 @@ export default function UsersPage() {
       return res.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/users"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/subscriptions/admin/users"] });
       toast({
         title: "User deleted",
         description: "User has been deleted successfully",
