@@ -408,6 +408,10 @@ router.get('/admin/users', requireAuth, async (req, res) => {
           username: user.username,
           email: user.email,
           role: user.role,
+          approved: user.approved,
+          can_view_nsfw: user.can_view_nsfw,
+          last_login: user.last_login,
+          last_ip: user.last_ip,
           subscription: subscription.length > 0 ? subscription[0] : null,
         };
       })
