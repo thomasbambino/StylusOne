@@ -1,6 +1,6 @@
 import React from 'react';
 import { Button } from "@/components/ui/button";
-import { signInWithPopup } from 'firebase/auth';
+import { signInWithRedirect, getRedirectResult } from 'firebase/auth';
 import { auth, googleProvider } from '@/lib/firebase';
 import { useToast } from '@/hooks/use-toast';
 import { Loader2 } from 'lucide-react';
@@ -9,6 +9,84 @@ export function GoogleAuthButton() {
   const { toast } = useToast();
   const [isLoading, setIsLoading] = React.useState(false);
 
+  // Handle redirect result when user returns from Google OAuth
+  React.useEffect(() => {
+    const handleRedirectResult = async () => {
+      try {
+        const result = await getRedirectResult(auth);
+
+        // No result means user hasn't been redirected yet
+        if (!result) {
+          return;
+        }
+
+        setIsLoading(true);
+
+        const idToken = await result.user.getIdToken();
+
+        toast({
+          title: "Google Sign-in Successful",
+          description: "Completing authentication with server...",
+        });
+
+        const response = await fetch('/api/auth/google', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({ token: idToken })
+        });
+
+        if (!response.ok) {
+          const errorData = await response.json();
+
+          if (response.status === 403 && errorData.requiresApproval) {
+            toast({
+              title: "Account Created",
+              description: "Your account is pending administrator approval.",
+            });
+            window.location.href = '/auth?pending=true';
+            return;
+          }
+
+          throw new Error(errorData.message || 'Failed to authenticate with the server');
+        }
+
+        await response.json();
+
+        toast({
+          title: "Success",
+          description: "Successfully signed in with Google",
+        });
+
+        window.location.href = '/';
+      } catch (error) {
+        console.error('Google redirect result error:', error);
+
+        let errorMessage = "Could not sign in with Google. Please try again.";
+        if (error instanceof Error) {
+          if (error.message.includes('network')) {
+            errorMessage = "Network error occurred. Please check your connection and try again.";
+          } else if (error.message.includes('auth/unauthorized-domain')) {
+            errorMessage = "This domain is not authorized for Google Sign-In. Please contact the administrator.";
+          } else if (error.message.includes('Failed to authenticate')) {
+            errorMessage = error.message;
+          }
+        }
+
+        toast({
+          title: "Authentication failed",
+          description: errorMessage,
+          variant: "destructive",
+        });
+
+        setIsLoading(false);
+      }
+    };
+
+    handleRedirectResult();
+  }, [toast]);
+
   const handleGoogleSignIn = async () => {
     if (isLoading) return;
 
@@ -16,64 +94,21 @@ export function GoogleAuthButton() {
       setIsLoading(true);
 
       toast({
-        title: "Connecting to Google",
-        description: "Please complete the sign-in in the popup window",
+        title: "Redirecting to Google",
+        description: "You will be redirected to sign in with your Google account",
       });
 
-      const result = await signInWithPopup(auth, googleProvider);
-      const idToken = await result.user.getIdToken();
-
-      toast({
-        title: "Google Sign-in Successful",
-        description: "Completing authentication with server...",
-      });
-
-      const response = await fetch('/api/auth/google', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({ token: idToken })
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json();
-
-        if (response.status === 403 && errorData.requiresApproval) {
-          toast({
-            title: "Account Created",
-            description: "Your account is pending administrator approval.",
-          });
-          window.location.href = '/auth?pending=true';
-          return;
-        }
-
-        throw new Error(errorData.message || 'Failed to authenticate with the server');
-      }
-
-      await response.json();
-
-      toast({
-        title: "Success",
-        description: "Successfully signed in with Google",
-      });
-
-      window.location.href = '/';
+      // Redirect to Google OAuth (full page redirect, not popup)
+      await signInWithRedirect(auth, googleProvider);
     } catch (error) {
       console.error('Google sign in error:', error);
 
       let errorMessage = "Could not sign in with Google. Please try again.";
       if (error instanceof Error) {
-        if (error.message.includes('popup-closed-by-user')) {
-          errorMessage = "The sign-in popup was closed. Please try again.";
-        } else if (error.message.includes('network')) {
+        if (error.message.includes('network')) {
           errorMessage = "Network error occurred. Please check your connection and try again.";
-        } else if (error.message.includes('popup-blocked')) {
-          errorMessage = "Pop-up was blocked. Please allow pop-ups for this site and try again.";
         } else if (error.message.includes('auth/unauthorized-domain')) {
           errorMessage = "This domain is not authorized for Google Sign-In. Please contact the administrator.";
-        } else if (error.message.includes('Failed to authenticate')) {
-          errorMessage = error.message;
         }
       }
 
@@ -82,7 +117,7 @@ export function GoogleAuthButton() {
         description: errorMessage,
         variant: "destructive",
       });
-    } finally {
+
       setIsLoading(false);
     }
   };
