@@ -527,16 +527,16 @@ export default function HomePage() {
                     {/* Recently Added Carousel */}
                     {recentlyAddedItems && recentlyAddedItems.length > 0 && (
                       <div className="pt-4 flex-1 flex flex-col">
-                        <div className="relative overflow-y-auto flex-1 min-h-[180px] max-h-[240px]">
+                        <div className="relative overflow-y-auto flex-1 min-h-[240px] max-h-[280px]">
                           <div 
                             className="flex gap-4 h-full"
                             ref={(el) => {
                               if (el && recentlyAddedItems?.length > 0) {
                                 // Clear any existing animation
                                 el.style.animation = 'none';
-                                
+
                                 // Calculate dimensions
-                                const itemWidth = 96; // 80px width + 16px gap
+                                const itemWidth = 144; // 128px width + 16px gap
                                 const baseItems = Math.min(recentlyAddedItems.length, 20);
                                 const totalItems = baseItems * 6; // 6 repetitions
                                 const totalWidth = totalItems * itemWidth;
@@ -571,7 +571,7 @@ export default function HomePage() {
                               }
                               return repeatedItems;
                             })().map((item: any, i: number) => (
-                              <div key={`${item.rating_key}-${i}`} className="flex-shrink-0 w-20 h-28 relative group cursor-pointer" onClick={() => openInPlex(item)}>
+                              <div key={`${item.rating_key}-${i}`} className="flex-shrink-0 w-32 h-48 relative group cursor-pointer" onClick={() => openInPlex(item)}>
                                 {getThumbnailUrl(item, 160, 224) ? (
                                   <img
                                     src={getThumbnailUrl(item, 160, 224)!}
@@ -585,9 +585,9 @@ export default function HomePage() {
                                 ) : (
                                   <div className="w-full h-full bg-muted rounded flex items-center justify-center">
                                     {item.media_type === 'movie' ? (
-                                      <Film className="h-6 w-6 text-muted-foreground" />
+                                      <Film className="h-8 w-8 text-muted-foreground" />
                                     ) : (
-                                      <Tv className="h-6 w-6 text-muted-foreground" />
+                                      <Tv className="h-8 w-8 text-muted-foreground" />
                                     )}
                                   </div>
                                 )}
