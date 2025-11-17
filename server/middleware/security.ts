@@ -54,7 +54,9 @@ export const helmetConfig = helmet({
         "'unsafe-inline'",
         "'unsafe-eval'",
         "https://*.gstatic.com",
-        "https://js.stripe.com"
+        "https://js.stripe.com",
+        "https://apis.google.com", // Google Authentication
+        "https://accounts.google.com" // Google Sign-In
       ],
       imgSrc: ["'self'", "data:", "blob:", "https:", "http:"],
       connectSrc: [
@@ -63,12 +65,20 @@ export const helmetConfig = helmet({
         "wss:",
         "ws:",
         "http:",
-        "https://api.stripe.com"
+        "https://api.stripe.com",
+        "https://accounts.google.com", // Google Authentication API
+        "https://securetoken.googleapis.com", // Firebase Auth
+        "https://identitytoolkit.googleapis.com" // Firebase Auth
       ],
       fontSrc: ["'self'", "data:"],
       objectSrc: ["'none'"],
       mediaSrc: ["'self'", "blob:", "https:", "http:"],
-      frameSrc: ["'self'", "https://*.gstatic.com"],
+      frameSrc: [
+        "'self'",
+        "https://*.gstatic.com",
+        "https://accounts.google.com", // Google Sign-In popup
+        "https://*.firebaseapp.com" // Firebase Auth
+      ],
       workerSrc: ["'self'", "blob:"],
       childSrc: ["'self'", "blob:"],
       formAction: ["'self'"],
