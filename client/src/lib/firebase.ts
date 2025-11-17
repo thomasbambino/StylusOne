@@ -1,5 +1,5 @@
 import { initializeApp } from 'firebase/app';
-import { getAuth, GoogleAuthProvider } from 'firebase/auth';
+import { getAuth, GoogleAuthProvider, inMemoryPersistence, setPersistence } from 'firebase/auth';
 
 // Verify Firebase configuration values
 const firebaseConfig = {
@@ -27,14 +27,23 @@ try {
   if (!firebaseConfig.apiKey || !firebaseConfig.projectId || !firebaseConfig.appId) {
     throw new Error('Firebase configuration is incomplete');
   }
-  
+
   app = initializeApp(firebaseConfig);
   auth = getAuth(app);
-  console.log('Firebase initialized successfully');
+
+  // Use in-memory persistence to avoid browser storage issues with tracking prevention
+  // This prevents Firebase from trying to store auth state in localStorage/indexedDB
+  setPersistence(auth, inMemoryPersistence)
+    .then(() => {
+      console.log('Firebase initialized successfully with in-memory persistence');
+    })
+    .catch((error) => {
+      console.warn('Failed to set persistence mode, continuing anyway:', error);
+    });
 } catch (error) {
   console.error('Firebase initialization failed:', error);
   console.warn('Running in fallback mode without Firebase authentication');
-  
+
   // Create mock auth object for fallback
   auth = {
     currentUser: null,
