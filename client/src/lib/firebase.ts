@@ -21,59 +21,62 @@ console.log('Initializing Firebase with config:', {
 // Initialize Firebase with error handling
 let app: any = null;
 let auth: any = null;
-
-try {
-  // Check if Firebase config is complete
-  if (!firebaseConfig.apiKey || !firebaseConfig.projectId || !firebaseConfig.appId) {
-    throw new Error('Firebase configuration is incomplete');
-  }
-
-  app = initializeApp(firebaseConfig);
-  auth = getAuth(app);
-
-  // Use in-memory persistence to avoid browser storage issues with tracking prevention
-  // This prevents Firebase from trying to store auth state in localStorage/indexedDB
-  setPersistence(auth, inMemoryPersistence)
-    .then(() => {
-      console.log('Firebase initialized successfully with in-memory persistence');
-    })
-    .catch((error) => {
-      console.warn('Failed to set persistence mode, continuing anyway:', error);
-    });
-} catch (error) {
-  console.error('Firebase initialization failed:', error);
-  console.warn('Running in fallback mode without Firebase authentication');
-
-  // Create mock auth object for fallback
-  auth = {
-    currentUser: null,
-    onAuthStateChanged: (callback: Function) => {
-      callback(null);
-      return () => {};
-    },
-    signInWithPopup: () => Promise.reject(new Error('Firebase not available')),
-    signOut: () => Promise.resolve()
-  };
-}
-
-export { app, auth };
-
-// Configure Google Provider (only if Firebase is available)
 let googleProvider: any = null;
-if (app) {
+let authInitialized = false;
+
+// Function to initialize auth with persistence
+async function initializeAuth() {
   try {
-    googleProvider = new GoogleAuthProvider();
-    googleProvider.addScope('email');
-    googleProvider.addScope('profile');
-    googleProvider.setCustomParameters({
-      prompt: 'select_account'
-    });
+    // Check if Firebase config is complete
+    if (!firebaseConfig.apiKey || !firebaseConfig.projectId || !firebaseConfig.appId) {
+      throw new Error('Firebase configuration is incomplete');
+    }
+
+    app = initializeApp(firebaseConfig);
+    auth = getAuth(app);
+
+    // Use in-memory persistence to avoid browser storage issues with tracking prevention
+    // This prevents Firebase from trying to store auth state in localStorage/indexedDB
+    // IMPORTANT: This must complete BEFORE any auth operations
+    await setPersistence(auth, inMemoryPersistence);
+    console.log('Firebase initialized successfully with in-memory persistence');
+
+    // Configure Google Provider after Firebase is initialized
+    try {
+      googleProvider = new GoogleAuthProvider();
+      googleProvider.addScope('email');
+      googleProvider.addScope('profile');
+      googleProvider.setCustomParameters({
+        prompt: 'select_account'
+      });
+      console.log('Google Provider configured successfully');
+    } catch (error) {
+      console.error('Failed to configure Google Provider:', error);
+    }
+
+    authInitialized = true;
   } catch (error) {
-    console.error('Failed to configure Google Provider:', error);
+    console.error('Firebase initialization failed:', error);
+    console.warn('Running in fallback mode without Firebase authentication');
+
+    // Create mock auth object for fallback
+    auth = {
+      currentUser: null,
+      onAuthStateChanged: (callback: Function) => {
+        callback(null);
+        return () => {};
+      },
+      signInWithPopup: () => Promise.reject(new Error('Firebase not available')),
+      signOut: () => Promise.resolve()
+    };
+    authInitialized = true;
   }
 }
 
-export { googleProvider };
+// Start initialization immediately
+initializeAuth();
+
+export { app, auth, googleProvider, authInitialized };
 
 // Log auth state changes for debugging (only if auth is available)
 if (auth && typeof auth.onAuthStateChanged === 'function') {

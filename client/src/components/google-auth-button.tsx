@@ -1,7 +1,7 @@
 import React from 'react';
 import { Button } from "@/components/ui/button";
 import { signInWithRedirect, getRedirectResult } from 'firebase/auth';
-import { auth, googleProvider } from '@/lib/firebase';
+import { auth, googleProvider, authInitialized } from '@/lib/firebase';
 import { useToast } from '@/hooks/use-toast';
 import { Loader2 } from 'lucide-react';
 
@@ -13,7 +13,13 @@ export function GoogleAuthButton() {
   React.useEffect(() => {
     const handleRedirectResult = async () => {
       try {
-        console.log('[Google Auth] Checking for redirect result...');
+        // Wait for Firebase auth to be fully initialized with persistence
+        console.log('[Google Auth] Waiting for Firebase initialization...');
+        while (!authInitialized) {
+          await new Promise(resolve => setTimeout(resolve, 50));
+        }
+        console.log('[Google Auth] Firebase initialized, checking for redirect result...');
+
         const result = await getRedirectResult(auth);
 
         // No result means user hasn't been redirected yet
