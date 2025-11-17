@@ -163,14 +163,21 @@ export function setupAuth(app: Express) {
   app.use((req, res, next) => {
     if (req.session && req.session.version !== SESSION_VERSION) {
       console.log(`Session version mismatch (expected: ${SESSION_VERSION}, got: ${req.session.version}), clearing session`);
-      req.session.destroy(() => {
+      req.session.destroy((err) => {
+        if (err) {
+          console.error('Session destroy error:', err);
+        }
         res.clearCookie('sessionId', {
           httpOnly: true,
           sameSite: process.env.NODE_ENV === 'production' ? 'strict' : 'lax',
           secure: process.env.NODE_ENV === 'production',
         });
+        next(); // Continue after clearing cookie
       });
-    } else if (req.session) {
+      return; // Don't call next() outside the callback
+    }
+
+    if (req.session) {
       req.session.version = SESSION_VERSION;
     }
     next();
