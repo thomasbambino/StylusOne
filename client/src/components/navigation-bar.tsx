@@ -1,4 +1,4 @@
-import { Users, Settings as SettingsIcon, LogOut, Menu, Search, CreditCard, Eye } from "lucide-react"
+import { Users, Settings as SettingsIcon, LogOut, Menu, Search, CreditCard, Eye, Gift } from "lucide-react"
 import { Link, useLocation } from "wouter"
 import { Settings } from "@shared/schema"
 import { motion } from "framer-motion"
@@ -182,6 +182,14 @@ export function NavigationBar({ settings, pageTitle }: NavigationBarProps) {
                   <DropdownMenuItem className="cursor-pointer">
                     <CreditCard className="h-4 w-4 mr-2" />
                     My Subscription
+                  </DropdownMenuItem>
+                </Link>
+
+                {/* User referrals link */}
+                <Link href="/my-referrals">
+                  <DropdownMenuItem className="cursor-pointer">
+                    <Gift className="h-4 w-4 mr-2" />
+                    My Referrals
                   </DropdownMenuItem>
                 </Link>
 

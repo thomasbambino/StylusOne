@@ -236,6 +236,37 @@ export const paymentMethods = pgTable("paymentMethods", {
   created_at: timestamp("created_at").notNull().defaultNow(),
 });
 
+// Referral system tables
+export const referralCodes = pgTable("referralCodes", {
+  id: serial("id").primaryKey(),
+  user_id: integer("user_id").notNull().references(() => users.id, { onDelete: 'cascade' }),
+  code: text("code").notNull().unique(), // Unique referral code
+  is_active: boolean("is_active").notNull().default(true),
+  created_at: timestamp("created_at").notNull().defaultNow(),
+  updated_at: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const referrals = pgTable("referrals", {
+  id: serial("id").primaryKey(),
+  referrer_user_id: integer("referrer_user_id").notNull().references(() => users.id, { onDelete: 'cascade' }), // User who referred
+  referred_user_id: integer("referred_user_id").notNull().references(() => users.id, { onDelete: 'cascade' }), // User who was referred
+  referral_code_id: integer("referral_code_id").notNull().references(() => referralCodes.id, { onDelete: 'cascade' }),
+  commission_earned: integer("commission_earned").default(0), // Commission in cents
+  free_month_credited: boolean("free_month_credited").notNull().default(false),
+  created_at: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const referralCredits = pgTable("referralCredits", {
+  id: serial("id").primaryKey(),
+  user_id: integer("user_id").notNull().references(() => users.id, { onDelete: 'cascade' }),
+  referral_id: integer("referral_id").notNull().references(() => referrals.id, { onDelete: 'cascade' }),
+  credit_type: text("credit_type", { enum: ['free_month', 'commission'] }).notNull(),
+  amount: integer("amount").notNull(), // For commission (in cents) or 1 for free month
+  applied: boolean("applied").notNull().default(false),
+  applied_at: timestamp("applied_at"),
+  created_at: timestamp("created_at").notNull().defaultNow(),
+});
+
 export const insertUserSchema = createInsertSchema(users);
 export const insertServiceSchema = createInsertSchema(services);
 export const insertGameServerSchema = createInsertSchema(gameServers);
@@ -251,6 +282,9 @@ export const insertSubscriptionPlanSchema = createInsertSchema(subscriptionPlans
 export const insertUserSubscriptionSchema = createInsertSchema(userSubscriptions);
 export const insertInvoiceSchema = createInsertSchema(invoices);
 export const insertPaymentMethodSchema = createInsertSchema(paymentMethods);
+export const insertReferralCodeSchema = createInsertSchema(referralCodes);
+export const insertReferralSchema = createInsertSchema(referrals);
+export const insertReferralCreditSchema = createInsertSchema(referralCredits);
 
 // Export the update schemas
 export const updateServiceSchema = insertServiceSchema.extend({
@@ -301,6 +335,18 @@ export const updatePaymentMethodSchema = insertPaymentMethodSchema.extend({
   id: z.number(),
 }).partial().required({ id: true });
 
+export const updateReferralCodeSchema = insertReferralCodeSchema.extend({
+  id: z.number(),
+}).partial().required({ id: true });
+
+export const updateReferralSchema = insertReferralSchema.extend({
+  id: z.number(),
+}).partial().required({ id: true });
+
+export const updateReferralCreditSchema = insertReferralCreditSchema.extend({
+  id: z.number(),
+}).partial().required({ id: true });
+
 // Export types
 export type InsertUser = z.infer<typeof insertUserSchema>;
 export type InsertService = z.infer<typeof insertServiceSchema>;
@@ -337,3 +383,12 @@ export type Invoice = typeof invoices.$inferSelect;
 export type InsertPaymentMethod = z.infer<typeof insertPaymentMethodSchema>;
 export type UpdatePaymentMethod = z.infer<typeof updatePaymentMethodSchema>;
 export type PaymentMethod = typeof paymentMethods.$inferSelect;
+export type InsertReferralCode = z.infer<typeof insertReferralCodeSchema>;
+export type UpdateReferralCode = z.infer<typeof updateReferralCodeSchema>;
+export type ReferralCode = typeof referralCodes.$inferSelect;
+export type InsertReferral = z.infer<typeof insertReferralSchema>;
+export type UpdateReferral = z.infer<typeof updateReferralSchema>;
+export type Referral = typeof referrals.$inferSelect;
+export type InsertReferralCredit = z.infer<typeof insertReferralCreditSchema>;
+export type UpdateReferralCredit = z.infer<typeof updateReferralCreditSchema>;
+export type ReferralCredit = typeof referralCredits.$inferSelect;

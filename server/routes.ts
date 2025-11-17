@@ -22,6 +22,7 @@ import booksRouter from './routes/books';
 import subscriptionsRouter from './routes/subscriptions';
 import adminSubscriptionsRouter from './routes/admin-subscriptions';
 import stripeWebhooksRouter from './routes/stripe-webhooks';
+import referralsRouter from './routes/referrals';
 import { z } from "zod";
 import { spawn } from 'child_process';
 import fetch from 'node-fetch';
@@ -505,6 +506,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Subscription routes
   app.use("/api/subscriptions", subscriptionsRouter);
   app.use("/api/admin", adminSubscriptionsRouter);
+
+  // Referral routes
+  app.use("/api/referrals", referralsRouter);
 
   app.get("/api/services", async (req, res) => {
     if (!req.isAuthenticated()) return res.sendStatus(401);
@@ -1264,11 +1268,45 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ message: "Username already exists" });
       }
 
+      const { referral_code, ...userData } = req.body;
+      let isAutoApproved = false;
+      let referralCodeData = null;
+
+      // Validate referral code if provided
+      if (referral_code) {
+        referralCodeData = await storage.validateReferralCode(referral_code);
+        if (!referralCodeData) {
+          return res.status(400).json({ message: "Invalid or inactive referral code" });
+        }
+        isAutoApproved = true;
+      }
+
+      // Create user with appropriate settings based on referral code
       const user = await storage.createUser({
-        ...req.body,
-        role: 'user',
-        approved: true,
+        ...userData,
+        role: isAutoApproved ? 'user' : 'pending',
+        approved: isAutoApproved,
+        enabled: isAutoApproved,
       });
+
+      // If referral code was used, create referral record and credit rewards
+      if (referralCodeData && user.id) {
+        try {
+          const referral = await storage.createReferral(
+            referralCodeData.user_id,
+            user.id,
+            referralCodeData.id
+          );
+
+          // Credit rewards to the referrer
+          // TODO: Make commission amount configurable
+          const commissionAmount = 500; // $5.00 in cents
+          await storage.creditReferralRewards(referral.id, commissionAmount);
+        } catch (error) {
+          console.error("Error creating referral record:", error);
+          // Don't fail user creation if referral tracking fails
+        }
+      }
 
       req.login(user, (err) => {
         if (err) {

@@ -31,6 +31,15 @@ import {
   loginAttempts,
   LoginAttempt,
   InsertLoginAttempt,
+  referralCodes,
+  referrals,
+  referralCredits,
+  ReferralCode,
+  Referral,
+  ReferralCredit,
+  InsertReferralCode,
+  InsertReferral,
+  InsertReferralCredit,
 } from "../shared/schema.js";
 import { db, pool } from "./db.js";
 import { eq, desc, and, gte, lte, or, asc } from "drizzle-orm";
@@ -573,6 +582,169 @@ export class DatabaseStorage implements IStorage {
       .select()
       .from(loginAttempts)
       .orderBy(desc(loginAttempts.timestamp));
+  }
+
+  // Referral Code Functions
+  async generateReferralCode(userId: number): Promise<ReferralCode> {
+    // Generate a unique 8-character code
+    const code = Math.random().toString(36).substring(2, 10).toUpperCase();
+
+    // Check if user already has a referral code
+    const existing = await this.getReferralCodeByUserId(userId);
+    if (existing) {
+      return existing;
+    }
+
+    const [referralCode] = await db
+      .insert(referralCodes)
+      .values({
+        user_id: userId,
+        code,
+        is_active: true,
+      })
+      .returning();
+    return referralCode;
+  }
+
+  async getReferralCodeByUserId(userId: number): Promise<ReferralCode | undefined> {
+    const [code] = await db
+      .select()
+      .from(referralCodes)
+      .where(eq(referralCodes.user_id, userId));
+    return code;
+  }
+
+  async getReferralCodeByCode(code: string): Promise<ReferralCode | undefined> {
+    const [referralCode] = await db
+      .select()
+      .from(referralCodes)
+      .where(eq(referralCodes.code, code.toUpperCase()));
+    return referralCode;
+  }
+
+  async validateReferralCode(code: string): Promise<ReferralCode | null> {
+    const referralCode = await this.getReferralCodeByCode(code);
+    if (!referralCode || !referralCode.is_active) {
+      return null;
+    }
+    return referralCode;
+  }
+
+  async createReferral(referrerUserId: number, referredUserId: number, referralCodeId: number): Promise<Referral> {
+    const [referral] = await db
+      .insert(referrals)
+      .values({
+        referrer_user_id: referrerUserId,
+        referred_user_id: referredUserId,
+        referral_code_id: referralCodeId,
+        commission_earned: 0,
+        free_month_credited: false,
+      })
+      .returning();
+    return referral;
+  }
+
+  async getReferralsByUserId(userId: number): Promise<Referral[]> {
+    return await db
+      .select()
+      .from(referrals)
+      .where(eq(referrals.referrer_user_id, userId))
+      .orderBy(desc(referrals.created_at));
+  }
+
+  async creditReferralRewards(referralId: number, commissionAmount: number): Promise<void> {
+    // Get the referral
+    const [referral] = await db
+      .select()
+      .from(referrals)
+      .where(eq(referrals.id, referralId));
+
+    if (!referral) {
+      throw new Error('Referral not found');
+    }
+
+    // Create commission credit
+    await db.insert(referralCredits).values({
+      user_id: referral.referrer_user_id,
+      referral_id: referralId,
+      credit_type: 'commission',
+      amount: commissionAmount,
+      applied: false,
+    });
+
+    // Create free month credit
+    await db.insert(referralCredits).values({
+      user_id: referral.referrer_user_id,
+      referral_id: referralId,
+      credit_type: 'free_month',
+      amount: 1,
+      applied: false,
+    });
+
+    // Update referral record
+    await db
+      .update(referrals)
+      .set({
+        commission_earned: commissionAmount,
+        free_month_credited: true,
+      })
+      .where(eq(referrals.id, referralId));
+  }
+
+  async getReferralStats(userId: number): Promise<{
+    totalReferrals: number;
+    totalCommission: number;
+    freeMonthsEarned: number;
+    freeMonthsApplied: number;
+  }> {
+    const userReferrals = await this.getReferralsByUserId(userId);
+
+    const credits = await db
+      .select()
+      .from(referralCredits)
+      .where(eq(referralCredits.user_id, userId));
+
+    const totalCommission = credits
+      .filter(c => c.credit_type === 'commission')
+      .reduce((sum, c) => sum + c.amount, 0);
+
+    const freeMonthsEarned = credits
+      .filter(c => c.credit_type === 'free_month')
+      .length;
+
+    const freeMonthsApplied = credits
+      .filter(c => c.credit_type === 'free_month' && c.applied)
+      .length;
+
+    return {
+      totalReferrals: userReferrals.length,
+      totalCommission,
+      freeMonthsEarned,
+      freeMonthsApplied,
+    };
+  }
+
+  async getPendingFreeMonths(userId: number): Promise<ReferralCredit[]> {
+    return await db
+      .select()
+      .from(referralCredits)
+      .where(
+        and(
+          eq(referralCredits.user_id, userId),
+          eq(referralCredits.credit_type, 'free_month'),
+          eq(referralCredits.applied, false)
+        )
+      );
+  }
+
+  async applyFreeMonth(creditId: number): Promise<void> {
+    await db
+      .update(referralCredits)
+      .set({
+        applied: true,
+        applied_at: new Date(),
+      })
+      .where(eq(referralCredits.id, creditId));
   }
 }
 

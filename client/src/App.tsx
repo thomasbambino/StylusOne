@@ -17,6 +17,7 @@ import BooksPage from "@/pages/books-page";
 import ServerSharePage from "@/pages/server-share-page";
 import SubscriptionPlansPage from "@/pages/subscription-plans-page";
 import MySubscriptionPage from "@/pages/my-subscription-page";
+import MyReferralsPage from "@/pages/my-referrals-page";
 import { ProtectedRoute } from "./lib/protected-route";
 import { FeatureProtectedRoute } from "./lib/feature-protected-route";
 import { ThemeProvider } from "@/components/theme-provider";
@@ -37,6 +38,7 @@ function Router() {
       <ProtectedRoute path="/settings" component={SettingsPage} />
       <ProtectedRoute path="/subscription-plans" component={SubscriptionPlansPage} />
       <ProtectedRoute path="/my-subscription" component={MySubscriptionPage} />
+      <ProtectedRoute path="/my-referrals" component={MyReferralsPage} />
       <Route path="/server/:serverId" component={ServerSharePage} />
       <Route path="/auth" component={AuthPage} />
       <Route path="/pending" component={PendingPage} />

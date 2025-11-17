@@ -55,11 +55,16 @@ export default function AuthPage() {
   });
 
   const registerForm = useForm({
-    resolver: zodResolver(insertUserSchema.pick({ username: true, password: true, email: true })),
+    resolver: zodResolver(
+      insertUserSchema.pick({ username: true, password: true, email: true }).extend({
+        referral_code: z.string().optional()
+      })
+    ),
     defaultValues: {
       username: "",
       password: "",
-      email: ""
+      email: "",
+      referral_code: ""
     }
   });
 
@@ -360,6 +365,22 @@ export default function AuthPage() {
                             <Input type="password" {...field} />
                           </FormControl>
                           <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={registerForm.control}
+                      name="referral_code"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Referral Code (Optional)</FormLabel>
+                          <FormControl>
+                            <Input {...field} placeholder="Enter referral code" />
+                          </FormControl>
+                          <FormMessage />
+                          <p className="text-xs text-muted-foreground">
+                            Have a referral code? Enter it to get instant access!
+                          </p>
                         </FormItem>
                       )}
                     />
