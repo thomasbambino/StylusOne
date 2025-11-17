@@ -149,7 +149,7 @@ export function setupAuth(app: Express) {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
       maxAge: 24 * 60 * 60 * 1000, // 24 hours
-      sameSite: process.env.NODE_ENV === 'production' ? 'strict' : 'lax',
+      sameSite: 'lax', // Use 'lax' for better compatibility with Cloudflare proxy
     },
     name: 'sessionId',
   };
@@ -223,9 +223,15 @@ export function setupAuth(app: Express) {
     }),
   );
 
-  passport.serializeUser((user, done) => done(null, user.id));
+  passport.serializeUser((user, done) => {
+    console.log('Serializing user:', user.id);
+    done(null, user.id);
+  });
+
   passport.deserializeUser(async (id: number, done) => {
+    console.log('Deserializing user ID:', id);
     const user = await storage.getUser(id);
+    console.log('Deserialized user:', user ? `${user.username} (${user.role})` : 'NOT FOUND');
     done(null, user);
   });
 
@@ -420,7 +426,7 @@ export function setupAuth(app: Express) {
         // Clear the session cookie explicitly
         res.clearCookie('sessionId', {
           httpOnly: true,
-          sameSite: process.env.NODE_ENV === 'production' ? 'strict' : 'lax',
+          sameSite: 'lax', // Match session cookie settings
           secure: process.env.NODE_ENV === 'production',
         });
 
