@@ -13,16 +13,20 @@ export function GoogleAuthButton() {
   React.useEffect(() => {
     const handleRedirectResult = async () => {
       try {
+        console.log('[Google Auth] Checking for redirect result...');
         const result = await getRedirectResult(auth);
 
         // No result means user hasn't been redirected yet
         if (!result) {
+          console.log('[Google Auth] No redirect result found');
           return;
         }
 
+        console.log('[Google Auth] Got redirect result:', result.user.email);
         setIsLoading(true);
 
         const idToken = await result.user.getIdToken();
+        console.log('[Google Auth] Got ID token, sending to server...');
 
         toast({
           title: "Google Sign-in Successful",
@@ -37,8 +41,11 @@ export function GoogleAuthButton() {
           body: JSON.stringify({ token: idToken })
         });
 
+        console.log('[Google Auth] Server response status:', response.status);
+
         if (!response.ok) {
           const errorData = await response.json();
+          console.error('[Google Auth] Server error:', errorData);
 
           if (response.status === 403 && errorData.requiresApproval) {
             toast({
@@ -52,16 +59,18 @@ export function GoogleAuthButton() {
           throw new Error(errorData.message || 'Failed to authenticate with the server');
         }
 
-        await response.json();
+        const responseData = await response.json();
+        console.log('[Google Auth] Authentication successful:', responseData);
 
         toast({
           title: "Success",
           description: "Successfully signed in with Google",
         });
 
+        console.log('[Google Auth] Redirecting to home page...');
         window.location.href = '/';
       } catch (error) {
-        console.error('Google redirect result error:', error);
+        console.error('[Google Auth] Redirect result error:', error);
 
         let errorMessage = "Could not sign in with Google. Please try again.";
         if (error instanceof Error) {
