@@ -280,11 +280,11 @@ router.get('/analytics/plans/:planId/users', requireSuperAdmin, async (req, res)
     const planId = parseInt(req.params.planId);
     console.log('Fetching users for plan ID:', planId);
 
-    const users = await db
+    const planUsers = await db
       .select({
-        id: usersTable.id,
-        username: usersTable.username,
-        email: usersTable.email,
+        id: users.id,
+        username: users.username,
+        email: users.email,
         status: userSubscriptions.status,
         billing_period: userSubscriptions.billing_period,
         current_period_start: userSubscriptions.current_period_start,
@@ -292,12 +292,12 @@ router.get('/analytics/plans/:planId/users', requireSuperAdmin, async (req, res)
         created_at: userSubscriptions.created_at,
       })
       .from(userSubscriptions)
-      .innerJoin(usersTable, eq(usersTable.id, userSubscriptions.user_id))
+      .innerJoin(users, eq(users.id, userSubscriptions.user_id))
       .where(eq(userSubscriptions.plan_id, planId))
       .orderBy(userSubscriptions.created_at);
 
-    console.log(`Found ${users.length} users for plan ${planId}`);
-    res.json(users);
+    console.log(`Found ${planUsers.length} users for plan ${planId}`);
+    res.json(planUsers);
   } catch (error) {
     console.error('Error fetching plan users:', error);
     res.status(500).json({ error: 'Failed to fetch plan users' });
