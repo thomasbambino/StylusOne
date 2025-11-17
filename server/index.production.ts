@@ -21,16 +21,16 @@ app.use(helmet({
     useDefaults: false,
     directives: {
       defaultSrc: ["'self'"],
-      scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'", "https://*.gstatic.com", "https://js.stripe.com"],
+      scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'", "https://*.gstatic.com", "https://js.stripe.com", "https://apis.google.com", "https://accounts.google.com"],
       styleSrc: ["'self'", "'unsafe-inline'"],
       imgSrc: ["'self'", "data:", "blob:", "https:", "http:"],
       fontSrc: ["'self'", "data:"],
       connectSrc: isLocalDocker
         ? ["'self'", "https:", "wss:", "ws:", "http:"]  // Allow HTTP for local, includes Stripe API
-        : ["'self'", "https:", "wss:", "https://*.gstatic.com", "https://api.stripe.com"],  // Allow Cast SDK and Stripe API connections
+        : ["'self'", "https:", "wss:", "https://*.gstatic.com", "https://api.stripe.com", "https://accounts.google.com", "https://securetoken.googleapis.com", "https://identitytoolkit.googleapis.com"],  // Allow Cast SDK, Stripe API, and Google Auth
       mediaSrc: ["'self'", "blob:", "https:", "http:"],
       objectSrc: ["'none'"],
-      frameSrc: ["'self'", "https://*.gstatic.com", "https://js.stripe.com"],  // Allow Cast SDK iframes and Stripe 3DS
+      frameSrc: ["'self'", "https://*.gstatic.com", "https://js.stripe.com", "https://accounts.google.com", "https://*.firebaseapp.com"],  // Allow Cast SDK iframes, Stripe 3DS, and Google Sign-In
       workerSrc: ["'self'", "blob:"],
       childSrc: ["'self'", "blob:"],
       formAction: ["'self'"],
