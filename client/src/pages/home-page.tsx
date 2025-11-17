@@ -786,7 +786,7 @@ export default function HomePage() {
                     </div>
                   </div>
                 ) : (
-                  <div className="flex-1 flex flex-col justify-between">
+                  <div className="flex-1 flex flex-col">
                     <div className="grid grid-cols-3 gap-4">
                       <div className="text-center">
                         <div className="text-2xl font-bold">{runningServers.length}</div>
@@ -802,7 +802,7 @@ export default function HomePage() {
                       </div>
                     </div>
 
-                    {runningServers.length > 0 && (
+                    {runningServers.length > 0 ? (
                       <div className="space-y-2 flex-1 pt-4">
                         <div className="space-y-2 min-h-[180px] max-h-[200px] overflow-y-auto">
                         {runningServers.slice(0, 3).map((server: any) => (
@@ -846,10 +846,12 @@ export default function HomePage() {
                         ))}
                         </div>
                       </div>
+                    ) : (
+                      <div className="flex-1" />
                     )}
 
                     {/* Action Button - Only show if user has access */}
-                    <div className="space-y-2 mt-4">
+                    <div className="space-y-2 mt-auto pt-4">
                       <Link href="/game-servers">
                         <Button className="w-full" variant="outline">
                           Manage Game Servers
