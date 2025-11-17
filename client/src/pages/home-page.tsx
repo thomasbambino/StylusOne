@@ -786,7 +786,7 @@ export default function HomePage() {
                     </div>
                   </div>
                 ) : (
-                  <>
+                  <div className="flex-1 flex flex-col justify-between">
                     <div className="grid grid-cols-3 gap-4">
                       <div className="text-center">
                         <div className="text-2xl font-bold">{runningServers.length}</div>
@@ -857,7 +857,7 @@ export default function HomePage() {
                         </Button>
                       </Link>
                     </div>
-                  </>
+                  </div>
                 )}
             </CardContent>
           </Card>
@@ -984,9 +984,7 @@ export default function HomePage() {
                   <div className="space-y-2 flex-1">
                     <p className="text-xs text-muted-foreground">Favorite Channels</p>
                     <div className="space-y-2 min-h-[275px] max-h-[300px] overflow-y-auto">
-                      {[0, 1, 2].map((index) => {
-                        const fav = favoriteChannels[index];
-                        if (!fav) return null;
+                      {favoriteChannels.map((fav) => {
                         return (
                           <FavoriteChannelItem
                             key={fav.id}
