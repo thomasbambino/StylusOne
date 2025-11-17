@@ -296,38 +296,54 @@ export function setupAuth(app: Express) {
         req.logIn(user, async (err) => {
           if (err) return next(err);
 
-          try {
-            const ipInfo = await getIpInfo(clientIp);
-            const now = new Date();
-
-            await storage.addLoginAttempt({
-              identifier,
-              ip: ipInfo.ip || clientIp,
-              type: 'success',
-              timestamp: now,
-              isp: ipInfo.isp || null,
-              city: ipInfo.city || null,
-              region: ipInfo.region || null,
-              country: ipInfo.country || null
-            });
-
-            await storage.updateUser({
-              id: user.id,
-              last_ip: ipInfo.ip || clientIp,
-              last_login: now // Add last_login update
-            });
-
-            res.json({
-              ...user,
-              requires_password_change: user.temp_password
-            });
-          } catch (error) {
-            console.error('Failed to update user IP with geolocation:', error);
-            res.json({
-              ...user,
-              requires_password_change: user.temp_password
-            });
+          // Set session version immediately after login
+          if (req.session) {
+            req.session.version = SESSION_VERSION;
           }
+
+          // Explicitly save the session to ensure passport data is persisted
+          req.session.save((saveErr) => {
+            if (saveErr) {
+              console.error('Session save error after login:', saveErr);
+              return next(saveErr);
+            }
+
+            // Session saved successfully, continue with login logic
+            (async () => {
+              try {
+                const ipInfo = await getIpInfo(clientIp);
+                const now = new Date();
+
+                await storage.addLoginAttempt({
+                  identifier,
+                  ip: ipInfo.ip || clientIp,
+                  type: 'success',
+                  timestamp: now,
+                  isp: ipInfo.isp || null,
+                  city: ipInfo.city || null,
+                  region: ipInfo.region || null,
+                  country: ipInfo.country || null
+                });
+
+                await storage.updateUser({
+                  id: user.id,
+                  last_ip: ipInfo.ip || clientIp,
+                  last_login: now
+                });
+
+                res.json({
+                  ...user,
+                  requires_password_change: user.temp_password
+                });
+              } catch (error) {
+                console.error('Failed to update user IP with geolocation:', error);
+                res.json({
+                  ...user,
+                  requires_password_change: user.temp_password
+                });
+              }
+            })();
+          });
         });
       })(req, res, next);
     } catch (error) {
