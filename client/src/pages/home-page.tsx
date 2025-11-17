@@ -392,7 +392,7 @@ export default function HomePage() {
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.5, delay: 0.3 }}
           >
-            <Card className="relative overflow-hidden flex flex-col hover:shadow-lg transition-shadow duration-300 h-[520px]">
+            <Card className="relative overflow-hidden flex flex-col hover:shadow-lg transition-shadow duration-300 h-[500px]">
             <div className="absolute top-0 right-0 w-32 h-32 bg-gradient-to-br from-orange-500/10 to-transparent rounded-bl-full" />
             <CardHeader>
               <div className="flex items-center justify-between">
@@ -681,7 +681,7 @@ export default function HomePage() {
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.5, delay: 0.4 }}
           >
-            <Card className="relative overflow-hidden flex flex-col hover:shadow-lg transition-shadow duration-300 h-[520px]">
+            <Card className="relative overflow-hidden flex flex-col hover:shadow-lg transition-shadow duration-300 h-[500px]">
             <div className="absolute top-0 right-0 w-32 h-32 bg-gradient-to-br from-purple-500/10 to-transparent rounded-bl-full" />
             <CardHeader>
               <div className="flex items-center justify-between">
@@ -869,7 +869,7 @@ export default function HomePage() {
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.5, delay: 0.5 }}
           >
-            <Card className="relative overflow-hidden hover:shadow-lg transition-shadow duration-300 flex flex-col h-[520px]">
+            <Card className="relative overflow-hidden hover:shadow-lg transition-shadow duration-300 flex flex-col h-[500px]">
             <div className="absolute top-0 right-0 w-32 h-32 bg-gradient-to-br from-blue-500/10 to-transparent rounded-bl-full" />
             <CardHeader>
               <div className="flex items-center justify-between">
