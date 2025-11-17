@@ -531,7 +531,7 @@ export default function HomePage() {
                           <div
                             className="flex gap-4 h-full"
                             style={{
-                              animation: 'scroll-left 60s linear infinite'
+                              animation: 'scroll-left 30s linear infinite'
                             }}
                           >
                             {/* Create 3 copies for seamless looping */}
