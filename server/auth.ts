@@ -687,14 +687,43 @@ export function setupAuth(app: Express) {
       }
 
       const clientIp = await getClientIp(req);
-      console.log('Attempting to verify Firebase token');
+      console.log('Attempting to verify token');
 
-      // Verify the Firebase ID token
-      const decodedToken = await admin.auth().verifyIdToken(token)
-        .catch(error => {
-          console.error('Token verification failed:', error);
-          throw error;
-        });
+      let decodedToken: any;
+
+      // Try to verify as Firebase ID token first
+      try {
+        decodedToken = await admin.auth().verifyIdToken(token);
+        console.log('Verified as Firebase ID token');
+      } catch (firebaseError) {
+        // If Firebase verification fails, try verifying as Google ID token
+        console.log('Not a Firebase token, trying Google ID token verification');
+        try {
+          const {OAuth2Client} = require('google-auth-library');
+          const client = new OAuth2Client();
+
+          const ticket = await client.verifyIdToken({
+            idToken: token,
+            // Don't specify audience to accept any Firebase/Google client ID
+          });
+
+          const payload = ticket.getPayload();
+          decodedToken = {
+            email: payload.email,
+            name: payload.name,
+            picture: payload.picture,
+            uid: payload.sub,
+            email_verified: payload.email_verified
+          };
+          console.log('Verified as Google ID token');
+        } catch (googleError) {
+          console.error('Token verification failed for both Firebase and Google:', {
+            firebaseError,
+            googleError
+          });
+          throw new Error('Invalid token');
+        }
+      }
 
       if (!decodedToken.email) {
         console.error('No email in decoded token:', decodedToken);
