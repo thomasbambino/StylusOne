@@ -161,21 +161,24 @@ export function setupAuth(app: Express) {
 
   // Session version checking middleware - invalidates old sessions after deployments
   app.use((req, res, next) => {
-    if (req.session && req.session.version !== SESSION_VERSION) {
-      console.log(`Session version mismatch (expected: ${SESSION_VERSION}, got: ${req.session.version}), regenerating session`);
-      req.session.regenerate((err) => {
-        if (err) {
-          console.error('Session regenerate error:', err);
-          return next(err);
-        }
-        // Set the new version on the regenerated session
-        req.session.version = SESSION_VERSION;
-        next();
-      });
-      return; // Don't call next() outside the callback
-    }
-
     if (req.session) {
+      // Only regenerate if session has a version AND it's different (old session)
+      // Don't regenerate if version is undefined (new session from login)
+      if (req.session.version && req.session.version !== SESSION_VERSION) {
+        console.log(`Session version mismatch (expected: ${SESSION_VERSION}, got: ${req.session.version}), regenerating session`);
+        req.session.regenerate((err) => {
+          if (err) {
+            console.error('Session regenerate error:', err);
+            return next(err);
+          }
+          // Set the new version on the regenerated session
+          req.session.version = SESSION_VERSION;
+          next();
+        });
+        return; // Don't call next() outside the callback
+      }
+
+      // Set version on new sessions or maintain version on current sessions
       req.session.version = SESSION_VERSION;
     }
     next();
