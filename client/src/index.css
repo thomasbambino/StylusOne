@@ -133,4 +133,14 @@
     appearance: none;
     margin-top: -5px;
   }
+
+  /* Smooth infinite carousel scroll animation */
+  @keyframes scroll-left {
+    0% {
+      transform: translateX(0);
+    }
+    100% {
+      transform: translateX(-33.333%);
+    }
+  }
 }

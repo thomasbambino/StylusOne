@@ -527,46 +527,19 @@ export default function HomePage() {
                     {/* Recently Added Carousel */}
                     {recentlyAddedItems && recentlyAddedItems.length > 0 && (
                       <div className="pt-4 flex-1 flex flex-col">
-                        <div className="relative overflow-y-auto flex-1 min-h-[200px] max-h-[220px]">
-                          <div 
+                        <div className="relative overflow-hidden flex-1 min-h-[200px] max-h-[220px]">
+                          <div
                             className="flex gap-4 h-full"
-                            ref={(el) => {
-                              if (el && recentlyAddedItems?.length > 0) {
-                                // Clear any existing animation
-                                el.style.animation = 'none';
-
-                                // Calculate dimensions
-                                const itemWidth = 128; // 112px width + 16px gap
-                                const baseItems = Math.min(recentlyAddedItems.length, 20);
-                                const totalItems = baseItems * 6; // 6 repetitions
-                                const totalWidth = totalItems * itemWidth;
-                                const oneLoopWidth = baseItems * itemWidth;
-                                
-                                // Create smooth continuous scroll animation
-                                let scrollPosition = 0;
-                                const scrollSpeed = 0.15; // pixels per frame (much slower)
-                                
-                                const animate = () => {
-                                  scrollPosition += scrollSpeed;
-                                  
-                                  // Reset at one full loop (1/6 of total width) to create seamless loop
-                                  if (scrollPosition >= oneLoopWidth) {
-                                    scrollPosition = 0;
-                                  }
-                                  
-                                  el.style.transform = `translateX(-${scrollPosition}px)`;
-                                  requestAnimationFrame(animate);
-                                };
-                                
-                                animate();
-                              }
+                            style={{
+                              animation: 'scroll-left 60s linear infinite'
                             }}
                           >
-                            {/* Create 6 copies for seamless looping */}
+                            {/* Create 3 copies for seamless looping */}
                             {(() => {
                               const baseItems = recentlyAddedItems.slice(0, Math.min(recentlyAddedItems.length, 20));
                               const repeatedItems = [];
-                              for (let rep = 0; rep < 6; rep++) {
+                              // Create 3 full copies for smooth infinite loop
+                              for (let rep = 0; rep < 3; rep++) {
                                 baseItems.forEach(item => repeatedItems.push(item));
                               }
                               return repeatedItems;
