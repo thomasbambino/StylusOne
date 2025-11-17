@@ -804,7 +804,7 @@ export default function HomePage() {
 
                     {runningServers.length > 0 ? (
                       <div className="space-y-2 flex-1 pt-4">
-                        <div className="space-y-2 min-h-[275px] max-h-[300px] overflow-y-auto">
+                        <div className="space-y-2 min-h-[200px] max-h-[225px] overflow-y-auto">
                         {runningServers.map((server: any) => (
                           <div key={server.instanceId} className="bg-accent/10 rounded-lg p-3 border border-border/50">
                             <div className="flex items-center gap-4">
@@ -847,7 +847,7 @@ export default function HomePage() {
                         </div>
                       </div>
                     ) : (
-                      <div className="flex-1 min-h-[275px] flex items-center justify-center text-center text-muted-foreground">
+                      <div className="flex-1 min-h-[200px] flex items-center justify-center text-center text-muted-foreground pt-4">
                         <div>
                           <p className="text-sm">No servers running</p>
                           <p className="text-xs mt-1">Start a server to see it here</p>
