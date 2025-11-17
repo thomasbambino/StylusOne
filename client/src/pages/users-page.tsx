@@ -7,8 +7,8 @@ import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useAuth } from "@/hooks/use-auth";
-import { Redirect, Link } from "wouter";
-import { KeyRound, Loader2, Save, Shield, Trash2, ArrowLeft } from "lucide-react";
+import { Redirect } from "wouter";
+import { KeyRound, Loader2, Save, Shield, Trash2, MoreVertical, CreditCard, UserCog, CheckCircle2, XCircle, Clock } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { useState } from "react";
@@ -17,10 +17,11 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { LoginAttemptsDialog } from "@/components/login-attempts-dialog";
 import { format } from 'date-fns';
 import { PageTransition } from "@/components/page-transition";
-import { Separator } from "@/components/ui/separator"; // Import Separator
 import { Copy, Check } from "lucide-react";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
-
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { Badge } from "@/components/ui/badge";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 
 export default function UsersPage() {
   const { toast } = useToast();
@@ -127,7 +128,6 @@ export default function UsersPage() {
     },
     onSuccess: (data) => {
       if (data.tempPassword) {
-        // Open dialog with password
         setPasswordDialog({
           open: true,
           password: data.tempPassword,
@@ -135,7 +135,6 @@ export default function UsersPage() {
           emailSent: data.emailSent
         });
       }
-      // Still send toast for email notification
       if (data.emailSent) {
         toast({
           title: "Password reset",
@@ -211,13 +210,11 @@ export default function UsersPage() {
   };
 
   const openSubscriptionDialog = (userId: number, username: string) => {
-    // Set defaults from user's current subscription if they have one
     const userWithSub = users.find(u => u.id === userId);
     if (userWithSub?.subscription) {
       setSelectedPlan(userWithSub.subscription.plan_id);
       setBillingPeriod(userWithSub.subscription.billing_period || 'monthly');
     } else {
-      // Reset to defaults if no subscription
       setSelectedPlan(subscriptionPlans[0]?.id || 0);
       setBillingPeriod('monthly');
     }
@@ -266,135 +263,105 @@ export default function UsersPage() {
     return false;
   };
 
+  const getStatusBadge = (u: any) => {
+    if (!u.approved) {
+      return <Badge variant="secondary" className="flex items-center gap-1"><Clock className="h-3 w-3" /> Pending</Badge>;
+    }
+    if (!u.enabled) {
+      return <Badge variant="destructive" className="flex items-center gap-1"><XCircle className="h-3 w-3" /> Disabled</Badge>;
+    }
+    return <Badge variant="default" className="flex items-center gap-1 bg-green-600"><CheckCircle2 className="h-3 w-3" /> Active</Badge>;
+  };
+
   return (
     <PageTransition>
-      <div className="min-h-screen bg-background">
+      <div className="container mx-auto px-4 py-6 space-y-6">
+        {/* Header */}
+        <div className="flex justify-between items-center">
+          <div>
+            <h1 className="text-3xl font-bold">User Management</h1>
+            <p className="text-muted-foreground mt-1">Manage user accounts and permissions</p>
+          </div>
+          <div className="flex items-center gap-4">
+            {isSuperAdmin && <LoginAttemptsDialog />}
+          </div>
+        </div>
 
-        <main className="container mx-auto px-4 pb-6 space-y-6">
-          <Card className="border-0 shadow-none">
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle>Users</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-4">
-                  <Label>Default role for new users:</Label>
-                  <Select
-                    value={settings?.default_role}
-                    onValueChange={(value) => updateSettingsMutation.mutate({ defaultRole: value })}
-                  >
-                    <SelectTrigger className="w-40">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="admin">Admin</SelectItem>
-                      <SelectItem value="user">User</SelectItem>
-                      <SelectItem value="pending">Pending</SelectItem>
-                    </SelectContent>
-                  </Select>
-                  {isSuperAdmin && <LoginAttemptsDialog />}
-                </div>
-              </div>
-            </CardContent>
-          </Card>
+        {/* Settings Card */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-lg">General Settings</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="flex items-center gap-4">
+              <Label className="text-sm font-medium">Default role for new users:</Label>
+              <Select
+                value={settings?.default_role}
+                onValueChange={(value) => updateSettingsMutation.mutate({ defaultRole: value })}
+              >
+                <SelectTrigger className="w-40">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="admin">Admin</SelectItem>
+                  <SelectItem value="user">User</SelectItem>
+                  <SelectItem value="pending">Pending</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </CardContent>
+        </Card>
 
-          <Separator className="mx-auto w-full max-w-[calc(100%-2rem)] bg-border/60" />
-
-          <div className="grid gap-4">
-            {[...users]
-              .sort((a, b) => a.id - b.id)
-              .map((u) => (
-                <Card key={u.id} className="border-0 shadow-none">
-                  <CardContent className="pt-6">
-                    <div className="flex items-center justify-between">
-                      <div className="space-y-2">
-                        <div className="flex items-center gap-2">
-                          <p className="font-medium">{u.username}</p>
-                          {u.role === 'superadmin' && (
-                            <p className="text-sm font-medium text-primary flex items-center gap-1">
-                              <Shield className="h-4 w-4 text-blue-500" />
-                              Superadmin
-                            </p>
-                          )}
-                        </div>
-                        <div className="flex items-center gap-4">
-                          <p className="text-sm text-muted-foreground">ID: {u.id}</p>
-                          <div className="flex items-center gap-6">
-                            <p className="text-sm text-blue-500">
-                              IP: {u.last_ip}
-                            </p>
-                            {u.last_login && (
-                              <p className="text-sm text-blue-500">
-                                Last Login: {format(new Date(u.last_login), "PPpp")}
-                              </p>
+        {/* Users Table */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-lg">Users ({users.length})</CardTitle>
+          </CardHeader>
+          <CardContent className="p-0">
+            <div className="overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="w-[200px]">User</TableHead>
+                    <TableHead>Email</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead>Role</TableHead>
+                    <TableHead>Subscription</TableHead>
+                    <TableHead>Last Login</TableHead>
+                    <TableHead className="text-right">Actions</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {[...users]
+                    .sort((a, b) => a.id - b.id)
+                    .map((u) => (
+                      <TableRow key={u.id}>
+                        <TableCell className="font-medium">
+                          <div className="flex items-center gap-2">
+                            <span>{u.username}</span>
+                            {u.role === 'superadmin' && (
+                              <Shield className="h-4 w-4 text-blue-500" title="Superadmin" />
                             )}
                           </div>
-                        </div>
-                        <div className="flex items-center gap-4 mt-2">
-                          <p className="text-sm text-muted-foreground">Subscription:</p>
-                          {u.subscription ? (
-                            <div className="flex items-center gap-2">
-                              <p className="text-sm font-medium text-green-600">{u.subscription.plan_name}</p>
-                              <p className="text-xs text-muted-foreground">
-                                ({u.subscription.billing_period}) - Expires: {format(new Date(u.subscription.current_period_end), "PP")}
-                              </p>
-                              <p className={`text-xs font-medium ${u.subscription.status === 'active' ? 'text-green-600' : 'text-yellow-600'}`}>
-                                {u.subscription.status.toUpperCase()}
-                              </p>
-                            </div>
-                          ) : (
-                            <p className="text-sm text-muted-foreground">No active subscription</p>
-                          )}
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => openSubscriptionDialog(u.id, u.username)}
-                          >
-                            {u.subscription ? 'Update Plan' : 'Assign Plan'}
-                          </Button>
-                          {u.subscription && (
-                            <AlertDialog>
-                              <AlertDialogTrigger asChild>
-                                <Button variant="outline" size="sm" className="text-destructive">
-                                  Remove
-                                </Button>
-                              </AlertDialogTrigger>
-                              <AlertDialogContent>
-                                <AlertDialogHeader>
-                                  <AlertDialogTitle>Remove Subscription</AlertDialogTitle>
-                                  <AlertDialogDescription>
-                                    Are you sure you want to remove the subscription for {u.username}? This will immediately revoke their access to premium features.
-                                  </AlertDialogDescription>
-                                </AlertDialogHeader>
-                                <AlertDialogFooter>
-                                  <AlertDialogCancel>Cancel</AlertDialogCancel>
-                                  <AlertDialogAction
-                                    onClick={() => removeSubscriptionMutation.mutate(u.id)}
-                                    className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                                  >
-                                    Remove
-                                  </AlertDialogAction>
-                                </AlertDialogFooter>
-                              </AlertDialogContent>
-                            </AlertDialog>
-                          )}
-                        </div>
-                        <div className="flex items-center gap-2">
+                          <div className="text-xs text-muted-foreground">ID: {u.id}</div>
+                        </TableCell>
+                        <TableCell>
                           <div className="flex items-center gap-2">
                             <Input
                               type="email"
                               placeholder="Email address"
                               value={editingEmails[u.id] ?? u.email ?? ''}
                               onChange={(e) => handleEmailChange(u.id, e.target.value)}
-                              className="w-64"
+                              className="h-8 w-full max-w-[200px]"
                               disabled={!canModifyUser(u)}
                             />
                             {editingEmails[u.id] !== undefined && canModifyUser(u) && (
                               <Button
-                                variant="outline"
+                                variant="ghost"
                                 size="sm"
                                 onClick={() => saveEmail(u.id)}
                                 disabled={updateUserMutation.isPending}
+                                className="h-8 w-8 p-0"
                               >
                                 {updateUserMutation.isPending ? (
                                   <Loader2 className="h-4 w-4 animate-spin" />
@@ -404,72 +371,10 @@ export default function UsersPage() {
                               </Button>
                             )}
                           </div>
-                          {canModifyUser(u) && (
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={() => resetPasswordMutation.mutate({ userId: u.id, username: u.username })}
-                            >
-                              <KeyRound className="h-4 w-4 mr-2" />
-                              Reset Password
-                            </Button>
-                          )}
-                          {isSuperAdmin && u.role !== 'superadmin' && (
-                            <AlertDialog>
-                              <AlertDialogTrigger asChild>
-                                <Button variant="outline" size="sm">
-                                  <Trash2 className="h-4 w-4 text-destructive" />
-                                </Button>
-                              </AlertDialogTrigger>
-                              <AlertDialogContent>
-                                <AlertDialogHeader>
-                                  <AlertDialogTitle>Delete User</AlertDialogTitle>
-                                  <AlertDialogDescription>
-                                    Are you sure you want to delete {u.username}? This action cannot be undone.
-                                  </AlertDialogDescription>
-                                </AlertDialogHeader>
-                                <AlertDialogFooter>
-                                  <AlertDialogCancel>Cancel</AlertDialogCancel>
-                                  <AlertDialogAction
-                                    onClick={() => deleteUserMutation.mutate(u.id)}
-                                    className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                                  >
-                                    Delete
-                                  </AlertDialogAction>
-                                </AlertDialogFooter>
-                              </AlertDialogContent>
-                            </AlertDialog>
-                          )}
-                        </div>
-                        {tempPasswords[u.id] && (
-                          <p className="text-sm text-muted-foreground">
-                            Temporary password: <code className="bg-muted px-1 py-0.5 rounded">{tempPasswords[u.id]}</code>
-                          </p>
-                        )}
-                      </div>
-                      <div className="flex items-center gap-4">
-                        {u.role !== 'superadmin' && canModifyUser(u) && (
-                          <>
-                            <div className="flex items-center gap-2">
-                              <Switch
-                                checked={!u.approved}
-                                onCheckedChange={(checked) =>
-                                  updateUserMutation.mutate({ id: u.id, approved: !checked })
-                                }
-                                disabled={!canModifyUser(u)}
-                              />
-                              <Label>Account Disabled</Label>
-                            </div>
-                            <div className="flex items-center gap-2">
-                              <Switch
-                                checked={u.can_view_nsfw}
-                                onCheckedChange={(checked) =>
-                                  updateUserMutation.mutate({ id: u.id, can_view_nsfw: checked })
-                                }
-                                disabled={!canModifyUser(u)}
-                              />
-                              <Label>NSFW Access</Label>
-                            </div>
+                        </TableCell>
+                        <TableCell>{getStatusBadge(u)}</TableCell>
+                        <TableCell>
+                          {u.role !== 'superadmin' && canModifyUser(u) ? (
                             <Select
                               value={u.role}
                               onValueChange={(value) =>
@@ -477,7 +382,7 @@ export default function UsersPage() {
                               }
                               disabled={!canModifyUser(u)}
                             >
-                              <SelectTrigger className="w-32">
+                              <SelectTrigger className="w-32 h-8">
                                 <SelectValue />
                               </SelectTrigger>
                               <SelectContent>
@@ -486,15 +391,99 @@ export default function UsersPage() {
                                 <SelectItem value="pending">Pending</SelectItem>
                               </SelectContent>
                             </Select>
-                          </>
-                        )}
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
-              ))}
-          </div>
-        </main>
+                          ) : (
+                            <Badge variant="secondary">{u.role}</Badge>
+                          )}
+                        </TableCell>
+                        <TableCell>
+                          {u.subscription ? (
+                            <div className="space-y-1">
+                              <div className="font-medium text-sm">{u.subscription.plan_name}</div>
+                              <div className="text-xs text-muted-foreground">
+                                Expires: {format(new Date(u.subscription.current_period_end), "MMM d, yyyy")}
+                              </div>
+                              <Badge
+                                variant={u.subscription.status === 'active' ? 'default' : 'secondary'}
+                                className={u.subscription.status === 'active' ? 'bg-green-600' : ''}
+                              >
+                                {u.subscription.status}
+                              </Badge>
+                            </div>
+                          ) : (
+                            <span className="text-muted-foreground text-sm">None</span>
+                          )}
+                        </TableCell>
+                        <TableCell>
+                          {u.last_login ? (
+                            <div className="space-y-1">
+                              <div className="text-sm">{format(new Date(u.last_login), "MMM d, yyyy")}</div>
+                              <div className="text-xs text-muted-foreground">{u.last_ip}</div>
+                            </div>
+                          ) : (
+                            <span className="text-muted-foreground text-sm">Never</span>
+                          )}
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
+                                <MoreVertical className="h-4 w-4" />
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end">
+                              <DropdownMenuItem onClick={() => openSubscriptionDialog(u.id, u.username)}>
+                                <CreditCard className="h-4 w-4 mr-2" />
+                                {u.subscription ? 'Update Plan' : 'Assign Plan'}
+                              </DropdownMenuItem>
+                              {u.subscription && (
+                                <DropdownMenuItem
+                                  onClick={() => removeSubscriptionMutation.mutate(u.id)}
+                                  className="text-destructive"
+                                >
+                                  <XCircle className="h-4 w-4 mr-2" />
+                                  Remove Subscription
+                                </DropdownMenuItem>
+                              )}
+                              {canModifyUser(u) && (
+                                <>
+                                  <DropdownMenuSeparator />
+                                  <DropdownMenuItem onClick={() => resetPasswordMutation.mutate({ userId: u.id, username: u.username })}>
+                                    <KeyRound className="h-4 w-4 mr-2" />
+                                    Reset Password
+                                  </DropdownMenuItem>
+                                  {u.role !== 'superadmin' && (
+                                    <DropdownMenuItem
+                                      onClick={() => updateUserMutation.mutate({ id: u.id, enabled: !u.enabled })}
+                                    >
+                                      <UserCog className="h-4 w-4 mr-2" />
+                                      {u.enabled ? 'Deactivate Account' : 'Activate Account'}
+                                    </DropdownMenuItem>
+                                  )}
+                                  {isSuperAdmin && u.role !== 'superadmin' && (
+                                    <DropdownMenuItem
+                                      onClick={() => {
+                                        if (confirm(`Are you sure you want to delete ${u.username}? This action cannot be undone.`)) {
+                                          deleteUserMutation.mutate(u.id);
+                                        }
+                                      }}
+                                      className="text-destructive"
+                                    >
+                                      <Trash2 className="h-4 w-4 mr-2" />
+                                      Delete User
+                                    </DropdownMenuItem>
+                                  )}
+                                </>
+                              )}
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                </TableBody>
+              </Table>
+            </div>
+          </CardContent>
+        </Card>
       </div>
 
       {/* Password Reset Dialog */}
@@ -564,7 +553,6 @@ export default function UsersPage() {
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
-            {/* Plan Selection */}
             <div className="space-y-2">
               <Label htmlFor="plan">Subscription Plan</Label>
               <Select
@@ -584,7 +572,6 @@ export default function UsersPage() {
               </Select>
             </div>
 
-            {/* Billing Period */}
             <div className="space-y-2">
               <Label>Billing Period</Label>
               <RadioGroup
@@ -602,7 +589,6 @@ export default function UsersPage() {
               </RadioGroup>
             </div>
 
-            {/* Duration */}
             <div className="space-y-2">
               <Label htmlFor="duration">Duration (months)</Label>
               <Input
@@ -618,7 +604,6 @@ export default function UsersPage() {
               </p>
             </div>
 
-            {/* Action Buttons */}
             <div className="flex justify-end gap-2 pt-4">
               <Button
                 variant="outline"

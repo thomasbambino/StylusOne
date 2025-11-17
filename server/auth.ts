@@ -12,6 +12,9 @@ import { getIpInfo } from './utils/ip';
 
 const scryptAsync = promisify(scrypt);
 
+// Session version for automatic invalidation after deployments
+const SESSION_VERSION = process.env.SESSION_VERSION || '1.0';
+
 // Initialize Firebase Admin
 try {
   // Delete any existing apps
@@ -142,12 +145,36 @@ export function setupAuth(app: Express) {
     resave: false,
     saveUninitialized: false,
     store: storage.sessionStore,
+    cookie: {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      maxAge: 24 * 60 * 60 * 1000, // 24 hours
+      sameSite: process.env.NODE_ENV === 'production' ? 'strict' : 'lax',
+    },
+    name: 'sessionId',
   };
 
   app.set("trust proxy", 1);
   app.use(session(sessionSettings));
   app.use(passport.initialize());
   app.use(passport.session());
+
+  // Session version checking middleware - invalidates old sessions after deployments
+  app.use((req, res, next) => {
+    if (req.session && req.session.version !== SESSION_VERSION) {
+      console.log(`Session version mismatch (expected: ${SESSION_VERSION}, got: ${req.session.version}), clearing session`);
+      req.session.destroy(() => {
+        res.clearCookie('sessionId', {
+          httpOnly: true,
+          sameSite: process.env.NODE_ENV === 'production' ? 'strict' : 'lax',
+          secure: process.env.NODE_ENV === 'production',
+        });
+      });
+    } else if (req.session) {
+      req.session.version = SESSION_VERSION;
+    }
+    next();
+  });
 
   passport.use(
     new LocalStrategy(async (username, password, done) => {
@@ -191,34 +218,35 @@ export function setupAuth(app: Express) {
     done(null, user);
   });
 
-  app.post("/api/register", async (req, res, next) => {
-    const { username, password, email } = req.body;
+  // NOTE: /api/register endpoint moved to routes.ts to support referral code logic
+  // app.post("/api/register", async (req, res, next) => {
+  //   const { username, password, email } = req.body;
 
-    if (!email) {
-      return res.status(400).json({ message: "Email is required" });
-    }
+  //   if (!email) {
+  //     return res.status(400).json({ message: "Email is required" });
+  //   }
 
-    const existingUser = await storage.getUserByUsername(username);
-    if (existingUser) {
-      return res.status(400).send("Username already exists");
-    }
+  //   const existingUser = await storage.getUserByUsername(username);
+  //   if (existingUser) {
+  //     return res.status(400).send("Username already exists");
+  //   }
 
-    const existingEmail = await storage.getUserByEmail(email);
-    if (existingEmail) {
-      return res.status(400).send("Email already exists");
-    }
+  //   const existingEmail = await storage.getUserByEmail(email);
+  //   if (existingEmail) {
+  //     return res.status(400).send("Email already exists");
+  //   }
 
-    const user = await storage.createUser({
-      ...req.body,
-      email,
-      password: await hashPassword(password),
-    });
+  //   const user = await storage.createUser({
+  //     ...req.body,
+  //     email,
+  //     password: await hashPassword(password),
+  //   });
 
-    req.login(user, (err) => {
-      if (err) return next(err);
-      res.status(201).json(user);
-    });
-  });
+  //   req.login(user, (err) => {
+  //     if (err) return next(err);
+  //     res.status(201).json(user);
+  //   });
+  // });
 
   app.post("/api/login", checkRateLimit, async (req, res, next) => {
     try {
@@ -371,7 +399,22 @@ export function setupAuth(app: Express) {
   app.post("/api/logout", (req, res, next) => {
     req.logout((err) => {
       if (err) return next(err);
-      res.sendStatus(200);
+
+      // Destroy the session completely
+      req.session.destroy((destroyErr) => {
+        if (destroyErr) {
+          console.error('Session destroy error:', destroyErr);
+        }
+
+        // Clear the session cookie explicitly
+        res.clearCookie('sessionId', {
+          httpOnly: true,
+          sameSite: process.env.NODE_ENV === 'production' ? 'strict' : 'lax',
+          secure: process.env.NODE_ENV === 'production',
+        });
+
+        res.sendStatus(200);
+      });
     });
   });
 
@@ -800,7 +843,7 @@ export function setupAuth(app: Express) {
   });
 }
 
-async function hashPassword(password: string) {
+export async function hashPassword(password: string) {
   const salt = randomBytes(16).toString("hex");
   const buf = (await scryptAsync(password, salt, 32)) as Buffer;
   const hashedPassword = `${buf.toString("hex")}.${salt}`;

@@ -8,8 +8,13 @@ import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
 import { useToast } from '@/hooks/use-toast';
-import { Plus, Edit2, Trash2, Users, DollarSign, TrendingUp, Package, ToggleLeft, ToggleRight } from 'lucide-react';
+import { Plus, Edit2, Trash2, Users, DollarSign, Package, Check, X, Loader2, MoreVertical, Tv, Book, Gamepad2, CheckCircle2, XCircle, Calendar, TrendingUp } from 'lucide-react';
 import type { SubscriptionPlan } from '@shared/schema';
+import { Badge } from '@/components/ui/badge';
+import { Separator } from '@/components/ui/separator';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
+import { format } from 'date-fns';
 
 interface PlanFormData {
   name: string;
@@ -50,8 +55,12 @@ export default function SubscriptionPlansPage() {
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [selectedPlan, setSelectedPlan] = useState<SubscriptionPlan | null>(null);
   const [formData, setFormData] = useState<PlanFormData>(defaultFormData);
+  const [viewUsersDialog, setViewUsersDialog] = useState<{ open: boolean; planId: number; planName: string }>({
+    open: false,
+    planId: 0,
+    planName: '',
+  });
 
-  // Fetch all subscription plans
   const { data: plans = [], isLoading: plansLoading } = useQuery<SubscriptionPlan[]>({
     queryKey: ['/api/admin/subscription-plans'],
     queryFn: async () => {
@@ -61,7 +70,6 @@ export default function SubscriptionPlansPage() {
     },
   });
 
-  // Fetch MRR analytics
   const { data: analytics } = useQuery({
     queryKey: ['/api/admin/analytics/mrr'],
     queryFn: async () => {
@@ -71,7 +79,16 @@ export default function SubscriptionPlansPage() {
     },
   });
 
-  // Create plan mutation
+  const { data: planUsers = [], isLoading: planUsersLoading } = useQuery({
+    queryKey: ['/api/admin/analytics/plans', viewUsersDialog.planId, 'users'],
+    queryFn: async () => {
+      const res = await fetch(`/api/admin/analytics/plans/${viewUsersDialog.planId}/users`);
+      if (!res.ok) throw new Error('Failed to fetch plan users');
+      return res.json();
+    },
+    enabled: viewUsersDialog.open && viewUsersDialog.planId > 0,
+  });
+
   const createPlanMutation = useMutation({
     mutationFn: async (data: PlanFormData) => {
       const res = await fetch('/api/admin/subscription-plans', {
@@ -80,8 +97,8 @@ export default function SubscriptionPlansPage() {
         body: JSON.stringify({
           name: data.name,
           description: data.description,
-          price_monthly: Math.round(parseFloat(data.price_monthly) * 100), // Convert to cents
-          price_annual: Math.round(parseFloat(data.price_annual) * 100), // Convert to cents
+          price_monthly: Math.round(parseFloat(data.price_monthly) * 100),
+          price_annual: Math.round(parseFloat(data.price_annual) * 100),
           features: {
             ...data.features,
             max_favorite_channels: parseInt(data.features.max_favorite_channels),
@@ -115,7 +132,6 @@ export default function SubscriptionPlansPage() {
     },
   });
 
-  // Update plan mutation
   const updatePlanMutation = useMutation({
     mutationFn: async ({ id, data }: { id: number; data: PlanFormData }) => {
       const res = await fetch(`/api/admin/subscription-plans/${id}`, {
@@ -156,7 +172,6 @@ export default function SubscriptionPlansPage() {
     },
   });
 
-  // Delete plan mutation
   const deletePlanMutation = useMutation({
     mutationFn: async (id: number) => {
       const res = await fetch(`/api/admin/subscription-plans/${id}`, {
@@ -185,7 +200,6 @@ export default function SubscriptionPlansPage() {
     },
   });
 
-  // Toggle plan active/inactive mutation
   const togglePlanMutation = useMutation({
     mutationFn: async (id: number) => {
       const res = await fetch(`/api/subscriptions/admin/plans/${id}/toggle`, {
@@ -249,12 +263,22 @@ export default function SubscriptionPlansPage() {
     }
   };
 
+  const getFeatureIcons = (plan: SubscriptionPlan) => {
+    const features = [];
+    if (plan.features.plex_access) features.push({ icon: Package, label: 'Plex' });
+    if (plan.features.live_tv_access) features.push({ icon: Tv, label: 'Live TV' });
+    if (plan.features.books_access) features.push({ icon: Book, label: 'Books' });
+    if (plan.features.game_servers_access) features.push({ icon: Gamepad2, label: 'Game Servers' });
+    return features;
+  };
+
   return (
-    <div className="container mx-auto p-6 space-y-6">
+    <div className="container mx-auto px-4 py-6 space-y-6">
+      {/* Header */}
       <div className="flex justify-between items-center">
         <div>
           <h1 className="text-3xl font-bold">Subscription Plans</h1>
-          <p className="text-muted-foreground">Manage subscription plans and pricing</p>
+          <p className="text-muted-foreground mt-1">Manage subscription plans and pricing</p>
         </div>
         <Button onClick={() => setIsCreateDialogOpen(true)}>
           <Plus className="h-4 w-4 mr-2" />
@@ -262,127 +286,206 @@ export default function SubscriptionPlansPage() {
         </Button>
       </div>
 
-      {/* Analytics Cards */}
+      {/* Analytics */}
       {analytics && (
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
           <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Monthly Recurring Revenue</CardTitle>
-              <DollarSign className="h-4 w-4 text-muted-foreground" />
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-3">
+              <CardTitle className="text-sm font-medium text-muted-foreground">Daily Revenue</CardTitle>
+              <Calendar className="h-5 w-5 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">${analytics.dailyRevenue?.toFixed(2) || '0.00'}</div>
+              <p className="text-xs text-muted-foreground mt-1">Avg per day</p>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-3">
+              <CardTitle className="text-sm font-medium text-muted-foreground">Monthly Revenue</CardTitle>
+              <DollarSign className="h-5 w-5 text-muted-foreground" />
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold">${analytics.totalMRR?.toFixed(2) || '0.00'}</div>
+              <p className="text-xs text-muted-foreground mt-1">MRR</p>
             </CardContent>
           </Card>
 
           <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Active Subscribers</CardTitle>
-              <Users className="h-4 w-4 text-muted-foreground" />
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-3">
+              <CardTitle className="text-sm font-medium text-muted-foreground">Annual Revenue</CardTitle>
+              <TrendingUp className="h-5 w-5 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">${analytics.totalARR?.toFixed(2) || '0.00'}</div>
+              <p className="text-xs text-muted-foreground mt-1">ARR</p>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-3">
+              <CardTitle className="text-sm font-medium text-muted-foreground">Active Subscribers</CardTitle>
+              <Users className="h-5 w-5 text-muted-foreground" />
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold">{analytics.totalActiveSubscribers || 0}</div>
+              <p className="text-xs text-muted-foreground mt-1">Users</p>
             </CardContent>
           </Card>
 
           <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Total Plans</CardTitle>
-              <Package className="h-4 w-4 text-muted-foreground" />
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-3">
+              <CardTitle className="text-sm font-medium text-muted-foreground">Available Plans</CardTitle>
+              <Package className="h-5 w-5 text-muted-foreground" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">{plans.length}</div>
+              <div className="text-2xl font-bold">{plans.filter(p => p.is_active).length} / {plans.length}</div>
+              <p className="text-xs text-muted-foreground mt-1">Active / Total</p>
             </CardContent>
           </Card>
         </div>
       )}
 
-      {/* Plans List */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+      {/* Plans Table */}
+      <div>
+        <h2 className="text-xl font-semibold mb-4">Plans</h2>
         {plansLoading ? (
-          <div className="col-span-full text-center py-8 text-muted-foreground">
-            Loading plans...
+          <div className="text-center py-12">
+            <Loader2 className="h-8 w-8 animate-spin mx-auto text-muted-foreground" />
           </div>
         ) : plans.length === 0 ? (
-          <div className="col-span-full text-center py-8 text-muted-foreground">
-            No subscription plans yet. Create one to get started.
-          </div>
+          <Card>
+            <CardContent className="py-12">
+              <div className="text-center text-muted-foreground">
+                <Package className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                <p className="text-lg font-medium">No subscription plans yet</p>
+                <p className="text-sm mt-1">Create your first plan to get started.</p>
+              </div>
+            </CardContent>
+          </Card>
         ) : (
-          plans.map((plan) => (
-            <Card key={plan.id} className={!plan.is_active ? 'opacity-60' : ''}>
-              <CardHeader>
-                <div className="flex justify-between items-start">
-                  <div>
-                    <CardTitle>{plan.name}</CardTitle>
-                    <CardDescription className="mt-1">{plan.description}</CardDescription>
-                  </div>
-                  <div className="flex gap-1">
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => togglePlanMutation.mutate(plan.id)}
-                      title={plan.is_active ? 'Deactivate plan' : 'Activate plan'}
-                    >
-                      {plan.is_active ? (
-                        <ToggleRight className="h-4 w-4 text-green-500" />
-                      ) : (
-                        <ToggleLeft className="h-4 w-4 text-gray-400" />
-                      )}
-                    </Button>
-                    <Button variant="ghost" size="icon" onClick={() => handleEdit(plan)}>
-                      <Edit2 className="h-4 w-4" />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => handleDelete(plan)}
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
-                  </div>
-                </div>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div>
-                  <div className="text-3xl font-bold">
-                    ${(plan.price_monthly / 100).toFixed(2)}
-                    <span className="text-sm font-normal text-muted-foreground">/mo</span>
-                  </div>
-                  <div className="text-sm text-muted-foreground">
-                    ${(plan.price_annual / 100).toFixed(2)}/year
-                  </div>
-                </div>
-
-                <div className="space-y-2 text-sm">
-                  <div className="flex items-center gap-2">
-                    <div className={`w-2 h-2 rounded-full ${plan.features.plex_access ? 'bg-green-500' : 'bg-gray-300'}`} />
-                    Plex Access
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <div className={`w-2 h-2 rounded-full ${plan.features.live_tv_access ? 'bg-green-500' : 'bg-gray-300'}`} />
-                    Live TV Access
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <div className={`w-2 h-2 rounded-full ${plan.features.books_access ? 'bg-green-500' : 'bg-gray-300'}`} />
-                    Books Access
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <div className={`w-2 h-2 rounded-full ${plan.features.game_servers_access ? 'bg-green-500' : 'bg-gray-300'}`} />
-                    Game Servers Access
-                  </div>
-                  <div className="text-xs text-muted-foreground">
-                    {plan.features.max_favorite_channels} favorite channels
-                  </div>
-                </div>
-
-                {!plan.is_active && (
-                  <div className="text-xs text-yellow-600 dark:text-yellow-500">
-                    Inactive - not available for subscription
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-          ))
+          <Card>
+            <CardContent className="p-0">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="w-[250px]">Plan</TableHead>
+                    <TableHead>Monthly Price</TableHead>
+                    <TableHead>Annual Price</TableHead>
+                    <TableHead>Features</TableHead>
+                    <TableHead>Max Channels</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead className="text-right">Actions</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {plans
+                    .sort((a, b) => a.sort_order - b.sort_order)
+                    .map((plan) => {
+                      const featureIcons = getFeatureIcons(plan);
+                      return (
+                        <TableRow
+                          key={plan.id}
+                          className={`cursor-pointer hover:bg-muted/50 ${!plan.is_active ? 'opacity-60' : ''}`}
+                          onClick={() => setViewUsersDialog({ open: true, planId: plan.id, planName: plan.name })}
+                        >
+                          <TableCell>
+                            <div>
+                              <div className="font-medium">{plan.name}</div>
+                              {plan.description && (
+                                <div className="text-sm text-muted-foreground line-clamp-2 max-w-[230px]">
+                                  {plan.description}
+                                </div>
+                              )}
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            <div className="font-medium">
+                              ${(plan.price_monthly / 100).toFixed(2)}
+                            </div>
+                            <div className="text-sm text-muted-foreground">/month</div>
+                          </TableCell>
+                          <TableCell>
+                            <div className="font-medium">
+                              ${(plan.price_annual / 100).toFixed(2)}
+                            </div>
+                            <div className="text-sm text-muted-foreground">/year</div>
+                          </TableCell>
+                          <TableCell>
+                            <div className="flex gap-2">
+                              {featureIcons.map((feature, idx) => {
+                                const Icon = feature.icon;
+                                return (
+                                  <div
+                                    key={idx}
+                                    className="flex items-center gap-1 text-xs px-2 py-1 rounded-md bg-secondary"
+                                    title={feature.label}
+                                  >
+                                    <Icon className="h-3 w-3" />
+                                    <span>{feature.label}</span>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            <span className="text-sm">{plan.features.max_favorite_channels}</span>
+                          </TableCell>
+                          <TableCell>
+                            {plan.is_active ? (
+                              <Badge variant="default" className="flex items-center gap-1 w-fit bg-green-600">
+                                <CheckCircle2 className="h-3 w-3" />
+                                Active
+                              </Badge>
+                            ) : (
+                              <Badge variant="secondary" className="flex items-center gap-1 w-fit">
+                                <XCircle className="h-3 w-3" />
+                                Inactive
+                              </Badge>
+                            )}
+                          </TableCell>
+                          <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
+                                <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
+                                  <MoreVertical className="h-4 w-4" />
+                                </Button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="end">
+                                <DropdownMenuItem onClick={() => togglePlanMutation.mutate(plan.id)}>
+                                  {plan.is_active ? (
+                                    <>
+                                      <XCircle className="h-4 w-4 mr-2" />
+                                      Deactivate
+                                    </>
+                                  ) : (
+                                    <>
+                                      <CheckCircle2 className="h-4 w-4 mr-2" />
+                                      Activate
+                                    </>
+                                  )}
+                                </DropdownMenuItem>
+                                <DropdownMenuItem onClick={() => handleEdit(plan)}>
+                                  <Edit2 className="h-4 w-4 mr-2" />
+                                  Edit Plan
+                                </DropdownMenuItem>
+                                <DropdownMenuItem
+                                  onClick={() => handleDelete(plan)}
+                                  className="text-destructive focus:text-destructive"
+                                >
+                                  <Trash2 className="h-4 w-4 mr-2" />
+                                  Delete Plan
+                                </DropdownMenuItem>
+                              </DropdownMenuContent>
+                            </DropdownMenu>
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
         )}
       </div>
 
@@ -397,141 +500,153 @@ export default function SubscriptionPlansPage() {
               </DialogDescription>
             </DialogHeader>
 
-            <div className="my-4 space-y-4">
-              <div>
-                <Label htmlFor="name">Plan Name</Label>
-                <Input
-                  id="name"
-                  value={formData.name}
-                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                  placeholder="e.g., Basic, Premium, Enterprise"
-                  required
-                />
-              </div>
-
-              <div>
-                <Label htmlFor="description">Description</Label>
-                <Textarea
-                  id="description"
-                  value={formData.description}
-                  onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                  placeholder="Describe what's included in this plan"
-                  rows={3}
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
+            <div className="my-6 space-y-6">
+              {/* Basic Info */}
+              <div className="space-y-4">
                 <div>
-                  <Label htmlFor="price_monthly">Monthly Price ($)</Label>
+                  <Label htmlFor="name">Plan Name</Label>
                   <Input
-                    id="price_monthly"
-                    type="number"
-                    step="0.01"
-                    value={formData.price_monthly}
-                    onChange={(e) => setFormData({ ...formData, price_monthly: e.target.value })}
-                    placeholder="9.99"
+                    id="name"
+                    value={formData.name}
+                    onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                    placeholder="e.g., Basic, Premium, Enterprise"
                     required
                   />
                 </div>
 
                 <div>
-                  <Label htmlFor="price_annual">Annual Price ($)</Label>
-                  <Input
-                    id="price_annual"
-                    type="number"
-                    step="0.01"
-                    value={formData.price_annual}
-                    onChange={(e) => setFormData({ ...formData, price_annual: e.target.value })}
-                    placeholder="99.99"
-                    required
+                  <Label htmlFor="description">Description</Label>
+                  <Textarea
+                    id="description"
+                    value={formData.description}
+                    onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                    placeholder="Describe what's included in this plan"
+                    rows={2}
                   />
                 </div>
               </div>
 
-              <div className="space-y-3">
-                <Label>Features</Label>
+              <Separator />
 
+              {/* Pricing */}
+              <div className="space-y-4">
+                <h4 className="font-medium">Pricing</h4>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <Label htmlFor="price_monthly">Monthly Price ($)</Label>
+                    <Input
+                      id="price_monthly"
+                      type="number"
+                      step="0.01"
+                      value={formData.price_monthly}
+                      onChange={(e) => setFormData({ ...formData, price_monthly: e.target.value })}
+                      placeholder="9.99"
+                      required
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="price_annual">Annual Price ($)</Label>
+                    <Input
+                      id="price_annual"
+                      type="number"
+                      step="0.01"
+                      value={formData.price_annual}
+                      onChange={(e) => setFormData({ ...formData, price_annual: e.target.value })}
+                      placeholder="99.99"
+                      required
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <Separator />
+
+              {/* Features */}
+              <div className="space-y-4">
+                <h4 className="font-medium">Features</h4>
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <Label htmlFor="plex_access" className="font-normal">Plex Access</Label>
+                    <Switch
+                      id="plex_access"
+                      checked={formData.features.plex_access}
+                      onCheckedChange={(checked) => setFormData({
+                        ...formData,
+                        features: { ...formData.features, plex_access: checked }
+                      })}
+                    />
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <Label htmlFor="live_tv_access" className="font-normal">Live TV Access</Label>
+                    <Switch
+                      id="live_tv_access"
+                      checked={formData.features.live_tv_access}
+                      onCheckedChange={(checked) => setFormData({
+                        ...formData,
+                        features: { ...formData.features, live_tv_access: checked }
+                      })}
+                    />
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <Label htmlFor="books_access" className="font-normal">Books Access</Label>
+                    <Switch
+                      id="books_access"
+                      checked={formData.features.books_access}
+                      onCheckedChange={(checked) => setFormData({
+                        ...formData,
+                        features: { ...formData.features, books_access: checked }
+                      })}
+                    />
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <Label htmlFor="game_servers_access" className="font-normal">Game Servers Access</Label>
+                    <Switch
+                      id="game_servers_access"
+                      checked={formData.features.game_servers_access}
+                      onCheckedChange={(checked) => setFormData({
+                        ...formData,
+                        features: { ...formData.features, game_servers_access: checked }
+                      })}
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="max_favorite_channels">Max Favorite Channels</Label>
+                    <Input
+                      id="max_favorite_channels"
+                      type="number"
+                      value={formData.features.max_favorite_channels}
+                      onChange={(e) => setFormData({
+                        ...formData,
+                        features: { ...formData.features, max_favorite_channels: e.target.value }
+                      })}
+                      placeholder="10"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <Separator />
+
+              {/* Settings */}
+              <div className="space-y-4">
                 <div className="flex items-center justify-between">
-                  <Label htmlFor="plex_access" className="font-normal">Plex Access</Label>
+                  <Label htmlFor="is_active" className="font-normal">Plan Active</Label>
                   <Switch
-                    id="plex_access"
-                    checked={formData.features.plex_access}
-                    onCheckedChange={(checked) => setFormData({
-                      ...formData,
-                      features: { ...formData.features, plex_access: checked }
-                    })}
+                    id="is_active"
+                    checked={formData.is_active}
+                    onCheckedChange={(checked) => setFormData({ ...formData, is_active: checked })}
                   />
                 </div>
-
-                <div className="flex items-center justify-between">
-                  <Label htmlFor="live_tv_access" className="font-normal">Live TV Access</Label>
-                  <Switch
-                    id="live_tv_access"
-                    checked={formData.features.live_tv_access}
-                    onCheckedChange={(checked) => setFormData({
-                      ...formData,
-                      features: { ...formData.features, live_tv_access: checked }
-                    })}
-                  />
-                </div>
-
-                <div className="flex items-center justify-between">
-                  <Label htmlFor="books_access" className="font-normal">Books Access</Label>
-                  <Switch
-                    id="books_access"
-                    checked={formData.features.books_access}
-                    onCheckedChange={(checked) => setFormData({
-                      ...formData,
-                      features: { ...formData.features, books_access: checked }
-                    })}
-                  />
-                </div>
-
-                <div className="flex items-center justify-between">
-                  <Label htmlFor="game_servers_access" className="font-normal">Game Servers Access</Label>
-                  <Switch
-                    id="game_servers_access"
-                    checked={formData.features.game_servers_access}
-                    onCheckedChange={(checked) => setFormData({
-                      ...formData,
-                      features: { ...formData.features, game_servers_access: checked }
-                    })}
-                  />
-                </div>
-
                 <div>
-                  <Label htmlFor="max_favorite_channels">Max Favorite Channels</Label>
+                  <Label htmlFor="sort_order">Sort Order</Label>
                   <Input
-                    id="max_favorite_channels"
+                    id="sort_order"
                     type="number"
-                    value={formData.features.max_favorite_channels}
-                    onChange={(e) => setFormData({
-                      ...formData,
-                      features: { ...formData.features, max_favorite_channels: e.target.value }
-                    })}
-                    placeholder="10"
+                    value={formData.sort_order}
+                    onChange={(e) => setFormData({ ...formData, sort_order: e.target.value })}
+                    placeholder="0"
                   />
                 </div>
-              </div>
-
-              <div className="flex items-center justify-between">
-                <Label htmlFor="is_active" className="font-normal">Plan Active</Label>
-                <Switch
-                  id="is_active"
-                  checked={formData.is_active}
-                  onCheckedChange={(checked) => setFormData({ ...formData, is_active: checked })}
-                />
-              </div>
-
-              <div>
-                <Label htmlFor="sort_order">Sort Order</Label>
-                <Input
-                  id="sort_order"
-                  type="number"
-                  value={formData.sort_order}
-                  onChange={(e) => setFormData({ ...formData, sort_order: e.target.value })}
-                  placeholder="0"
-                />
               </div>
             </div>
 
@@ -540,7 +655,14 @@ export default function SubscriptionPlansPage() {
                 Cancel
               </Button>
               <Button type="submit" disabled={createPlanMutation.isPending}>
-                {createPlanMutation.isPending ? 'Creating...' : 'Create Plan'}
+                {createPlanMutation.isPending ? (
+                  <>
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    Creating...
+                  </>
+                ) : (
+                  'Create Plan'
+                )}
               </Button>
             </DialogFooter>
           </form>
@@ -558,141 +680,153 @@ export default function SubscriptionPlansPage() {
               </DialogDescription>
             </DialogHeader>
 
-            <div className="my-4 space-y-4">
-              <div>
-                <Label htmlFor="edit-name">Plan Name</Label>
-                <Input
-                  id="edit-name"
-                  value={formData.name}
-                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                  placeholder="e.g., Basic, Premium, Enterprise"
-                  required
-                />
-              </div>
-
-              <div>
-                <Label htmlFor="edit-description">Description</Label>
-                <Textarea
-                  id="edit-description"
-                  value={formData.description}
-                  onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                  placeholder="Describe what's included in this plan"
-                  rows={3}
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
+            <div className="my-6 space-y-6">
+              {/* Basic Info */}
+              <div className="space-y-4">
                 <div>
-                  <Label htmlFor="edit-price_monthly">Monthly Price ($)</Label>
+                  <Label htmlFor="edit-name">Plan Name</Label>
                   <Input
-                    id="edit-price_monthly"
-                    type="number"
-                    step="0.01"
-                    value={formData.price_monthly}
-                    onChange={(e) => setFormData({ ...formData, price_monthly: e.target.value })}
-                    placeholder="9.99"
+                    id="edit-name"
+                    value={formData.name}
+                    onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                    placeholder="e.g., Basic, Premium, Enterprise"
                     required
                   />
                 </div>
 
                 <div>
-                  <Label htmlFor="edit-price_annual">Annual Price ($)</Label>
-                  <Input
-                    id="edit-price_annual"
-                    type="number"
-                    step="0.01"
-                    value={formData.price_annual}
-                    onChange={(e) => setFormData({ ...formData, price_annual: e.target.value })}
-                    placeholder="99.99"
-                    required
+                  <Label htmlFor="edit-description">Description</Label>
+                  <Textarea
+                    id="edit-description"
+                    value={formData.description}
+                    onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                    placeholder="Describe what's included in this plan"
+                    rows={2}
                   />
                 </div>
               </div>
 
-              <div className="space-y-3">
-                <Label>Features</Label>
+              <Separator />
 
+              {/* Pricing */}
+              <div className="space-y-4">
+                <h4 className="font-medium">Pricing</h4>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <Label htmlFor="edit-price_monthly">Monthly Price ($)</Label>
+                    <Input
+                      id="edit-price_monthly"
+                      type="number"
+                      step="0.01"
+                      value={formData.price_monthly}
+                      onChange={(e) => setFormData({ ...formData, price_monthly: e.target.value })}
+                      placeholder="9.99"
+                      required
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="edit-price_annual">Annual Price ($)</Label>
+                    <Input
+                      id="edit-price_annual"
+                      type="number"
+                      step="0.01"
+                      value={formData.price_annual}
+                      onChange={(e) => setFormData({ ...formData, price_annual: e.target.value })}
+                      placeholder="99.99"
+                      required
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <Separator />
+
+              {/* Features */}
+              <div className="space-y-4">
+                <h4 className="font-medium">Features</h4>
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <Label htmlFor="edit-plex_access" className="font-normal">Plex Access</Label>
+                    <Switch
+                      id="edit-plex_access"
+                      checked={formData.features.plex_access}
+                      onCheckedChange={(checked) => setFormData({
+                        ...formData,
+                        features: { ...formData.features, plex_access: checked }
+                      })}
+                    />
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <Label htmlFor="edit-live_tv_access" className="font-normal">Live TV Access</Label>
+                    <Switch
+                      id="edit-live_tv_access"
+                      checked={formData.features.live_tv_access}
+                      onCheckedChange={(checked) => setFormData({
+                        ...formData,
+                        features: { ...formData.features, live_tv_access: checked }
+                      })}
+                    />
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <Label htmlFor="edit-books_access" className="font-normal">Books Access</Label>
+                    <Switch
+                      id="edit-books_access"
+                      checked={formData.features.books_access}
+                      onCheckedChange={(checked) => setFormData({
+                        ...formData,
+                        features: { ...formData.features, books_access: checked }
+                      })}
+                    />
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <Label htmlFor="edit-game_servers_access" className="font-normal">Game Servers Access</Label>
+                    <Switch
+                      id="edit-game_servers_access"
+                      checked={formData.features.game_servers_access}
+                      onCheckedChange={(checked) => setFormData({
+                        ...formData,
+                        features: { ...formData.features, game_servers_access: checked }
+                      })}
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="edit-max_favorite_channels">Max Favorite Channels</Label>
+                    <Input
+                      id="edit-max_favorite_channels"
+                      type="number"
+                      value={formData.features.max_favorite_channels}
+                      onChange={(e) => setFormData({
+                        ...formData,
+                        features: { ...formData.features, max_favorite_channels: e.target.value }
+                      })}
+                      placeholder="10"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <Separator />
+
+              {/* Settings */}
+              <div className="space-y-4">
                 <div className="flex items-center justify-between">
-                  <Label htmlFor="edit-plex_access" className="font-normal">Plex Access</Label>
+                  <Label htmlFor="edit-is_active" className="font-normal">Plan Active</Label>
                   <Switch
-                    id="edit-plex_access"
-                    checked={formData.features.plex_access}
-                    onCheckedChange={(checked) => setFormData({
-                      ...formData,
-                      features: { ...formData.features, plex_access: checked }
-                    })}
+                    id="edit-is_active"
+                    checked={formData.is_active}
+                    onCheckedChange={(checked) => setFormData({ ...formData, is_active: checked })}
                   />
                 </div>
-
-                <div className="flex items-center justify-between">
-                  <Label htmlFor="edit-live_tv_access" className="font-normal">Live TV Access</Label>
-                  <Switch
-                    id="edit-live_tv_access"
-                    checked={formData.features.live_tv_access}
-                    onCheckedChange={(checked) => setFormData({
-                      ...formData,
-                      features: { ...formData.features, live_tv_access: checked }
-                    })}
-                  />
-                </div>
-
-                <div className="flex items-center justify-between">
-                  <Label htmlFor="edit-books_access" className="font-normal">Books Access</Label>
-                  <Switch
-                    id="edit-books_access"
-                    checked={formData.features.books_access}
-                    onCheckedChange={(checked) => setFormData({
-                      ...formData,
-                      features: { ...formData.features, books_access: checked }
-                    })}
-                  />
-                </div>
-
-                <div className="flex items-center justify-between">
-                  <Label htmlFor="edit-game_servers_access" className="font-normal">Game Servers Access</Label>
-                  <Switch
-                    id="edit-game_servers_access"
-                    checked={formData.features.game_servers_access}
-                    onCheckedChange={(checked) => setFormData({
-                      ...formData,
-                      features: { ...formData.features, game_servers_access: checked }
-                    })}
-                  />
-                </div>
-
                 <div>
-                  <Label htmlFor="edit-max_favorite_channels">Max Favorite Channels</Label>
+                  <Label htmlFor="edit-sort_order">Sort Order</Label>
                   <Input
-                    id="edit-max_favorite_channels"
+                    id="edit-sort_order"
                     type="number"
-                    value={formData.features.max_favorite_channels}
-                    onChange={(e) => setFormData({
-                      ...formData,
-                      features: { ...formData.features, max_favorite_channels: e.target.value }
-                    })}
-                    placeholder="10"
+                    value={formData.sort_order}
+                    onChange={(e) => setFormData({ ...formData, sort_order: e.target.value })}
+                    placeholder="0"
                   />
                 </div>
-              </div>
-
-              <div className="flex items-center justify-between">
-                <Label htmlFor="edit-is_active" className="font-normal">Plan Active</Label>
-                <Switch
-                  id="edit-is_active"
-                  checked={formData.is_active}
-                  onCheckedChange={(checked) => setFormData({ ...formData, is_active: checked })}
-                />
-              </div>
-
-              <div>
-                <Label htmlFor="edit-sort_order">Sort Order</Label>
-                <Input
-                  id="edit-sort_order"
-                  type="number"
-                  value={formData.sort_order}
-                  onChange={(e) => setFormData({ ...formData, sort_order: e.target.value })}
-                  placeholder="0"
-                />
               </div>
             </div>
 
@@ -701,10 +835,87 @@ export default function SubscriptionPlansPage() {
                 Cancel
               </Button>
               <Button type="submit" disabled={updatePlanMutation.isPending}>
-                {updatePlanMutation.isPending ? 'Updating...' : 'Update Plan'}
+                {updatePlanMutation.isPending ? (
+                  <>
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    Updating...
+                  </>
+                ) : (
+                  'Update Plan'
+                )}
               </Button>
             </DialogFooter>
           </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* View Plan Users Dialog */}
+      <Dialog open={viewUsersDialog.open} onOpenChange={(open) => setViewUsersDialog({ ...viewUsersDialog, open })}>
+        <DialogContent className="max-w-3xl max-h-[80vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Users on {viewUsersDialog.planName} Plan</DialogTitle>
+            <DialogDescription>
+              All users currently subscribed to this plan
+            </DialogDescription>
+          </DialogHeader>
+
+          {planUsersLoading ? (
+            <div className="text-center py-12">
+              <Loader2 className="h-8 w-8 animate-spin mx-auto text-muted-foreground" />
+            </div>
+          ) : planUsers.length === 0 ? (
+            <div className="text-center py-12 text-muted-foreground">
+              <Users className="h-12 w-12 mx-auto mb-4 opacity-50" />
+              <p>No users on this plan yet</p>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              <div className="text-sm text-muted-foreground">
+                {planUsers.length} {planUsers.length === 1 ? 'user' : 'users'} subscribed
+              </div>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>User</TableHead>
+                    <TableHead>Email</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead>Billing</TableHead>
+                    <TableHead>Expires</TableHead>
+                    <TableHead>Joined</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {planUsers.map((user: any) => (
+                    <TableRow key={user.id}>
+                      <TableCell className="font-medium">{user.username}</TableCell>
+                      <TableCell className="text-sm">{user.email}</TableCell>
+                      <TableCell>
+                        <Badge
+                          variant={user.status === 'active' ? 'default' : 'secondary'}
+                          className={user.status === 'active' ? 'bg-green-600' : ''}
+                        >
+                          {user.status}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="text-sm capitalize">{user.billing_period}</TableCell>
+                      <TableCell className="text-sm">
+                        {format(new Date(user.current_period_end), "MMM d, yyyy")}
+                      </TableCell>
+                      <TableCell className="text-sm text-muted-foreground">
+                        {format(new Date(user.created_at), "MMM d, yyyy")}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          )}
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setViewUsersDialog({ ...viewUsersDialog, open: false })}>
+              Close
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>

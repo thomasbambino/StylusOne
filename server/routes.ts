@@ -1,6 +1,6 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
-import { setupAuth } from "./auth";
+import { setupAuth, hashPassword } from "./auth";
 import { storage } from "./storage";
 import { insertServiceSchema, insertGameServerSchema, updateServiceSchema, updateGameServerSchema, GameServer } from "@shared/schema";
 import { fromZodError } from "zod-validation-error";
@@ -1257,18 +1257,28 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // No uptime logging endpoints - completely removed from the application
   // Inside /api/register route
-  app.post("/api/register", async (req, res) => {
+  app.post("/api/register", async (req, res, next) => {
     if (req.isAuthenticated()) {
       return res.status(400).json({ message: "Already logged in" });
     }
 
     try {
-      const existingUser = await storage.getUserByUsername(req.body.username);
+      const { username, password, email, referral_code } = req.body;
+
+      if (!email) {
+        return res.status(400).json({ message: "Email is required" });
+      }
+
+      const existingUser = await storage.getUserByUsername(username);
       if (existingUser) {
         return res.status(400).json({ message: "Username already exists" });
       }
 
-      const { referral_code, ...userData } = req.body;
+      const existingEmail = await storage.getUserByEmail(email);
+      if (existingEmail) {
+        return res.status(400).json({ message: "Email already exists" });
+      }
+
       let isAutoApproved = false;
       let referralCodeData = null;
 
@@ -1283,7 +1293,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // Create user with appropriate settings based on referral code
       const user = await storage.createUser({
-        ...userData,
+        username,
+        email,
+        password: await hashPassword(password),
         role: isAutoApproved ? 'user' : 'pending',
         approved: isAutoApproved,
         enabled: isAutoApproved,

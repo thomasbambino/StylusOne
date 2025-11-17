@@ -33,15 +33,15 @@ export default function MyReferralsPage() {
   const { toast } = useToast();
   const [copied, setCopied] = useState(false);
 
-  const { data: referralCode, isLoading: codeLoading } = useQuery<ReferralCode>({
+  const { data: referralCode, isLoading: codeLoading, error: codeError } = useQuery<ReferralCode>({
     queryKey: ["/api/referrals/code"],
   });
 
-  const { data: stats, isLoading: statsLoading } = useQuery<ReferralStats>({
+  const { data: stats, isLoading: statsLoading, error: statsError } = useQuery<ReferralStats>({
     queryKey: ["/api/referrals/stats"],
   });
 
-  const { data: referrals, isLoading: referralsLoading } = useQuery<Referral[]>({
+  const { data: referrals, isLoading: referralsLoading, error: referralsError } = useQuery<Referral[]>({
     queryKey: ["/api/referrals/list"],
   });
 
@@ -81,6 +81,24 @@ export default function MyReferralsPage() {
     return (
       <div className="flex items-center justify-center min-h-[400px]">
         <Loader2 className="h-8 w-8 animate-spin" />
+      </div>
+    );
+  }
+
+  if (codeError || statsError) {
+    return (
+      <div className="container mx-auto p-6 max-w-6xl">
+        <Card>
+          <CardHeader>
+            <CardTitle>Error Loading Referral Data</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="text-destructive">
+              <p>{codeError?.message || statsError?.message || 'An error occurred while loading your referral information.'}</p>
+              <p className="mt-2 text-sm text-muted-foreground">Please try refreshing the page.</p>
+            </div>
+          </CardContent>
+        </Card>
       </div>
     );
   }

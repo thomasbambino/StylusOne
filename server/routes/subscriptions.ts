@@ -460,6 +460,7 @@ router.get('/admin/users', requireAuth, async (req, res) => {
           email: user.email,
           role: user.role,
           approved: user.approved,
+          enabled: user.enabled,
           can_view_nsfw: user.can_view_nsfw,
           last_login: user.last_login,
           last_ip: user.last_ip,

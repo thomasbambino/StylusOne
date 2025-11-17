@@ -248,8 +248,16 @@ router.get('/analytics/mrr', requireSuperAdmin, async (req, res) => {
       .from(userSubscriptions)
       .groupBy(userSubscriptions.status);
 
+    // Calculate daily revenue (MRR / 30)
+    const dailyRevenue = totalMRR / 30;
+
+    // Calculate ARR (Annual Recurring Revenue)
+    const totalARR = totalMRR * 12;
+
     res.json({
       totalMRR: Math.round(totalMRR * 100) / 100, // Round to 2 decimal places
+      totalARR: Math.round(totalARR * 100) / 100,
+      dailyRevenue: Math.round(dailyRevenue * 100) / 100,
       totalActiveSubscribers: activeSubscriptions.length,
       planBreakdown,
       statusCounts: statusCounts.reduce((acc, item) => {
@@ -260,6 +268,37 @@ router.get('/analytics/mrr', requireSuperAdmin, async (req, res) => {
   } catch (error) {
     console.error('Error calculating MRR:', error);
     res.status(500).json({ error: 'Failed to calculate analytics' });
+  }
+});
+
+/**
+ * GET /api/admin/analytics/plans/:planId/users
+ * Get users subscribed to a specific plan
+ */
+router.get('/analytics/plans/:planId/users', requireSuperAdmin, async (req, res) => {
+  try {
+    const planId = parseInt(req.params.planId);
+
+    const users = await db
+      .select({
+        id: usersTable.id,
+        username: usersTable.username,
+        email: usersTable.email,
+        status: userSubscriptions.status,
+        billing_period: userSubscriptions.billing_period,
+        current_period_start: userSubscriptions.current_period_start,
+        current_period_end: userSubscriptions.current_period_end,
+        created_at: userSubscriptions.created_at,
+      })
+      .from(userSubscriptions)
+      .innerJoin(usersTable, eq(usersTable.id, userSubscriptions.user_id))
+      .where(eq(userSubscriptions.plan_id, planId))
+      .orderBy(userSubscriptions.created_at);
+
+    res.json(users);
+  } catch (error) {
+    console.error('Error fetching plan users:', error);
+    res.status(500).json({ error: 'Failed to fetch plan users' });
   }
 });
 
