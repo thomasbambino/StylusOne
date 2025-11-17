@@ -14,35 +14,12 @@ services:
     ports:
       - "5001:5000"  # Use 5001 by default to avoid conflicts
     env_file:
-      - .env
+      - .env.production  # Production uses .env.production, development uses .env
     environment:
+      # All configuration loaded from .env.production file
+      # Copy .env.example to .env.production and configure your environment-specific values
       - NODE_ENV=production
       - PORT=5000
-      - DATABASE_URL=postgresql://postgres:postgres@db:5432/gamelab
-      # Firebase Configuration (loaded from .env.production)
-      - VITE_FIREBASE_API_KEY=${VITE_FIREBASE_API_KEY:-demo-api-key}
-      - VITE_FIREBASE_PROJECT_ID=${VITE_FIREBASE_PROJECT_ID:-demo-project}
-      - VITE_FIREBASE_APP_ID=${VITE_FIREBASE_APP_ID:-demo-app-id}
-      # Security
-      - SESSION_SECRET=${SESSION_SECRET:-change_this_in_production}
-      - SESSION_VERSION=${SESSION_VERSION:-1.0}
-      # Mailgun Email Service Configuration (loaded from .env.production)
-      - MAILGUN_API_KEY=${MAILGUN_API_KEY:-}
-      - MAILGUN_DOMAIN=${MAILGUN_DOMAIN:-stylus.services}
-      - MAILGUN_FROM_EMAIL=${MAILGUN_FROM_EMAIL:-noreply@stylus.services}
-      - MAILGUN_REGION=${MAILGUN_REGION:-us}
-      - EMAIL_FROM=${EMAIL_FROM:-noreply@stylus.services}
-      - EMAIL_FROM_NAME=${EMAIL_FROM_NAME:-StylusOne Dashboard}
-      - KINDLE_SENDER_EMAIL=${KINDLE_SENDER_EMAIL:-kindle@stylus.services}
-      - AMP_API_URL=${AMP_API_URL:-}
-      - AMP_API_USERNAME=${AMP_API_USERNAME:-}
-      - AMP_API_PASSWORD=${AMP_API_PASSWORD:-}
-      - TAUTULLI_URL=${TAUTULLI_URL:-}
-      - TAUTULLI_API_KEY=${TAUTULLI_API_KEY:-}
-      - HDHOMERUN_URL=${HDHOMERUN_URL:-}
-      - XTREAM_SERVER_URL=${XTREAM_SERVER_URL:-}
-      - XTREAM_USERNAME=${XTREAM_USERNAME:-}
-      - XTREAM_PASSWORD=${XTREAM_PASSWORD:-}
     volumes:
       - app_uploads:/app/uploads
     depends_on:
@@ -61,9 +38,9 @@ services:
   db:
     image: postgres:16-alpine
     environment:
-      - POSTGRES_USER=postgres
-      - POSTGRES_PASSWORD=postgres
-      - POSTGRES_DB=gamelab
+      - POSTGRES_USER=${POSTGRES_USER:-postgres}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-postgres}
+      - POSTGRES_DB=${POSTGRES_DB:-gamelab}
     # Database port NOT exposed externally for security
     # Only accessible within Docker network
     expose:
