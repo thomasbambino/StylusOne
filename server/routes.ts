@@ -2485,7 +2485,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       } else if (existingStream && token) {
         // For token-based auth (Chromecast), use moderate refresh
         const manifestAge = Date.now() - existingStream.manifestFetchedAt.getTime();
-        const needsFreshManifest = manifestAge > 4000; // 4 seconds for casting devices
+        const needsFreshManifest = manifestAge > 12000; // 12 seconds for casting devices (upstream is slow)
 
         if (!needsFreshManifest) {
           // Manifest is still fresh, use cached version with tokens
