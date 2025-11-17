@@ -595,7 +595,7 @@ export default function HomePage() {
                             ))}
                           </div>
                         </div>
-                        <h4 className="text-sm font-medium text-center text-muted-foreground mt-3">Recently Added</h4>
+                        <h4 className="text-sm font-medium text-center text-muted-foreground mt-1">Recently Added</h4>
                       </div>
                     )}
                   </>
@@ -608,7 +608,7 @@ export default function HomePage() {
 
               {/* Action Buttons - Only show if user has access */}
               {hasPlexAccess && (
-                <div className="mt-4 space-y-4 pb-4">
+                <div className="mt-2 space-y-4 pb-4">
                     <div className="grid grid-cols-2 gap-4">
                       <Dialog open={showPlexDialog} onOpenChange={setShowPlexDialog}>
                         <DialogTrigger asChild>
