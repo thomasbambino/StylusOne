@@ -147,14 +147,24 @@ export function setupAuth(app: Express) {
     store: storage.sessionStore,
     cookie: {
       httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
+      secure: 'auto', // Auto-detect based on connection (works with Cloudflare proxy)
       maxAge: 24 * 60 * 60 * 1000, // 24 hours
       sameSite: 'lax', // Use 'lax' for better compatibility with Cloudflare proxy
     },
     name: 'sessionId',
   };
 
+  // Trust Cloudflare proxy headers
   app.set("trust proxy", 1);
+
+  // Debug middleware - log cookie and protocol info
+  app.use((req, res, next) => {
+    if (req.path === '/api/login' || req.path === '/api/user') {
+      console.log(`[${req.path}] Protocol: ${req.protocol}, Secure: ${req.secure}, Cookie: ${req.headers.cookie ? 'present' : 'missing'}`);
+    }
+    next();
+  });
+
   app.use(session(sessionSettings));
   app.use(passport.initialize());
   app.use(passport.session());
