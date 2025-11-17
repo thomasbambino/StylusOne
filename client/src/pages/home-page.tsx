@@ -392,7 +392,7 @@ export default function HomePage() {
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.5, delay: 0.3 }}
           >
-            <Card className="relative overflow-hidden flex flex-col hover:shadow-lg transition-shadow duration-300">
+            <Card className="relative overflow-hidden flex flex-col hover:shadow-lg transition-shadow duration-300 h-[520px]">
             <div className="absolute top-0 right-0 w-32 h-32 bg-gradient-to-br from-orange-500/10 to-transparent rounded-bl-full" />
             <CardHeader>
               <div className="flex items-center justify-between">
@@ -527,7 +527,7 @@ export default function HomePage() {
                     {/* Recently Added Carousel */}
                     {recentlyAddedItems && recentlyAddedItems.length > 0 && (
                       <div className="pt-4 flex-1 flex flex-col">
-                        <div className="relative overflow-hidden flex-1 min-h-[120px]">
+                        <div className="relative overflow-y-auto flex-1 min-h-[120px] max-h-[180px]">
                           <div 
                             className="flex gap-4 h-full"
                             ref={(el) => {
@@ -681,7 +681,7 @@ export default function HomePage() {
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.5, delay: 0.4 }}
           >
-            <Card className="relative overflow-hidden flex flex-col hover:shadow-lg transition-shadow duration-300">
+            <Card className="relative overflow-hidden flex flex-col hover:shadow-lg transition-shadow duration-300 h-[520px]">
             <div className="absolute top-0 right-0 w-32 h-32 bg-gradient-to-br from-purple-500/10 to-transparent rounded-bl-full" />
             <CardHeader>
               <div className="flex items-center justify-between">
@@ -804,7 +804,7 @@ export default function HomePage() {
 
                     {runningServers.length > 0 && (
                       <div className="space-y-2 flex-1 pt-4">
-                        <div className="space-y-2 min-h-[180px]">
+                        <div className="space-y-2 min-h-[180px] max-h-[200px] overflow-y-auto">
                         {runningServers.slice(0, 3).map((server: any) => (
                           <div key={server.instanceId} className="bg-accent/10 rounded-lg p-3 border border-border/50">
                             <div className="flex items-center gap-4">
@@ -869,7 +869,7 @@ export default function HomePage() {
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.5, delay: 0.5 }}
           >
-            <Card className="relative overflow-hidden hover:shadow-lg transition-shadow duration-300">
+            <Card className="relative overflow-hidden hover:shadow-lg transition-shadow duration-300 flex flex-col h-[520px]">
             <div className="absolute top-0 right-0 w-32 h-32 bg-gradient-to-br from-blue-500/10 to-transparent rounded-bl-full" />
             <CardHeader>
               <div className="flex items-center justify-between">
@@ -983,7 +983,7 @@ export default function HomePage() {
                 ) : favoriteChannels.length > 0 ? (
                   <div className="space-y-2 flex-1">
                     <p className="text-xs text-muted-foreground">Favorite Channels</p>
-                    <div className="space-y-2 min-h-[275px]">
+                    <div className="space-y-2 min-h-[275px] max-h-[300px] overflow-y-auto">
                       {[0, 1, 2].map((index) => {
                         const fav = favoriteChannels[index];
                         if (!fav) return null;
