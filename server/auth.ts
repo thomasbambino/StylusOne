@@ -157,14 +157,6 @@ export function setupAuth(app: Express) {
   // Trust Cloudflare proxy headers
   app.set("trust proxy", 1);
 
-  // Debug middleware - log cookie and protocol info
-  app.use((req, res, next) => {
-    if (req.path === '/api/login' || req.path === '/api/user') {
-      console.log(`[${req.path}] Protocol: ${req.protocol}, Secure: ${req.secure}, Cookie: ${req.headers.cookie ? 'present' : 'missing'}`);
-    }
-    next();
-  });
-
   app.use(session(sessionSettings));
   app.use(passport.initialize());
   app.use(passport.session());
@@ -234,14 +226,11 @@ export function setupAuth(app: Express) {
   );
 
   passport.serializeUser((user, done) => {
-    console.log('Serializing user:', user.id);
     done(null, user.id);
   });
 
   passport.deserializeUser(async (id: number, done) => {
-    console.log('Deserializing user ID:', id);
     const user = await storage.getUser(id);
-    console.log('Deserialized user:', user ? `${user.username} (${user.role})` : 'NOT FOUND');
     done(null, user);
   });
 
