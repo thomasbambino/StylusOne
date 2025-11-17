@@ -278,6 +278,7 @@ router.get('/analytics/mrr', requireSuperAdmin, async (req, res) => {
 router.get('/analytics/plans/:planId/users', requireSuperAdmin, async (req, res) => {
   try {
     const planId = parseInt(req.params.planId);
+    console.log('Fetching users for plan ID:', planId);
 
     const users = await db
       .select({
@@ -295,6 +296,7 @@ router.get('/analytics/plans/:planId/users', requireSuperAdmin, async (req, res)
       .where(eq(userSubscriptions.plan_id, planId))
       .orderBy(userSubscriptions.created_at);
 
+    console.log(`Found ${users.length} users for plan ${planId}`);
     res.json(users);
   } catch (error) {
     console.error('Error fetching plan users:', error);

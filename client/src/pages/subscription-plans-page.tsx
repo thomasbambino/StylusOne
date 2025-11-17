@@ -82,9 +82,12 @@ export default function SubscriptionPlansPage() {
   const { data: planUsers = [], isLoading: planUsersLoading } = useQuery({
     queryKey: ['/api/admin/analytics/plans', viewUsersDialog.planId, 'users'],
     queryFn: async () => {
+      console.log('Fetching users for plan:', viewUsersDialog.planId, viewUsersDialog.planName);
       const res = await fetch(`/api/admin/analytics/plans/${viewUsersDialog.planId}/users`);
       if (!res.ok) throw new Error('Failed to fetch plan users');
-      return res.json();
+      const data = await res.json();
+      console.log('Received plan users:', data);
+      return data;
     },
     enabled: viewUsersDialog.open && viewUsersDialog.planId > 0,
   });
