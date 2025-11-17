@@ -786,7 +786,7 @@ export default function HomePage() {
                     </div>
                   </div>
                 ) : (
-                  <div className="flex-1 flex flex-col">
+                  <>
                     <div className="grid grid-cols-3 gap-4">
                       <div className="text-center">
                         <div className="text-2xl font-bold">{runningServers.length}</div>
@@ -856,7 +856,7 @@ export default function HomePage() {
                     )}
 
                     {/* Action Button - Only show if user has access */}
-                    <div className="space-y-2 mt-auto pt-4">
+                    <div className="space-y-2 mt-4">
                       <Link href="/game-servers">
                         <Button className="w-full" variant="outline">
                           Manage Game Servers
@@ -864,7 +864,7 @@ export default function HomePage() {
                         </Button>
                       </Link>
                     </div>
-                  </div>
+                  </>
                 )}
             </CardContent>
           </Card>
