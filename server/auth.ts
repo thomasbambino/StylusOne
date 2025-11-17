@@ -162,17 +162,15 @@ export function setupAuth(app: Express) {
   // Session version checking middleware - invalidates old sessions after deployments
   app.use((req, res, next) => {
     if (req.session && req.session.version !== SESSION_VERSION) {
-      console.log(`Session version mismatch (expected: ${SESSION_VERSION}, got: ${req.session.version}), clearing session`);
-      req.session.destroy((err) => {
+      console.log(`Session version mismatch (expected: ${SESSION_VERSION}, got: ${req.session.version}), regenerating session`);
+      req.session.regenerate((err) => {
         if (err) {
-          console.error('Session destroy error:', err);
+          console.error('Session regenerate error:', err);
+          return next(err);
         }
-        res.clearCookie('sessionId', {
-          httpOnly: true,
-          sameSite: process.env.NODE_ENV === 'production' ? 'strict' : 'lax',
-          secure: process.env.NODE_ENV === 'production',
-        });
-        next(); // Continue after clearing cookie
+        // Set the new version on the regenerated session
+        req.session.version = SESSION_VERSION;
+        next();
       });
       return; // Don't call next() outside the callback
     }
