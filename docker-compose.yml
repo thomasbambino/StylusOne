@@ -25,6 +25,7 @@ services:
       - VITE_FIREBASE_APP_ID=${VITE_FIREBASE_APP_ID:-demo-app-id}
       # Security
       - SESSION_SECRET=${SESSION_SECRET:-change_this_in_production}
+      - SESSION_VERSION=${SESSION_VERSION:-1.0}
       # Mailgun Email Service Configuration (loaded from .env.production)
       - MAILGUN_API_KEY=${MAILGUN_API_KEY:-}
       - MAILGUN_DOMAIN=${MAILGUN_DOMAIN:-stylus.services}
