@@ -159,7 +159,9 @@ export function setupAuth(app: Express) {
   app.use(passport.initialize());
   app.use(passport.session());
 
-  // Session version checking middleware - invalidates old sessions after deployments
+  // Session version checking middleware - disabled temporarily to debug login issues
+  // TODO: Re-enable after confirming basic session persistence works
+  /*
   app.use((req, res, next) => {
     if (req.session) {
       // Only regenerate if session has a version AND it's different (old session)
@@ -183,6 +185,7 @@ export function setupAuth(app: Express) {
     }
     next();
   });
+  */
 
   passport.use(
     new LocalStrategy(async (username, password, done) => {
@@ -296,54 +299,38 @@ export function setupAuth(app: Express) {
         req.logIn(user, async (err) => {
           if (err) return next(err);
 
-          // Set session version immediately after login
-          if (req.session) {
-            req.session.version = SESSION_VERSION;
+          try {
+            const ipInfo = await getIpInfo(clientIp);
+            const now = new Date();
+
+            await storage.addLoginAttempt({
+              identifier,
+              ip: ipInfo.ip || clientIp,
+              type: 'success',
+              timestamp: now,
+              isp: ipInfo.isp || null,
+              city: ipInfo.city || null,
+              region: ipInfo.region || null,
+              country: ipInfo.country || null
+            });
+
+            await storage.updateUser({
+              id: user.id,
+              last_ip: ipInfo.ip || clientIp,
+              last_login: now
+            });
+
+            res.json({
+              ...user,
+              requires_password_change: user.temp_password
+            });
+          } catch (error) {
+            console.error('Failed to update user IP with geolocation:', error);
+            res.json({
+              ...user,
+              requires_password_change: user.temp_password
+            });
           }
-
-          // Explicitly save the session to ensure passport data is persisted
-          req.session.save((saveErr) => {
-            if (saveErr) {
-              console.error('Session save error after login:', saveErr);
-              return next(saveErr);
-            }
-
-            // Session saved successfully, continue with login logic
-            (async () => {
-              try {
-                const ipInfo = await getIpInfo(clientIp);
-                const now = new Date();
-
-                await storage.addLoginAttempt({
-                  identifier,
-                  ip: ipInfo.ip || clientIp,
-                  type: 'success',
-                  timestamp: now,
-                  isp: ipInfo.isp || null,
-                  city: ipInfo.city || null,
-                  region: ipInfo.region || null,
-                  country: ipInfo.country || null
-                });
-
-                await storage.updateUser({
-                  id: user.id,
-                  last_ip: ipInfo.ip || clientIp,
-                  last_login: now
-                });
-
-                res.json({
-                  ...user,
-                  requires_password_change: user.temp_password
-                });
-              } catch (error) {
-                console.error('Failed to update user IP with geolocation:', error);
-                res.json({
-                  ...user,
-                  requires_password_change: user.temp_password
-                });
-              }
-            })();
-          });
         });
       })(req, res, next);
     } catch (error) {
