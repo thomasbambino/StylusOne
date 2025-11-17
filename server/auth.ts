@@ -1,6 +1,7 @@
 import admin from 'firebase-admin';
 import passport from "passport";
 import { Strategy as LocalStrategy } from "passport-local";
+import { Strategy as GoogleStrategy } from "passport-google-oauth20";
 import { Express, Request, Response, NextFunction } from "express";
 import session from "express-session";
 import { scrypt, randomBytes, timingSafeEqual } from "crypto";
@@ -224,6 +225,57 @@ export function setupAuth(app: Express) {
       }
     }),
   );
+
+  // Google OAuth Strategy
+  if (process.env.VITE_GOOGLE_CLIENT_ID) {
+    passport.use(
+      new GoogleStrategy(
+        {
+          clientID: process.env.VITE_GOOGLE_CLIENT_ID,
+          clientSecret: process.env.GOOGLE_CLIENT_SECRET || '', // Will use for server-side flow
+          callbackURL: `${process.env.APP_URL || process.env.BASE_URL}/api/auth/google/callback`,
+        },
+        async (accessToken, refreshToken, profile, done) => {
+          try {
+            console.log('Google OAuth callback received for:', profile.emails?.[0]?.value);
+
+            const email = profile.emails?.[0]?.value;
+            if (!email) {
+              return done(new Error('No email provided by Google'));
+            }
+
+            // Check if user exists
+            let user = await storage.getUserByEmail(email);
+
+            if (!user) {
+              // Create new user
+              console.log('Creating new user for Google account:', email);
+              const randomPassword = randomBytes(32).toString('hex');
+
+              const settings = await storage.getSettings();
+              const defaultRole = settings?.default_role || 'pending';
+
+              user = await storage.createUser({
+                username: profile.displayName || email.split('@')[0],
+                email,
+                password: await hashPassword(randomPassword),
+                approved: defaultRole !== 'pending',
+                role: defaultRole,
+              });
+            }
+
+            return done(null, user);
+          } catch (error) {
+            console.error('Google OAuth error:', error);
+            return done(error as Error);
+          }
+        }
+      )
+    );
+    console.log('Google OAuth strategy configured');
+  } else {
+    console.log('Google OAuth not configured - VITE_GOOGLE_CLIENT_ID not set');
+  }
 
   passport.serializeUser((user, done) => {
     done(null, user.id);
@@ -678,6 +730,38 @@ export function setupAuth(app: Express) {
     }
   });
 
+  // Google OAuth Routes (server-side flow)
+  app.get('/api/auth/google/start', passport.authenticate('google', {
+    scope: ['profile', 'email'],
+    prompt: 'select_account'
+  }));
+
+  app.get('/api/auth/google/callback',
+    passport.authenticate('google', { failureRedirect: '/auth?error=google_auth_failed' }),
+    async (req, res) => {
+      try {
+        const user = req.user as SelectUser;
+
+        if (!user) {
+          return res.redirect('/auth?error=no_user');
+        }
+
+        // Check if user needs approval
+        if (!user.approved) {
+          return res.redirect('/auth?pending=true');
+        }
+
+        // User is authenticated via passport, redirect to home
+        console.log('Google OAuth successful, redirecting to home');
+        res.redirect('/');
+      } catch (error) {
+        console.error('Error in Google OAuth callback:', error);
+        res.redirect('/auth?error=auth_failed');
+      }
+    }
+  );
+
+  // Legacy endpoint for Google ID token verification (kept for backward compatibility)
   app.post("/api/auth/google", async (req, res) => {
     try {
       const { token } = req.body;
