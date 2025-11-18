@@ -42,3 +42,13 @@ coverage/
 # OS generated files
 Thumbs.db
 ehthumbs.db
+
+# Android/Capacitor
+android/app/build/
+android/app/.cxx/
+android/build/
+android/.gradle/
+android/local.properties
+android/.idea/
+android/*.iml
+android/app/src/main/assets/public/

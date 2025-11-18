@@ -54,11 +54,12 @@ npm run build
 ## Environment Variables Required
 - DATABASE_URL
 - VITE_FIREBASE_API_KEY
-- VITE_FIREBASE_PROJECT_ID  
+- VITE_FIREBASE_PROJECT_ID
 - VITE_FIREBASE_APP_ID
 - SESSION_SECRET
 - MAILGUN_API_KEY
 - MAILGUN_DOMAIN
+- VITE_API_URL (for mobile app)
 - AMP_API_URL (optional)
 - AMP_API_USERNAME (optional)
 - AMP_API_PASSWORD (optional)
@@ -67,6 +68,35 @@ npm run build
 - Development: http://localhost:5000 (npm run dev)
 - Docker: http://localhost:5000 (or 5001 if port conflict)
 - Database: localhost:5432 (internal: db:5432)
+
+## Mobile App (Android/iOS)
+
+The app supports native mobile deployment using Capacitor.
+
+### Mobile Development Commands
+```bash
+# Build and sync web assets to mobile
+npm run cap:sync
+
+# Open Android Studio
+npm run cap:open
+
+# Build, sync, and open (all-in-one)
+npm run cap:run
+
+# Build debug APK
+npm run android:build
+```
+
+### Mobile-Specific Configuration
+- **API URL**: Set `VITE_API_URL=https://stylus.services` in .env
+- **Platform Detection**: Use `isNativePlatform()` from `client/src/lib/capacitor.ts`
+- **Documentation**: See MOBILE.md for complete setup and deployment guide
+
+### Prerequisites for Mobile Development
+1. Android Studio (with Android SDK)
+2. Java JDK 17+
+3. ANDROID_HOME environment variable set
 
 ## Quick Fixes for Common Problems
 
