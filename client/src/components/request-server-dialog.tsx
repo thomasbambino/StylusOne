@@ -17,9 +17,10 @@ import { Form, FormControl, FormField, FormItem, FormLabel } from "@/components/
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useToast } from "@/hooks/use-toast";
-import { Plus } from "lucide-react";
+import { Plus, Loader2 } from "lucide-react";
 import * as z from 'zod';
 import { apiRequest } from "@/lib/queryClient";
+import { useState } from "react";
 
 // List of supported games from the text file
 const SUPPORTED_GAMES = [
@@ -162,6 +163,8 @@ type RequestServerForm = z.infer<typeof requestServerSchema>;
 
 export function RequestServerDialog() {
   const { toast } = useToast();
+  const [open, setOpen] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const form = useForm<RequestServerForm>({
     resolver: zodResolver(requestServerSchema),
     defaultValues: {
@@ -171,23 +174,27 @@ export function RequestServerDialog() {
 
   const onSubmit = async (data: RequestServerForm) => {
     try {
+      setIsSubmitting(true);
       await apiRequest("POST", "/api/game-servers/request", data);
       toast({
         title: "Server request submitted",
         description: `Your request for a ${data.game} server has been sent to the administrators.`,
       });
       form.reset();
+      setOpen(false); // Close the dialog on success
     } catch (error) {
       toast({
         title: "Failed to submit request",
         description: error instanceof Error ? error.message : "An error occurred",
         variant: "destructive",
       });
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
   return (
-    <Dialog>
+    <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
         <Button variant="outline" size="sm">
           <Plus className="h-4 w-4 mr-2" />
@@ -206,7 +213,11 @@ export function RequestServerDialog() {
               render={({ field }) => (
                 <FormItem>
                   <FormLabel>Game</FormLabel>
-                  <Select onValueChange={field.onChange} defaultValue={field.value}>
+                  <Select
+                    onValueChange={field.onChange}
+                    defaultValue={field.value}
+                    disabled={isSubmitting}
+                  >
                     <FormControl>
                       <SelectTrigger>
                         <SelectValue placeholder="Select a game" />
@@ -223,8 +234,15 @@ export function RequestServerDialog() {
                 </FormItem>
               )}
             />
-            <Button type="submit" className="w-full">
-              Submit Request
+            <Button type="submit" className="w-full" disabled={isSubmitting}>
+              {isSubmitting ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Submitting...
+                </>
+              ) : (
+                "Submit Request"
+              )}
             </Button>
           </form>
         </Form>
