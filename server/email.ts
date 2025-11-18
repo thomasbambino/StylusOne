@@ -71,6 +71,15 @@ export async function sendEmail(params: EmailParams): Promise<boolean> {
       html = compileTemplate(template.template, templateData);
     }
 
+    // Validate that we have content to send
+    if (!html && !params.text) {
+      throw new Error('Email must have either text or html content');
+    }
+
+    if (!subject) {
+      throw new Error('Email must have a subject');
+    }
+
     await client.messages.create(process.env.MAILGUN_DOMAIN!, {
       from: process.env.MAILGUN_FROM_EMAIL!,
       to: [params.to],

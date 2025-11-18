@@ -1208,19 +1208,40 @@ export async function registerRoutes(app: Express): Promise<Server> {
         .map(admin => admin.email);
 
       if (adminEmails.length > 0) {
-        // Send email to all admins using the template
+        // Send email to all admins using the template or fallback
         for (const adminEmail of adminEmails) {
           if (adminEmail) {
-            await sendEmail({
-              to: adminEmail,
-              templateId: template?.id,
-              templateData: {
-                game,
-                username: user.username,
-                userEmail: user.email || 'No email provided',
-                timestamp: new Date().toLocaleString()
-              }
-            });
+            // If template exists, use it; otherwise use fallback content
+            if (template?.id) {
+              await sendEmail({
+                to: adminEmail,
+                templateId: template.id,
+                templateData: {
+                  game,
+                  username: user.username,
+                  userEmail: user.email || 'No email provided',
+                  timestamp: new Date().toLocaleString()
+                }
+              });
+            } else {
+              // Fallback email when template doesn't exist
+              await sendEmail({
+                to: adminEmail,
+                subject: `Game Server Request from ${user.username}`,
+                html: `
+                  <h2>Game Server Request</h2>
+                  <p>A user has requested a new game server:</p>
+                  <ul>
+                    <li><strong>Game:</strong> ${game}</li>
+                    <li><strong>User:</strong> ${user.username}</li>
+                    <li><strong>Email:</strong> ${user.email || 'No email provided'}</li>
+                    <li><strong>Time:</strong> ${new Date().toLocaleString()}</li>
+                  </ul>
+                  <p>Please review this request in the admin panel.</p>
+                `,
+                text: `Game Server Request\n\nGame: ${game}\nUser: ${user.username}\nEmail: ${user.email || 'No email provided'}\nTime: ${new Date().toLocaleString()}`
+              });
+            }
           }
         }
       }
