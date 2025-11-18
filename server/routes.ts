@@ -1199,7 +1199,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const user = req.user as User;
 
       // Get the Game Server Request email template
-      const template = await storage.getEmailTemplateByName("Game Server Request");
+      const template = await storage.getEmailTemplateByName("New Game Server Request");
 
       // Get all admin users
       const admins = await storage.getAllUsers();
@@ -1213,14 +1213,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
           if (adminEmail) {
             // If template exists, use it; otherwise use fallback content
             if (template?.id) {
+              const baseUrl = process.env.APP_URL || process.env.BASE_URL || 'http://localhost:5000';
               await sendEmail({
                 to: adminEmail,
                 templateId: template.id,
                 templateData: {
                   game,
                   username: user.username,
-                  userEmail: user.email || 'No email provided',
-                  timestamp: new Date().toLocaleString()
+                  requestDate: new Date().toLocaleString(),
+                  adminLink: `${baseUrl}/admin`
                 }
               });
             } else {
