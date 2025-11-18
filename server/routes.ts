@@ -1201,10 +1201,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Get the Game Server Request email template
       const template = await storage.getEmailTemplateByName("New Game Server Request");
 
-      // Get all admin users
+      // Get all admin and superadmin users
       const admins = await storage.getAllUsers();
       const adminEmails = admins
-        .filter(admin => admin.role === 'admin' && admin.email)
+        .filter(admin => (admin.role === 'admin' || admin.role === 'superadmin') && admin.email)
         .map(admin => admin.email);
 
       if (adminEmails.length > 0) {
