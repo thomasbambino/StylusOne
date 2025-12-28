@@ -46,8 +46,13 @@ const RATE_LIMIT = {
 
 async function checkRateLimit(req: Request, res: Response, next: NextFunction) {
   const identifier = req.body.username || req.body.identifier || req.body.email;
-  const ip = req.ip;
+  const ip = getClientIp(req);
   const type = req.path.includes('reset') ? 'reset' : 'login';
+
+  // Skip rate limit check if identifier or IP is missing
+  if (!identifier || !ip) {
+    return next();
+  }
 
   try {
     const attempts = await storage.getLoginAttemptsInWindow(identifier, ip, type, RATE_LIMIT.WINDOW_MS);
@@ -148,9 +153,9 @@ export function setupAuth(app: Express) {
     store: storage.sessionStore,
     cookie: {
       httpOnly: true,
-      secure: true, // Required for sameSite: 'none'
+      secure: 'auto', // Auto-detect based on connection (works with Cloudflare proxy)
       maxAge: 24 * 60 * 60 * 1000, // 24 hours
-      sameSite: 'none', // Required for cross-origin requests from mobile app
+      sameSite: 'lax', // Use 'lax' for better compatibility with Cloudflare proxy
     },
     name: 'sessionId',
   };
@@ -749,17 +754,9 @@ export function setupAuth(app: Express) {
           return res.redirect('/auth?pending=true');
         }
 
-        // IMPORTANT: Save session before redirecting to ensure session persistence
-        req.session.save((err) => {
-          if (err) {
-            console.error('[Google OAuth] Session save error:', err);
-            return res.redirect('/auth?error=session_error');
-          }
-
-          // User is authenticated via passport, redirect to home
-          console.log('[Google OAuth] Login successful for:', user.email);
-          res.redirect('/');
-        });
+        // User is authenticated via passport, redirect to home
+        console.log('[Google OAuth] Login successful for:', user.email);
+        res.redirect('/');
       } catch (error) {
         console.error('[Google OAuth] Callback error:', error);
         res.redirect('/auth?error=auth_failed');
