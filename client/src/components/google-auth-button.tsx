@@ -1,10 +1,12 @@
 import React from 'react';
 import { Button } from "@/components/ui/button";
+import { buildApiUrl } from "@/lib/capacitor";
 
 export function GoogleAuthButton() {
   const handleGoogleSignIn = () => {
     // Redirect to server-side OAuth flow
-    window.location.href = '/api/auth/google/start';
+    // Use buildApiUrl to support both web and native mobile apps
+    window.location.href = buildApiUrl('/api/auth/google/start');
   };
 
   return (
