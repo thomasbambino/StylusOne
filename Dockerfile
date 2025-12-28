@@ -30,8 +30,8 @@ RUN apt-get update && \
 COPY package*.json ./
 COPY tsconfig.json ./
 
-# Install dependencies
-RUN npm ci
+# Install dependencies (--legacy-peer-deps needed for capacitor-google-auth)
+RUN npm ci --legacy-peer-deps
 
 # Copy source code
 COPY . .
@@ -53,7 +53,7 @@ RUN apt-get update && \
 
 # Copy package files and install all dependencies (needed for drizzle-kit)
 COPY package*.json ./
-RUN npm ci
+RUN npm ci --legacy-peer-deps
 
 # Copy built files from builder stage
 COPY --from=builder /app/dist ./dist
