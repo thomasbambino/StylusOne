@@ -9,10 +9,11 @@
     "start": "NODE_ENV=production node dist/index.js",
     "check": "tsc",
     "db:push": "drizzle-kit push",
-    "cap:sync": "npm run build && npx cap sync",
+    "update:android-config": "node scripts/update-android-config.cjs",
+    "cap:sync": "npm run update:android-config && npm run build && npx cap sync",
     "cap:open": "npx cap open android",
     "cap:run": "npm run cap:sync && npx cap open android",
-    "android:build": "npm run build && npx cap sync android && cd android && ./gradlew assembleDebug"
+    "android:build": "npm run update:android-config && npm run build && npx cap sync android && cd android && ./gradlew assembleDebug"
   },
   "dependencies": {
     "@capacitor/android": "^7.4.4",
