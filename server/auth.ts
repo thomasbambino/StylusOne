@@ -234,13 +234,15 @@ export function setupAuth(app: Express) {
           clientID: process.env.VITE_GOOGLE_CLIENT_ID,
           clientSecret: process.env.GOOGLE_CLIENT_SECRET || '', // Will use for server-side flow
           callbackURL: `${process.env.APP_URL || process.env.BASE_URL}/api/auth/google/callback`,
+          passReqToCallback: false,
         },
         async (accessToken, refreshToken, profile, done) => {
           try {
-            console.log('Google OAuth callback received for:', profile.emails?.[0]?.value);
+            console.log('[Google OAuth] Strategy callback invoked for:', profile.emails?.[0]?.value);
 
             const email = profile.emails?.[0]?.value;
             if (!email) {
+              console.error('[Google OAuth] No email in profile');
               return done(new Error('No email provided by Google'));
             }
 
@@ -249,7 +251,7 @@ export function setupAuth(app: Express) {
 
             if (!user) {
               // Create new user
-              console.log('Creating new user for Google account:', email);
+              console.log('[Google OAuth] Creating new user for:', email);
               const randomPassword = randomBytes(32).toString('hex');
 
               const settings = await storage.getSettings();
@@ -262,17 +264,21 @@ export function setupAuth(app: Express) {
                 approved: defaultRole !== 'pending',
                 role: defaultRole,
               });
+              console.log('[Google OAuth] New user created successfully');
+            } else {
+              console.log('[Google OAuth] Existing user found:', email);
             }
 
+            console.log('[Google OAuth] Returning user to passport, approved:', user.approved);
             return done(null, user);
           } catch (error) {
-            console.error('Google OAuth error:', error);
+            console.error('[Google OAuth] Strategy error:', error);
             return done(error as Error);
           }
         }
       )
     );
-    console.log('Google OAuth strategy configured');
+    console.log('Google OAuth strategy configured with callback URL:', `${process.env.APP_URL || process.env.BASE_URL}/api/auth/google/callback`);
   } else {
     console.log('Google OAuth not configured - VITE_GOOGLE_CLIENT_ID not set');
   }
@@ -731,35 +737,46 @@ export function setupAuth(app: Express) {
   });
 
   // Google OAuth Routes (server-side flow)
-  app.get('/api/auth/google/start', passport.authenticate('google', {
-    scope: ['profile', 'email'],
-    prompt: 'select_account'
-  }));
+  app.get('/api/auth/google/start', (req, res, next) => {
+    console.log('[Google OAuth] Starting OAuth flow');
+    passport.authenticate('google', {
+      scope: ['profile', 'email'],
+      prompt: 'select_account'
+    })(req, res, next);
+  });
 
-  app.get('/api/auth/google/callback',
-    passport.authenticate('google', { failureRedirect: '/auth?error=google_auth_failed' }),
-    async (req, res) => {
-      try {
-        const user = req.user as SelectUser;
+  app.get('/api/auth/google/callback', (req, res, next) => {
+    console.log('[Google OAuth] Callback received from Google');
 
-        if (!user) {
-          return res.redirect('/auth?error=no_user');
-        }
-
-        // Check if user needs approval
-        if (!user.approved) {
-          return res.redirect('/auth?pending=true');
-        }
-
-        // User is authenticated via passport, redirect to home
-        console.log('Google OAuth successful, redirecting to home');
-        res.redirect('/');
-      } catch (error) {
-        console.error('Error in Google OAuth callback:', error);
-        res.redirect('/auth?error=auth_failed');
+    passport.authenticate('google', (err: any, user: any, info: any) => {
+      if (err) {
+        console.error('[Google OAuth] Authentication error:', err);
+        return res.redirect('/auth?error=google_auth_failed');
       }
-    }
-  );
+
+      if (!user) {
+        console.error('[Google OAuth] No user returned from strategy. Info:', info);
+        return res.redirect('/auth?error=google_auth_failed');
+      }
+
+      // Check if user needs approval
+      if (!user.approved) {
+        console.log('[Google OAuth] User not approved, redirecting to pending page');
+        return res.redirect('/auth?pending=true');
+      }
+
+      // Log the user in
+      req.login(user, (loginErr) => {
+        if (loginErr) {
+          console.error('[Google OAuth] Login error:', loginErr);
+          return res.redirect('/auth?error=auth_failed');
+        }
+
+        console.log('[Google OAuth] Login successful, redirecting to home');
+        res.redirect('/');
+      });
+    })(req, res, next);
+  });
 
   // Legacy endpoint for Google ID token verification (kept for backward compatibility)
   app.post("/api/auth/google", async (req, res) => {

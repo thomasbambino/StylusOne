@@ -97,6 +97,37 @@ export default function AuthPage() {
     };
   }, []);
 
+  // Handle Google OAuth error messages from URL parameters
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const error = params.get('error');
+
+    if (error) {
+      let errorMessage = 'Authentication failed. Please try again.';
+
+      switch (error) {
+        case 'google_auth_failed':
+          errorMessage = 'Google authentication failed. Please try again or use a different method.';
+          break;
+        case 'no_user':
+          errorMessage = 'Unable to retrieve user information. Please try again.';
+          break;
+        case 'auth_failed':
+          errorMessage = 'Authentication error occurred. Please try again.';
+          break;
+      }
+
+      toast({
+        title: "Sign In Failed",
+        description: errorMessage,
+        variant: "destructive"
+      });
+
+      // Clean up the URL by removing error parameter
+      window.history.replaceState({}, '', '/auth');
+    }
+  }, [toast]);
+
   const handleFormTypeChange = (type: FormType) => {
     setFormType(type);
     loginForm.reset();
