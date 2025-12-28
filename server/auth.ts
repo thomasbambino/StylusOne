@@ -749,9 +749,17 @@ export function setupAuth(app: Express) {
           return res.redirect('/auth?pending=true');
         }
 
-        // User is authenticated via passport, redirect to home
-        console.log('[Google OAuth] Login successful for:', user.email);
-        res.redirect('/');
+        // IMPORTANT: Save session before redirecting to ensure session persistence
+        req.session.save((err) => {
+          if (err) {
+            console.error('[Google OAuth] Session save error:', err);
+            return res.redirect('/auth?error=session_error');
+          }
+
+          // User is authenticated via passport, redirect to home
+          console.log('[Google OAuth] Login successful for:', user.email);
+          res.redirect('/');
+        });
       } catch (error) {
         console.error('[Google OAuth] Callback error:', error);
         res.redirect('/auth?error=auth_failed');
