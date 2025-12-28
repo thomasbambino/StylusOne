@@ -4,4 +4,6 @@
     <string name="title_activity_main">Stylus One</string>
     <string name="package_name">com.stylusone.app</string>
     <string name="custom_url_scheme">com.stylusone.app</string>
+    <!-- Google OAuth Client ID - must match VITE_GOOGLE_CLIENT_ID from .env -->
+    <string name="server_client_id">YOUR_GOOGLE_CLIENT_ID.apps.googleusercontent.com</string>
 </resources>
