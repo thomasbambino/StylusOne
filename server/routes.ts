@@ -3267,6 +3267,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const { channelId } = req.params;
       const epgService = await getEPGService();
 
+      // Refresh EPG data if stale (older than 6 hours)
+      await epgService.refreshIfNeeded();
+
       const currentProgram = epgService.getCurrentProgram(channelId);
       res.json({ program: currentProgram });
     } catch (error) {
@@ -3285,6 +3288,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const { channelId } = req.params;
       const hours = parseInt(req.query.hours as string) || 3;
       const epgService = await getEPGService();
+
+      // Refresh EPG data if stale (older than 6 hours)
+      await epgService.refreshIfNeeded();
 
       const upcomingPrograms = epgService.getUpcomingPrograms(channelId, hours);
       res.json({ programs: upcomingPrograms });

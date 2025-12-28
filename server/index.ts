@@ -84,10 +84,10 @@ app.use((req, res, next) => {
     res.status(status).json({ message });
     throw err;
   });
-  
-  
-  // Start EPG scheduler for automatic TV guide updates
-  epgScheduler.start();
+
+
+  // EPG scheduler disabled - now using IPTV EPG with auto-refresh in routes
+  // epgScheduler.start();
 
   if (app.get("env") === "development") {
     await setupVite(app, server);
@@ -106,7 +106,7 @@ app.use((req, res, next) => {
 
   // Handle graceful shutdown
   const cleanup = () => {
-    epgScheduler.stop();
+    // epgScheduler.stop();
     server.close();
     process.exit(0);
   };

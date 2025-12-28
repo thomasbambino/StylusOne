@@ -9,6 +9,10 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
 export default defineConfig({
+  define: {
+    // Explicitly define VITE_API_URL for mobile builds
+    'import.meta.env.VITE_API_URL': JSON.stringify(process.env.VITE_API_URL || 'https://stylus.services'),
+  },
   plugins: [
     react(),
     runtimeErrorOverlay(),

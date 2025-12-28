@@ -148,9 +148,9 @@ export function setupAuth(app: Express) {
     store: storage.sessionStore,
     cookie: {
       httpOnly: true,
-      secure: 'auto', // Auto-detect based on connection (works with Cloudflare proxy)
+      secure: true, // Required for sameSite: 'none'
       maxAge: 24 * 60 * 60 * 1000, // 24 hours
-      sameSite: 'lax', // Use 'lax' for better compatibility with Cloudflare proxy
+      sameSite: 'none', // Required for cross-origin requests from mobile app
     },
     name: 'sessionId',
   };
@@ -477,8 +477,8 @@ export function setupAuth(app: Express) {
         // Clear the session cookie explicitly
         res.clearCookie('sessionId', {
           httpOnly: true,
-          sameSite: 'lax', // Match session cookie settings
-          secure: process.env.NODE_ENV === 'production',
+          sameSite: 'none', // Match session cookie settings
+          secure: true,
         });
 
         res.sendStatus(200);

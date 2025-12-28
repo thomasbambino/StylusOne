@@ -22,9 +22,13 @@ export function getPlatform(): string {
 export function getApiBaseUrl(): string {
   if (isNativePlatform()) {
     // Use environment variable or fallback to production URL
-    return import.meta.env.VITE_API_URL || 'https://stylus.services';
+    const apiUrl = import.meta.env.VITE_API_URL || 'https://stylus.services';
+    console.log('[Capacitor] Native platform detected, using API URL:', apiUrl);
+    console.log('[Capacitor] Environment VITE_API_URL:', import.meta.env.VITE_API_URL);
+    return apiUrl;
   }
   // For web, use relative URLs (handled by the server)
+  console.log('[Capacitor] Web platform detected, using relative URLs');
   return '';
 }
 
@@ -35,5 +39,7 @@ export function buildApiUrl(path: string): string {
   const baseUrl = getApiBaseUrl();
   // Ensure path starts with /
   const normalizedPath = path.startsWith('/') ? path : `/${path}`;
-  return `${baseUrl}${normalizedPath}`;
+  const fullUrl = `${baseUrl}${normalizedPath}`;
+  console.log('[Capacitor] Building API URL:', path, '->', fullUrl);
+  return fullUrl;
 }
