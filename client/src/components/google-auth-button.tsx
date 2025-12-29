@@ -44,9 +44,18 @@ export function GoogleAuthButton() {
       }
     } catch (error) {
       console.error('Google Sign-In error:', error);
+      console.error('Error details:', JSON.stringify(error, null, 2));
+
+      let errorMessage = "Failed to sign in with Google";
+      if (error instanceof Error) {
+        errorMessage = error.message;
+        console.error('Error message:', error.message);
+        console.error('Error stack:', error.stack);
+      }
+
       toast({
         title: "Sign In Failed",
-        description: error instanceof Error ? error.message : "Failed to sign in with Google",
+        description: errorMessage,
         variant: "destructive"
       });
       setIsLoading(false);

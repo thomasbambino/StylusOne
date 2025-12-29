@@ -10,6 +10,7 @@ import { storage } from "./storage";
 import { User as SelectUser } from "@shared/schema";
 import { sendEmail } from "./email";
 import { getIpInfo } from './utils/ip';
+import { OAuth2Client } from 'google-auth-library';
 
 const scryptAsync = promisify(scrypt);
 
@@ -786,7 +787,6 @@ export function setupAuth(app: Express) {
         // If Firebase verification fails, try verifying as Google ID token
         console.log('Not a Firebase token, trying Google ID token verification');
         try {
-          const {OAuth2Client} = require('google-auth-library');
           const client = new OAuth2Client();
 
           const ticket = await client.verifyIdToken({

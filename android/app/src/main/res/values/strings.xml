@@ -7,5 +7,5 @@
     <!-- Google OAuth Client ID - AUTO-INJECTED from .env during build -->
     <!-- DO NOT manually edit this value - it will be overwritten -->
     <!-- Set VITE_GOOGLE_CLIENT_ID in .env file instead -->
-    <string name="server_client_id">AUTO_INJECTED_FROM_ENV</string>
+    <string name="server_client_id">779648554838-nbvmtebbotrf7vq3jbhbjv84i0sst0ek.apps.googleusercontent.com</string>
 </resources>
