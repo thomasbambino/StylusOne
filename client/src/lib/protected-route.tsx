@@ -20,13 +20,7 @@ export function ProtectedRoute({
     // IMPORTANT: All hooks must be called before any conditional returns
     const { data: settings } = useQuery({
       queryKey: ["/api/settings"],
-      queryFn: async () => {
-        const response = await fetch("/api/settings");
-        if (!response.ok) {
-          throw new Error("Failed to fetch settings");
-        }
-        return response.json();
-      },
+      // Uses default queryFn from queryClient which handles native platforms
       enabled: !!user?.approved, // Only fetch when user is approved
     });
 

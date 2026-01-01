@@ -11,6 +11,7 @@ import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Label } from "@/components/ui/label";
 import { useAuth } from "@/hooks/use-auth";
 import { apiRequest, queryClient } from "@/lib/queryClient";
+import { buildApiUrl } from "@/lib/capacitor";
 
 interface FirstTimeLoginDialogProps {
   open: boolean;
@@ -32,7 +33,9 @@ export function FirstTimeLoginDialog({ open, onOpenChange, forceShow = false }: 
   const { data: plans = [] } = useQuery<SubscriptionPlan[]>({
     queryKey: ["/api/subscriptions/plans"],
     queryFn: async () => {
-      const res = await fetch('/api/subscriptions/plans');
+      const res = await fetch(buildApiUrl('/api/subscriptions/plans'), {
+        credentials: 'include',
+      });
       if (!res.ok) return [];
       return res.json();
     },
@@ -41,13 +44,9 @@ export function FirstTimeLoginDialog({ open, onOpenChange, forceShow = false }: 
   // Create checkout session mutation
   const createCheckoutMutation = useMutation({
     mutationFn: async ({ planId, period }: { planId: number; period: 'monthly' | 'annual' }) => {
-      const res = await fetch('/api/subscriptions/checkout', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          plan_id: planId,
-          billing_period: period,
-        }),
+      const res = await apiRequest('POST', '/api/subscriptions/checkout', {
+        plan_id: planId,
+        billing_period: period,
       });
       if (!res.ok) {
         const error = await res.json();

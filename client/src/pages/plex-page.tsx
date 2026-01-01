@@ -4,68 +4,47 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Play, Pause, Tv, Film, Server, Activity, Plus, History } from "lucide-react";
 import { motion } from "framer-motion";
+import { getQueryFn } from "@/lib/queryClient";
+import { buildApiUrl } from "@/lib/capacitor";
+import { AuthenticatedImage } from "@/components/authenticated-image";
 
 export default function PlexPage() {
   const { data: settings } = useQuery<Settings>({
     queryKey: ["/api/settings"],
-    queryFn: async () => {
-      const res = await fetch("/api/settings");
-      if (!res.ok) throw new Error("Failed to fetch settings");
-      return res.json();
-    },
+    // Uses default queryFn from queryClient which handles native platforms
   });
 
   // Fetch current activity (active streams)
   const { data: activity } = useQuery({
     queryKey: ['/api/tautulli/activity'],
-    queryFn: async () => {
-      const response = await fetch('/api/tautulli/activity');
-      if (!response.ok) return null;
-      return response.json();
-    },
+    queryFn: getQueryFn({ on401: "returnNull" }),
     refetchInterval: 30000,
   });
 
   // Fetch libraries for stats
   const { data: libraries } = useQuery({
     queryKey: ['/api/tautulli/libraries'],
-    queryFn: async () => {
-      const response = await fetch('/api/tautulli/libraries');
-      if (!response.ok) return [];
-      return response.json();
-    },
+    queryFn: getQueryFn({ on401: "returnNull" }),
   });
 
   // Fetch recently added content
   const { data: recentlyAdded } = useQuery({
-    queryKey: ['/api/tautulli/recently-added'],
-    queryFn: async () => {
-      const response = await fetch('/api/tautulli/recently-added?count=10');
-      if (!response.ok) return null;
-      return response.json();
-    },
+    queryKey: ['/api/tautulli/recently-added?count=10'],
+    queryFn: getQueryFn({ on401: "returnNull" }),
     refetchInterval: 60000,
   });
 
   // Fetch recently watched content (from history)
   const { data: recentlyWatched } = useQuery({
-    queryKey: ['/api/tautulli/history'],
-    queryFn: async () => {
-      const response = await fetch('/api/tautulli/history?length=10');
-      if (!response.ok) return null;
-      return response.json();
-    },
+    queryKey: ['/api/tautulli/history?length=10'],
+    queryFn: getQueryFn({ on401: "returnNull" }),
     refetchInterval: 60000,
   });
 
   // Fetch server info
   const { data: serverInfo } = useQuery({
     queryKey: ['/api/tautulli/server-info'],
-    queryFn: async () => {
-      const response = await fetch('/api/tautulli/server-info');
-      if (!response.ok) return null;
-      return response.json();
-    },
+    queryFn: getQueryFn({ on401: "returnNull" }),
     refetchInterval: 60000,
   });
 
@@ -73,7 +52,7 @@ export default function PlexPage() {
   const getThumbnailUrl = (item: any, width = 100, height = 150) => {
     const thumb = item.grandparent_thumb || item.parent_thumb || item.thumb;
     if (thumb) {
-      return `/api/tautulli/proxy-image?img=${encodeURIComponent(thumb)}&width=${width}&height=${height}`;
+      return buildApiUrl(`/api/tautulli/proxy-image?img=${encodeURIComponent(thumb)}&width=${width}&height=${height}`);
     }
     return undefined;
   };
@@ -82,7 +61,7 @@ export default function PlexPage() {
   const getBackgroundUrl = (item: any) => {
     const art = item.art || item.grandparent_art || item.parent_art;
     if (art) {
-      return `/api/tautulli/proxy-image?img=${encodeURIComponent(art)}&width=800&height=450`;
+      return buildApiUrl(`/api/tautulli/proxy-image?img=${encodeURIComponent(art)}&width=800&height=450`);
     }
     return undefined;
   };
@@ -475,8 +454,8 @@ export default function PlexPage() {
                       {recentlyAddedItems.slice(0, 5).map((item: any, index: number) => (
                         <div key={index} className="flex items-start gap-3 cursor-pointer hover:bg-accent/50 rounded-lg p-2 -m-2 transition-colors" onClick={() => openInPlex(item)}>
                           {getThumbnailUrl(item) ? (
-                            <img 
-                              src={getThumbnailUrl(item, 60, 90)} 
+                            <AuthenticatedImage
+                              src={getThumbnailUrl(item, 60, 90)}
                               alt={item.title}
                               className="w-10 h-14 rounded object-cover flex-shrink-0"
                             />
@@ -539,8 +518,8 @@ export default function PlexPage() {
                       {historyItems.slice(0, 5).map((item: any, index: number) => (
                         <div key={index} className="flex items-start gap-3 cursor-pointer hover:bg-accent/50 rounded-lg p-2 -m-2 transition-colors" onClick={() => openInPlex(item)}>
                           {getThumbnailUrl(item) ? (
-                            <img 
-                              src={getThumbnailUrl(item, 60, 90)} 
+                            <AuthenticatedImage
+                              src={getThumbnailUrl(item, 60, 90)}
                               alt={item.title}
                               className="w-10 h-14 rounded object-cover flex-shrink-0"
                             />

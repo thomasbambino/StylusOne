@@ -4,9 +4,9 @@ import { Card } from "@/components/ui/card";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { RequestServerDialog } from "@/components/request-server-dialog";
-import { 
-  Server, 
-  AlertCircle, 
+import {
+  Server,
+  AlertCircle,
   Activity,
   RefreshCw,
   WifiOff
@@ -51,18 +51,7 @@ export default function GameServersPage() {
 
   const { data: gameServers, isLoading, error, refetch } = useQuery<AMPInstance[]>({
     queryKey: ['/api/game-servers'],
-    queryFn: async () => {
-      const response = await fetch('/api/game-servers', {
-        credentials: 'include',
-      });
-      if (!response.ok) {
-        if (response.status === 401) {
-          throw new Error('Authentication required');
-        }
-        throw new Error('Failed to fetch game servers');
-      }
-      return response.json();
-    },
+    // Uses default queryFn from queryClient which handles native platforms and auth errors
     refetchInterval: 30000, // Refresh every 30 seconds
   });
 

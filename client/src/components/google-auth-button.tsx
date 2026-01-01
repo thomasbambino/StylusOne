@@ -4,6 +4,8 @@ import { buildApiUrl, isNativePlatform } from "@/lib/capacitor";
 import { GoogleAuth } from '@codetrix-studio/capacitor-google-auth';
 import { useToast } from "@/hooks/use-toast";
 import { Loader2 } from "lucide-react";
+import { CapacitorHttp } from '@capacitor/core';
+import { queryClient } from "@/lib/queryClient";
 
 export function GoogleAuthButton() {
   const [isLoading, setIsLoading] = useState(false);
@@ -15,28 +17,41 @@ export function GoogleAuthButton() {
     try {
       if (isNativePlatform()) {
         // Use native Google Sign-In on mobile
+        console.log('Starting native Google sign-in...');
         const result = await GoogleAuth.signIn();
+        console.log('Native sign-in completed, result:', result);
 
-        // Send ID token to backend
-        const response = await fetch(buildApiUrl('/api/auth/google'), {
-          method: 'POST',
+        // Send ID token to backend using CapacitorHttp (required for native platforms)
+        const url = buildApiUrl('/api/auth/google');
+        console.log('Sending ID token to backend:', url);
+
+        const response = await CapacitorHttp.post({
+          url,
           headers: { 'Content-Type': 'application/json' },
-          credentials: 'include', // Important for session cookies
-          body: JSON.stringify({ token: result.authentication.idToken }),
+          data: { token: result.authentication.idToken },
         });
 
-        const data = await response.json();
+        console.log('Auth response:', response.status);
+        console.log('Auth response data:', JSON.stringify(response.data, null, 2));
 
-        if (!response.ok) {
-          if (response.status === 403 && data.requiresApproval) {
+        if (response.status !== 200) {
+          if (response.status === 403 && response.data?.requiresApproval) {
             // User account pending approval
             window.location.href = '/auth?pending=true';
             return;
           }
-          throw new Error(data.message || 'Authentication failed');
+          throw new Error(response.data?.message || 'Authentication failed');
         }
 
-        // Success - reload to trigger auth state update
+        // Success - manually update the user in the query cache
+        console.log('Authentication successful!');
+        console.log('User data:', JSON.stringify(response.data, null, 2));
+        console.log('User role:', response.data.role);
+        console.log('User approved:', response.data.approved);
+        queryClient.setQueryData(["/api/user"], response.data);
+
+        // Reload to trigger auth state update
+        console.log('Redirecting to home...');
         window.location.href = '/';
       } else {
         // Use web OAuth flow

@@ -15,6 +15,7 @@ import { Separator } from '@/components/ui/separator';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { format } from 'date-fns';
+import { buildApiUrl } from '@/lib/capacitor';
 
 interface PlanFormData {
   name: string;
@@ -64,7 +65,9 @@ export default function SubscriptionPlansPage() {
   const { data: plans = [], isLoading: plansLoading } = useQuery<SubscriptionPlan[]>({
     queryKey: ['/api/admin/subscription-plans'],
     queryFn: async () => {
-      const res = await fetch('/api/admin/subscription-plans');
+      const res = await fetch(buildApiUrl('/api/admin/subscription-plans'), {
+        credentials: 'include',
+      });
       if (!res.ok) throw new Error('Failed to fetch plans');
       return res.json();
     },
@@ -73,7 +76,9 @@ export default function SubscriptionPlansPage() {
   const { data: analytics } = useQuery({
     queryKey: ['/api/admin/analytics/mrr'],
     queryFn: async () => {
-      const res = await fetch('/api/admin/analytics/mrr');
+      const res = await fetch(buildApiUrl('/api/admin/analytics/mrr'), {
+        credentials: 'include',
+      });
       if (!res.ok) throw new Error('Failed to fetch analytics');
       return res.json();
     },
@@ -83,7 +88,9 @@ export default function SubscriptionPlansPage() {
     queryKey: ['/api/admin/analytics/plans', viewUsersDialog.planId, 'users'],
     queryFn: async () => {
       console.log('Fetching users for plan:', viewUsersDialog.planId, viewUsersDialog.planName);
-      const res = await fetch(`/api/admin/analytics/plans/${viewUsersDialog.planId}/users`);
+      const res = await fetch(buildApiUrl(`/api/admin/analytics/plans/${viewUsersDialog.planId}/users`), {
+        credentials: 'include',
+      });
       if (!res.ok) throw new Error('Failed to fetch plan users');
       const data = await res.json();
       console.log('Received plan users:', data);

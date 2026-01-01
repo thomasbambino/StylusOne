@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/use-toast';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Loader2 } from 'lucide-react';
+import { apiRequest } from '@/lib/queryClient';
 
 interface PaymentMethodFormProps {
   onSuccess?: ((paymentMethodId: string) => void) | (() => void);
@@ -20,10 +21,8 @@ export function PaymentMethodForm({ onSuccess, submitButtonText = 'Save Payment 
 
   const updatePaymentMethodMutation = useMutation({
     mutationFn: async (paymentMethodId: string) => {
-      const res = await fetch('/api/subscriptions/payment-method', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ payment_method_id: paymentMethodId }),
+      const res = await apiRequest('POST', '/api/subscriptions/payment-method', {
+        payment_method_id: paymentMethodId,
       });
       if (!res.ok) throw new Error('Failed to update payment method');
       return res.json();

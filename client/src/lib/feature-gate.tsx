@@ -4,6 +4,7 @@ import { Loader2, Lock } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Link } from 'wouter';
+import { getQueryFn } from './queryClient';
 
 interface CurrentSubscription {
   plan_features: {
@@ -47,11 +48,7 @@ export function FeatureGate({
 }: FeatureGateProps) {
   const { data: subscription, isLoading } = useQuery<CurrentSubscription | null>({
     queryKey: ['/api/subscriptions/current'],
-    queryFn: async () => {
-      const res = await fetch('/api/subscriptions/current');
-      if (!res.ok) return null;
-      return res.json();
-    },
+    queryFn: getQueryFn({ on401: "returnNull" }),
   });
 
   if (isLoading) {
@@ -122,11 +119,7 @@ export function useFeatureAccess(
 ): { hasAccess: boolean; isLoading: boolean } {
   const { data: subscription, isLoading } = useQuery<CurrentSubscription | null>({
     queryKey: ['/api/subscriptions/current'],
-    queryFn: async () => {
-      const res = await fetch('/api/subscriptions/current');
-      if (!res.ok) return null;
-      return res.json();
-    },
+    queryFn: getQueryFn({ on401: "returnNull" }),
   });
 
   const hasAccess =

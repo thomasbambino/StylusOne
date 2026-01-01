@@ -22,6 +22,8 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { useToast } from "@/hooks/use-toast";
+import { buildApiUrl, isNativePlatform } from "@/lib/capacitor";
+import { getQueryFn, apiRequest } from "@/lib/queryClient";
 
 interface HDHomeRunDevice {
   DeviceID: string;
@@ -729,41 +731,25 @@ export default function LiveTVPage() {
 
   const { data: settings } = useQuery<Settings>({
     queryKey: ["/api/settings"],
-    queryFn: async () => {
-      const res = await fetch("/api/settings");
-      if (!res.ok) throw new Error("Failed to fetch settings");
-      return res.json();
-    }
+    // Uses default queryFn from queryClient which handles native platforms
   });
 
   const { data: deviceInfo, isLoading: deviceLoading, error: deviceError } = useQuery<HDHomeRunDeviceResponse>({
     queryKey: ["/api/hdhomerun/devices"],
-    queryFn: async () => {
-      const res = await fetch("/api/hdhomerun/devices");
-      if (!res.ok) throw new Error("Failed to fetch device info");
-      return res.json();
-    },
+    // Uses default queryFn
     refetchInterval: 30000
   });
 
   const { data: channelsData, isLoading: channelsLoading } = useQuery<HDHomeRunChannelsResponse>({
     queryKey: ["/api/hdhomerun/channels"],
-    queryFn: async () => {
-      const res = await fetch("/api/hdhomerun/channels");
-      if (!res.ok) throw new Error("Failed to fetch channels");
-      return res.json();
-    },
+    // Uses default queryFn
     enabled: deviceInfo?.configured === true,
     refetchInterval: 60000
   });
 
   const { data: tunersData } = useQuery<HDHomeRunTunersResponse>({
     queryKey: ["/api/hdhomerun/tuners"],
-    queryFn: async () => {
-      const res = await fetch("/api/hdhomerun/tuners");
-      if (!res.ok) throw new Error("Failed to fetch tuner status");
-      return res.json();
-    },
+    // Uses default queryFn
     enabled: deviceInfo?.configured === true,
     refetchInterval: 5000
   });
@@ -771,11 +757,7 @@ export default function LiveTVPage() {
   // Query for tuner management status
   const { data: tunerStatusData } = useQuery<TunerStatus>({
     queryKey: ["/api/tuner/status"],
-    queryFn: async () => {
-      const res = await fetch("/api/tuner/status");
-      if (!res.ok) throw new Error("Failed to fetch tuner management status");
-      return res.json();
-    },
+    // Uses default queryFn
     enabled: deviceInfo?.configured === true,
     refetchInterval: 2000
   });
@@ -783,21 +765,13 @@ export default function LiveTVPage() {
   // IPTV queries
   const { data: iptvStatus } = useQuery<IPTVStatusResponse>({
     queryKey: ["/api/iptv/status"],
-    queryFn: async () => {
-      const res = await fetch("/api/iptv/status");
-      if (!res.ok) throw new Error("Failed to fetch IPTV status");
-      return res.json();
-    },
+    // Uses default queryFn
     refetchInterval: 60000
   });
 
   const { data: iptvChannelsData, isLoading: iptvChannelsLoading } = useQuery<IPTVChannelsResponse>({
     queryKey: ["/api/iptv/channels"],
-    queryFn: async () => {
-      const res = await fetch("/api/iptv/channels");
-      if (!res.ok) throw new Error("Failed to fetch IPTV channels");
-      return res.json();
-    },
+    // Uses default queryFn
     enabled: iptvStatus?.configured === true,
     refetchInterval: 300000 // 5 minutes
   });
@@ -808,22 +782,17 @@ export default function LiveTVPage() {
 
   const { data: favoriteChannels = [] } = useQuery<Array<{id: number, channelId: string, channelName: string, channelLogo: string | null}>>({
     queryKey: ["/api/favorite-channels"],
-    queryFn: async () => {
-      const res = await fetch("/api/favorite-channels");
-      if (!res.ok) throw new Error("Failed to fetch favorite channels");
-      return res.json();
-    },
+    queryFn: getQueryFn({ on401: "returnNull" }),
     refetchInterval: 60000
   });
 
   const addFavoriteMutation = useMutation({
     mutationFn: async ({ channelId, channelName, channelLogo }: { channelId: string, channelName: string, channelLogo: string | undefined }) => {
-      const res = await fetch("/api/favorite-channels", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ channelId, channelName, channelLogo: channelLogo || null })
+      const res = await apiRequest("POST", "/api/favorite-channels", {
+        channelId,
+        channelName,
+        channelLogo: channelLogo || null
       });
-      if (!res.ok) throw new Error("Failed to add favorite");
       return res.json();
     },
     onSuccess: () => {
@@ -834,8 +803,7 @@ export default function LiveTVPage() {
 
   const removeFavoriteMutation = useMutation({
     mutationFn: async (channelId: string) => {
-      const res = await fetch(`/api/favorite-channels/${channelId}`, { method: "DELETE" });
-      if (!res.ok) throw new Error("Failed to remove favorite");
+      const res = await apiRequest("DELETE", `/api/favorite-channels/${channelId}`);
       return res.json();
     },
     onSuccess: () => {
@@ -858,18 +826,11 @@ export default function LiveTVPage() {
     ? selectedChannel?.epgId
     : selectedChannel?.GuideNumber;
   const { data: selectedChannelProgram, isLoading: selectedChannelProgramLoading } = useQuery({
-    queryKey: ['epg', 'current', selectedChannelKey],
-    queryFn: async () => {
-      if (!selectedChannel || !selectedChannelKey) return null;
-      console.log('[CurrentProgram] Fetching program for channel:', selectedChannelKey, 'source:', selectedChannel.source);
-      const response = await fetch(`/api/epg/current/${encodeURIComponent(selectedChannelKey)}`);
-      if (!response.ok) {
-        console.error('[CurrentProgram] Failed to fetch program data:', response.status);
-        throw new Error('Failed to fetch program data');
-      }
-      const data = await response.json();
+    queryKey: [`/api/epg/current/${encodeURIComponent(selectedChannelKey || '')}`],
+    queryFn: getQueryFn({ on401: "returnNull" }),
+    select: (data: any) => {
       console.log('[CurrentProgram] Received program data:', data);
-      return data.program as EPGProgram | null;
+      return data?.program as EPGProgram | null;
     },
     staleTime: 5 * 60 * 1000, // 5 minutes
     refetchInterval: 5 * 60 * 1000, // Refetch every 5 minutes
@@ -924,20 +885,25 @@ export default function LiveTVPage() {
   // Load EPG data in batches as user scrolls for better performance
   const channelsForEPG = filteredChannels.slice(0, visibleChannelCount);
   const epgQueries = useQueries({
-    queries: channelsForEPG.map((channel) => ({
-      queryKey: ['epg', 'upcoming', channel.source === 'iptv' ? channel.epgId : channel.GuideNumber],
-      queryFn: async () => {
-        // For IPTV channels, use epgId (XMLTV channel ID), for HDHomeRun use GuideNumber
-        const channelKey = channel.source === 'iptv' ? channel.epgId : channel.GuideNumber;
-        if (!channelKey) return [];
-        const response = await fetch(`/api/epg/upcoming/${encodeURIComponent(channelKey)}`);
-        if (!response.ok) return [];
-        const data = await response.json();
-        return data.programs as EPGProgram[];
-      },
-      staleTime: 5 * 60 * 1000, // 5 minutes
-      refetchInterval: 5 * 60 * 1000,
-    }))
+    queries: channelsForEPG.map((channel) => {
+      // For IPTV channels, use epgId (XMLTV channel ID), for HDHomeRun use GuideNumber
+      const channelKey = channel.source === 'iptv' ? channel.epgId : channel.GuideNumber;
+      if (!channelKey) {
+        return {
+          queryKey: ['epg', 'upcoming', 'none'],
+          queryFn: async () => [],
+          staleTime: 5 * 60 * 1000,
+          refetchInterval: 5 * 60 * 1000,
+        };
+      }
+      return {
+        queryKey: [`/api/epg/upcoming/${encodeURIComponent(channelKey)}`],
+        queryFn: getQueryFn({ on401: "returnNull" }),
+        select: (data: any) => (data?.programs || []) as EPGProgram[],
+        staleTime: 5 * 60 * 1000, // 5 minutes
+        refetchInterval: 5 * 60 * 1000,
+      };
+    })
   });
 
   // Create a map of channel ID/number to EPG data
@@ -1083,24 +1049,15 @@ export default function LiveTVPage() {
               (async () => {
                 try {
                   console.log('🔑 Requesting stream token for Chromecast...');
-                  const tokenResponse = await fetch('/api/iptv/generate-token', {
-                    method: 'POST',
-                    headers: {
-                      'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify({ streamId: selectedChannel.iptvId }),
-                    credentials: 'include',
+                  const tokenResponse = await apiRequest('POST', '/api/iptv/generate-token', {
+                    streamId: selectedChannel.iptvId
                   });
-
-                  if (!tokenResponse.ok) {
-                    throw new Error(`Failed to generate token: ${tokenResponse.status}`);
-                  }
 
                   const { token } = await tokenResponse.json();
                   console.log('✅ Stream token received');
 
                   // Load media to cast device with token
-                  const streamUrl = `${window.location.origin}/api/iptv/stream/${selectedChannel.iptvId}.m3u8?token=${token}`;
+                  const streamUrl = buildApiUrl(`/api/iptv/stream/${selectedChannel.iptvId}.m3u8?token=${token}`);
                   console.log('Stream URL with token:', streamUrl.replace(/token=[^&]+/, 'token=***'));
 
                   const chromecast = (window as any).chrome.cast;
@@ -1297,13 +1254,14 @@ export default function LiveTVPage() {
       if (currentSession) {
         const data = JSON.stringify({ sessionId: currentSession.id });
         if (navigator.sendBeacon) {
-          navigator.sendBeacon('/api/tuner/release-session', data);
+          navigator.sendBeacon(buildApiUrl('/api/tuner/release-session'), data);
         } else {
-          fetch('/api/tuner/release-session', {
+          fetch(buildApiUrl('/api/tuner/release-session'), {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: data,
-            keepalive: true
+            keepalive: true,
+            credentials: 'include',
           }).catch(console.error);
         }
       }
@@ -1730,17 +1688,37 @@ export default function LiveTVPage() {
       if (channel.source === 'static' || channel.source === 'iptv') {
         // Static channels and IPTV don't need tuner manager, play directly
         console.log(`Playing ${channel.source} channel: ${channel.GuideName} directly`);
-        playStreamDirectly(channel.URL);
+
+        let streamUrl = buildApiUrl(channel.URL);
+
+        // On native platforms, IPTV streams need a token for authentication
+        if (isNativePlatform() && channel.source === 'iptv' && channel.iptvId) {
+          try {
+            console.log('🔐 Generating stream token for native platform');
+            const tokenResponse = await apiRequest('POST', '/api/iptv/generate-token', {
+              streamId: channel.iptvId
+            });
+            const { token } = await tokenResponse.json();
+            streamUrl = `${streamUrl}?token=${token}`;
+            console.log('✅ Stream token generated for native playback');
+          } catch (error) {
+            console.error('❌ Failed to generate stream token:', error);
+            // Continue anyway, might work with session auth
+          }
+        }
+
+        playStreamDirectly(streamUrl);
         // Don't set isLoading to false here - let HLS events handle it
         return;
       }
 
       // Request stream through tuner manager for HDHomeRun channels only
       console.log('Requesting stream for HDHomeRun channel:', channel.GuideNumber);
-      const res = await fetch('/api/tuner/request-stream', {
+      const res = await fetch(buildApiUrl('/api/tuner/request-stream'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ channelNumber: channel.GuideNumber })
+        body: JSON.stringify({ channelNumber: channel.GuideNumber }),
+        credentials: 'include',
       });
 
       const data = await res.json();
@@ -2049,10 +2027,11 @@ export default function LiveTVPage() {
     // Send heartbeat every 30 seconds
     heartbeatIntervalRef.current = setInterval(async () => {
       try {
-        const res = await fetch('/api/tuner/heartbeat', {
+        const res = await fetch(buildApiUrl('/api/tuner/heartbeat'), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ sessionId })
+          body: JSON.stringify({ sessionId }),
+          credentials: 'include',
         });
 
         if (!res.ok) {
@@ -2078,10 +2057,11 @@ export default function LiveTVPage() {
       }
 
       // Release session
-      const res = await fetch('/api/tuner/release-session', {
+      const res = await fetch(buildApiUrl('/api/tuner/release-session'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ sessionId: currentSession.id })
+        body: JSON.stringify({ sessionId: currentSession.id }),
+        credentials: 'include',
       });
 
       if (!res.ok) {
@@ -2150,15 +2130,9 @@ export default function LiveTVPage() {
   // Custom hook to fetch upcoming programs for timeline
   const useUpcomingPrograms = (channelName: string, hours: number = 6) => {
     return useQuery({
-      queryKey: ['epg', 'upcoming', channelName, hours],
-      queryFn: async () => {
-        const response = await fetch(`/api/epg/upcoming/${encodeURIComponent(channelName)}?hours=${hours}`);
-        if (!response.ok) {
-          throw new Error('Failed to fetch program data');
-        }
-        const data = await response.json();
-        return data.programs as EPGProgram[] || [];
-      },
+      queryKey: [`/api/epg/upcoming/${encodeURIComponent(channelName)}?hours=${hours}`],
+      queryFn: getQueryFn({ on401: "throw" }),
+      select: (data: any) => (data?.programs || []) as EPGProgram[],
       staleTime: 60 * 1000, // 1 minute - refresh timeline more frequently
       refetchInterval: 60 * 1000, // Refetch every minute to keep timeline current
       enabled: !!channelName

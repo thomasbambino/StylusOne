@@ -44,6 +44,9 @@ import { cn } from "@/lib/utils";
 import { getGameArtwork } from "@/lib/game-artwork";
 import { motion } from "framer-motion";
 import { useFeatureAccess } from "@/lib/feature-gate";
+import { buildApiUrl } from "@/lib/capacitor";
+import { getQueryFn, apiRequest } from "@/lib/queryClient";
+import { AuthenticatedImage } from "@/components/authenticated-image";
 
 const plexInviteSchema = z.object({
   email: z.string().email("Please enter a valid email address"),
@@ -117,11 +120,7 @@ const FavoriteChannelItem = React.memo(function FavoriteChannelItem({
 export default function HomePage() {
   const { data: settings } = useQuery<Settings>({
     queryKey: ["/api/settings"],
-    queryFn: async () => {
-      const res = await fetch("/api/settings");
-      if (!res.ok) throw new Error("Failed to fetch settings");
-      return res.json();
-    },
+    // Uses default queryFn from queryClient which handles native platforms
   });
   const { toast } = useToast();
   const [showPlexDialog, setShowPlexDialog] = useState(false);
@@ -140,15 +139,7 @@ export default function HomePage() {
 
   const createPlexAccountMutation = useMutation({
     mutationFn: async (data: PlexInviteForm) => {
-      const response = await fetch("/api/services/plex/account", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(data),
-      });
-      if (!response.ok) {
-        const error = await response.text();
-        throw new Error(error || "Failed to send invitation");
-      }
+      const response = await apiRequest("POST", "/api/services/plex/account", data);
       return response.json();
     },
     onSuccess: () => {
@@ -175,11 +166,7 @@ export default function HomePage() {
   // Fetch Plex activity from Tautulli
   const { data: plexActivity } = useQuery({
     queryKey: ['/api/tautulli/activity'],
-    queryFn: async () => {
-      const response = await fetch('/api/tautulli/activity');
-      if (!response.ok) return null;
-      return response.json();
-    },
+    queryFn: getQueryFn({ on401: "returnNull" }),
     refetchInterval: 30000,
     enabled: hasPlexAccess,
   });
@@ -187,11 +174,7 @@ export default function HomePage() {
   // Fetch Plex libraries
   const { data: plexLibraries } = useQuery({
     queryKey: ['/api/tautulli/libraries'],
-    queryFn: async () => {
-      const response = await fetch('/api/tautulli/libraries');
-      if (!response.ok) return null;
-      return response.json();
-    },
+    queryFn: getQueryFn({ on401: "returnNull" }),
     refetchInterval: 60000,
     enabled: hasPlexAccess,
   });
@@ -199,11 +182,7 @@ export default function HomePage() {
   // Fetch recently added - available for all users (promotional display)
   const { data: recentlyAdded } = useQuery({
     queryKey: ['/api/tautulli/recently-added'],
-    queryFn: async () => {
-      const response = await fetch('/api/tautulli/recently-added');
-      if (!response.ok) return null;
-      return response.json();
-    },
+    queryFn: getQueryFn({ on401: "returnNull" }),
     refetchInterval: 60000,
     // No 'enabled' check - available to all users for promotional purposes
   });
@@ -212,11 +191,7 @@ export default function HomePage() {
   // Fetch Game Servers data
   const { data: gameServers } = useQuery({
     queryKey: ['/api/game-servers'],
-    queryFn: async () => {
-      const response = await fetch('/api/game-servers');
-      if (!response.ok) return [];
-      return response.json();
-    },
+    queryFn: getQueryFn({ on401: "returnNull" }),
     refetchInterval: 30000,
     enabled: hasGameServersAccess,
   });
@@ -224,13 +199,7 @@ export default function HomePage() {
   // Fetch IPTV channels instead of HDHomeRun
   const { data: iptvStatus } = useQuery({
     queryKey: ['/api/iptv/status'],
-    queryFn: async () => {
-      const response = await fetch('/api/iptv/status', {
-        credentials: 'include',
-      });
-      if (!response.ok) return null;
-      return response.json();
-    },
+    queryFn: getQueryFn({ on401: "returnNull" }),
     refetchInterval: 60000,
     enabled: hasLiveTVAccess,
   });
@@ -238,13 +207,7 @@ export default function HomePage() {
   // Fetch IPTV channels - available for all users for promotional display
   const { data: iptvChannels } = useQuery({
     queryKey: ['/api/iptv/channels'],
-    queryFn: async () => {
-      const response = await fetch('/api/iptv/channels', {
-        credentials: 'include',
-      });
-      if (!response.ok) return null;
-      return response.json();
-    },
+    queryFn: getQueryFn({ on401: "returnNull" }),
     // Note: No 'enabled' check - available to all users for promotional carousel
     refetchInterval: 60000,
   });
@@ -252,13 +215,7 @@ export default function HomePage() {
   // Fetch favorite channels
   const { data: favoriteChannels = [] } = useQuery<Array<{id: number, channelId: string, channelName: string, channelLogo: string | null}>>({
     queryKey: ['/api/favorite-channels'],
-    queryFn: async () => {
-      const response = await fetch('/api/favorite-channels', {
-        credentials: 'include',
-      });
-      if (!response.ok) return [];
-      return response.json();
-    },
+    queryFn: getQueryFn({ on401: "returnNull" }),
     refetchInterval: 5000, // Refetch every 5 seconds to quickly show new favorites
     enabled: hasLiveTVAccess,
   });
@@ -282,9 +239,7 @@ export default function HomePage() {
       await Promise.all(
         favoriteChannelIds.map(async (channelId) => {
           try {
-            const response = await fetch(`/api/epg/current/${channelId}`, {
-              credentials: 'include',
-            });
+            const response = await apiRequest("GET", `/api/epg/current/${channelId}`);
             if (response.ok) {
               const data = await response.json();
               programs[channelId] = data.program;
@@ -304,11 +259,7 @@ export default function HomePage() {
   // Fetch Tautulli server info for machine ID (needed for Plex URLs)
   const { data: serverInfoData } = useQuery({
     queryKey: ['/api/tautulli/server-info'],
-    queryFn: async () => {
-      const response = await fetch('/api/tautulli/server-info');
-      if (!response.ok) throw new Error('Failed to fetch server info');
-      return response.json();
-    },
+    queryFn: getQueryFn({ on401: "returnNull" }),
     refetchInterval: 60000,
     enabled: hasPlexAccess,
   });
@@ -326,7 +277,7 @@ export default function HomePage() {
   const getThumbnailUrl = (item: any, width = 150, height = 225) => {
     const thumb = item.grandparent_thumb || item.parent_thumb || item.thumb;
     if (thumb) {
-      return `/api/tautulli/proxy-image?img=${encodeURIComponent(thumb)}&width=${width}&height=${height}`;
+      return buildApiUrl(`/api/tautulli/proxy-image?img=${encodeURIComponent(thumb)}&width=${width}&height=${height}`);
     }
     return null;
   };
@@ -479,7 +430,7 @@ export default function HomePage() {
                             })().map((item: any, i: number) => (
                               <div key={`${item.rating_key}-${i}`} className="flex-shrink-0 w-20 h-28 relative group">
                                 {getThumbnailUrl(item, 160, 224) ? (
-                                  <img
+                                  <AuthenticatedImage
                                     src={getThumbnailUrl(item, 160, 224)!}
                                     alt={item.title}
                                     className="w-full h-full object-cover rounded shadow-sm"
@@ -546,7 +497,7 @@ export default function HomePage() {
                             })().map((item: any, i: number) => (
                               <div key={`${item.rating_key}-${i}`} className="flex-shrink-0 w-28 h-40 relative group cursor-pointer" onClick={() => openInPlex(item)}>
                                 {getThumbnailUrl(item, 160, 224) ? (
-                                  <img
+                                  <AuthenticatedImage
                                     src={getThumbnailUrl(item, 160, 224)!}
                                     alt={item.title}
                                     className="w-full h-full object-cover rounded shadow-sm group-hover:scale-105 transition-transform duration-200"

@@ -13,6 +13,7 @@ import SettingsPage from "@/pages/settings-page";
 import GameServersPage from "@/pages/game-servers-page";
 import PlexPage from "@/pages/plex-page";
 import LiveTVPage from "@/pages/live-tv-page";
+import LiveTVAdaptive from "@/pages/live-tv-adaptive";
 import BooksPage from "@/pages/books-page";
 import ServerSharePage from "@/pages/server-share-page";
 import SubscriptionPlansPage from "@/pages/subscription-plans-page";
@@ -21,14 +22,19 @@ import MyReferralsPage from "@/pages/my-referrals-page";
 import { ProtectedRoute } from "./lib/protected-route";
 import { FeatureProtectedRoute } from "./lib/feature-protected-route";
 import { ThemeProvider } from "@/components/theme-provider";
-import { DiscordButton } from "@/components/discord-button";
 import { FaviconUpdater } from "@/components/favicon-updater";
 import { CacheUpdater } from "@/components/cache-updater";
+import { getDeviceType } from "@/lib/capacitor";
+import { useEffect, useState } from "react";
 
 function Router() {
   return (
     <Switch>
-      <ProtectedRoute path="/" component={HomePage} />
+      {/* Live TV as primary screen - adapts to device type */}
+      <FeatureProtectedRoute path="/" component={LiveTVAdaptive} feature="live_tv_access" fullscreen={true} />
+
+      {/* Dashboard accessible at /home for phones/tablets */}
+      <ProtectedRoute path="/home" component={HomePage} />
       <ProtectedRoute path="/dashboard" component={Dashboard} />
       <FeatureProtectedRoute path="/plex" component={PlexPage} feature="plex_access" />
       <FeatureProtectedRoute path="/game-servers" component={GameServersPage} feature="game_servers_access" />
@@ -50,6 +56,16 @@ function Router() {
 function App() {
   const [location] = useLocation();
   const isSharePage = location.startsWith('/server/');
+  const [isTVDevice, setIsTVDevice] = useState(false);
+
+  // Detect if running on TV device
+  useEffect(() => {
+    async function detectDevice() {
+      const deviceType = await getDeviceType();
+      setIsTVDevice(deviceType === 'tv');
+    }
+    detectDevice();
+  }, []);
 
   return (
     <ThemeProvider attribute="class" defaultTheme="system" enableSystem>
@@ -60,11 +76,6 @@ function App() {
             <CacheUpdater />
             <Router />
             <Toaster />
-            {!isSharePage && (
-              <div className="fixed bottom-4 right-4 flex items-center gap-2" style={{ zIndex: 9999 }}>
-                <DiscordButton />
-              </div>
-            )}
           </AuthProvider>
         </QueryClientProvider>
       </div>

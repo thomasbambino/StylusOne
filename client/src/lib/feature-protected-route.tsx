@@ -5,11 +5,14 @@ import { PageTransition } from "@/components/page-transition";
 import { NavigationBar } from "@/components/navigation-bar";
 import { useQuery } from "@tanstack/react-query";
 import { FeatureGate } from "./feature-gate";
+import { buildApiUrl, getDeviceType } from "@/lib/capacitor";
+import { useEffect, useState } from "react";
 
 interface FeatureProtectedRouteProps {
   path: string;
   component: React.ComponentType;
   feature?: 'plex_access' | 'live_tv_access' | 'books_access' | 'game_servers_access';
+  fullscreen?: boolean;
 }
 
 /**
@@ -20,22 +23,27 @@ export function FeatureProtectedRoute({
   path,
   component: Component,
   feature,
+  fullscreen = false,
 }: FeatureProtectedRouteProps) {
   const ProtectedContent = () => {
     const { user, isLoading } = useAuth();
+    const [isTVDevice, setIsTVDevice] = useState(false);
 
     // IMPORTANT: All hooks must be called before any conditional returns
     const { data: settings } = useQuery({
       queryKey: ["/api/settings"],
-      queryFn: async () => {
-        const response = await fetch("/api/settings");
-        if (!response.ok) {
-          throw new Error("Failed to fetch settings");
-        }
-        return response.json();
-      },
+      // Uses default queryFn from queryClient which handles native platforms
       enabled: !!user?.approved, // Only fetch when user is approved
     });
+
+    // Detect if this is a TV device
+    useEffect(() => {
+      async function detectDevice() {
+        const deviceType = await getDeviceType();
+        setIsTVDevice(deviceType === 'tv');
+      }
+      detectDevice();
+    }, []);
 
     if (isLoading) {
       return (
@@ -61,6 +69,12 @@ export function FeatureProtectedRoute({
       <Component />
     );
 
+    // On TV devices or fullscreen mode, don't show navigation bar or page transitions
+    if (isTVDevice || fullscreen) {
+      return content;
+    }
+
+    // On other devices, show full UI with navigation
     return (
       <>
         <NavigationBar settings={settings} />

@@ -19,6 +19,8 @@
     "@capacitor/android": "^7.4.4",
     "@capacitor/cli": "^7.4.4",
     "@capacitor/core": "^7.4.4",
+    "@capacitor/device": "^7.0.3",
+    "@caprockapps/capacitor-chromecast": "^7.0.6",
     "@codetrix-studio/capacitor-google-auth": "^3.4.0-rc.4",
     "@hello-pangea/dnd": "^18.0.1",
     "@hookform/resolvers": "^3.9.1",

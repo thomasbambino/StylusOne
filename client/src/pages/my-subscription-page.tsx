@@ -19,6 +19,7 @@ import {
 } from 'lucide-react';
 import type { SubscriptionPlan } from '@shared/schema';
 import { PaymentMethodForm } from '@/components/payment-method-form';
+import { apiRequest } from '@/lib/queryClient';
 
 interface CurrentSubscription {
   id: number;
@@ -99,42 +100,22 @@ export default function MySubscriptionPage() {
   // Fetch current subscription
   const { data: currentSubscription, isLoading: subscriptionLoading } = useQuery<CurrentSubscription | null>({
     queryKey: ['/api/subscriptions/current'],
-    queryFn: async () => {
-      const res = await fetch('/api/subscriptions/current');
-      if (!res.ok) throw new Error('Failed to fetch subscription');
-      return res.json();
-    },
   });
 
   // Fetch available plans
   const { data: plans = [] } = useQuery<SubscriptionPlan[]>({
     queryKey: ['/api/subscriptions/plans'],
-    queryFn: async () => {
-      const res = await fetch('/api/subscriptions/plans');
-      if (!res.ok) throw new Error('Failed to fetch plans');
-      return res.json();
-    },
   });
 
   // Fetch invoices
   const { data: invoices = [] } = useQuery<Invoice[]>({
     queryKey: ['/api/subscriptions/invoices'],
-    queryFn: async () => {
-      const res = await fetch('/api/subscriptions/invoices');
-      if (!res.ok) throw new Error('Failed to fetch invoices');
-      return res.json();
-    },
   });
 
   // Cancel subscription mutation
   const cancelMutation = useMutation({
     mutationFn: async (immediately: boolean) => {
-      const res = await fetch('/api/subscriptions/cancel', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ immediately }),
-      });
-      if (!res.ok) throw new Error('Failed to cancel subscription');
+      const res = await apiRequest('POST', '/api/subscriptions/cancel', { immediately });
       return res.json();
     },
     onSuccess: () => {
@@ -156,10 +137,7 @@ export default function MySubscriptionPage() {
   // Reactivate subscription mutation
   const reactivateMutation = useMutation({
     mutationFn: async () => {
-      const res = await fetch('/api/subscriptions/reactivate', {
-        method: 'POST',
-      });
-      if (!res.ok) throw new Error('Failed to reactivate subscription');
+      const res = await apiRequest('POST', '/api/subscriptions/reactivate');
       return res.json();
     },
     onSuccess: () => {
@@ -181,19 +159,11 @@ export default function MySubscriptionPage() {
   // Create subscription mutation
   const createSubscriptionMutation = useMutation({
     mutationFn: async ({ planId, period, paymentMethodId }: { planId: number; period: 'monthly' | 'annual'; paymentMethodId: string }) => {
-      const res = await fetch('/api/subscriptions/create', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          plan_id: planId,
-          billing_period: period,
-          payment_method_id: paymentMethodId,
-        }),
+      const res = await apiRequest('POST', '/api/subscriptions/create', {
+        plan_id: planId,
+        billing_period: period,
+        payment_method_id: paymentMethodId,
       });
-      if (!res.ok) {
-        const error = await res.json();
-        throw new Error(error.error || 'Failed to create subscription');
-      }
       return res.json();
     },
     onSuccess: () => {
@@ -216,15 +186,10 @@ export default function MySubscriptionPage() {
   // Upgrade/downgrade mutation
   const upgradeMutation = useMutation({
     mutationFn: async ({ planId, period }: { planId: number; period: 'monthly' | 'annual' }) => {
-      const res = await fetch('/api/subscriptions/upgrade', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          plan_id: planId,
-          billing_period: period,
-        }),
+      const res = await apiRequest('POST', '/api/subscriptions/upgrade', {
+        plan_id: planId,
+        billing_period: period,
       });
-      if (!res.ok) throw new Error('Failed to update subscription');
       return res.json();
     },
     onSuccess: () => {
