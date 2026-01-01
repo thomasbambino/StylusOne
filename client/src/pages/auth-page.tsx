@@ -213,7 +213,9 @@ export default function AuthPage() {
   };
 
   if (user && !user.requires_password_change) {
-    return <Redirect to="/" />;
+    // Check for redirect parameter (e.g., from /tvcode)
+    const redirectTo = new URLSearchParams(window.location.search).get('redirect') || '/';
+    return <Redirect to={redirectTo} />;
   }
 
   // Show skeleton while checking device type or loading settings

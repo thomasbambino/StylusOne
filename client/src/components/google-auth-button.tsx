@@ -50,12 +50,15 @@ export function GoogleAuthButton() {
         console.log('User approved:', response.data.approved);
         queryClient.setQueryData(["/api/user"], response.data);
 
-        // Reload to trigger auth state update
-        console.log('Redirecting to home...');
-        window.location.href = '/';
+        // Reload to trigger auth state update - check for redirect parameter
+        const redirectTo = new URLSearchParams(window.location.search).get('redirect') || '/';
+        console.log('Redirecting to:', redirectTo);
+        window.location.href = redirectTo;
       } else {
-        // Use web OAuth flow
-        window.location.href = buildApiUrl('/api/auth/google/start');
+        // Use web OAuth flow - pass redirect parameter if present
+        const redirectParam = new URLSearchParams(window.location.search).get('redirect');
+        const authUrl = buildApiUrl('/api/auth/google/start');
+        window.location.href = redirectParam ? `${authUrl}?redirect=${encodeURIComponent(redirectParam)}` : authUrl;
       }
     } catch (error) {
       console.error('Google Sign-In error:', error);

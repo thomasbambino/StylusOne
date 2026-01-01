@@ -733,10 +733,17 @@ export function setupAuth(app: Express) {
   });
 
   // Google OAuth Routes (server-side flow)
-  app.get('/api/auth/google/start', passport.authenticate('google', {
-    scope: ['profile', 'email'],
-    prompt: 'select_account'
-  }));
+  app.get('/api/auth/google/start', (req, res, next) => {
+    // Store redirect URL in session before OAuth
+    const redirect = req.query.redirect as string;
+    if (redirect && req.session) {
+      (req.session as any).authRedirect = redirect;
+    }
+    passport.authenticate('google', {
+      scope: ['profile', 'email'],
+      prompt: 'select_account'
+    })(req, res, next);
+  });
 
   app.get('/api/auth/google/callback',
     passport.authenticate('google', { failureRedirect: '/auth?error=google_auth_failed' }),
@@ -755,9 +762,16 @@ export function setupAuth(app: Express) {
           return res.redirect('/auth?pending=true');
         }
 
-        // User is authenticated via passport, redirect to home
-        console.log('[Google OAuth] Login successful for:', user.email);
-        res.redirect('/');
+        // Get redirect URL from session (if set during /start)
+        const redirectTo = (req.session as any)?.authRedirect || '/';
+        // Clear the stored redirect
+        if (req.session) {
+          delete (req.session as any).authRedirect;
+        }
+
+        // User is authenticated via passport, redirect
+        console.log('[Google OAuth] Login successful for:', user.email, 'redirecting to:', redirectTo);
+        res.redirect(redirectTo);
       } catch (error) {
         console.error('[Google OAuth] Callback error:', error);
         res.redirect('/auth?error=auth_failed');

@@ -1,7 +1,8 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Tv, Mail, Loader2, QrCode } from 'lucide-react';
+import { Tv, Mail, Loader2, Smartphone } from 'lucide-react';
+import { QRCodeSVG } from 'qrcode.react';
 import { GoogleAuth } from '@codetrix-studio/capacitor-google-auth';
 import { CapacitorHttp } from '@capacitor/core';
 import { buildApiUrl } from '@/lib/capacitor';
@@ -62,7 +63,7 @@ export default function AuthTvPage() {
   });
 
   const buttons = [
-    { id: 'code', label: 'Sign in with Code', description: 'Use your phone to sign in', icon: QrCode },
+    { id: 'code', label: 'Sign in with Code', description: 'Use your phone to sign in', icon: Smartphone },
     { id: 'google', label: 'Sign in with Google', description: 'Quick sign in with Google', icon: () => (
       <img src="/google-g-logo.png" alt="Google" className="w-7 h-7" />
     ) },
@@ -498,36 +499,35 @@ export default function AuthTvPage() {
               animate={{ opacity: 1, x: 0 }}
               exit={{ opacity: 0, x: -50 }}
               transition={{ duration: 0.4 }}
-              className="w-1/2 flex flex-col justify-center pl-16 pr-12 z-10"
+              className="w-1/2 flex flex-col justify-center pl-12 pr-8 z-10"
             >
               <motion.h2
                 initial={{ opacity: 0, y: -20 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: 0.1 }}
-                className="text-2xl font-bold text-white mb-6"
+                className="text-xl font-bold text-white mb-4"
               >
-                Enter Code
+                Your Code
               </motion.h2>
 
-              {/* Code Display */}
+              {/* Code Display - Smaller */}
               <motion.div
                 initial={{ opacity: 0, scale: 0.9 }}
                 animate={{ opacity: 1, scale: 1 }}
                 transition={{ delay: 0.2 }}
-                className="flex gap-3 mb-8"
+                className="flex gap-2 mb-6"
               >
                 {tvCode.split('').map((char, i) => (
                   <motion.div
                     key={i}
-                    initial={{ opacity: 0, y: 20, rotateX: -30 }}
-                    animate={{ opacity: 1, y: 0, rotateX: 0 }}
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
                     transition={{ delay: 0.3 + i * 0.08 }}
                     className="relative"
                   >
-                    <div className="w-20 h-24 bg-gradient-to-b from-white/15 to-white/5 rounded-xl flex items-center justify-center border border-white/20 shadow-xl shadow-black/30">
-                      <span className="text-5xl font-bold text-white">{char}</span>
+                    <div className="w-14 h-16 bg-gradient-to-b from-white/15 to-white/5 rounded-lg flex items-center justify-center border border-white/20 shadow-lg shadow-black/30">
+                      <span className="text-3xl font-bold text-white">{char}</span>
                     </div>
-                    <div className="absolute -bottom-1 left-1/2 -translate-x-1/2 w-12 h-3 bg-white/10 blur-lg rounded-full" />
                   </motion.div>
                 ))}
               </motion.div>
@@ -537,28 +537,14 @@ export default function AuthTvPage() {
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 transition={{ delay: 0.6 }}
-                className="flex flex-col gap-3"
+                className="flex flex-col gap-2"
               >
-                <div className="flex items-center gap-3 px-4 py-2 bg-white/5 rounded-lg border border-white/10 w-fit">
-                  <div className="relative">
-                    <Loader2 className="w-5 h-5 animate-spin text-white/70" />
-                  </div>
-                  <span className="text-lg text-white/70">Waiting for verification...</span>
+                <div className="flex items-center gap-2 px-3 py-2 bg-white/5 rounded-lg border border-white/10 w-fit">
+                  <Loader2 className="w-4 h-4 animate-spin text-white/70" />
+                  <span className="text-sm text-white/70">Waiting for verification...</span>
                 </div>
 
-                <div className="flex items-center gap-2 text-white/40 text-sm">
-                  <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-                    <circle cx="12" cy="12" r="10" strokeWidth="2" strokeOpacity="0.3" />
-                    <path
-                      d="M12 2a10 10 0 0 1 0 20"
-                      strokeWidth="2"
-                      strokeLinecap="round"
-                      style={{
-                        strokeDasharray: `${(timeRemaining / 900) * 62.8} 62.8`,
-                        transition: 'stroke-dasharray 1s linear',
-                      }}
-                    />
-                  </svg>
+                <div className="flex items-center gap-2 text-white/40 text-xs">
                   <span className="font-mono">Expires in {formatTime(timeRemaining)}</span>
                 </div>
               </motion.div>
@@ -568,23 +554,23 @@ export default function AuthTvPage() {
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 transition={{ delay: 0.7 }}
-                className="mt-8 px-6 py-3 bg-white/10 hover:bg-white/20 rounded-lg text-white font-medium transition-all duration-300 focus:ring-4 focus:ring-white/30 focus:scale-105 border border-white/10 w-fit"
+                className="mt-6 px-5 py-2 bg-white/10 hover:bg-white/20 rounded-lg text-white text-sm font-medium transition-all duration-300 focus:ring-4 focus:ring-white/30 focus:scale-105 border border-white/10 w-fit"
                 onClick={cancelCodeLogin}
               >
                 Cancel
               </motion.button>
             </motion.div>
 
-            {/* Right Side - Instructions */}
+            {/* Right Side - QR Code and Instructions */}
             <motion.div
               key="code-right"
               initial={{ opacity: 0, x: 50 }}
               animate={{ opacity: 1, x: 0 }}
               exit={{ opacity: 0, x: 50 }}
               transition={{ duration: 0.4, delay: 0.1 }}
-              className="w-1/2 flex flex-col items-center justify-center pr-16 z-10 border-l border-white/5"
+              className="w-1/2 flex flex-col items-center justify-center pr-12 z-10 border-l border-white/5"
             >
-              <div className="absolute w-80 h-80 bg-red-600/10 rounded-full blur-3xl" />
+              <div className="absolute w-64 h-64 bg-red-600/10 rounded-full blur-3xl" />
 
               <motion.div
                 initial={{ opacity: 0, y: 20 }}
@@ -592,21 +578,33 @@ export default function AuthTvPage() {
                 transition={{ delay: 0.2 }}
                 className="relative text-center"
               >
-                <div className="w-20 h-20 mx-auto mb-6 bg-white/10 rounded-2xl flex items-center justify-center border border-white/20">
-                  <QrCode className="w-10 h-10 text-white" />
-                </div>
+                {/* QR Code */}
+                <motion.div
+                  initial={{ scale: 0.8, opacity: 0 }}
+                  animate={{ scale: 1, opacity: 1 }}
+                  transition={{ delay: 0.3 }}
+                  className="bg-white p-3 rounded-xl mb-5 inline-block shadow-2xl"
+                >
+                  <QRCodeSVG
+                    value="https://stylus.services/tvcode"
+                    size={140}
+                    level="M"
+                    bgColor="#ffffff"
+                    fgColor="#000000"
+                  />
+                </motion.div>
 
-                <p className="text-xl text-white/60 mb-3">On your phone or computer, go to</p>
+                <p className="text-base text-white/60 mb-2">Scan or visit</p>
 
-                <div className="flex items-center justify-center gap-3 mb-6">
-                  <div className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
-                  <p className="text-3xl font-bold text-white tracking-wide">
+                <div className="flex items-center justify-center gap-2 mb-4">
+                  <div className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse" />
+                  <p className="text-xl font-bold text-white tracking-wide">
                     stylus.services/tvcode
                   </p>
                 </div>
 
-                <p className="text-lg text-white/40 max-w-sm">
-                  Sign in on your device and enter the code shown on the left
+                <p className="text-sm text-white/40 max-w-xs">
+                  Sign in and enter the code on the left
                 </p>
               </motion.div>
 
@@ -615,7 +613,7 @@ export default function AuthTvPage() {
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 transition={{ delay: 0.8 }}
-                className="absolute bottom-8 text-white/20 text-sm"
+                className="absolute bottom-6 text-white/20 text-xs"
               >
                 {settings?.site_title || 'Stylus One'} for Android TV
               </motion.p>

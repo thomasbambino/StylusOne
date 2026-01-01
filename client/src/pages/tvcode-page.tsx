@@ -126,9 +126,9 @@ export default function TvCodePage() {
     );
   }
 
-  // Redirect to auth if not logged in
+  // Redirect to auth if not logged in, with redirect back to tvcode
   if (!user) {
-    return <Redirect to="/auth" />;
+    return <Redirect to="/auth?redirect=/tvcode" />;
   }
 
   return (
