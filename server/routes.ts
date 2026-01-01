@@ -3446,6 +3446,234 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // ============================================================================
+  // TV CODE LOGIN API - Netflix/Hulu style code authentication for TV devices
+  // ============================================================================
+
+  // Characters for code generation (no confusing chars like 0/O, 1/I/L)
+  const TV_CODE_CHARS = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
+  const TV_CODE_EXPIRY_MINUTES = 15;
+
+  function generateTvCode(): string {
+    return Array.from({ length: 5 }, () =>
+      TV_CODE_CHARS[Math.floor(Math.random() * TV_CODE_CHARS.length)]
+    ).join('');
+  }
+
+  // Generate a new TV code
+  app.post("/api/tv-codes/generate", async (req, res) => {
+    try {
+      const { tvCodes } = await import('@shared/schema');
+      const { lt } = await import('drizzle-orm');
+
+      // Clean up expired codes first
+      await db.delete(tvCodes).where(lt(tvCodes.expires_at, new Date()));
+
+      // Generate a unique code
+      let code: string;
+      let attempts = 0;
+      do {
+        code = generateTvCode();
+        attempts++;
+        if (attempts > 10) {
+          return res.status(500).json({ message: "Failed to generate unique code" });
+        }
+        // Check if code already exists
+        const existing = await db.select().from(tvCodes).where(
+          (await import('drizzle-orm')).eq(tvCodes.code, code)
+        ).limit(1);
+        if (existing.length === 0) break;
+      } while (true);
+
+      const expiresAt = new Date(Date.now() + TV_CODE_EXPIRY_MINUTES * 60 * 1000);
+
+      await db.insert(tvCodes).values({
+        code,
+        expires_at: expiresAt,
+      });
+
+      console.log(`📺 Generated TV code: ${code}`);
+
+      res.json({
+        code,
+        expiresAt: expiresAt.toISOString(),
+        expiresInSeconds: TV_CODE_EXPIRY_MINUTES * 60
+      });
+    } catch (error) {
+      console.error('Error generating TV code:', error);
+      res.status(500).json({
+        message: "Failed to generate TV code",
+        error: error instanceof Error ? error.message : "Unknown error"
+      });
+    }
+  });
+
+  // Check status of a TV code (for polling from TV)
+  app.get("/api/tv-codes/status/:code", async (req, res) => {
+    try {
+      const { tvCodes } = await import('@shared/schema');
+      const { eq } = await import('drizzle-orm');
+      const { code } = req.params;
+
+      const [tvCode] = await db.select().from(tvCodes).where(eq(tvCodes.code, code.toUpperCase())).limit(1);
+
+      if (!tvCode) {
+        return res.status(404).json({ message: "Code not found" });
+      }
+
+      if (tvCode.expires_at < new Date()) {
+        return res.status(410).json({ message: "Code expired" });
+      }
+
+      if (tvCode.used) {
+        return res.status(410).json({ message: "Code already used" });
+      }
+
+      if (tvCode.verified_at && tvCode.auth_token) {
+        // Code has been verified - return the auth token
+        res.json({
+          verified: true,
+          authToken: tvCode.auth_token
+        });
+      } else {
+        // Code is still pending
+        res.json({
+          verified: false,
+          expiresAt: tvCode.expires_at.toISOString()
+        });
+      }
+    } catch (error) {
+      console.error('Error checking TV code status:', error);
+      res.status(500).json({
+        message: "Failed to check TV code status",
+        error: error instanceof Error ? error.message : "Unknown error"
+      });
+    }
+  });
+
+  // Verify a TV code (from web, requires auth)
+  app.post("/api/tv-codes/verify", async (req, res) => {
+    if (!req.isAuthenticated()) return res.sendStatus(401);
+
+    try {
+      const { tvCodes } = await import('@shared/schema');
+      const { eq } = await import('drizzle-orm');
+      const { code } = req.body;
+
+      if (!code || typeof code !== 'string') {
+        return res.status(400).json({ message: "Code is required" });
+      }
+
+      const [tvCode] = await db.select().from(tvCodes).where(eq(tvCodes.code, code.toUpperCase())).limit(1);
+
+      if (!tvCode) {
+        return res.status(404).json({ message: "Invalid code" });
+      }
+
+      if (tvCode.expires_at < new Date()) {
+        return res.status(410).json({ message: "Code expired" });
+      }
+
+      if (tvCode.verified_at || tvCode.used) {
+        return res.status(409).json({ message: "Code already used" });
+      }
+
+      // Generate auth token using JWT
+      const jwt = await import('jsonwebtoken');
+      const authToken = jwt.default.sign(
+        { userId: req.user!.id, type: 'tv_code_auth' },
+        process.env.SESSION_SECRET || 'fallback-secret',
+        { expiresIn: '5m' }
+      );
+
+      // Mark code as verified
+      await db.update(tvCodes).set({
+        verified_at: new Date(),
+        verified_by_user_id: req.user!.id,
+        auth_token: authToken
+      }).where(eq(tvCodes.code, code.toUpperCase()));
+
+      console.log(`✅ TV code ${code} verified by user ${req.user!.id}`);
+
+      res.json({ success: true, message: "TV linked successfully" });
+    } catch (error) {
+      console.error('Error verifying TV code:', error);
+      res.status(500).json({
+        message: "Failed to verify TV code",
+        error: error instanceof Error ? error.message : "Unknown error"
+      });
+    }
+  });
+
+  // Login with TV code auth token
+  app.post("/api/tv-codes/login", async (req, res) => {
+    try {
+      const { tvCodes, users } = await import('@shared/schema');
+      const { eq } = await import('drizzle-orm');
+      const { authToken } = req.body;
+
+      if (!authToken) {
+        return res.status(400).json({ message: "Auth token is required" });
+      }
+
+      // Verify the auth token
+      const jwt = await import('jsonwebtoken');
+      let decoded: { userId: number; type: string };
+      try {
+        decoded = jwt.default.verify(
+          authToken,
+          process.env.SESSION_SECRET || 'fallback-secret'
+        ) as { userId: number; type: string };
+      } catch (jwtError) {
+        return res.status(401).json({ message: "Invalid or expired token" });
+      }
+
+      if (decoded.type !== 'tv_code_auth') {
+        return res.status(401).json({ message: "Invalid token type" });
+      }
+
+      // Mark the code as used (find by auth_token)
+      await db.update(tvCodes).set({ used: true }).where(eq(tvCodes.auth_token, authToken));
+
+      // Get the user
+      const [user] = await db.select().from(users).where(eq(users.id, decoded.userId)).limit(1);
+
+      if (!user) {
+        return res.status(404).json({ message: "User not found" });
+      }
+
+      if (!user.approved) {
+        return res.status(403).json({ message: "Account not approved", requiresApproval: true });
+      }
+
+      // Log the user in via Passport
+      req.login(user, (err) => {
+        if (err) {
+          console.error('Error logging in user via TV code:', err);
+          return res.status(500).json({ message: "Login failed" });
+        }
+
+        console.log(`📺 User ${user.id} (${user.username}) logged in via TV code`);
+
+        // Return user data similar to /api/login
+        res.json({
+          id: user.id,
+          username: user.username,
+          email: user.email,
+          role: user.role,
+          approved: user.approved,
+          enabled: user.enabled
+        });
+      });
+    } catch (error) {
+      console.error('Error logging in with TV code:', error);
+      res.status(500).json({
+        message: "Failed to login with TV code",
+        error: error instanceof Error ? error.message : "Unknown error"
+      });
+    }
+  });
+
   const httpServer = createServer(app);
   return httpServer;
 }

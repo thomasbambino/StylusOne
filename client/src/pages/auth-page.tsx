@@ -17,6 +17,7 @@ import { GoogleAuthButton } from "@/components/google-auth-button";
 import { useLocation } from 'wouter';
 import { cn } from "@/lib/utils";
 import { AuthPageSkeleton } from "../components/auth-skeleton";
+import { getDeviceType } from "@/lib/capacitor";
 
 const requestResetSchema = z.object({
   email: z.string().email("Please enter a valid email address"),
@@ -41,10 +42,25 @@ export default function AuthPage() {
   const { toast } = useToast();
   const isPending = new URLSearchParams(window.location.search).get('pending') === 'true';
   const [contentVisible, setContentVisible] = useState(false);
+  const [isCheckingDevice, setIsCheckingDevice] = useState(true);
 
   const { data: settings, isLoading: isSettingsLoading } = useQuery<Settings>({
     queryKey: ["/api/settings"],
   });
+
+  // Check for TV device and redirect to TV-optimized auth page
+  useEffect(() => {
+    async function checkDevice() {
+      const deviceType = await getDeviceType();
+      if (deviceType === 'tv') {
+        // Redirect to TV auth page
+        window.location.href = '/auth-tv';
+        return;
+      }
+      setIsCheckingDevice(false);
+    }
+    checkDevice();
+  }, []);
 
   const loginForm = useForm({
     resolver: zodResolver(insertUserSchema.pick({ username: true, password: true })),
@@ -199,9 +215,9 @@ export default function AuthPage() {
   if (user && !user.requires_password_change) {
     return <Redirect to="/" />;
   }
-  
-  // Show skeleton while loading settings
-  if (isSettingsLoading) {
+
+  // Show skeleton while checking device type or loading settings
+  if (isCheckingDevice || isSettingsLoading) {
     return <AuthPageSkeleton />;
   }
 

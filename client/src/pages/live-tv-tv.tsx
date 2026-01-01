@@ -1,10 +1,11 @@
 import { useState, useEffect, useCallback, useRef, useMemo, memo } from 'react';
 import { useQuery, useQueries, useMutation, useQueryClient } from '@tanstack/react-query';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ChevronDown, Play, Pause, Volume2, VolumeX, Info, Plus, MoreHorizontal, Star, X, Check, CreditCard, Calendar, ExternalLink } from 'lucide-react';
+import { ChevronDown, Play, Pause, Volume2, VolumeX, Info, Plus, MoreHorizontal, Star, X, Check, CreditCard, Calendar, ExternalLink, LogOut } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { getQueryFn, apiRequest } from '@/lib/queryClient';
+import { getQueryFn, apiRequest, queryClient } from '@/lib/queryClient';
 import { buildApiUrl, isNativePlatform } from '@/lib/capacitor';
+import { useAuth } from '@/hooks/use-auth';
 import Hls from 'hls.js';
 
 // ============================================================================
@@ -253,10 +254,12 @@ InfoModal.displayName = 'InfoModal';
 const MenuPopup = memo(({
   onShowFavorites,
   onShowSubscription,
+  onLogout,
   onClose
 }: {
   onShowFavorites: () => void;
   onShowSubscription: () => void;
+  onLogout: () => void;
   onClose: () => void;
 }) => (
   <motion.div
@@ -284,7 +287,7 @@ const MenuPopup = memo(({
         <span className="text-lg">Favorites</span>
       </button>
       <button
-        className="w-full px-6 py-4 text-left text-white hover:bg-white/10 flex items-center gap-3"
+        className="w-full px-6 py-4 text-left text-white hover:bg-white/10 flex items-center gap-3 border-b border-white/10"
         onClick={() => {
           onShowSubscription();
           onClose();
@@ -292,6 +295,16 @@ const MenuPopup = memo(({
       >
         <CreditCard className="w-5 h-5 text-white" />
         <span className="text-lg">My Subscription</span>
+      </button>
+      <button
+        className="w-full px-6 py-4 text-left text-white hover:bg-white/10 flex items-center gap-3"
+        onClick={() => {
+          onLogout();
+          onClose();
+        }}
+      >
+        <LogOut className="w-5 h-5 text-white" />
+        <span className="text-lg">Log Out</span>
       </button>
     </motion.div>
   </motion.div>
@@ -729,6 +742,9 @@ FocusedProgramPanel.displayName = 'FocusedProgramPanel';
 // ============================================================================
 
 export default function LiveTVTvPage() {
+  // Auth
+  const { logoutMutation } = useAuth();
+
   // View state: 'player' (fullscreen) or 'guide' (with PiP)
   const [viewMode, setViewMode] = useState<'player' | 'guide'>('player');
   const [showOverlay, setShowOverlay] = useState(true);
@@ -1449,6 +1465,7 @@ export default function LiveTVTvPage() {
           <MenuPopup
             onShowFavorites={() => setShowFavoritesPopup(true)}
             onShowSubscription={() => setShowSubscriptionPopup(true)}
+            onLogout={() => logoutMutation.mutate()}
             onClose={() => setShowMenuPopup(false)}
           />
         )}

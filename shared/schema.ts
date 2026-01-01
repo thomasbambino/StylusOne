@@ -267,6 +267,18 @@ export const referralCredits = pgTable("referralCredits", {
   created_at: timestamp("created_at").notNull().defaultNow(),
 });
 
+// TV Code Login - Netflix/Hulu style code authentication for TV devices
+export const tvCodes = pgTable("tvCodes", {
+  id: serial("id").primaryKey(),
+  code: text("code").notNull().unique(),
+  created_at: timestamp("created_at").notNull().defaultNow(),
+  expires_at: timestamp("expires_at").notNull(),
+  verified_at: timestamp("verified_at"),
+  verified_by_user_id: integer("verified_by_user_id").references(() => users.id),
+  auth_token: text("auth_token"),
+  used: boolean("used").notNull().default(false),
+});
+
 export const insertUserSchema = createInsertSchema(users);
 export const insertServiceSchema = createInsertSchema(services);
 export const insertGameServerSchema = createInsertSchema(gameServers);
@@ -285,6 +297,7 @@ export const insertPaymentMethodSchema = createInsertSchema(paymentMethods);
 export const insertReferralCodeSchema = createInsertSchema(referralCodes);
 export const insertReferralSchema = createInsertSchema(referrals);
 export const insertReferralCreditSchema = createInsertSchema(referralCredits);
+export const insertTvCodeSchema = createInsertSchema(tvCodes);
 
 // Export the update schemas
 export const updateServiceSchema = insertServiceSchema.extend({
@@ -392,3 +405,5 @@ export type Referral = typeof referrals.$inferSelect;
 export type InsertReferralCredit = z.infer<typeof insertReferralCreditSchema>;
 export type UpdateReferralCredit = z.infer<typeof updateReferralCreditSchema>;
 export type ReferralCredit = typeof referralCredits.$inferSelect;
+export type InsertTvCode = z.infer<typeof insertTvCodeSchema>;
+export type TvCode = typeof tvCodes.$inferSelect;
