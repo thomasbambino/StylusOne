@@ -5,6 +5,9 @@ project(':capacitor-android').projectDir = new File('../node_modules/@capacitor/
 include ':capacitor-device'
 project(':capacitor-device').projectDir = new File('../node_modules/@capacitor/device/android')
 
+include ':capacitor-screen-orientation'
+project(':capacitor-screen-orientation').projectDir = new File('../node_modules/@capacitor/screen-orientation/android')
+
 include ':caprockapps-capacitor-chromecast'
 project(':caprockapps-capacitor-chromecast').projectDir = new File('../node_modules/@caprockapps/capacitor-chromecast/android')
 

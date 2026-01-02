@@ -50,6 +50,7 @@ export default function AuthTvPage() {
   const [view, setView] = useState<AuthView>('menu');
   const [focusedButton, setFocusedButton] = useState(0);
   const [isLoading, setIsLoading] = useState(false);
+  const [loadingButton, setLoadingButton] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   // TV Code state
@@ -123,6 +124,7 @@ export default function AuthTvPage() {
   const generateCode = async () => {
     try {
       setIsLoading(true);
+      setLoadingButton('code');
       setError(null);
 
       const response = await CapacitorHttp.post({
@@ -147,6 +149,7 @@ export default function AuthTvPage() {
       setError(err instanceof Error ? err.message : 'Failed to generate code');
     } finally {
       setIsLoading(false);
+      setLoadingButton(null);
     }
   };
 
@@ -227,6 +230,7 @@ export default function AuthTvPage() {
   const handleGoogleSignIn = async () => {
     try {
       setIsLoading(true);
+      setLoadingButton('google');
       setError(null);
 
       const result = await GoogleAuth.signIn();
@@ -252,6 +256,7 @@ export default function AuthTvPage() {
       setError(err instanceof Error ? err.message : 'Google sign-in failed');
     } finally {
       setIsLoading(false);
+      setLoadingButton(null);
     }
   };
 
@@ -368,8 +373,8 @@ export default function AuthTvPage() {
                         "relative z-10 flex items-center justify-center w-12 h-12 rounded-lg transition-all duration-300",
                         isFocused ? "bg-gray-900/10" : "bg-white/10"
                       )}>
-                        {isLoading && isFocused ? (
-                          <Loader2 className="w-6 h-6 animate-spin" />
+                        {loadingButton === button.id ? (
+                          <Loader2 className={cn("w-6 h-6 animate-spin", isFocused ? "text-gray-900" : "text-white")} />
                         ) : (
                           <Icon className={cn("w-6 h-6", isFocused ? "text-gray-900" : "text-white")} />
                         )}

@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef, useMemo, memo } from 'react';
 import { useQuery, useQueries, useMutation, useQueryClient } from '@tanstack/react-query';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ChevronDown, Play, Pause, Volume2, VolumeX, Info, Plus, MoreHorizontal, Star, X, Check, CreditCard, Calendar, ExternalLink, LogOut } from 'lucide-react';
+import { ChevronDown, ChevronUp, Play, Pause, Volume2, VolumeX, Info, Plus, MoreHorizontal, Star, X, Check, CreditCard, Calendar, ExternalLink, LogOut, LayoutGrid } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { getQueryFn, apiRequest, queryClient } from '@/lib/queryClient';
 import { buildApiUrl, isNativePlatform } from '@/lib/capacitor';
@@ -1263,50 +1263,10 @@ export default function LiveTVTvPage() {
     const deltaY = touchStartY.current - touchEndY;
     const deltaX = Math.abs(touchStartX.current - touchEndX);
 
-    // Only handle vertical swipes (deltaY significant, deltaX small)
-    const SWIPE_THRESHOLD = 50;
     const TAP_THRESHOLD = 10;
-
-    const isSwipe = Math.abs(deltaY) > SWIPE_THRESHOLD && deltaX < Math.abs(deltaY);
     const isTap = Math.abs(deltaY) < TAP_THRESHOLD && deltaX < TAP_THRESHOLD;
 
-    if (isSwipe) {
-      if (viewMode === 'player') {
-        if (deltaY > 0) {
-          // Swipe UP - open guide if overlay is showing
-          if (showOverlay) {
-            setViewMode('guide');
-            const currentIdx = selectedChannel
-              ? channels.findIndex((ch: Channel) => ch.iptvId === selectedChannel.iptvId)
-              : 0;
-            setFocusedChannelIndex(Math.max(0, currentIdx));
-          }
-        } else {
-          // Swipe DOWN - show overlay if hidden
-          if (!showOverlay) {
-            setShowOverlay(true);
-            if (overlayTimeoutRef.current) {
-              clearTimeout(overlayTimeoutRef.current);
-            }
-            overlayTimeoutRef.current = setTimeout(() => {
-              setShowOverlay(false);
-            }, 5000);
-          }
-        }
-      } else if (viewMode === 'guide') {
-        // Only handle swipe down to exit when scrolled to top
-        if (deltaY < 0) {
-          // Swipe DOWN - check if at top of scroll, then exit
-          const scrollContainer = guideScrollRef.current;
-          if (scrollContainer && scrollContainer.scrollTop <= 10) {
-            // At top of scroll - go back to player
-            setViewMode('player');
-          }
-          // Otherwise let native scroll handle it
-        }
-        // Swipe UP - let native scroll handle it naturally
-      }
-    } else if (isTap && viewMode === 'player') {
+    if (isTap && viewMode === 'player') {
       // Tap to toggle overlay visibility
       if (showOverlay) {
         setShowOverlay(false);
@@ -1464,8 +1424,20 @@ export default function LiveTVTvPage() {
         />
         {/* Loading Indicator - inside video container */}
         {isLoading && (
-          <div className="absolute inset-0 flex items-center justify-center bg-black/70 rounded-xl">
-            <div className="w-10 h-10 border-4 border-white/30 border-t-white rounded-full animate-spin" />
+          <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/90 rounded-xl">
+            <div className="w-12 h-12 border-4 border-white/30 border-t-white rounded-full animate-spin mb-4" />
+            <p className="text-white text-lg font-medium">Loading Stream</p>
+            {currentChannel && (
+              <p className="text-white/60 text-sm mt-1">{currentChannel.GuideName}</p>
+            )}
+          </div>
+        )}
+        {/* Initial startup indicator - before first channel loads */}
+        {!isLoading && !selectedChannel && viewMode === 'player' && (
+          <div className="absolute inset-0 flex flex-col items-center justify-center bg-black">
+            <div className="w-12 h-12 border-4 border-white/30 border-t-white rounded-full animate-spin mb-4" />
+            <p className="text-white text-lg font-medium">Starting Up</p>
+            <p className="text-white/50 text-sm mt-1">Preparing your stream...</p>
           </div>
         )}
         {viewMode === 'guide' && !isLoading && (
@@ -1579,17 +1551,38 @@ export default function LiveTVTvPage() {
               </div>
             )}
 
-            {/* Channel Logo + Name - Bottom Left, vertically centered with controls */}
-            <div className="absolute bottom-8 left-12 h-16 flex items-center gap-2">
-              {currentChannel?.logo && (
-                <img
-                  src={currentChannel.logo}
-                  alt=""
-                  className="h-5 w-auto object-contain"
-                  onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
-                />
-              )}
-              <span className="text-white text-base font-medium">{currentChannel?.GuideName}</span>
+            {/* Channel Selector - Bottom Left, logo row centered with controls */}
+            <div className="absolute bottom-2 left-8">
+              <div className="relative flex flex-col items-center">
+                {/* Channel Up - positioned above logo */}
+                <button
+                  onClick={(e) => { e.stopPropagation(); changeChannel('up'); }}
+                  className="p-1 text-white/60 hover:text-white active:scale-95 transition-all"
+                >
+                  <ChevronUp className="w-5 h-5" />
+                </button>
+
+                {/* Channel Logo + Name - at same level as play/pause button */}
+                <div className="flex items-center gap-2 py-1">
+                  {currentChannel?.logo && (
+                    <img
+                      src={currentChannel.logo}
+                      alt=""
+                      className="h-6 w-auto object-contain"
+                      onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                    />
+                  )}
+                  <span className="text-white text-sm font-medium max-w-[100px] truncate">{currentChannel?.GuideName}</span>
+                </div>
+
+                {/* Channel Down - positioned below logo */}
+                <button
+                  onClick={(e) => { e.stopPropagation(); changeChannel('down'); }}
+                  className="p-1 text-white/60 hover:text-white active:scale-95 transition-all"
+                >
+                  <ChevronDown className="w-5 h-5" />
+                </button>
+              </div>
             </div>
 
             {/* Controls Bar - Bottom Center */}
@@ -1616,19 +1609,29 @@ export default function LiveTVTvPage() {
             </div>
 
             {/* Action Buttons - Bottom Right */}
-            <div className="absolute bottom-8 right-12">
+            <div className="absolute bottom-8 right-8 flex items-center gap-3">
+              {/* Guide Button */}
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setViewMode('guide');
+                  const currentIdx = selectedChannel
+                    ? channels.findIndex((ch: Channel) => ch.iptvId === selectedChannel.iptvId)
+                    : 0;
+                  setFocusedChannelIndex(Math.max(0, currentIdx));
+                }}
+                className="flex items-center gap-2 px-4 py-2 bg-white/20 hover:bg-white/30 rounded-lg text-white transition-all active:scale-95"
+              >
+                <LayoutGrid className="w-5 h-5" />
+                <span className="text-sm font-medium">Guide</span>
+              </button>
+
               <ActionButtons
                 isFavorite={isFavorite}
                 onToggleFavorite={toggleFavorite}
                 onShowInfo={() => setShowInfoModal(true)}
                 onShowMenu={() => setShowMenuPopup(true)}
               />
-            </div>
-
-            {/* Down arrow hint */}
-            <div className="absolute bottom-2 left-1/2 -translate-x-1/2 text-white/40 text-sm flex items-center gap-1">
-              <ChevronDown className="w-4 h-4" />
-              Press down for guide
             </div>
           </motion.div>
         )}
@@ -1642,9 +1645,17 @@ export default function LiveTVTvPage() {
         style={{ willChange: 'transform' }}
       >
             {/* Top section - Program details on left, PiP space on right */}
-            <div className="h-52 shrink-0 flex">
+            <div className="h-52 shrink-0 flex relative">
+              {/* Close Button - Top Left */}
+              <button
+                onClick={() => setViewMode('player')}
+                className="absolute top-4 left-4 p-2 bg-white/10 hover:bg-white/20 rounded-full text-white transition-all active:scale-95 z-10"
+              >
+                <X className="w-5 h-5" />
+              </button>
+
               {/* Program Details - fills left side */}
-              <div className="flex-1 flex items-end pb-4">
+              <div className="flex-1 flex items-end pb-4 pl-16">
                 <FocusedProgramPanel channel={focusedChannel} program={focusedEPG?.currentProgram || null} />
               </div>
               {/* Space for PiP video (320px + padding) */}
@@ -1672,10 +1683,6 @@ export default function LiveTVTvPage() {
               ))}
             </div>
 
-            {/* Scroll hint */}
-            <div className="py-2 border-t border-white/10 text-center text-white/40 text-sm shrink-0">
-              ↑ Scroll up to return to video
-            </div>
       </div>
 
       {/* Info Modal */}
