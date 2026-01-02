@@ -1080,8 +1080,27 @@ export default function LiveTVTvPage() {
         const tokenResponse = await apiRequest('POST', '/api/iptv/generate-token', {
           streamId: channel.iptvId
         });
-        const { token } = await tokenResponse.json();
+        const { token, sessionToken } = await tokenResponse.json();
         streamUrl = `${streamUrl}?token=${token}`;
+
+        // Use sessionToken from generate-token for stream tracking on native platforms
+        if (sessionToken) {
+          console.log('[TV] Got session token from generate-token:', sessionToken);
+          streamSessionToken.current = sessionToken;
+
+          // Start heartbeat every 30 seconds
+          heartbeatIntervalRef.current = setInterval(async () => {
+            if (streamSessionToken.current) {
+              try {
+                await apiRequest('POST', '/api/iptv/stream/heartbeat', {
+                  sessionToken: streamSessionToken.current
+                });
+              } catch (e) {
+                console.log('[TV] Heartbeat error:', e);
+              }
+            }
+          }, 30000);
+        }
       }
 
       if (Hls.isSupported()) {

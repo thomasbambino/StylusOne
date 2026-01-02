@@ -2495,10 +2495,47 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ message: "streamId is required" });
       }
 
-      const token = generateStreamToken(req.user!.id, streamId);
+      const userId = req.user!.id;
+      const token = generateStreamToken(userId, streamId);
+
+      // Also acquire stream session for tracking
+      let sessionToken: string | null = null;
+      try {
+        // Get user's subscription to find their IPTV credential
+        const [subscription] = await db.select()
+          .from(subscriptions)
+          .where(and(
+            eq(subscriptions.userId, userId),
+            eq(subscriptions.status, 'active')
+          ));
+
+        if (subscription) {
+          const [plan] = await db.select()
+            .from(subscriptionPlans)
+            .where(eq(subscriptionPlans.id, subscription.planId));
+
+          if (plan?.iptvCredentialId) {
+            const { streamTrackerService } = await import('./services/stream-tracker-service');
+            const ipAddress = req.ip || req.socket.remoteAddress;
+            sessionToken = await streamTrackerService.acquireStream(
+              userId,
+              plan.iptvCredentialId,
+              streamId,
+              ipAddress
+            );
+            if (sessionToken) {
+              console.log(`[Token+Track] User ${userId} acquired stream ${streamId} on credential ${plan.iptvCredentialId}`);
+            }
+          }
+        }
+      } catch (trackError) {
+        console.error('Error tracking stream at token generation:', trackError);
+        // Don't fail the request - token still works
+      }
 
       res.json({
         token,
+        sessionToken, // Include for heartbeat if tracking succeeded
         expiresIn: 3600 // seconds
       });
     } catch (error) {
