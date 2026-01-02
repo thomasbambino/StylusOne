@@ -1379,32 +1379,11 @@ export default function LiveTVTvPage() {
   // RENDER
   // ============================================================================
 
-  // Portrait mode blocker for native platforms
-  // isPortrait === null means we're still detecting, show loading
+  // Show loading spinner while detecting orientation
   if (isNativePlatform() && isPortrait === null) {
     return (
       <div className="fixed inset-0 bg-black flex items-center justify-center">
         <div className="w-8 h-8 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-      </div>
-    );
-  }
-
-  if (isPortrait === true && isNativePlatform()) {
-    return (
-      <div className="fixed inset-0 bg-black flex flex-col items-center justify-center z-50">
-        <div className="text-white/80 mb-6">
-          <svg xmlns="http://www.w3.org/2000/svg" className="w-24 h-24 animate-pulse" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
-            <rect x="4" y="2" width="16" height="20" rx="2" />
-            <path d="M12 18h.01" />
-            <path d="M15 6H9" strokeLinecap="round" />
-            {/* Rotation arrow */}
-            <path d="M20 12a8 8 0 0 1-8 8M4 12a8 8 0 0 1 8-8" strokeLinecap="round" className="origin-center" style={{ transform: 'translateX(12px) translateY(-8px)' }} />
-          </svg>
-        </div>
-        <h2 className="text-white text-2xl font-bold mb-2">Rotate Your Device</h2>
-        <p className="text-white/60 text-center px-8">
-          Please rotate your device to landscape mode to watch live TV
-        </p>
       </div>
     );
   }
@@ -1458,6 +1437,22 @@ export default function LiveTVTvPage() {
           </div>
         )}
       </motion.div>
+
+      {/* Portrait Mode Overlay - Video keeps playing behind */}
+      {isPortrait === true && isNativePlatform() && (
+        <div className="absolute inset-0 bg-black/90 flex flex-col items-center justify-center z-50">
+          <div className="text-white/80 mb-6">
+            <svg xmlns="http://www.w3.org/2000/svg" className="w-20 h-20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+              <rect x="4" y="2" width="16" height="20" rx="2" />
+              <path d="M12 18h.01" />
+            </svg>
+          </div>
+          <h2 className="text-white text-xl font-bold mb-2">Rotate Your Device</h2>
+          <p className="text-white/60 text-center text-sm px-8">
+            Rotate to landscape to watch
+          </p>
+        </div>
+      )}
 
       {/* Player Overlay - Only in player mode */}
       <AnimatePresence>
