@@ -305,14 +305,14 @@ export default function AuthTvPage() {
         {/* Menu View - Responsive Layout */}
         {view === 'menu' && (
           <>
-            {/* Sign In Options - Full width on mobile, half on desktop */}
+            {/* Sign In Options - Bottom on mobile, left side on desktop */}
             <motion.div
               key="menu-left"
-              initial={{ opacity: 0, x: -50 }}
-              animate={{ opacity: 1, x: 0 }}
-              exit={{ opacity: 0, x: -50 }}
+              initial={{ opacity: 0, y: 30 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: 30 }}
               transition={{ duration: 0.5 }}
-              className="w-full md:w-1/2 flex flex-col justify-center px-6 md:pl-16 md:pr-12 z-10 order-2 md:order-1"
+              className="w-full md:w-1/2 flex flex-col justify-end md:justify-center px-6 pb-8 md:pb-0 md:pl-16 md:pr-12 z-10 order-2 md:order-1 flex-1 md:flex-none"
             >
               <motion.h2
                 initial={{ opacity: 0, y: -20 }}
@@ -430,7 +430,7 @@ export default function AuthTvPage() {
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -30 }}
               transition={{ duration: 0.5, delay: 0.1 }}
-              className="w-full md:w-1/2 flex flex-col items-center justify-center py-8 md:py-0 md:pr-16 z-10 md:border-l border-white/5 order-1 md:order-2"
+              className="w-full md:w-1/2 flex flex-col items-center justify-center pt-16 pb-4 md:py-0 md:pr-16 z-10 md:border-l border-white/5 order-1 md:order-2"
             >
               {/* Decorative glow behind logo */}
               <div className="absolute w-64 h-64 bg-red-600/10 rounded-full blur-3xl" />
@@ -492,14 +492,14 @@ export default function AuthTvPage() {
         {/* Code View - Responsive Layout */}
         {view === 'code' && tvCode && (
           <>
-            {/* Code Display - Full width on mobile, half on desktop */}
+            {/* Code Display - Bottom on mobile, left side on desktop */}
             <motion.div
               key="code-left"
-              initial={{ opacity: 0, x: -50 }}
-              animate={{ opacity: 1, x: 0 }}
-              exit={{ opacity: 0, x: -50 }}
+              initial={{ opacity: 0, y: 30 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: 30 }}
               transition={{ duration: 0.4 }}
-              className="w-full md:w-1/2 flex flex-col justify-center px-6 md:pl-12 md:pr-8 z-10 order-2 md:order-1"
+              className="w-full md:w-1/2 flex flex-col justify-end md:justify-center px-6 pb-8 md:pb-0 md:pl-12 md:pr-8 z-10 order-2 md:order-1 flex-1 md:flex-none"
             >
               <motion.h2
                 initial={{ opacity: 0, y: -20 }}
@@ -568,7 +568,7 @@ export default function AuthTvPage() {
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -30 }}
               transition={{ duration: 0.4, delay: 0.1 }}
-              className="w-full md:w-1/2 flex flex-col items-center justify-center py-6 md:py-0 md:pr-12 z-10 md:border-l border-white/5 order-1 md:order-2"
+              className="w-full md:w-1/2 flex flex-col items-center justify-center pt-12 pb-4 md:py-0 md:pr-12 z-10 md:border-l border-white/5 order-1 md:order-2"
             >
               <div className="absolute w-64 h-64 bg-red-600/10 rounded-full blur-3xl" />
 
@@ -624,14 +624,14 @@ export default function AuthTvPage() {
         {/* Pending Approval View - Responsive Layout */}
         {view === 'pending' && (
           <>
-            {/* Message - Full width on mobile, half on desktop */}
+            {/* Message - Bottom on mobile, left side on desktop */}
             <motion.div
               key="pending-left"
-              initial={{ opacity: 0, x: -50 }}
-              animate={{ opacity: 1, x: 0 }}
-              exit={{ opacity: 0, x: -50 }}
+              initial={{ opacity: 0, y: 30 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: 30 }}
               transition={{ duration: 0.4 }}
-              className="w-full md:w-1/2 flex flex-col justify-center px-6 md:pl-16 md:pr-12 z-10 order-2 md:order-1"
+              className="w-full md:w-1/2 flex flex-col justify-end md:justify-center px-6 pb-8 md:pb-0 md:pl-16 md:pr-12 z-10 order-2 md:order-1 flex-1 md:flex-none"
             >
               <motion.div
                 initial={{ scale: 0 }}
@@ -690,7 +690,7 @@ export default function AuthTvPage() {
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -30 }}
               transition={{ duration: 0.4, delay: 0.1 }}
-              className="w-full md:w-1/2 flex flex-col items-center justify-center py-8 md:py-0 md:pr-16 z-10 md:border-l border-white/5 order-1 md:order-2"
+              className="w-full md:w-1/2 flex flex-col items-center justify-center pt-16 pb-4 md:py-0 md:pr-16 z-10 md:border-l border-white/5 order-1 md:order-2"
             >
               <div className="absolute w-80 h-80 bg-amber-600/10 rounded-full blur-3xl" />
 
