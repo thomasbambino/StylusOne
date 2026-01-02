@@ -1457,6 +1457,10 @@ export default function LiveTVTvPage() {
           preload="none"
           poster="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7"
           style={{ WebkitAppearance: 'none' } as React.CSSProperties}
+          // @ts-ignore - AirPlay support for iOS
+          x-webkit-airplay="allow"
+          // @ts-ignore - AirPlay wireless video playback
+          airplay="allow"
         />
         {/* Loading Indicator - inside video container */}
         {isLoading && (

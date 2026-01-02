@@ -270,6 +270,34 @@ export default function IptvCredentialsPage() {
     },
   });
 
+  const cleanupStaleMutation = useMutation({
+    mutationFn: async () => {
+      const res = await fetch(buildApiUrl('/api/admin/iptv-credentials/cleanup-stale'), {
+        method: 'POST',
+        credentials: 'include',
+      });
+      if (!res.ok) {
+        const error = await res.json();
+        throw new Error(error.error || 'Failed to cleanup stale streams');
+      }
+      return res.json();
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ['/api/admin/iptv-credentials'] });
+      toast({
+        title: 'Cleanup Complete',
+        description: `${data.cleaned} stale stream(s) removed`,
+      });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: 'Error',
+        description: error.message,
+        variant: 'destructive',
+      });
+    },
+  });
+
   const handleEdit = async (credential: IptvCredential) => {
     const res = await fetch(buildApiUrl(`/api/admin/iptv-credentials/${credential.id}`), {
       credentials: 'include',
@@ -328,10 +356,26 @@ export default function IptvCredentialsPage() {
           <h1 className="text-3xl font-bold">IPTV Credentials</h1>
           <p className="text-muted-foreground">Manage IPTV provider credentials for subscription plans</p>
         </div>
-        <Button onClick={() => setIsCreateDialogOpen(true)}>
-          <Plus className="h-4 w-4 mr-2" />
-          Add Credential
-        </Button>
+        <div className="flex gap-2">
+          {totalActiveStreams > 0 && (
+            <Button
+              variant="outline"
+              onClick={() => cleanupStaleMutation.mutate()}
+              disabled={cleanupStaleMutation.isPending}
+            >
+              {cleanupStaleMutation.isPending ? (
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+              ) : (
+                <RefreshCw className="h-4 w-4 mr-2" />
+              )}
+              Cleanup Stale
+            </Button>
+          )}
+          <Button onClick={() => setIsCreateDialogOpen(true)}>
+            <Plus className="h-4 w-4 mr-2" />
+            Add Credential
+          </Button>
+        </div>
       </div>
 
       {/* Stats Cards */}
