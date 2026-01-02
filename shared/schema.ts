@@ -32,6 +32,13 @@ export const users = pgTable("users", {
   has_seen_first_time_dialog: boolean("has_seen_first_time_dialog").notNull().default(false),
 });
 
+// Session table managed by connect-pg-simple - defined here so Drizzle doesn't try to delete it
+export const userSessions = pgTable("user_sessions", {
+  sid: text("sid").primaryKey(),
+  sess: jsonb("sess").notNull(),
+  expire: timestamp("expire", { precision: 6 }).notNull(),
+});
+
 export const settings = pgTable("settings", {
   id: serial("id").primaryKey(),
   default_role: text("default_role", { enum: ['admin', 'user', 'pending'] }).notNull().default('pending'),
