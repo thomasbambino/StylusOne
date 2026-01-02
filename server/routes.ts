@@ -28,6 +28,7 @@ import { z } from "zod";
 import { spawn } from 'child_process';
 import fetch from 'node-fetch';
 import { db, pool } from './db';
+import { eq, and, inArray } from 'drizzle-orm';
 import { EPGService } from './services/epg-service';
 import { randomBytes } from 'crypto';
 import {
