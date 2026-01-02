@@ -2219,6 +2219,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const { streamId } = req.params;
       const limit = req.query.limit ? parseInt(req.query.limit as string) : undefined;
+      const userId = (req.user as any).id;
 
       const { xtreamCodesService } = await import('./services/xtream-codes-service');
 
@@ -2226,12 +2227,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.json({ configured: false, epg: [] });
       }
 
-      
       if (!xtreamCodesService.isInitialized()) {
         return res.status(500).json({ message: "Failed to initialize IPTV service" });
       }
 
-      const epg = await xtreamCodesService.getEPG(streamId, limit);
+      // Get EPG from user's subscription credentials
+      const client = await xtreamCodesService.getClientForStream(userId, streamId);
+      if (!client) {
+        return res.json({ configured: true, epg: [] });
+      }
+
+      const epg = await client.getEPG(streamId, limit);
       res.json({ configured: true, epg });
     } catch (error) {
       console.error('Error fetching IPTV EPG:', error);
@@ -2247,20 +2253,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
     try {
       const { streamId } = req.params;
+      const userId = (req.user as any).id;
 
       const { xtreamCodesService } = await import('./services/xtream-codes-service');
-      
 
       if (!xtreamCodesService.isConfigured()) {
         return res.json({ configured: false, now: null, next: null });
       }
 
-      
       if (!xtreamCodesService.isInitialized()) {
         return res.status(500).json({ message: "Failed to initialize IPTV service" });
       }
 
-      const { now, next } = await xtreamCodesService.getShortEPG(streamId);
+      // Get short EPG from user's subscription credentials
+      const client = await xtreamCodesService.getClientForStream(userId, streamId);
+      if (!client) {
+        return res.json({ configured: true, now: null, next: null });
+      }
+
+      const { now, next } = await client.getShortEPG(streamId);
       res.json({ configured: true, now, next });
     } catch (error) {
       console.error('Error fetching short IPTV EPG:', error);
