@@ -1,4 +1,4 @@
-import { pgTable, text, serial, integer, boolean, timestamp, jsonb, decimal } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, integer, boolean, timestamp, jsonb, json, decimal, varchar } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 import { createInsertSchema } from "drizzle-zod";
 import * as z from "zod";
@@ -34,8 +34,8 @@ export const users = pgTable("users", {
 
 // Session table managed by connect-pg-simple - defined here so Drizzle doesn't try to delete it
 export const userSessions = pgTable("user_sessions", {
-  sid: text("sid").primaryKey(),
-  sess: jsonb("sess").notNull(),
+  sid: varchar("sid", { length: 255 }).primaryKey(),
+  sess: json("sess").notNull(),
   expire: timestamp("expire", { precision: 6 }).notNull(),
 });
 
