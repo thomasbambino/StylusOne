@@ -8,12 +8,13 @@ import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
 import { useToast } from '@/hooks/use-toast';
-import { Plus, Edit2, Trash2, Users, DollarSign, Package, Check, X, Loader2, MoreVertical, Tv, Book, Gamepad2, CheckCircle2, XCircle, Calendar, TrendingUp, Server } from 'lucide-react';
+import { Plus, Edit2, Trash2, Users, DollarSign, Package, Check, X, Loader2, MoreVertical, Tv, Book, Gamepad2, CheckCircle2, XCircle, Calendar, TrendingUp, Server, Link2, Unlink } from 'lucide-react';
 import type { SubscriptionPlan } from '@shared/schema';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator } from '@/components/ui/dropdown-menu';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { format } from 'date-fns';
 import { buildApiUrl } from '@/lib/capacitor';
 
@@ -49,6 +50,24 @@ const defaultFormData: PlanFormData = {
   sort_order: '0',
 };
 
+interface IptvCredential {
+  id: number;
+  name: string;
+  isActive: boolean;
+  maxConnections: number;
+  healthStatus: 'healthy' | 'unhealthy' | 'unknown';
+}
+
+interface PlanIptvCredential {
+  id: number;
+  credentialId: number;
+  priority: number;
+  credentialName: string;
+  isActive: boolean;
+  maxConnections: number;
+  healthStatus: string;
+}
+
 export default function SubscriptionPlansPage() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -61,6 +80,12 @@ export default function SubscriptionPlansPage() {
     planId: 0,
     planName: '',
   });
+  const [iptvDialog, setIptvDialog] = useState<{ open: boolean; planId: number; planName: string }>({
+    open: false,
+    planId: 0,
+    planName: '',
+  });
+  const [selectedCredentialToAdd, setSelectedCredentialToAdd] = useState<string>('');
 
   const { data: plans = [], isLoading: plansLoading } = useQuery<SubscriptionPlan[]>({
     queryKey: ['/api/admin/subscription-plans'],
@@ -97,6 +122,32 @@ export default function SubscriptionPlansPage() {
       return data;
     },
     enabled: viewUsersDialog.open && viewUsersDialog.planId > 0,
+  });
+
+  // Fetch all available IPTV credentials
+  const { data: allIptvCredentials = [] } = useQuery<IptvCredential[]>({
+    queryKey: ['/api/admin/iptv-credentials'],
+    queryFn: async () => {
+      const res = await fetch(buildApiUrl('/api/admin/iptv-credentials'), {
+        credentials: 'include',
+      });
+      if (!res.ok) throw new Error('Failed to fetch IPTV credentials');
+      return res.json();
+    },
+    enabled: iptvDialog.open,
+  });
+
+  // Fetch IPTV credentials assigned to the selected plan
+  const { data: planIptvCredentials = [], isLoading: planIptvLoading } = useQuery<PlanIptvCredential[]>({
+    queryKey: ['/api/admin/subscription-plans', iptvDialog.planId, 'iptv-credentials'],
+    queryFn: async () => {
+      const res = await fetch(buildApiUrl(`/api/admin/subscription-plans/${iptvDialog.planId}/iptv-credentials`), {
+        credentials: 'include',
+      });
+      if (!res.ok) throw new Error('Failed to fetch plan IPTV credentials');
+      return res.json();
+    },
+    enabled: iptvDialog.open && iptvDialog.planId > 0,
   });
 
   const createPlanMutation = useMutation({
@@ -227,6 +278,65 @@ export default function SubscriptionPlansPage() {
       toast({
         title: 'Success',
         description: data.message || 'Plan status updated successfully',
+      });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: 'Error',
+        description: error.message,
+        variant: 'destructive',
+      });
+    },
+  });
+
+  const addIptvCredentialMutation = useMutation({
+    mutationFn: async ({ planId, credentialId }: { planId: number; credentialId: number }) => {
+      const res = await fetch(buildApiUrl(`/api/admin/subscription-plans/${planId}/iptv-credentials`), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ credentialId, priority: planIptvCredentials.length }),
+      });
+      if (!res.ok) {
+        const error = await res.json();
+        throw new Error(error.error || 'Failed to add IPTV credential');
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/admin/subscription-plans', iptvDialog.planId, 'iptv-credentials'] });
+      setSelectedCredentialToAdd('');
+      toast({
+        title: 'Success',
+        description: 'IPTV credential added to plan',
+      });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: 'Error',
+        description: error.message,
+        variant: 'destructive',
+      });
+    },
+  });
+
+  const removeIptvCredentialMutation = useMutation({
+    mutationFn: async ({ planId, credentialId }: { planId: number; credentialId: number }) => {
+      const res = await fetch(buildApiUrl(`/api/admin/subscription-plans/${planId}/iptv-credentials/${credentialId}`), {
+        method: 'DELETE',
+        credentials: 'include',
+      });
+      if (!res.ok) {
+        const error = await res.json();
+        throw new Error(error.error || 'Failed to remove IPTV credential');
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/admin/subscription-plans', iptvDialog.planId, 'iptv-credentials'] });
+      toast({
+        title: 'Success',
+        description: 'IPTV credential removed from plan',
       });
     },
     onError: (error: Error) => {
@@ -485,6 +595,13 @@ export default function SubscriptionPlansPage() {
                                   <Edit2 className="h-4 w-4 mr-2" />
                                   Edit Plan
                                 </DropdownMenuItem>
+                                <DropdownMenuItem
+                                  onClick={() => setIptvDialog({ open: true, planId: plan.id, planName: plan.name })}
+                                >
+                                  <Link2 className="h-4 w-4 mr-2" />
+                                  Manage IPTV Sources
+                                </DropdownMenuItem>
+                                <DropdownMenuSeparator />
                                 <DropdownMenuItem
                                   onClick={() => handleDelete(plan)}
                                   className="text-destructive focus:text-destructive"
@@ -929,6 +1046,164 @@ export default function SubscriptionPlansPage() {
 
           <DialogFooter>
             <Button variant="outline" onClick={() => setViewUsersDialog({ ...viewUsersDialog, open: false })}>
+              Close
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Manage IPTV Sources Dialog */}
+      <Dialog open={iptvDialog.open} onOpenChange={(open) => {
+        setIptvDialog({ ...iptvDialog, open });
+        if (!open) setSelectedCredentialToAdd('');
+      }}>
+        <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>IPTV Sources for {iptvDialog.planName}</DialogTitle>
+            <DialogDescription>
+              Assign IPTV credentials to this subscription plan. Users on this plan will get access to streams from these sources.
+            </DialogDescription>
+          </DialogHeader>
+
+          {planIptvLoading ? (
+            <div className="text-center py-12">
+              <Loader2 className="h-8 w-8 animate-spin mx-auto text-muted-foreground" />
+            </div>
+          ) : (
+            <div className="space-y-6">
+              {/* Add New Credential */}
+              <div className="space-y-2">
+                <Label>Add IPTV Source</Label>
+                <div className="flex gap-2">
+                  <Select
+                    value={selectedCredentialToAdd}
+                    onValueChange={setSelectedCredentialToAdd}
+                  >
+                    <SelectTrigger className="flex-1">
+                      <SelectValue placeholder="Select an IPTV source..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {allIptvCredentials
+                        .filter(cred => cred.isActive && !planIptvCredentials.some(pc => pc.credentialId === cred.id))
+                        .map(cred => (
+                          <SelectItem key={cred.id} value={cred.id.toString()}>
+                            <div className="flex items-center gap-2">
+                              <span>{cred.name}</span>
+                              <Badge variant="outline" className="text-xs">
+                                {cred.maxConnections} conn
+                              </Badge>
+                              {cred.healthStatus === 'healthy' && (
+                                <CheckCircle2 className="h-3 w-3 text-green-500" />
+                              )}
+                            </div>
+                          </SelectItem>
+                        ))}
+                    </SelectContent>
+                  </Select>
+                  <Button
+                    onClick={() => {
+                      if (selectedCredentialToAdd) {
+                        addIptvCredentialMutation.mutate({
+                          planId: iptvDialog.planId,
+                          credentialId: parseInt(selectedCredentialToAdd),
+                        });
+                      }
+                    }}
+                    disabled={!selectedCredentialToAdd || addIptvCredentialMutation.isPending}
+                  >
+                    {addIptvCredentialMutation.isPending ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <Plus className="h-4 w-4" />
+                    )}
+                  </Button>
+                </div>
+                {allIptvCredentials.filter(cred => cred.isActive && !planIptvCredentials.some(pc => pc.credentialId === cred.id)).length === 0 && (
+                  <p className="text-sm text-muted-foreground">
+                    No available IPTV sources. Create new credentials in the IPTV Sources page.
+                  </p>
+                )}
+              </div>
+
+              <Separator />
+
+              {/* Assigned Credentials */}
+              <div className="space-y-2">
+                <Label>Assigned IPTV Sources ({planIptvCredentials.length})</Label>
+                {planIptvCredentials.length === 0 ? (
+                  <div className="text-center py-8 text-muted-foreground border rounded-lg border-dashed">
+                    <Server className="h-8 w-8 mx-auto mb-2 opacity-50" />
+                    <p>No IPTV sources assigned to this plan</p>
+                    <p className="text-sm">Add sources above to enable Live TV for subscribers</p>
+                  </div>
+                ) : (
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Name</TableHead>
+                        <TableHead className="text-center">Max Connections</TableHead>
+                        <TableHead>Health</TableHead>
+                        <TableHead>Status</TableHead>
+                        <TableHead className="text-right">Actions</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {planIptvCredentials
+                        .sort((a, b) => a.priority - b.priority)
+                        .map((cred) => (
+                          <TableRow key={cred.id}>
+                            <TableCell className="font-medium">{cred.credentialName}</TableCell>
+                            <TableCell className="text-center">{cred.maxConnections}</TableCell>
+                            <TableCell>
+                              <Badge
+                                variant="outline"
+                                className={
+                                  cred.healthStatus === 'healthy'
+                                    ? 'bg-green-500/10 text-green-500 border-green-500/20'
+                                    : cred.healthStatus === 'unhealthy'
+                                    ? 'bg-red-500/10 text-red-500 border-red-500/20'
+                                    : 'bg-yellow-500/10 text-yellow-500 border-yellow-500/20'
+                                }
+                              >
+                                {cred.healthStatus}
+                              </Badge>
+                            </TableCell>
+                            <TableCell>
+                              {cred.isActive ? (
+                                <Badge variant="outline" className="bg-green-500/10 text-green-500 border-green-500/20">
+                                  Active
+                                </Badge>
+                              ) : (
+                                <Badge variant="outline" className="bg-gray-500/10 text-gray-500 border-gray-500/20">
+                                  Inactive
+                                </Badge>
+                              )}
+                            </TableCell>
+                            <TableCell className="text-right">
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => removeIptvCredentialMutation.mutate({
+                                  planId: iptvDialog.planId,
+                                  credentialId: cred.credentialId,
+                                })}
+                                disabled={removeIptvCredentialMutation.isPending}
+                                className="text-destructive hover:text-destructive"
+                              >
+                                <Unlink className="h-4 w-4" />
+                              </Button>
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                    </TableBody>
+                  </Table>
+                )}
+              </div>
+            </div>
+          )}
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIptvDialog({ ...iptvDialog, open: false })}>
               Close
             </Button>
           </DialogFooter>
