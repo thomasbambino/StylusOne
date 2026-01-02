@@ -33,11 +33,8 @@ import { useEffect, useState } from "react";
 function Router() {
   return (
     <Switch>
-      {/* Live TV as primary screen - adapts to device type */}
-      <FeatureProtectedRoute path="/" component={LiveTVAdaptive} feature="live_tv_access" fullscreen={true} />
-
-      {/* Dashboard accessible at /home for phones/tablets */}
-      <ProtectedRoute path="/home" component={HomePage} />
+      {/* Homepage as primary screen */}
+      <ProtectedRoute path="/" component={HomePage} />
       <ProtectedRoute path="/dashboard" component={Dashboard} />
       <FeatureProtectedRoute path="/plex" component={PlexPage} feature="plex_access" />
       <FeatureProtectedRoute path="/game-servers" component={GameServersPage} feature="game_servers_access" />
