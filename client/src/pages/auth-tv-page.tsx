@@ -305,14 +305,14 @@ export default function AuthTvPage() {
         {/* Menu View - Responsive Layout */}
         {view === 'menu' && (
           <>
-            {/* Sign In Options - Bottom on mobile, left side on desktop */}
+            {/* Sign In Options - Below branding on mobile, left side on desktop */}
             <motion.div
               key="menu-left"
               initial={{ opacity: 0, y: 30 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: 30 }}
               transition={{ duration: 0.5 }}
-              className="w-full md:w-1/2 flex flex-col justify-end md:justify-center px-6 pb-8 md:pb-0 md:pl-16 md:pr-12 z-10 order-2 md:order-1 flex-1 md:flex-none"
+              className="w-full md:w-1/2 flex flex-col justify-start md:justify-center px-6 md:pl-16 md:pr-12 z-10 order-2 md:order-1"
             >
               <motion.h2
                 initial={{ opacity: 0, y: -20 }}
@@ -423,14 +423,14 @@ export default function AuthTvPage() {
               </motion.p>
             </motion.div>
 
-            {/* Branding - Top on mobile, right side on desktop */}
+            {/* Branding - Above buttons on mobile, right side on desktop */}
             <motion.div
               key="menu-right"
               initial={{ opacity: 0, y: -30 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -30 }}
               transition={{ duration: 0.5, delay: 0.1 }}
-              className="w-full md:w-1/2 flex flex-col items-center justify-center pt-16 pb-4 md:py-0 md:pr-16 z-10 md:border-l border-white/5 order-1 md:order-2"
+              className="w-full md:w-1/2 flex flex-col items-center justify-end md:justify-center pt-20 pb-6 md:py-0 md:pr-16 z-10 md:border-l border-white/5 order-1 md:order-2"
             >
               {/* Decorative glow behind logo */}
               <div className="absolute w-64 h-64 bg-red-600/10 rounded-full blur-3xl" />
@@ -492,14 +492,14 @@ export default function AuthTvPage() {
         {/* Code View - Responsive Layout */}
         {view === 'code' && tvCode && (
           <>
-            {/* Code Display - Bottom on mobile, left side on desktop */}
+            {/* Code Display - Below QR on mobile, left side on desktop */}
             <motion.div
               key="code-left"
               initial={{ opacity: 0, y: 30 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: 30 }}
               transition={{ duration: 0.4 }}
-              className="w-full md:w-1/2 flex flex-col justify-end md:justify-center px-6 pb-8 md:pb-0 md:pl-12 md:pr-8 z-10 order-2 md:order-1 flex-1 md:flex-none"
+              className="w-full md:w-1/2 flex flex-col justify-start md:justify-center px-6 md:pl-12 md:pr-8 z-10 order-2 md:order-1"
             >
               <motion.h2
                 initial={{ opacity: 0, y: -20 }}
@@ -561,14 +561,14 @@ export default function AuthTvPage() {
               </motion.button>
             </motion.div>
 
-            {/* QR Code and Instructions - Top on mobile, right side on desktop */}
+            {/* QR Code and Instructions - Above code on mobile, right side on desktop */}
             <motion.div
               key="code-right"
               initial={{ opacity: 0, y: -30 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -30 }}
               transition={{ duration: 0.4, delay: 0.1 }}
-              className="w-full md:w-1/2 flex flex-col items-center justify-center pt-12 pb-4 md:py-0 md:pr-12 z-10 md:border-l border-white/5 order-1 md:order-2"
+              className="w-full md:w-1/2 flex flex-col items-center justify-end md:justify-center pt-16 pb-6 md:py-0 md:pr-12 z-10 md:border-l border-white/5 order-1 md:order-2"
             >
               <div className="absolute w-64 h-64 bg-red-600/10 rounded-full blur-3xl" />
 
@@ -624,14 +624,14 @@ export default function AuthTvPage() {
         {/* Pending Approval View - Responsive Layout */}
         {view === 'pending' && (
           <>
-            {/* Message - Bottom on mobile, left side on desktop */}
+            {/* Message - Below branding on mobile, left side on desktop */}
             <motion.div
               key="pending-left"
               initial={{ opacity: 0, y: 30 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: 30 }}
               transition={{ duration: 0.4 }}
-              className="w-full md:w-1/2 flex flex-col justify-end md:justify-center px-6 pb-8 md:pb-0 md:pl-16 md:pr-12 z-10 order-2 md:order-1 flex-1 md:flex-none"
+              className="w-full md:w-1/2 flex flex-col justify-start md:justify-center px-6 md:pl-16 md:pr-12 z-10 order-2 md:order-1"
             >
               <motion.div
                 initial={{ scale: 0 }}
@@ -683,14 +683,14 @@ export default function AuthTvPage() {
               </motion.button>
             </motion.div>
 
-            {/* Branding - Top on mobile, right side on desktop */}
+            {/* Branding - Above message on mobile, right side on desktop */}
             <motion.div
               key="pending-right"
               initial={{ opacity: 0, y: -30 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -30 }}
               transition={{ duration: 0.4, delay: 0.1 }}
-              className="w-full md:w-1/2 flex flex-col items-center justify-center pt-16 pb-4 md:py-0 md:pr-16 z-10 md:border-l border-white/5 order-1 md:order-2"
+              className="w-full md:w-1/2 flex flex-col items-center justify-end md:justify-center pt-20 pb-6 md:py-0 md:pr-16 z-10 md:border-l border-white/5 order-1 md:order-2"
             >
               <div className="absolute w-80 h-80 bg-amber-600/10 rounded-full blur-3xl" />
 

@@ -7,6 +7,7 @@ import { getQueryFn, apiRequest, queryClient } from '@/lib/queryClient';
 import { buildApiUrl, isNativePlatform } from '@/lib/capacitor';
 import { useAuth } from '@/hooks/use-auth';
 import Hls from 'hls.js';
+import { ScreenOrientation } from '@capacitor/screen-orientation';
 
 // ============================================================================
 // TYPES & INTERFACES
@@ -1272,6 +1273,22 @@ export default function LiveTVTvPage() {
     touchStartY.current = null;
     touchStartX.current = null;
   }, [viewMode, showOverlay, selectedChannel, channels]);
+
+  // Lock orientation to landscape on native platforms
+  useEffect(() => {
+    if (isNativePlatform()) {
+      ScreenOrientation.lock({ orientation: 'landscape' }).catch(err => {
+        console.log('[TV] Could not lock orientation:', err);
+      });
+
+      return () => {
+        // Unlock orientation when leaving the page
+        ScreenOrientation.unlock().catch(err => {
+          console.log('[TV] Could not unlock orientation:', err);
+        });
+      };
+    }
+  }, []);
 
   // Auto-play first channel with delay to prevent overwhelming emulator
   useEffect(() => {
