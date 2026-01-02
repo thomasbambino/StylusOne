@@ -773,6 +773,10 @@ export default function LiveTVTvPage() {
   const overlayTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const guideScrollRef = useRef<HTMLDivElement>(null);
 
+  // Touch/swipe gesture tracking
+  const touchStartY = useRef<number | null>(null);
+  const touchStartX = useRef<number | null>(null);
+
   // Query client for mutations
   const queryClient = useQueryClient();
 
@@ -1186,6 +1190,89 @@ export default function LiveTVTvPage() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [viewMode, channels, selectedChannel, focusedChannel, isPlaying, isMuted, showOverlay, changeChannel, selectChannelFromGuide]);
 
+  // ============================================================================
+  // TOUCH/SWIPE GESTURE HANDLERS
+  // ============================================================================
+
+  const handleTouchStart = useCallback((e: React.TouchEvent) => {
+    touchStartY.current = e.touches[0].clientY;
+    touchStartX.current = e.touches[0].clientX;
+  }, []);
+
+  const handleTouchEnd = useCallback((e: React.TouchEvent) => {
+    if (touchStartY.current === null || touchStartX.current === null) return;
+
+    const touchEndY = e.changedTouches[0].clientY;
+    const touchEndX = e.changedTouches[0].clientX;
+    const deltaY = touchStartY.current - touchEndY;
+    const deltaX = Math.abs(touchStartX.current - touchEndX);
+
+    // Only handle vertical swipes (deltaY significant, deltaX small)
+    const SWIPE_THRESHOLD = 50;
+    const TAP_THRESHOLD = 10;
+
+    const isSwipe = Math.abs(deltaY) > SWIPE_THRESHOLD && deltaX < Math.abs(deltaY);
+    const isTap = Math.abs(deltaY) < TAP_THRESHOLD && deltaX < TAP_THRESHOLD;
+
+    if (isSwipe) {
+      if (viewMode === 'player') {
+        if (deltaY > 0) {
+          // Swipe UP - open guide if overlay is showing
+          if (showOverlay) {
+            setViewMode('guide');
+            const currentIdx = selectedChannel
+              ? channels.findIndex((ch: Channel) => ch.iptvId === selectedChannel.iptvId)
+              : 0;
+            setFocusedChannelIndex(Math.max(0, currentIdx));
+          }
+        } else {
+          // Swipe DOWN - show overlay if hidden
+          if (!showOverlay) {
+            setShowOverlay(true);
+            if (overlayTimeoutRef.current) {
+              clearTimeout(overlayTimeoutRef.current);
+            }
+            overlayTimeoutRef.current = setTimeout(() => {
+              setShowOverlay(false);
+            }, 5000);
+          }
+        }
+      } else if (viewMode === 'guide') {
+        // Only handle swipe down to exit when scrolled to top
+        if (deltaY < 0) {
+          // Swipe DOWN - check if at top of scroll, then exit
+          const scrollContainer = guideScrollRef.current;
+          if (scrollContainer && scrollContainer.scrollTop <= 10) {
+            // At top of scroll - go back to player
+            setViewMode('player');
+          }
+          // Otherwise let native scroll handle it
+        }
+        // Swipe UP - let native scroll handle it naturally
+      }
+    } else if (isTap && viewMode === 'player') {
+      // Tap to toggle overlay visibility
+      if (showOverlay) {
+        setShowOverlay(false);
+        if (overlayTimeoutRef.current) {
+          clearTimeout(overlayTimeoutRef.current);
+        }
+      } else {
+        setShowOverlay(true);
+        if (overlayTimeoutRef.current) {
+          clearTimeout(overlayTimeoutRef.current);
+        }
+        overlayTimeoutRef.current = setTimeout(() => {
+          setShowOverlay(false);
+        }, 5000);
+      }
+    }
+
+    // Reset touch tracking
+    touchStartY.current = null;
+    touchStartX.current = null;
+  }, [viewMode, showOverlay, selectedChannel, channels]);
+
   // Auto-play first channel with delay to prevent overwhelming emulator
   useEffect(() => {
     if (channels.length > 0 && !selectedChannel) {
@@ -1220,7 +1307,11 @@ export default function LiveTVTvPage() {
   // ============================================================================
 
   return (
-    <div className="relative w-screen h-screen bg-black overflow-hidden">
+    <div
+      className="relative w-screen h-screen bg-black overflow-hidden"
+      onTouchStart={handleTouchStart}
+      onTouchEnd={handleTouchEnd}
+    >
       {/* Video Element - Full screen or PiP */}
       <motion.div
         className="absolute bg-black"

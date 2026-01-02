@@ -10,6 +10,7 @@ export * from './service-checker';
 export * from './email-service';
 export * from './epub-service';
 export * from './xtream-codes-service';
+export * from './stream-tracker-service';
 
 // Import services and service registry
 import { serviceRegistry } from './service-registry';
@@ -18,6 +19,7 @@ import { serviceCheckerService } from './service-checker';
 import { emailService } from './email-service';
 import { epubService } from './epub-service';
 import { xtreamCodesService } from './xtream-codes-service';
+import { streamTrackerService } from './stream-tracker-service';
 
 /**
  * Initialize all services and register them with the service registry
@@ -32,6 +34,9 @@ export async function initializeServices(): Promise<void> {
 
   // Initialize all registered services
   await serviceRegistry.initializeAll();
+
+  // Start stream tracker cleanup interval
+  streamTrackerService.startCleanupInterval();
 
   console.log('All services initialized');
 }

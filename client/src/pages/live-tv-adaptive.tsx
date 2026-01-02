@@ -1,13 +1,11 @@
 import { useEffect, useState } from 'react';
 import { getDeviceType, type DeviceType } from '@/lib/capacitor';
-import LiveTVSimple from './live-tv-simple';
 import LiveTVTV from './live-tv-tv';
 import LiveTVPage from './live-tv-page'; // Fallback for web
 
 /**
  * Adaptive Live TV component that switches layouts based on device type
- * - Phone/Tablet: Simplified, performant layout with overlay controls
- * - TV: Channel surfing with D-pad navigation
+ * - Phone/Tablet/TV: Unified TV-style interface with overlay controls and guide
  * - Web: Full-featured desktop layout
  */
 export default function LiveTVAdaptive() {
@@ -38,10 +36,9 @@ export default function LiveTVAdaptive() {
   // Select the appropriate layout based on device type
   switch (deviceType) {
     case 'tv':
-      return <LiveTVTV />;
     case 'tablet':
     case 'phone':
-      return <LiveTVSimple />;
+      return <LiveTVTV />;
     case 'web':
     default:
       return <LiveTVPage />;

@@ -1,5 +1,9 @@
 import axios from 'axios';
 import { IService } from './interfaces';
+import { db } from '../db';
+import { iptvCredentials, planIptvCredentials, activeIptvStreams, userSubscriptions, subscriptionPlans } from '@shared/schema';
+import { eq, and, inArray, desc } from 'drizzle-orm';
+import { decrypt, maskCredential } from '../utils/encryption';
 
 /**
  * Interface for Xtream Codes authentication
@@ -43,6 +47,7 @@ export interface IPTVChannel {
   categoryId: string;
   hasArchive: boolean;
   archiveDays: number;
+  credentialId?: number; // Track which credential this channel belongs to
 }
 
 /**
@@ -73,104 +78,52 @@ export interface XtreamEPGListing {
 }
 
 /**
- * Xtream Codes API Service for IPTV functionality
+ * Decrypted credential data
  */
-export class XtreamCodesService implements IService {
+export interface DecryptedCredential {
+  id: number;
+  name: string;
+  serverUrl: string;
+  username: string;
+  password: string;
+  maxConnections: number;
+  isActive: boolean;
+}
+
+/**
+ * Xtream Codes Client - handles API calls for a single IPTV credential
+ */
+export class XtreamCodesClient {
   private serverUrl: string;
   private username: string;
   private password: string;
-  private initialized: boolean = false;
+  private credentialId: number | null;
   private authInfo: any = null;
 
   // Cache storage
   private categoriesCache: XtreamCategory[] | null = null;
   private channelsCache: IPTVChannel[] | null = null;
   private cacheTimestamp: number = 0;
-  private cacheExpirationMs: number = 1; // Force immediate cache refresh
+  private cacheExpirationMs: number = 30000; // 30 second cache
 
-  constructor() {
-    this.serverUrl = process.env.XTREAM_SERVER_URL || '';
-    this.username = process.env.XTREAM_USERNAME || '';
-    this.password = process.env.XTREAM_PASSWORD || '';
+  constructor(credentials: { serverUrl: string; username: string; password: string; credentialId?: number }) {
+    this.serverUrl = credentials.serverUrl;
+    this.username = credentials.username;
+    this.password = credentials.password;
+    this.credentialId = credentials.credentialId || null;
   }
 
   /**
-   * Initialize the service by testing authentication and preloading data
+   * Get the credential ID for this client
    */
-  async initialize(): Promise<void> {
-    if (!this.serverUrl || !this.username || !this.password) {
-      console.log('Xtream Codes credentials not configured, skipping initialization');
-      this.initialized = false;
-      return;
-    }
-
-    try {
-      // Test authentication by getting user info
-      this.authInfo = await this.authenticate();
-      this.initialized = true;
-      console.log('Xtream Codes service initialized successfully');
-      console.log(`Server: ${this.serverUrl}`);
-      console.log(`User: ${this.username}`);
-      console.log(`Status: ${this.authInfo.user_info.status}`);
-      console.log(`Expires: ${new Date(this.authInfo.user_info.exp_date * 1000).toLocaleString()}`);
-
-      // Preload categories and channels into cache
-      console.log('Preloading Xtream Codes data into cache...');
-      await this.refreshCache();
-      console.log(`Cached ${this.categoriesCache?.length || 0} categories and ${this.channelsCache?.length || 0} channels`);
-    } catch (error) {
-      console.error('Failed to initialize Xtream Codes service:', error);
-      this.initialized = false;
-    }
+  getCredentialId(): number | null {
+    return this.credentialId;
   }
 
   /**
-   * Reinitialize the service and clear cache
+   * Test authentication and get user info
    */
-  async reinitialize(): Promise<void> {
-    this.initialized = false;
-    this.authInfo = null;
-    this.categoriesCache = null;
-    this.channelsCache = null;
-    this.cacheTimestamp = 0;
-    await this.initialize();
-  }
-
-  /**
-   * Manually refresh the cache (useful for admin/maintenance)
-   */
-  async forceRefreshCache(): Promise<void> {
-    if (!this.isConfigured() || !this.initialized) {
-      throw new Error('Service not initialized');
-    }
-    await this.refreshCache();
-  }
-
-  /**
-   * Check if the service is healthy
-   */
-  async isHealthy(): Promise<boolean> {
-    if (!this.isConfigured() || !this.initialized) {
-      return false;
-    }
-
-    try {
-      const info = await this.authenticate();
-      return info.user_info.status === 'Active';
-    } catch (error) {
-      console.error('Xtream Codes health check failed:', error);
-      return false;
-    }
-  }
-
-  /**
-   * Authenticate and get user info
-   */
-  private async authenticate(): Promise<any> {
-    if (!this.isConfigured()) {
-      throw new Error('Xtream Codes credentials not configured');
-    }
-
+  async authenticate(): Promise<any> {
     try {
       const url = `${this.serverUrl}/player_api.php?username=${this.username}&password=${this.password}`;
       const response = await axios.get(url, { timeout: 10000 });
@@ -179,6 +132,7 @@ export class XtreamCodesService implements IService {
         throw new Error('Invalid authentication response');
       }
 
+      this.authInfo = response.data;
       return response.data;
     } catch (error) {
       console.error('Error authenticating with Xtream Codes:', error);
@@ -187,72 +141,32 @@ export class XtreamCodesService implements IService {
   }
 
   /**
-   * Refresh the cache by fetching categories and channels
+   * Check if connection is healthy
    */
-  private async refreshCache(): Promise<void> {
+  async isHealthy(): Promise<boolean> {
     try {
-      // Fetch categories
-      const categoriesUrl = `${this.serverUrl}/player_api.php?username=${this.username}&password=${this.password}&action=get_live_categories`;
-      const categoriesResponse = await axios.get(categoriesUrl, { timeout: 10000 });
-      this.categoriesCache = categoriesResponse.data || [];
-
-      // Fetch all live streams (without category filter for full cache)
-      const streamsUrl = `${this.serverUrl}/player_api.php?username=${this.username}&password=${this.password}&action=get_live_streams`;
-      const streamsResponse = await axios.get(streamsUrl, { timeout: 15000 });
-      const streams: XtreamChannel[] = streamsResponse.data || [];
-
-      // Convert to IPTVChannel format
-      this.channelsCache = streams.map(stream => ({
-        id: stream.stream_id.toString(),
-        number: stream.num ? stream.num.toString() : stream.stream_id.toString(),
-        name: stream.name,
-        streamUrl: `/api/iptv/stream/${stream.stream_id}.m3u8`, // HLS manifest proxy endpoint
-        logo: stream.stream_icon || '',
-        epgId: stream.epg_channel_id || '',
-        categoryName: stream.category_name || 'Unknown',
-        categoryId: stream.category_id || '',
-        hasArchive: stream.tv_archive === 1,
-        archiveDays: stream.tv_archive_duration || 0
-      }));
-
-      this.cacheTimestamp = Date.now();
+      const info = await this.authenticate();
+      return info.user_info.status === 'Active';
     } catch (error) {
-      console.error('Error refreshing Xtream Codes cache:', error);
-      throw error;
+      return false;
     }
   }
 
   /**
-   * Check if cache is valid
-   */
-  private isCacheValid(): boolean {
-    return this.channelsCache !== null &&
-           this.categoriesCache !== null &&
-           (Date.now() - this.cacheTimestamp) < this.cacheExpirationMs;
-  }
-
-  /**
-   * Get live stream categories (from cache)
+   * Get live stream categories
    */
   async getCategories(): Promise<XtreamCategory[]> {
-    if (!this.isConfigured()) {
-      throw new Error('Xtream Codes credentials not configured');
-    }
-
     // Return from cache if valid
     if (this.isCacheValid() && this.categoriesCache) {
       return this.categoriesCache;
     }
 
-    // Refresh cache if expired or empty
     try {
       await this.refreshCache();
       return this.categoriesCache || [];
     } catch (error) {
-      console.error('Error fetching Xtream Codes categories:', error);
-      // Return stale cache if available, otherwise throw
+      console.error('Error fetching categories:', error);
       if (this.categoriesCache) {
-        console.warn('Returning stale cache due to refresh error');
         return this.categoriesCache;
       }
       throw new Error('Failed to fetch categories');
@@ -260,52 +174,21 @@ export class XtreamCodesService implements IService {
   }
 
   /**
-   * Get all live streams (channels)
-   */
-  async getLiveStreams(categoryId?: string): Promise<XtreamChannel[]> {
-    if (!this.isConfigured()) {
-      throw new Error('Xtream Codes credentials not configured');
-    }
-
-    try {
-      let url = `${this.serverUrl}/player_api.php?username=${this.username}&password=${this.password}&action=get_live_streams`;
-
-      if (categoryId) {
-        url += `&category_id=${categoryId}`;
-      }
-
-      const response = await axios.get(url, { timeout: 15000 });
-      return response.data || [];
-    } catch (error) {
-      console.error('Error fetching Xtream Codes live streams:', error);
-      throw new Error('Failed to fetch live streams');
-    }
-  }
-
-  /**
-   * Get formatted channels for our app (from cache)
+   * Get formatted channels
    */
   async getChannels(categoryId?: string): Promise<IPTVChannel[]> {
-    if (!this.isConfigured()) {
-      throw new Error('Xtream Codes credentials not configured');
-    }
-
-    // Refresh cache if not valid
     if (!this.isCacheValid()) {
       try {
         await this.refreshCache();
       } catch (error) {
         console.error('Error refreshing cache:', error);
-        // Continue with stale cache if available
       }
     }
 
-    // Return from cache
     if (!this.channelsCache) {
       return [];
     }
 
-    // Filter by category if specified
     if (categoryId) {
       return this.channelsCache.filter(ch => ch.categoryId === categoryId);
     }
@@ -317,10 +200,6 @@ export class XtreamCodesService implements IService {
    * Get EPG data for a specific channel
    */
   async getEPG(streamId: string, limit?: number): Promise<XtreamEPGListing[]> {
-    if (!this.isConfigured()) {
-      throw new Error('Xtream Codes credentials not configured');
-    }
-
     try {
       let url = `${this.serverUrl}/player_api.php?username=${this.username}&password=${this.password}&action=get_simple_data_table&stream_id=${streamId}`;
 
@@ -340,10 +219,6 @@ export class XtreamCodesService implements IService {
    * Get short EPG (current and next program) for a channel
    */
   async getShortEPG(streamId: string): Promise<{ now?: XtreamEPGListing; next?: XtreamEPGListing }> {
-    if (!this.isConfigured()) {
-      throw new Error('Xtream Codes credentials not configured');
-    }
-
     try {
       const url = `${this.serverUrl}/player_api.php?username=${this.username}&password=${this.password}&action=get_short_epg&stream_id=${streamId}&limit=2`;
       const response = await axios.get(url, { timeout: 10000 });
@@ -360,32 +235,9 @@ export class XtreamCodesService implements IService {
   }
 
   /**
-   * Get M3U playlist URL
-   */
-  getM3UUrl(): string {
-    if (!this.isConfigured()) {
-      throw new Error('Xtream Codes credentials not configured');
-    }
-    return `${this.serverUrl}/get.php?username=${this.username}&password=${this.password}&type=m3u_plus&output=ts`;
-  }
-
-  /**
-   * Get XMLTV EPG URL
-   */
-  getXMLTVUrl(): string {
-    if (!this.isConfigured()) {
-      throw new Error('Xtream Codes credentials not configured');
-    }
-    return `${this.serverUrl}/xmltv.php?username=${this.username}&password=${this.password}`;
-  }
-
-  /**
    * Get stream URL for a specific channel
    */
   getStreamUrl(streamId: string, extension: string = 'ts'): string {
-    if (!this.isConfigured()) {
-      throw new Error('Xtream Codes credentials not configured');
-    }
     return `${this.serverUrl}/live/${this.username}/${this.password}/${streamId}.${extension}`;
   }
 
@@ -393,31 +245,21 @@ export class XtreamCodesService implements IService {
    * Get HLS stream URL for a specific channel (for web player)
    */
   getHLSStreamUrl(streamId: string): string {
-    if (!this.isConfigured()) {
-      throw new Error('Xtream Codes credentials not configured');
-    }
     return `${this.serverUrl}/live/${this.username}/${this.password}/${streamId}.m3u8`;
   }
 
   /**
-   * Check if service is configured
+   * Get M3U playlist URL
    */
-  isConfigured(): boolean {
-    return !!(this.serverUrl && this.username && this.password);
+  getM3UUrl(): string {
+    return `${this.serverUrl}/get.php?username=${this.username}&password=${this.password}&type=m3u_plus&output=ts`;
   }
 
   /**
-   * Check if service is initialized
+   * Get XMLTV EPG URL
    */
-  isInitialized(): boolean {
-    return this.initialized;
-  }
-
-  /**
-   * Get authentication info (if initialized)
-   */
-  getAuthInfo(): any {
-    return this.authInfo;
+  getXMLTVUrl(): string {
+    return `${this.serverUrl}/xmltv.php?username=${this.username}&password=${this.password}`;
   }
 
   /**
@@ -440,7 +282,578 @@ export class XtreamCodesService implements IService {
   getPassword(): string {
     return this.password;
   }
+
+  /**
+   * Get auth info
+   */
+  getAuthInfo(): any {
+    return this.authInfo;
+  }
+
+  /**
+   * Check if cache is valid
+   */
+  private isCacheValid(): boolean {
+    return this.channelsCache !== null &&
+           this.categoriesCache !== null &&
+           (Date.now() - this.cacheTimestamp) < this.cacheExpirationMs;
+  }
+
+  /**
+   * Refresh the cache by fetching categories and channels
+   */
+  private async refreshCache(): Promise<void> {
+    try {
+      // Fetch categories
+      const categoriesUrl = `${this.serverUrl}/player_api.php?username=${this.username}&password=${this.password}&action=get_live_categories`;
+      const categoriesResponse = await axios.get(categoriesUrl, { timeout: 10000 });
+      this.categoriesCache = categoriesResponse.data || [];
+
+      // Fetch all live streams
+      const streamsUrl = `${this.serverUrl}/player_api.php?username=${this.username}&password=${this.password}&action=get_live_streams`;
+      const streamsResponse = await axios.get(streamsUrl, { timeout: 15000 });
+      const streams: XtreamChannel[] = streamsResponse.data || [];
+
+      // Convert to IPTVChannel format with credentialId
+      this.channelsCache = streams.map(stream => ({
+        id: stream.stream_id.toString(),
+        number: stream.num ? stream.num.toString() : stream.stream_id.toString(),
+        name: stream.name,
+        streamUrl: `/api/iptv/stream/${stream.stream_id}.m3u8`,
+        logo: stream.stream_icon || '',
+        epgId: stream.epg_channel_id || '',
+        categoryName: stream.category_name || 'Unknown',
+        categoryId: stream.category_id || '',
+        hasArchive: stream.tv_archive === 1,
+        archiveDays: stream.tv_archive_duration || 0,
+        credentialId: this.credentialId || undefined
+      }));
+
+      this.cacheTimestamp = Date.now();
+    } catch (error) {
+      console.error('Error refreshing Xtream Codes cache:', error);
+      throw error;
+    }
+  }
 }
 
-// Export singleton instance
-export const xtreamCodesService = new XtreamCodesService();
+/**
+ * Xtream Codes Manager - manages multiple IPTV credentials and user access
+ */
+export class XtreamCodesManager implements IService {
+  private clients: Map<number, XtreamCodesClient> = new Map();
+  private envClient: XtreamCodesClient | null = null;
+  private initialized: boolean = false;
+
+  // Cache for user channels (merged from all credentials)
+  private userChannelCache: Map<number, { channels: IPTVChannel[]; timestamp: number }> = new Map();
+  private userCacheExpiration: number = 30000; // 30 seconds
+
+  constructor() {
+    // Check for environment variable fallback
+    const serverUrl = process.env.XTREAM_SERVER_URL || '';
+    const username = process.env.XTREAM_USERNAME || '';
+    const password = process.env.XTREAM_PASSWORD || '';
+
+    if (serverUrl && username && password) {
+      this.envClient = new XtreamCodesClient({ serverUrl, username, password });
+    }
+  }
+
+  /**
+   * Initialize the service
+   */
+  async initialize(): Promise<void> {
+    // Initialize env client if available
+    if (this.envClient) {
+      try {
+        await this.envClient.authenticate();
+        console.log('Xtream Codes service initialized with environment credentials');
+      } catch (error) {
+        console.error('Failed to initialize env client:', error);
+      }
+    }
+
+    // Load active credentials from database
+    await this.loadCredentialsFromDatabase();
+
+    this.initialized = true;
+    console.log(`Xtream Codes Manager initialized with ${this.clients.size} database credentials`);
+  }
+
+  /**
+   * Load active credentials from database
+   */
+  private async loadCredentialsFromDatabase(): Promise<void> {
+    try {
+      const credentials = await db.select().from(iptvCredentials).where(eq(iptvCredentials.isActive, true));
+
+      for (const cred of credentials) {
+        try {
+          const decrypted = this.decryptCredential(cred);
+          const client = new XtreamCodesClient({
+            serverUrl: decrypted.serverUrl,
+            username: decrypted.username,
+            password: decrypted.password,
+            credentialId: cred.id
+          });
+
+          this.clients.set(cred.id, client);
+          console.log(`Loaded IPTV credential: ${cred.name} (ID: ${cred.id})`);
+        } catch (error) {
+          console.error(`Failed to load credential ${cred.name}:`, error);
+        }
+      }
+    } catch (error) {
+      console.error('Error loading credentials from database:', error);
+    }
+  }
+
+  /**
+   * Decrypt a credential from the database
+   */
+  private decryptCredential(cred: typeof iptvCredentials.$inferSelect): DecryptedCredential {
+    return {
+      id: cred.id,
+      name: cred.name,
+      serverUrl: decrypt(cred.serverUrl),
+      username: decrypt(cred.username),
+      password: decrypt(cred.password),
+      maxConnections: cred.maxConnections,
+      isActive: cred.isActive
+    };
+  }
+
+  /**
+   * Get or create client for a specific credential ID
+   */
+  async getClient(credentialId: number): Promise<XtreamCodesClient | null> {
+    if (this.clients.has(credentialId)) {
+      return this.clients.get(credentialId)!;
+    }
+
+    // Try to load from database
+    const [cred] = await db.select().from(iptvCredentials).where(eq(iptvCredentials.id, credentialId));
+    if (!cred || !cred.isActive) {
+      return null;
+    }
+
+    try {
+      const decrypted = this.decryptCredential(cred);
+      const client = new XtreamCodesClient({
+        serverUrl: decrypted.serverUrl,
+        username: decrypted.username,
+        password: decrypted.password,
+        credentialId: cred.id
+      });
+
+      this.clients.set(cred.id, client);
+      return client;
+    } catch (error) {
+      console.error(`Failed to create client for credential ${credentialId}:`, error);
+      return null;
+    }
+  }
+
+  /**
+   * Get all clients that a user has access to based on their subscriptions
+   */
+  async getClientsForUser(userId: number): Promise<XtreamCodesClient[]> {
+    const clients: XtreamCodesClient[] = [];
+
+    // Get user's active subscriptions
+    const subscriptions = await db.select()
+      .from(userSubscriptions)
+      .innerJoin(subscriptionPlans, eq(userSubscriptions.plan_id, subscriptionPlans.id))
+      .where(and(
+        eq(userSubscriptions.user_id, userId),
+        eq(userSubscriptions.status, 'active')
+      ));
+
+    if (subscriptions.length === 0) {
+      // Fallback to env client if no subscriptions but user has access
+      if (this.envClient) {
+        return [this.envClient];
+      }
+      return [];
+    }
+
+    // Get credentials assigned to user's plans
+    const planIds = subscriptions.map(s => s.userSubscriptions.plan_id);
+    const planCredentials = await db.select()
+      .from(planIptvCredentials)
+      .innerJoin(iptvCredentials, eq(planIptvCredentials.credentialId, iptvCredentials.id))
+      .where(and(
+        inArray(planIptvCredentials.planId, planIds),
+        eq(iptvCredentials.isActive, true)
+      ))
+      .orderBy(planIptvCredentials.priority);
+
+    // Collect unique credential IDs
+    const seenCredentialIds = new Set<number>();
+    for (const pc of planCredentials) {
+      if (!seenCredentialIds.has(pc.iptv_credentials.id)) {
+        seenCredentialIds.add(pc.iptv_credentials.id);
+        const client = await this.getClient(pc.iptv_credentials.id);
+        if (client) {
+          clients.push(client);
+        }
+      }
+    }
+
+    // If no database credentials, fallback to env client
+    if (clients.length === 0 && this.envClient) {
+      return [this.envClient];
+    }
+
+    return clients;
+  }
+
+  /**
+   * Get merged channels from all credentials a user has access to
+   */
+  async getMergedChannels(userId: number, categoryId?: string): Promise<IPTVChannel[]> {
+    // Check cache first
+    const cached = this.userChannelCache.get(userId);
+    if (cached && (Date.now() - cached.timestamp) < this.userCacheExpiration) {
+      if (categoryId) {
+        return cached.channels.filter(ch => ch.categoryId === categoryId);
+      }
+      return cached.channels;
+    }
+
+    const clients = await this.getClientsForUser(userId);
+    if (clients.length === 0) {
+      return [];
+    }
+
+    // Fetch channels from all clients in parallel
+    const channelArrays = await Promise.all(
+      clients.map(client => client.getChannels().catch(() => []))
+    );
+
+    // Merge and deduplicate channels
+    const channelMap = new Map<string, IPTVChannel>();
+    for (const channels of channelArrays) {
+      for (const channel of channels) {
+        // Use channel name as the deduplication key
+        // Keep the first occurrence (from higher priority credential)
+        const key = channel.name.toLowerCase().trim();
+        if (!channelMap.has(key)) {
+          channelMap.set(key, channel);
+        }
+      }
+    }
+
+    const mergedChannels = Array.from(channelMap.values());
+
+    // Sort by channel number/name
+    mergedChannels.sort((a, b) => {
+      const numA = parseInt(a.number) || 0;
+      const numB = parseInt(b.number) || 0;
+      if (numA !== numB) return numA - numB;
+      return a.name.localeCompare(b.name);
+    });
+
+    // Cache the result
+    this.userChannelCache.set(userId, {
+      channels: mergedChannels,
+      timestamp: Date.now()
+    });
+
+    if (categoryId) {
+      return mergedChannels.filter(ch => ch.categoryId === categoryId);
+    }
+
+    return mergedChannels;
+  }
+
+  /**
+   * Get merged categories from all credentials a user has access to
+   */
+  async getMergedCategories(userId: number): Promise<XtreamCategory[]> {
+    const clients = await this.getClientsForUser(userId);
+    if (clients.length === 0) {
+      return [];
+    }
+
+    // Fetch categories from all clients in parallel
+    const categoryArrays = await Promise.all(
+      clients.map(client => client.getCategories().catch(() => []))
+    );
+
+    // Merge and deduplicate categories
+    const categoryMap = new Map<string, XtreamCategory>();
+    for (const categories of categoryArrays) {
+      for (const category of categories) {
+        const key = category.category_name.toLowerCase().trim();
+        if (!categoryMap.has(key)) {
+          categoryMap.set(key, category);
+        }
+      }
+    }
+
+    return Array.from(categoryMap.values()).sort((a, b) =>
+      a.category_name.localeCompare(b.category_name)
+    );
+  }
+
+  /**
+   * Select a credential for streaming a channel (checks capacity)
+   * Returns credential ID if available, null if no capacity
+   */
+  async selectCredentialForStream(userId: number, streamId: string): Promise<number | null> {
+    const clients = await this.getClientsForUser(userId);
+    if (clients.length === 0) {
+      // Use env client fallback (no stream tracking)
+      return this.envClient ? -1 : null;
+    }
+
+    // Check each credential for the channel and available capacity
+    for (const client of clients) {
+      const credentialId = client.getCredentialId();
+      if (!credentialId) continue;
+
+      // Check if this credential has the channel
+      const channels = await client.getChannels();
+      const hasChannel = channels.some(ch => ch.id === streamId);
+      if (!hasChannel) continue;
+
+      // Check capacity
+      const [cred] = await db.select().from(iptvCredentials).where(eq(iptvCredentials.id, credentialId));
+      if (!cred) continue;
+
+      const activeStreams = await db.select()
+        .from(activeIptvStreams)
+        .where(eq(activeIptvStreams.credentialId, credentialId));
+
+      if (activeStreams.length < cred.maxConnections) {
+        return credentialId;
+      }
+    }
+
+    return null; // No capacity available
+  }
+
+  /**
+   * Get a client for a stream (finds the right credential)
+   */
+  async getClientForStream(userId: number, streamId: string): Promise<XtreamCodesClient | null> {
+    const credentialId = await this.selectCredentialForStream(userId, streamId);
+
+    if (credentialId === null) {
+      return null;
+    }
+
+    // Use env client fallback
+    if (credentialId === -1) {
+      return this.envClient;
+    }
+
+    return this.getClient(credentialId);
+  }
+
+  /**
+   * Clear user channel cache
+   */
+  clearUserCache(userId: number): void {
+    this.userChannelCache.delete(userId);
+  }
+
+  /**
+   * Reload a specific credential (after update)
+   */
+  async reloadCredential(credentialId: number): Promise<void> {
+    // Remove existing client
+    this.clients.delete(credentialId);
+
+    // Reload from database
+    const [cred] = await db.select().from(iptvCredentials).where(eq(iptvCredentials.id, credentialId));
+    if (cred && cred.isActive) {
+      try {
+        const decrypted = this.decryptCredential(cred);
+        const client = new XtreamCodesClient({
+          serverUrl: decrypted.serverUrl,
+          username: decrypted.username,
+          password: decrypted.password,
+          credentialId: cred.id
+        });
+        this.clients.set(cred.id, client);
+      } catch (error) {
+        console.error(`Failed to reload credential ${credentialId}:`, error);
+      }
+    }
+
+    // Clear all user caches since credentials changed
+    this.userChannelCache.clear();
+  }
+
+  /**
+   * Remove a credential from the manager
+   */
+  removeCredential(credentialId: number): void {
+    this.clients.delete(credentialId);
+    this.userChannelCache.clear();
+  }
+
+  /**
+   * Check if service is healthy
+   */
+  async isHealthy(): Promise<boolean> {
+    // Check env client
+    if (this.envClient) {
+      const healthy = await this.envClient.isHealthy();
+      if (healthy) return true;
+    }
+
+    // Check at least one database credential
+    for (const client of Array.from(this.clients.values())) {
+      const healthy = await client.isHealthy();
+      if (healthy) return true;
+    }
+
+    return false;
+  }
+
+  /**
+   * Check if service is initialized
+   */
+  isInitialized(): boolean {
+    return this.initialized;
+  }
+
+  /**
+   * Check if any credentials are configured
+   */
+  isConfigured(): boolean {
+    return this.envClient !== null || this.clients.size > 0;
+  }
+
+  /**
+   * Get env client (for backward compatibility)
+   */
+  getEnvClient(): XtreamCodesClient | null {
+    return this.envClient;
+  }
+
+  // =====================================================
+  // Backward compatibility methods (delegate to env client or first available)
+  // =====================================================
+
+  /**
+   * Get default client (env client or first database client)
+   */
+  private getDefaultClient(): XtreamCodesClient | null {
+    if (this.envClient) return this.envClient;
+    const firstClient = this.clients.values().next().value;
+    return firstClient || null;
+  }
+
+  async reinitialize(): Promise<void> {
+    this.clients.clear();
+    this.userChannelCache.clear();
+    this.initialized = false;
+    await this.initialize();
+  }
+
+  async forceRefreshCache(): Promise<void> {
+    this.userChannelCache.clear();
+    // Force refresh all clients
+    for (const client of Array.from(this.clients.values())) {
+      try {
+        await client.getChannels();
+      } catch (error) {
+        console.error('Error refreshing client cache:', error);
+      }
+    }
+    if (this.envClient) {
+      try {
+        await this.envClient.getChannels();
+      } catch (error) {
+        console.error('Error refreshing env client cache:', error);
+      }
+    }
+  }
+
+  // Legacy methods for backward compatibility with existing code
+  async getCategories(): Promise<XtreamCategory[]> {
+    const client = this.getDefaultClient();
+    if (!client) throw new Error('No IPTV credentials configured');
+    return client.getCategories();
+  }
+
+  async getChannels(categoryId?: string): Promise<IPTVChannel[]> {
+    const client = this.getDefaultClient();
+    if (!client) throw new Error('No IPTV credentials configured');
+    return client.getChannels(categoryId);
+  }
+
+  async getEPG(streamId: string, limit?: number): Promise<XtreamEPGListing[]> {
+    const client = this.getDefaultClient();
+    if (!client) throw new Error('No IPTV credentials configured');
+    return client.getEPG(streamId, limit);
+  }
+
+  async getShortEPG(streamId: string): Promise<{ now?: XtreamEPGListing; next?: XtreamEPGListing }> {
+    const client = this.getDefaultClient();
+    if (!client) throw new Error('No IPTV credentials configured');
+    return client.getShortEPG(streamId);
+  }
+
+  getStreamUrl(streamId: string, extension: string = 'ts'): string {
+    const client = this.getDefaultClient();
+    if (!client) throw new Error('No IPTV credentials configured');
+    return client.getStreamUrl(streamId, extension);
+  }
+
+  getHLSStreamUrl(streamId: string): string {
+    const client = this.getDefaultClient();
+    if (!client) throw new Error('No IPTV credentials configured');
+    return client.getHLSStreamUrl(streamId);
+  }
+
+  getM3UUrl(): string {
+    const client = this.getDefaultClient();
+    if (!client) throw new Error('No IPTV credentials configured');
+    return client.getM3UUrl();
+  }
+
+  getXMLTVUrl(): string {
+    const client = this.getDefaultClient();
+    if (!client) throw new Error('No IPTV credentials configured');
+    return client.getXMLTVUrl();
+  }
+
+  getServerUrl(): string {
+    const client = this.getDefaultClient();
+    if (!client) throw new Error('No IPTV credentials configured');
+    return client.getServerUrl();
+  }
+
+  getUsername(): string {
+    const client = this.getDefaultClient();
+    if (!client) throw new Error('No IPTV credentials configured');
+    return client.getUsername();
+  }
+
+  getPassword(): string {
+    const client = this.getDefaultClient();
+    if (!client) throw new Error('No IPTV credentials configured');
+    return client.getPassword();
+  }
+
+  getAuthInfo(): any {
+    const client = this.getDefaultClient();
+    if (!client) return null;
+    return client.getAuthInfo();
+  }
+}
+
+// Export singleton manager instance (replaces old singleton service)
+export const xtreamCodesManager = new XtreamCodesManager();
+
+// Backward compatibility: alias for existing code
+export const xtreamCodesService = xtreamCodesManager;
+
+// Legacy class export for type compatibility
+export class XtreamCodesService extends XtreamCodesManager {}

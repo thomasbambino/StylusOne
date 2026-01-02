@@ -21,6 +21,7 @@ import { epubService } from './services/epub-service';
 import booksRouter from './routes/books';
 import subscriptionsRouter from './routes/subscriptions';
 import adminSubscriptionsRouter from './routes/admin-subscriptions';
+import adminIptvRouter from './routes/admin-iptv';
 import stripeWebhooksRouter from './routes/stripe-webhooks';
 import referralsRouter from './routes/referrals';
 import { z } from "zod";
@@ -506,6 +507,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Subscription routes
   app.use("/api/subscriptions", subscriptionsRouter);
   app.use("/api/admin", adminSubscriptionsRouter);
+  app.use("/api/admin", adminIptvRouter);
 
   // Referral routes
   app.use("/api/referrals", referralsRouter);
@@ -2973,6 +2975,52 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error('Error proxying IPTV segment:', error);
       res.status(500).send('Failed to proxy segment');
+    }
+  });
+
+  // IPTV Stream Heartbeat - keep stream session alive
+  app.post("/api/iptv/stream/heartbeat", async (req, res) => {
+    if (!req.isAuthenticated()) return res.sendStatus(401);
+
+    try {
+      const { sessionToken } = req.body;
+
+      if (!sessionToken) {
+        return res.status(400).json({ error: "Session token required" });
+      }
+
+      const { streamTrackerService } = await import('./services/stream-tracker-service');
+      const success = await streamTrackerService.heartbeat(sessionToken);
+
+      if (success) {
+        res.json({ success: true });
+      } else {
+        res.status(404).json({ error: "Session not found" });
+      }
+    } catch (error) {
+      console.error('Error processing stream heartbeat:', error);
+      res.status(500).json({ error: "Failed to process heartbeat" });
+    }
+  });
+
+  // IPTV Stream Release - release stream session
+  app.post("/api/iptv/stream/release", async (req, res) => {
+    if (!req.isAuthenticated()) return res.sendStatus(401);
+
+    try {
+      const { sessionToken } = req.body;
+
+      if (!sessionToken) {
+        return res.status(400).json({ error: "Session token required" });
+      }
+
+      const { streamTrackerService } = await import('./services/stream-tracker-service');
+      const success = await streamTrackerService.releaseStream(sessionToken);
+
+      res.json({ success: success });
+    } catch (error) {
+      console.error('Error releasing stream:', error);
+      res.status(500).json({ error: "Failed to release stream" });
     }
   });
 

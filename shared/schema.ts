@@ -279,6 +279,43 @@ export const tvCodes = pgTable("tvCodes", {
   used: boolean("used").notNull().default(false),
 });
 
+// IPTV Credentials - Store multiple IPTV provider credentials (encrypted at rest)
+export const iptvCredentials = pgTable("iptv_credentials", {
+  id: serial("id").primaryKey(),
+  name: text("name").notNull(), // Display name (e.g., "Provider A")
+  serverUrl: text("server_url").notNull(), // Encrypted
+  username: text("username").notNull(), // Encrypted
+  password: text("password").notNull(), // Encrypted
+  maxConnections: integer("max_connections").notNull().default(1), // Max concurrent streams
+  isActive: boolean("is_active").notNull().default(true),
+  notes: text("notes"), // Admin notes
+  healthStatus: text("health_status", { enum: ['healthy', 'unhealthy', 'unknown'] }).notNull().default('unknown'),
+  lastHealthCheck: timestamp("last_health_check"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+// Plan-Credential Junction - Many-to-many relationship between plans and IPTV credentials
+export const planIptvCredentials = pgTable("plan_iptv_credentials", {
+  id: serial("id").primaryKey(),
+  planId: integer("plan_id").notNull().references(() => subscriptionPlans.id, { onDelete: 'cascade' }),
+  credentialId: integer("credential_id").notNull().references(() => iptvCredentials.id, { onDelete: 'cascade' }),
+  priority: integer("priority").notNull().default(0), // Lower = higher priority for load balancing
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+// Active IPTV Streams - Track concurrent streams per credential for rate limiting
+export const activeIptvStreams = pgTable("active_iptv_streams", {
+  id: serial("id").primaryKey(),
+  credentialId: integer("credential_id").notNull().references(() => iptvCredentials.id, { onDelete: 'cascade' }),
+  userId: integer("user_id").notNull().references(() => users.id, { onDelete: 'cascade' }),
+  streamId: text("stream_id").notNull(), // IPTV channel/stream ID
+  sessionToken: text("session_token").notNull().unique(), // Unique session identifier
+  startedAt: timestamp("started_at").notNull().defaultNow(),
+  lastHeartbeat: timestamp("last_heartbeat").notNull().defaultNow(),
+  ipAddress: text("ip_address"),
+});
+
 export const insertUserSchema = createInsertSchema(users);
 export const insertServiceSchema = createInsertSchema(services);
 export const insertGameServerSchema = createInsertSchema(gameServers);
@@ -298,6 +335,9 @@ export const insertReferralCodeSchema = createInsertSchema(referralCodes);
 export const insertReferralSchema = createInsertSchema(referrals);
 export const insertReferralCreditSchema = createInsertSchema(referralCredits);
 export const insertTvCodeSchema = createInsertSchema(tvCodes);
+export const insertIptvCredentialSchema = createInsertSchema(iptvCredentials);
+export const insertPlanIptvCredentialSchema = createInsertSchema(planIptvCredentials);
+export const insertActiveIptvStreamSchema = createInsertSchema(activeIptvStreams);
 
 // Export the update schemas
 export const updateServiceSchema = insertServiceSchema.extend({
@@ -360,6 +400,18 @@ export const updateReferralCreditSchema = insertReferralCreditSchema.extend({
   id: z.number(),
 }).partial().required({ id: true });
 
+export const updateIptvCredentialSchema = insertIptvCredentialSchema.extend({
+  id: z.number(),
+}).partial().required({ id: true });
+
+export const updatePlanIptvCredentialSchema = insertPlanIptvCredentialSchema.extend({
+  id: z.number(),
+}).partial().required({ id: true });
+
+export const updateActiveIptvStreamSchema = insertActiveIptvStreamSchema.extend({
+  id: z.number(),
+}).partial().required({ id: true });
+
 // Export types
 export type InsertUser = z.infer<typeof insertUserSchema>;
 export type InsertService = z.infer<typeof insertServiceSchema>;
@@ -407,3 +459,12 @@ export type UpdateReferralCredit = z.infer<typeof updateReferralCreditSchema>;
 export type ReferralCredit = typeof referralCredits.$inferSelect;
 export type InsertTvCode = z.infer<typeof insertTvCodeSchema>;
 export type TvCode = typeof tvCodes.$inferSelect;
+export type InsertIptvCredential = z.infer<typeof insertIptvCredentialSchema>;
+export type UpdateIptvCredential = z.infer<typeof updateIptvCredentialSchema>;
+export type IptvCredential = typeof iptvCredentials.$inferSelect;
+export type InsertPlanIptvCredential = z.infer<typeof insertPlanIptvCredentialSchema>;
+export type UpdatePlanIptvCredential = z.infer<typeof updatePlanIptvCredentialSchema>;
+export type PlanIptvCredential = typeof planIptvCredentials.$inferSelect;
+export type InsertActiveIptvStream = z.infer<typeof insertActiveIptvStreamSchema>;
+export type UpdateActiveIptvStream = z.infer<typeof updateActiveIptvStreamSchema>;
+export type ActiveIptvStream = typeof activeIptvStreams.$inferSelect;

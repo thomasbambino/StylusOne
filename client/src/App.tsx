@@ -17,6 +17,7 @@ import LiveTVAdaptive from "@/pages/live-tv-adaptive";
 import BooksPage from "@/pages/books-page";
 import ServerSharePage from "@/pages/server-share-page";
 import SubscriptionPlansPage from "@/pages/subscription-plans-page";
+import IptvCredentialsPage from "@/pages/iptv-credentials-page";
 import MySubscriptionPage from "@/pages/my-subscription-page";
 import MyReferralsPage from "@/pages/my-referrals-page";
 import AuthTvPage from "@/pages/auth-tv-page";
@@ -45,6 +46,7 @@ function Router() {
       <ProtectedRoute path="/users" component={UsersPage} />
       <ProtectedRoute path="/settings" component={SettingsPage} />
       <ProtectedRoute path="/subscription-plans" component={SubscriptionPlansPage} />
+      <ProtectedRoute path="/iptv-credentials" component={IptvCredentialsPage} />
       <ProtectedRoute path="/my-subscription" component={MySubscriptionPage} />
       <ProtectedRoute path="/my-referrals" component={MyReferralsPage} />
       <Route path="/server/:serverId" component={ServerSharePage} />

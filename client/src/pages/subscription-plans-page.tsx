@@ -8,7 +8,7 @@ import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
 import { useToast } from '@/hooks/use-toast';
-import { Plus, Edit2, Trash2, Users, DollarSign, Package, Check, X, Loader2, MoreVertical, Tv, Book, Gamepad2, CheckCircle2, XCircle, Calendar, TrendingUp } from 'lucide-react';
+import { Plus, Edit2, Trash2, Users, DollarSign, Package, Check, X, Loader2, MoreVertical, Tv, Book, Gamepad2, CheckCircle2, XCircle, Calendar, TrendingUp, Server } from 'lucide-react';
 import type { SubscriptionPlan } from '@shared/schema';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
@@ -290,10 +290,16 @@ export default function SubscriptionPlansPage() {
           <h1 className="text-3xl font-bold">Subscription Plans</h1>
           <p className="text-muted-foreground mt-1">Manage subscription plans and pricing</p>
         </div>
-        <Button onClick={() => setIsCreateDialogOpen(true)}>
-          <Plus className="h-4 w-4 mr-2" />
-          Create Plan
-        </Button>
+        <div className="flex gap-2">
+          <Button variant="outline" onClick={() => window.location.href = '/iptv-credentials'}>
+            <Server className="h-4 w-4 mr-2" />
+            IPTV Sources
+          </Button>
+          <Button onClick={() => setIsCreateDialogOpen(true)}>
+            <Plus className="h-4 w-4 mr-2" />
+            Create Plan
+          </Button>
+        </div>
       </div>
 
       {/* Analytics */}
