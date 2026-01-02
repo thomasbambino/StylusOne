@@ -1416,16 +1416,30 @@ export default function LiveTVTvPage() {
       {/* Video Element - Full screen or PiP */}
       <motion.div
         className="absolute bg-black"
+        initial={{
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          width: '100%',
+          height: '100%',
+          zIndex: 0,
+          borderRadius: 0
+        }}
         animate={viewMode === 'guide' ? {
           top: 24,
           right: 24,
+          left: 'auto',
+          bottom: 'auto',
           width: 320,
           height: 180,
           zIndex: 30,
           borderRadius: 12
         } : {
           top: 0,
+          left: 0,
           right: 0,
+          bottom: 0,
           width: '100%',
           height: '100%',
           zIndex: 0,
