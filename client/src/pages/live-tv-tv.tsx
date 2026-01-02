@@ -746,13 +746,8 @@ export default function LiveTVTvPage() {
   // Auth
   const { logoutMutation } = useAuth();
 
-  // Portrait mode detection for native platforms
-  const [isPortrait, setIsPortrait] = useState(() => {
-    if (typeof window !== 'undefined') {
-      return window.innerHeight > window.innerWidth;
-    }
-    return false;
-  });
+  // Portrait mode detection for native platforms - start as null to avoid flash
+  const [isPortrait, setIsPortrait] = useState<boolean | null>(null);
 
   // View state: 'player' (fullscreen) or 'guide' (with PiP)
   const [viewMode, setViewMode] = useState<'player' | 'guide'>('player');
@@ -1313,18 +1308,37 @@ export default function LiveTVTvPage() {
 
   // Detect portrait/landscape orientation changes on native platforms
   useEffect(() => {
-    if (!isNativePlatform()) return;
+    if (!isNativePlatform()) {
+      setIsPortrait(false); // Web always shows player
+      return;
+    }
 
     const handleResize = () => {
-      const portrait = window.innerHeight > window.innerWidth;
+      // Use screen dimensions for more reliable detection
+      const width = window.screen.width;
+      const height = window.screen.height;
+      const orientation = window.screen.orientation?.type || '';
+
+      // Check orientation type first, fallback to dimension comparison
+      let portrait: boolean;
+      if (orientation.includes('portrait')) {
+        portrait = true;
+      } else if (orientation.includes('landscape')) {
+        portrait = false;
+      } else {
+        // Fallback: compare current window dimensions
+        portrait = window.innerHeight > window.innerWidth;
+      }
+
+      console.log('[TV] Orientation check:', { width, height, orientation, portrait, innerW: window.innerWidth, innerH: window.innerHeight });
       setIsPortrait(portrait);
     };
 
     window.addEventListener('resize', handleResize);
     window.addEventListener('orientationchange', handleResize);
 
-    // Initial check
-    handleResize();
+    // Initial check with small delay to ensure correct values
+    setTimeout(handleResize, 100);
 
     return () => {
       window.removeEventListener('resize', handleResize);
@@ -1366,7 +1380,16 @@ export default function LiveTVTvPage() {
   // ============================================================================
 
   // Portrait mode blocker for native platforms
-  if (isPortrait && isNativePlatform()) {
+  // isPortrait === null means we're still detecting, show loading
+  if (isNativePlatform() && isPortrait === null) {
+    return (
+      <div className="fixed inset-0 bg-black flex items-center justify-center">
+        <div className="w-8 h-8 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+      </div>
+    );
+  }
+
+  if (isPortrait === true && isNativePlatform()) {
     return (
       <div className="fixed inset-0 bg-black flex flex-col items-center justify-center z-50">
         <div className="text-white/80 mb-6">
@@ -1581,16 +1604,13 @@ export default function LiveTVTvPage() {
         )}
       </AnimatePresence>
 
-      {/* Guide View */}
-      <AnimatePresence>
-        {viewMode === 'guide' && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0, y: 50 }}
-            transition={{ duration: 0.1, ease: 'easeOut' }}
-            className="absolute inset-0 bg-black/95 z-20 flex flex-col"
-          >
+      {/* Guide View - Always rendered, slides in/out */}
+      <div
+        className={`absolute inset-0 bg-black/95 z-20 flex flex-col transition-transform duration-150 ease-out ${
+          viewMode === 'guide' ? 'translate-y-0' : 'translate-y-full'
+        }`}
+        style={{ willChange: 'transform' }}
+      >
             {/* Top section - Program details on left, PiP space on right */}
             <div className="h-52 shrink-0 flex">
               {/* Program Details - fills left side */}
@@ -1626,9 +1646,7 @@ export default function LiveTVTvPage() {
             <div className="py-2 border-t border-white/10 text-center text-white/40 text-sm shrink-0">
               ↑ Scroll up to return to video
             </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+      </div>
 
       {/* Info Modal */}
       <AnimatePresence>
