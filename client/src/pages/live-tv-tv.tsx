@@ -1277,15 +1277,28 @@ export default function LiveTVTvPage() {
   // Lock orientation to landscape on native platforms
   useEffect(() => {
     if (isNativePlatform()) {
-      ScreenOrientation.lock({ orientation: 'landscape' }).catch(err => {
-        console.log('[TV] Could not lock orientation:', err);
-      });
+      // Lock to landscape-primary (forced landscape)
+      ScreenOrientation.lock({ orientation: 'landscape-primary' })
+        .then(() => {
+          console.log('[TV] Orientation locked to landscape');
+        })
+        .catch(err => {
+          console.log('[TV] Could not lock orientation:', err);
+          // Try alternate landscape type
+          ScreenOrientation.lock({ orientation: 'landscape' }).catch(e => {
+            console.log('[TV] Alternate lock also failed:', e);
+          });
+        });
 
       return () => {
         // Unlock orientation when leaving the page
-        ScreenOrientation.unlock().catch(err => {
-          console.log('[TV] Could not unlock orientation:', err);
-        });
+        ScreenOrientation.unlock()
+          .then(() => {
+            console.log('[TV] Orientation unlocked');
+          })
+          .catch(err => {
+            console.log('[TV] Could not unlock orientation:', err);
+          });
       };
     }
   }, []);
