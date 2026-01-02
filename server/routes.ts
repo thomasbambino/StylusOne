@@ -3014,6 +3014,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // IPTV Stream Acquire - get a stream session token for tracking
   app.post("/api/iptv/stream/acquire", async (req, res) => {
+    console.log(`[Stream Acquire] Auth: ${req.isAuthenticated()}, User: ${req.user?.email || 'none'}, Body:`, req.body);
     if (!req.isAuthenticated()) return res.sendStatus(401);
 
     try {
@@ -3056,8 +3057,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       );
 
       if (sessionToken) {
+        console.log(`[Stream Acquire] Success for user ${userId}, credential ${plan.iptvCredentialId}, session: ${sessionToken}`);
         res.json({ sessionToken });
       } else {
+        console.log(`[Stream Acquire] Failed - no slots for user ${userId}, credential ${plan.iptvCredentialId}`);
         res.status(429).json({ error: "No available stream slots" });
       }
     } catch (error) {

@@ -503,9 +503,11 @@ export class XtreamCodesManager implements IService {
 
     // If no database credentials, fallback to env client
     if (clients.length === 0 && this.envClient) {
+      console.log(`[IPTV] User ${userId} has no plan credentials, falling back to ENV`);
       return [this.envClient];
     }
 
+    console.log(`[IPTV] User ${userId} has ${clients.length} plan credential(s)`);
     return clients;
   }
 
@@ -606,6 +608,7 @@ export class XtreamCodesManager implements IService {
     const clients = await this.getClientsForUser(userId);
     if (clients.length === 0) {
       // Use env client fallback (no stream tracking)
+      console.log(`[IPTV] User ${userId} using ENV CLIENT (no plan credentials)`);
       return this.envClient ? -1 : null;
     }
 
@@ -628,10 +631,12 @@ export class XtreamCodesManager implements IService {
         .where(eq(activeIptvStreams.credentialId, credentialId));
 
       if (activeStreams.length < cred.maxConnections) {
+        console.log(`[IPTV] User ${userId} using PLAN CREDENTIAL ${credentialId} (${cred.name}) for stream ${streamId}`);
         return credentialId;
       }
     }
 
+    console.log(`[IPTV] User ${userId} NO CAPACITY for stream ${streamId}`);
     return null; // No capacity available
   }
 

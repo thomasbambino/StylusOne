@@ -1049,10 +1049,13 @@ export default function LiveTVTvPage() {
       // For IPTV channels, acquire stream session for tracking
       if (channel.source === 'iptv' && channel.iptvId) {
         try {
+          console.log('[TV] Acquiring stream session for:', channel.iptvId);
           const acquireResponse = await apiRequest('POST', '/api/iptv/stream/acquire', {
             streamId: channel.iptvId
           });
-          const { sessionToken } = await acquireResponse.json();
+          const data = await acquireResponse.json();
+          console.log('[TV] Stream acquire response:', data);
+          const { sessionToken } = data;
           streamSessionToken.current = sessionToken;
 
           // Start heartbeat every 30 seconds
