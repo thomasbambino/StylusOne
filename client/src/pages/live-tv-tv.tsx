@@ -1410,7 +1410,7 @@ export default function LiveTVTvPage() {
           zIndex: 0,
           borderRadius: 0
         }}
-        transition={{ duration: 0.3, ease: 'easeInOut' }}
+        transition={{ duration: 0.15, ease: 'easeOut' }}
       >
         <video
           ref={videoRef}
@@ -1588,7 +1588,7 @@ export default function LiveTVTvPage() {
             initial={{ opacity: 0, y: 100 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: 100 }}
-            transition={{ duration: 0.3 }}
+            transition={{ duration: 0.15 }}
             className="absolute inset-0 bg-black/95 z-20 flex flex-col"
           >
             {/* Top section - Program details on left, PiP space on right */}
