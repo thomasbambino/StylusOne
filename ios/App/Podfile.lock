@@ -10,24 +10,27 @@ PODS:
   - CapacitorCordova (7.4.4)
   - CapacitorDevice (7.0.3):
     - Capacitor
+  - CapacitorScreenOrientation (6.0.4):
+    - Capacitor
   - CaprockAppsCapacitorChromecast (7.0.6):
     - Capacitor
   - CodetrixStudioCapacitorGoogleAuth (0.0.1):
     - Capacitor
-    - GoogleSignIn (~> 6.2.4)
-  - GoogleSignIn (6.2.4):
-    - AppAuth (~> 1.5)
-    - GTMAppAuth (~> 1.3)
-    - GTMSessionFetcher/Core (< 3.0, >= 1.1)
-  - GTMAppAuth (1.3.1):
-    - AppAuth/Core (~> 1.6)
-    - GTMSessionFetcher/Core (< 3.0, >= 1.5)
-  - GTMSessionFetcher/Core (2.3.0)
+    - GoogleSignIn (~> 7.1)
+  - GoogleSignIn (7.1.0):
+    - AppAuth (< 2.0, >= 1.7.3)
+    - GTMAppAuth (< 5.0, >= 4.1.1)
+    - GTMSessionFetcher/Core (~> 3.3)
+  - GTMAppAuth (4.1.1):
+    - AppAuth/Core (~> 1.7)
+    - GTMSessionFetcher/Core (< 4.0, >= 3.3)
+  - GTMSessionFetcher/Core (3.5.0)
 
 DEPENDENCIES:
   - "Capacitor (from `../../node_modules/@capacitor/ios`)"
   - "CapacitorCordova (from `../../node_modules/@capacitor/ios`)"
   - "CapacitorDevice (from `../../node_modules/@capacitor/device`)"
+  - "CapacitorScreenOrientation (from `../../node_modules/@capacitor/screen-orientation`)"
   - "CaprockAppsCapacitorChromecast (from `../../node_modules/@caprockapps/capacitor-chromecast`)"
   - "CodetrixStudioCapacitorGoogleAuth (from `../../node_modules/@codetrix-studio/capacitor-google-auth`)"
 
@@ -45,6 +48,8 @@ EXTERNAL SOURCES:
     :path: "../../node_modules/@capacitor/ios"
   CapacitorDevice:
     :path: "../../node_modules/@capacitor/device"
+  CapacitorScreenOrientation:
+    :path: "../../node_modules/@capacitor/screen-orientation"
   CaprockAppsCapacitorChromecast:
     :path: "../../node_modules/@caprockapps/capacitor-chromecast"
   CodetrixStudioCapacitorGoogleAuth:
@@ -55,12 +60,13 @@ SPEC CHECKSUMS:
   Capacitor: 358dd1c3fdd71d969547b17e159fd8a7736cb45f
   CapacitorCordova: bf648a636f3c153f652d312ae145fb508b6ffced
   CapacitorDevice: b64654eb4d404373e733c01d835055ba59286e5c
+  CapacitorScreenOrientation: 9ac79362f7389af6fa70a76fdad84c4b1d8324e7
   CaprockAppsCapacitorChromecast: 1bde7717d370fd7391754901b42ef6fc7a02c229
-  CodetrixStudioCapacitorGoogleAuth: 9dcfabfb7dd804ad6231a1513bc6e81e620cbec6
-  GoogleSignIn: 5651ce3a61e56ca864160e79b484cd9ed3f49b7a
-  GTMAppAuth: 0ff230db599948a9ad7470ca667337803b3fc4dd
-  GTMSessionFetcher: 3a63d75eecd6aa32c2fc79f578064e1214dfdec2
+  CodetrixStudioCapacitorGoogleAuth: 88ad04845b71e573d44237c15dd6a2345c8cdfcb
+  GoogleSignIn: d4281ab6cf21542b1cfaff85c191f230b399d2db
+  GTMAppAuth: f69bd07d68cd3b766125f7e072c45d7340dea0de
+  GTMSessionFetcher: 5aea5ba6bd522a239e236100971f10cb71b96ab6
 
-PODFILE CHECKSUM: ce31ee0c8495a65e7490fe61759ea9cbb3316214
+PODFILE CHECKSUM: 837cf32754b64bf74f072a60cd0167cbb4e5b239
 
 COCOAPODS: 1.16.2

@@ -729,6 +729,10 @@ export default function LiveTVPage() {
   const playbackTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const channelListRef = useRef<HTMLDivElement>(null);
 
+  // IPTV stream tracking (separate from HDHomeRun tuner tracking)
+  const iptvSessionToken = useRef<string | null>(null);
+  const iptvHeartbeatRef = useRef<NodeJS.Timeout | null>(null);
+
   const { data: settings } = useQuery<Settings>({
     queryKey: ["/api/settings"],
     // Uses default queryFn from queryClient which handles native platforms
@@ -1251,6 +1255,7 @@ export default function LiveTVPage() {
   // Cleanup on unmount and page unload - MOVED HERE BEFORE EARLY RETURNS
   useEffect(() => {
     const handleBeforeUnload = () => {
+      // Release HDHomeRun session
       if (currentSession) {
         const data = JSON.stringify({ sessionId: currentSession.id });
         if (navigator.sendBeacon) {
@@ -1263,6 +1268,13 @@ export default function LiveTVPage() {
             keepalive: true,
             credentials: 'include',
           }).catch(console.error);
+        }
+      }
+      // Release IPTV session
+      if (iptvSessionToken.current) {
+        const iptvData = JSON.stringify({ sessionToken: iptvSessionToken.current });
+        if (navigator.sendBeacon) {
+          navigator.sendBeacon(buildApiUrl('/api/iptv/stream/release'), iptvData);
         }
       }
     };
@@ -1294,6 +1306,17 @@ export default function LiveTVPage() {
 
       if (currentSession) {
         releaseCurrentSession();
+      }
+
+      // Release IPTV session on unmount
+      if (iptvHeartbeatRef.current) {
+        clearInterval(iptvHeartbeatRef.current);
+      }
+      if (iptvSessionToken.current) {
+        navigator.sendBeacon(
+          buildApiUrl('/api/iptv/stream/release'),
+          JSON.stringify({ sessionToken: iptvSessionToken.current })
+        );
       }
     };
   }, []);
@@ -1679,7 +1702,7 @@ export default function LiveTVPage() {
       setQueuePosition(null);
       setSelectedChannel(channel);
 
-      // Release current session in background (don't await - let it happen async)
+      // Release current HDHomeRun session in background (don't await - let it happen async)
       if (currentSession) {
         releaseCurrentSession().catch(err => console.error('Error releasing session:', err));
       }
@@ -1690,6 +1713,11 @@ export default function LiveTVPage() {
         console.log(`Playing ${channel.source} channel: ${channel.GuideName} directly`);
 
         let streamUrl = buildApiUrl(channel.URL);
+
+        // For IPTV channels, acquire stream session for tracking
+        if (channel.source === 'iptv' && channel.iptvId) {
+          await acquireIptvSession(channel.iptvId);
+        }
 
         // On native platforms, IPTV streams need a token for authentication
         if (isNativePlatform() && channel.source === 'iptv' && channel.iptvId) {
@@ -1711,6 +1739,9 @@ export default function LiveTVPage() {
         // Don't set isLoading to false here - let HLS events handle it
         return;
       }
+
+      // Release any IPTV session when switching to HDHomeRun
+      await releaseIptvSession();
 
       // Request stream through tuner manager for HDHomeRun channels only
       console.log('Requesting stream for HDHomeRun channel:', channel.GuideNumber);
@@ -2071,6 +2102,59 @@ export default function LiveTVPage() {
       console.error('Error releasing session:', error);
     } finally {
       setCurrentSession(null);
+    }
+  };
+
+  // Release IPTV stream session
+  const releaseIptvSession = async () => {
+    // Stop IPTV heartbeat
+    if (iptvHeartbeatRef.current) {
+      clearInterval(iptvHeartbeatRef.current);
+      iptvHeartbeatRef.current = null;
+    }
+
+    // Release IPTV session
+    if (iptvSessionToken.current) {
+      try {
+        await apiRequest('POST', '/api/iptv/stream/release', {
+          sessionToken: iptvSessionToken.current
+        });
+      } catch (e) {
+        console.log('[IPTV] Error releasing stream:', e);
+      }
+      iptvSessionToken.current = null;
+    }
+  };
+
+  // Acquire IPTV stream session for tracking
+  const acquireIptvSession = async (streamId: string) => {
+    // Release any existing IPTV session first
+    await releaseIptvSession();
+
+    try {
+      const response = await apiRequest('POST', '/api/iptv/stream/acquire', {
+        streamId
+      });
+      const { sessionToken } = await response.json();
+      iptvSessionToken.current = sessionToken;
+
+      // Start IPTV heartbeat every 30 seconds
+      iptvHeartbeatRef.current = setInterval(async () => {
+        if (iptvSessionToken.current) {
+          try {
+            await apiRequest('POST', '/api/iptv/stream/heartbeat', {
+              sessionToken: iptvSessionToken.current
+            });
+          } catch (e) {
+            console.log('[IPTV] Heartbeat error:', e);
+          }
+        }
+      }, 30000);
+
+      console.log('[IPTV] Stream session acquired');
+    } catch (e) {
+      console.log('[IPTV] Could not acquire stream session:', e);
+      // Continue anyway - stream might still work for users without subscription
     }
   };
 

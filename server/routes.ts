@@ -3012,6 +3012,60 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // IPTV Stream Acquire - get a stream session token for tracking
+  app.post("/api/iptv/stream/acquire", async (req, res) => {
+    if (!req.isAuthenticated()) return res.sendStatus(401);
+
+    try {
+      const { streamId } = req.body;
+
+      if (!streamId) {
+        return res.status(400).json({ error: "Stream ID required" });
+      }
+
+      const userId = req.user!.id;
+
+      // Get user's subscription to find their IPTV credential
+      const [subscription] = await db.select()
+        .from(subscriptions)
+        .where(and(
+          eq(subscriptions.userId, userId),
+          eq(subscriptions.status, 'active')
+        ));
+
+      if (!subscription) {
+        return res.status(403).json({ error: "No active subscription" });
+      }
+
+      // Get the plan's assigned IPTV credential
+      const [plan] = await db.select()
+        .from(subscriptionPlans)
+        .where(eq(subscriptionPlans.id, subscription.planId));
+
+      if (!plan || !plan.iptvCredentialId) {
+        return res.status(403).json({ error: "No IPTV access on plan" });
+      }
+
+      const { streamTrackerService } = await import('./services/stream-tracker-service');
+      const ipAddress = req.ip || req.socket.remoteAddress;
+      const sessionToken = await streamTrackerService.acquireStream(
+        userId,
+        plan.iptvCredentialId,
+        streamId,
+        ipAddress
+      );
+
+      if (sessionToken) {
+        res.json({ sessionToken });
+      } else {
+        res.status(429).json({ error: "No available stream slots" });
+      }
+    } catch (error) {
+      console.error('Error acquiring stream:', error);
+      res.status(500).json({ error: "Failed to acquire stream" });
+    }
+  });
+
   // IPTV Stream Heartbeat - keep stream session alive
   app.post("/api/iptv/stream/heartbeat", async (req, res) => {
     if (!req.isAuthenticated()) return res.sendStatus(401);
@@ -3039,10 +3093,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // IPTV Stream Release - release stream session
   app.post("/api/iptv/stream/release", async (req, res) => {
-    if (!req.isAuthenticated()) return res.sendStatus(401);
+    // Allow both authenticated sessions and token-based release
+    // sendBeacon from mobile apps may include session cookie
 
     try {
-      const { sessionToken } = req.body;
+      // Handle both JSON and sendBeacon (text/plain) requests
+      let sessionToken: string | undefined;
+      if (req.headers['content-type']?.includes('application/json')) {
+        sessionToken = req.body?.sessionToken;
+      } else {
+        // sendBeacon sends as text/plain, parse JSON manually
+        const bodyData = typeof req.body === 'string' ? JSON.parse(req.body) : req.body;
+        sessionToken = bodyData?.sessionToken;
+      }
 
       if (!sessionToken) {
         return res.status(400).json({ error: "Session token required" });

@@ -24,4 +24,41 @@ end
 
 post_install do |installer|
   assertDeploymentTarget(installer)
+
+  # Privacy manifest XML for SDKs missing them
+  privacy_xml = <<-XML
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>NSPrivacyTracking</key>
+    <false/>
+    <key>NSPrivacyTrackingDomains</key>
+    <array/>
+    <key>NSPrivacyCollectedDataTypes</key>
+    <array/>
+    <key>NSPrivacyAccessedAPITypes</key>
+    <array>
+        <dict>
+            <key>NSPrivacyAccessedAPIType</key>
+            <string>NSPrivacyAccessedAPICategoryUserDefaults</string>
+            <key>NSPrivacyAccessedAPITypeReasons</key>
+            <array>
+                <string>CA92.1</string>
+            </array>
+        </dict>
+    </array>
+</dict>
+</plist>
+  XML
+
+  # Add to pods that need it
+  pods_needing_manifest = ['GoogleSignIn', 'GTMAppAuth', 'GTMSessionFetcher']
+  installer.pods_project.targets.each do |target|
+    if pods_needing_manifest.include?(target.name)
+      resource_dir = "#{installer.sandbox.root}/#{target.name}/Resources"
+      FileUtils.mkdir_p(resource_dir)
+      File.write("#{resource_dir}/PrivacyInfo.xcprivacy", privacy_xml)
+    end
+  end
 end

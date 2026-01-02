@@ -443,16 +443,16 @@ const SubscriptionPopup = memo(({
         initial={{ scale: 0.9, opacity: 0 }}
         animate={{ scale: 1, opacity: 1 }}
         exit={{ scale: 0.9, opacity: 0 }}
-        className="bg-zinc-900 rounded-xl p-6 max-w-md w-full mx-8"
+        className="bg-zinc-900 rounded-xl p-4 max-w-sm w-full mx-4 max-h-[85vh] overflow-y-auto"
         onClick={e => e.stopPropagation()}
       >
-        <div className="flex justify-between items-center mb-6">
-          <h2 className="text-2xl font-bold text-white flex items-center gap-2">
-            <CreditCard className="w-6 h-6 text-white" />
+        <div className="flex justify-between items-center mb-4">
+          <h2 className="text-lg font-bold text-white flex items-center gap-2">
+            <CreditCard className="w-5 h-5 text-white" />
             My Subscription
           </h2>
-          <button onClick={onClose} className="p-2 hover:bg-white/10 rounded-full">
-            <X className="w-6 h-6 text-white/60" />
+          <button onClick={onClose} className="p-1.5 hover:bg-white/10 rounded-full">
+            <X className="w-5 h-5 text-white/60" />
           </button>
         </div>
 
@@ -462,12 +462,12 @@ const SubscriptionPopup = memo(({
             <p className="text-white/50 mt-4">Loading subscription...</p>
           </div>
         ) : subscription ? (
-          <div className="space-y-4">
+          <div className="space-y-3">
             {/* Plan Name & Status */}
             <div className="flex justify-between items-center">
               <div>
-                <h3 className="text-xl font-semibold text-white">{subscription.plan_name}</h3>
-                <p className="text-white/60 text-sm capitalize">{subscription.billing_period} billing</p>
+                <h3 className="text-base font-semibold text-white">{subscription.plan_name}</h3>
+                <p className="text-white/60 text-xs capitalize">{subscription.billing_period} billing</p>
               </div>
               <span className={cn(
                 "px-3 py-1 rounded-full text-sm font-medium",
@@ -481,37 +481,34 @@ const SubscriptionPopup = memo(({
             </div>
 
             {/* Price */}
-            <div className="bg-white/5 rounded-lg p-4">
-              <div className="text-3xl font-bold text-white">
+            <div className="bg-white/5 rounded-lg p-3">
+              <div className="text-2xl font-bold text-white">
                 {formatPrice(subscription.billing_period === 'monthly'
                   ? subscription.price_monthly
                   : subscription.price_annual)}
-                <span className="text-lg font-normal text-white/60">
+                <span className="text-sm font-normal text-white/60">
                   /{subscription.billing_period === 'monthly' ? 'mo' : 'yr'}
                 </span>
               </div>
             </div>
 
             {/* Dates */}
-            <div className="space-y-3">
-              <div className="flex items-center gap-3 text-white/80">
-                <Calendar className="w-5 h-5 text-white/50" />
+            <div className="grid grid-cols-2 gap-2 text-sm">
+              <div className="flex items-center gap-2 text-white/80">
+                <Calendar className="w-4 h-4 text-white/50 shrink-0" />
                 <div>
-                  <p className="text-sm text-white/50">Started</p>
-                  <p>{formatDate(subscription.current_period_start)}</p>
+                  <p className="text-xs text-white/50">Started</p>
+                  <p className="text-xs">{formatDate(subscription.current_period_start)}</p>
                 </div>
               </div>
-              <div className="flex items-center gap-3 text-white/80">
-                <Calendar className="w-5 h-5 text-white/50" />
+              <div className="flex items-center gap-2 text-white/80">
+                <Calendar className="w-4 h-4 text-white/50 shrink-0" />
                 <div>
-                  <p className="text-sm text-white/50">
+                  <p className="text-xs text-white/50">
                     {subscription.cancel_at_period_end ? 'Expires' : 'Renews'}
                   </p>
-                  <p>
+                  <p className="text-xs">
                     {formatDate(subscription.current_period_end)}
-                    <span className="text-white/50 ml-2">
-                      ({getDaysRemaining(subscription.current_period_end)} days)
-                    </span>
                   </p>
                 </div>
               </div>
@@ -746,8 +743,8 @@ export default function LiveTVTvPage() {
   // Auth
   const { logoutMutation } = useAuth();
 
-  // Portrait mode detection for native platforms - start as null to avoid flash
-  const [isPortrait, setIsPortrait] = useState<boolean | null>(null);
+  // Portrait mode detection - start as false (assume landscape) to avoid false warning on startup
+  const [isPortrait, setIsPortrait] = useState(false);
 
   // View state: 'player' (fullscreen) or 'guide' (with PiP)
   const [viewMode, setViewMode] = useState<'player' | 'guide'>('player');
@@ -780,6 +777,10 @@ export default function LiveTVTvPage() {
   // Touch/swipe gesture tracking
   const touchStartY = useRef<number | null>(null);
   const touchStartX = useRef<number | null>(null);
+
+  // Stream tracking
+  const streamSessionToken = useRef<string | null>(null);
+  const heartbeatIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
   // Query client for mutations
   const queryClient = useQueryClient();
@@ -1006,12 +1007,36 @@ export default function LiveTVTvPage() {
   // VIDEO PLAYBACK
   // ============================================================================
 
+  // Release previous stream and stop heartbeats
+  const releaseCurrentStream = useCallback(async () => {
+    // Stop heartbeat
+    if (heartbeatIntervalRef.current) {
+      clearInterval(heartbeatIntervalRef.current);
+      heartbeatIntervalRef.current = null;
+    }
+
+    // Release stream session
+    if (streamSessionToken.current) {
+      try {
+        await apiRequest('POST', '/api/iptv/stream/release', {
+          sessionToken: streamSessionToken.current
+        });
+      } catch (e) {
+        console.log('[TV] Error releasing stream:', e);
+      }
+      streamSessionToken.current = null;
+    }
+  }, []);
+
   const playStream = useCallback(async (channel: Channel) => {
     if (!videoRef.current) return;
 
     const video = videoRef.current;
     setIsLoading(true);
     setSelectedChannel(channel);
+
+    // Release previous stream
+    await releaseCurrentStream();
 
     if (hlsRef.current) {
       hlsRef.current.destroy();
@@ -1020,6 +1045,33 @@ export default function LiveTVTvPage() {
 
     try {
       let streamUrl = buildApiUrl(channel.URL);
+
+      // For IPTV channels, acquire stream session for tracking
+      if (channel.source === 'iptv' && channel.iptvId) {
+        try {
+          const acquireResponse = await apiRequest('POST', '/api/iptv/stream/acquire', {
+            streamId: channel.iptvId
+          });
+          const { sessionToken } = await acquireResponse.json();
+          streamSessionToken.current = sessionToken;
+
+          // Start heartbeat every 30 seconds
+          heartbeatIntervalRef.current = setInterval(async () => {
+            if (streamSessionToken.current) {
+              try {
+                await apiRequest('POST', '/api/iptv/stream/heartbeat', {
+                  sessionToken: streamSessionToken.current
+                });
+              } catch (e) {
+                console.log('[TV] Heartbeat error:', e);
+              }
+            }
+          }, 30000);
+        } catch (e) {
+          console.log('[TV] Could not acquire stream session:', e);
+          // Continue anyway - stream might still work
+        }
+      }
 
       if (isNativePlatform() && channel.source === 'iptv' && channel.iptvId) {
         const tokenResponse = await apiRequest('POST', '/api/iptv/generate-token', {
@@ -1076,7 +1128,7 @@ export default function LiveTVTvPage() {
       console.error('[TV] Stream error:', error);
       setIsLoading(false);
     }
-  }, []);
+  }, [releaseCurrentStream]);
 
   // ============================================================================
   // CHANNEL NAVIGATION
@@ -1277,72 +1329,56 @@ export default function LiveTVTvPage() {
     touchStartX.current = null;
   }, [viewMode, showOverlay, selectedChannel, channels]);
 
-  // Lock orientation to landscape on native platforms
-  useEffect(() => {
-    if (isNativePlatform()) {
-      // Lock to landscape-primary (forced landscape)
-      ScreenOrientation.lock({ orientation: 'landscape-primary' })
-        .then(() => {
-          console.log('[TV] Orientation locked to landscape');
-        })
-        .catch(err => {
-          console.log('[TV] Could not lock orientation:', err);
-          // Try alternate landscape type
-          ScreenOrientation.lock({ orientation: 'landscape' }).catch(e => {
-            console.log('[TV] Alternate lock also failed:', e);
-          });
-        });
-
-      return () => {
-        // Unlock orientation when leaving the page
-        ScreenOrientation.unlock()
-          .then(() => {
-            console.log('[TV] Orientation unlocked');
-          })
-          .catch(err => {
-            console.log('[TV] Could not unlock orientation:', err);
-          });
-      };
-    }
-  }, []);
-
-  // Detect portrait/landscape orientation changes on native platforms
+  // Detect portrait/landscape on native platforms
+  // Key: Wait for app to fully initialize before starting detection
   useEffect(() => {
     if (!isNativePlatform()) {
-      setIsPortrait(false); // Web always shows player
+      setIsPortrait(false);
       return;
     }
 
-    const handleResize = () => {
-      // Use screen dimensions for more reliable detection
-      const width = window.screen.width;
-      const height = window.screen.height;
-      const orientation = window.screen.orientation?.type || '';
+    let isActive = true;
+    let checkInterval: NodeJS.Timeout | null = null;
 
-      // Check orientation type first, fallback to dimension comparison
-      let portrait: boolean;
-      if (orientation.includes('portrait')) {
-        portrait = true;
-      } else if (orientation.includes('landscape')) {
-        portrait = false;
-      } else {
-        // Fallback: compare current window dimensions
-        portrait = window.innerHeight > window.innerWidth;
-      }
-
-      console.log('[TV] Orientation check:', { width, height, orientation, portrait, innerW: window.innerWidth, innerH: window.innerHeight });
+    const checkOrientation = () => {
+      if (!isActive) return;
+      // Simple dimension check - this works reliably after app init
+      const portrait = window.innerWidth < window.innerHeight;
       setIsPortrait(portrait);
     };
 
-    window.addEventListener('resize', handleResize);
-    window.addEventListener('orientationchange', handleResize);
+    // Wait 1 second for iOS to fully initialize before starting checks
+    const startupDelay = setTimeout(() => {
+      if (!isActive) return;
 
-    // Initial check with small delay to ensure correct values
-    setTimeout(handleResize, 100);
+      // Do initial check
+      checkOrientation();
+
+      // Then check on resize/orientation events
+      window.addEventListener('resize', checkOrientation);
+      window.addEventListener('orientationchange', () => {
+        // Small delay after orientationchange event
+        setTimeout(checkOrientation, 100);
+      });
+
+      // Also poll every 500ms for the first few seconds as backup
+      let pollCount = 0;
+      checkInterval = setInterval(() => {
+        checkOrientation();
+        pollCount++;
+        if (pollCount > 10 && checkInterval) {
+          clearInterval(checkInterval);
+          checkInterval = null;
+        }
+      }, 500);
+    }, 1000);
 
     return () => {
-      window.removeEventListener('resize', handleResize);
-      window.removeEventListener('orientationchange', handleResize);
+      isActive = false;
+      clearTimeout(startupDelay);
+      if (checkInterval) clearInterval(checkInterval);
+      window.removeEventListener('resize', checkOrientation);
+      window.removeEventListener('orientationchange', checkOrientation);
     };
   }, []);
 
@@ -1372,6 +1408,15 @@ export default function LiveTVTvPage() {
     return () => {
       if (hlsRef.current) hlsRef.current.destroy();
       if (overlayTimeoutRef.current) clearTimeout(overlayTimeoutRef.current);
+      // Release stream on unmount
+      if (heartbeatIntervalRef.current) clearInterval(heartbeatIntervalRef.current);
+      if (streamSessionToken.current) {
+        // Use sendBeacon for reliable cleanup on page unload
+        navigator.sendBeacon(
+          buildApiUrl('/api/iptv/stream/release'),
+          JSON.stringify({ sessionToken: streamSessionToken.current })
+        );
+      }
     };
   }, []);
 
@@ -1379,14 +1424,6 @@ export default function LiveTVTvPage() {
   // RENDER
   // ============================================================================
 
-  // Show loading spinner while detecting orientation
-  if (isNativePlatform() && isPortrait === null) {
-    return (
-      <div className="fixed inset-0 bg-black flex items-center justify-center">
-        <div className="w-8 h-8 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-      </div>
-    );
-  }
 
   return (
     <div
@@ -1438,19 +1475,17 @@ export default function LiveTVTvPage() {
         )}
       </motion.div>
 
-      {/* Portrait Mode Overlay - Video keeps playing behind */}
-      {isPortrait === true && isNativePlatform() && (
-        <div className="absolute inset-0 bg-black/90 flex flex-col items-center justify-center z-50">
+      {/* Portrait Mode Warning - shown when device is in portrait */}
+      {isPortrait && isNativePlatform() && (
+        <div className="absolute inset-0 bg-black/95 flex flex-col items-center justify-center z-50">
           <div className="text-white/80 mb-6">
-            <svg xmlns="http://www.w3.org/2000/svg" className="w-20 h-20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+            <svg xmlns="http://www.w3.org/2000/svg" className="w-16 h-16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
               <rect x="4" y="2" width="16" height="20" rx="2" />
               <path d="M12 18h.01" />
             </svg>
           </div>
           <h2 className="text-white text-xl font-bold mb-2">Rotate Your Device</h2>
-          <p className="text-white/60 text-center text-sm px-8">
-            Rotate to landscape to watch
-          </p>
+          <p className="text-white/50 text-sm">Turn sideways to watch</p>
         </div>
       )}
 
