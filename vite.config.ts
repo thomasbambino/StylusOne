@@ -1,4 +1,4 @@
-import { defineConfig } from "vite";
+import { defineConfig, loadEnv } from "vite";
 import react from "@vitejs/plugin-react";
 import themePlugin from "@replit/vite-plugin-shadcn-theme-json";
 import path, { dirname } from "path";
@@ -8,10 +8,16 @@ import { fileURLToPath } from "url";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
-export default defineConfig({
+export default defineConfig(async ({ mode }) => {
+  // Load env from project root (not client folder) for all modes
+  const env = loadEnv(mode, __dirname, '');
+
+  return {
   define: {
-    // Explicitly define VITE_API_URL for mobile builds
-    'import.meta.env.VITE_API_URL': JSON.stringify(process.env.VITE_API_URL || 'https://stylus.services'),
+    // Explicitly define env vars for mobile builds - use loaded env, not process.env
+    'import.meta.env.VITE_API_URL': JSON.stringify(env.VITE_API_URL || 'https://stylus.services'),
+    'import.meta.env.VITE_GOOGLE_CLIENT_ID': JSON.stringify(env.VITE_GOOGLE_CLIENT_ID || ''),
+    'import.meta.env.VITE_GOOGLE_IOS_CLIENT_ID': JSON.stringify(env.VITE_GOOGLE_IOS_CLIENT_ID || ''),
   },
   plugins: [
     react(),
@@ -45,4 +51,5 @@ export default defineConfig({
       'Content-Security-Policy': "script-src 'self' 'unsafe-inline' 'unsafe-eval' http://www.gstatic.com https://www.gstatic.com; connect-src 'self' http://www.gstatic.com https://www.gstatic.com ws: wss:; img-src 'self' data: https:; style-src 'self' 'unsafe-inline';"
     }
   },
+};
 });
