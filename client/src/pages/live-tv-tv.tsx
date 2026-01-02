@@ -1114,16 +1114,27 @@ export default function LiveTVTvPage() {
       if (viewMode === 'player') {
         switch (e.key) {
           case 'ArrowUp':
-            changeChannel('up');
+            // Hide overlay when pressing up
+            if (showOverlay) {
+              setShowOverlay(false);
+              if (overlayTimeoutRef.current) {
+                clearTimeout(overlayTimeoutRef.current);
+              }
+            }
             break;
           case 'ArrowDown':
-            // Open guide when pressing down in player mode
-            setViewMode('guide');
-            // Set focus to current channel in guide
-            const currentIdx = selectedChannel
-              ? channels.findIndex((ch: Channel) => ch.iptvId === selectedChannel.iptvId)
-              : 0;
-            setFocusedChannelIndex(Math.max(0, currentIdx));
+            if (!showOverlay) {
+              // First down press: show overlay
+              setShowOverlay(true);
+            } else {
+              // Second down press: open guide
+              setViewMode('guide');
+              // Set focus to current channel in guide
+              const currentIdx = selectedChannel
+                ? channels.findIndex((ch: Channel) => ch.iptvId === selectedChannel.iptvId)
+                : 0;
+              setFocusedChannelIndex(Math.max(0, currentIdx));
+            }
             break;
           case 'Enter':
           case ' ':
@@ -1344,8 +1355,8 @@ export default function LiveTVTvPage() {
               </div>
             )}
 
-            {/* Channel Logo + Name - Bottom Left (always visible) */}
-            <div className="absolute bottom-8 left-12 flex items-center gap-2">
+            {/* Channel Logo + Name - Bottom Left, vertically centered with controls */}
+            <div className="absolute bottom-8 left-12 h-16 flex items-center gap-2">
               {currentChannel?.logo && (
                 <img
                   src={currentChannel.logo}
