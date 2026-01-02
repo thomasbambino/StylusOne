@@ -1585,10 +1585,10 @@ export default function LiveTVTvPage() {
       <AnimatePresence>
         {viewMode === 'guide' && (
           <motion.div
-            initial={{ opacity: 0, y: 100 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: 100 }}
-            transition={{ duration: 0.15 }}
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0, y: 50 }}
+            transition={{ duration: 0.1, ease: 'easeOut' }}
             className="absolute inset-0 bg-black/95 z-20 flex flex-col"
           >
             {/* Top section - Program details on left, PiP space on right */}
