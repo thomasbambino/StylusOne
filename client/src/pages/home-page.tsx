@@ -44,7 +44,8 @@ import { cn } from "@/lib/utils";
 import { getGameArtwork } from "@/lib/game-artwork";
 import { motion } from "framer-motion";
 import { useFeatureAccess } from "@/lib/feature-gate";
-import { buildApiUrl } from "@/lib/capacitor";
+import { buildApiUrl, isNativePlatform } from "@/lib/capacitor";
+import { useLocation } from "wouter";
 import { getQueryFn, apiRequest } from "@/lib/queryClient";
 import { AuthenticatedImage } from "@/components/authenticated-image";
 
@@ -118,6 +119,15 @@ const FavoriteChannelItem = React.memo(function FavoriteChannelItem({
 });
 
 export default function HomePage() {
+  const [, setLocation] = useLocation();
+
+  // Redirect native mobile apps directly to Live TV
+  React.useEffect(() => {
+    if (isNativePlatform()) {
+      setLocation('/live-tv');
+    }
+  }, [setLocation]);
+
   const { data: settings } = useQuery<Settings>({
     queryKey: ["/api/settings"],
     // Uses default queryFn from queryClient which handles native platforms

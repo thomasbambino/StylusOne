@@ -12,7 +12,6 @@ import PendingPage from "@/pages/pending-page";
 import SettingsPage from "@/pages/settings-page";
 import GameServersPage from "@/pages/game-servers-page";
 import PlexPage from "@/pages/plex-page";
-import LiveTVPage from "@/pages/live-tv-page";
 import LiveTVAdaptive from "@/pages/live-tv-adaptive";
 import BooksPage from "@/pages/books-page";
 import ServerSharePage from "@/pages/server-share-page";
@@ -38,7 +37,7 @@ function Router() {
       <ProtectedRoute path="/dashboard" component={Dashboard} />
       <FeatureProtectedRoute path="/plex" component={PlexPage} feature="plex_access" />
       <FeatureProtectedRoute path="/game-servers" component={GameServersPage} feature="game_servers_access" />
-      <FeatureProtectedRoute path="/live-tv" component={LiveTVPage} feature="live_tv_access" />
+      <FeatureProtectedRoute path="/live-tv" component={LiveTVAdaptive} feature="live_tv_access" />
       <FeatureProtectedRoute path="/books" component={BooksPage} feature="books_access" />
       <ProtectedRoute path="/users" component={UsersPage} />
       <ProtectedRoute path="/settings" component={SettingsPage} />
