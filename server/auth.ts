@@ -734,14 +734,14 @@ export function setupAuth(app: Express) {
 
   // Google OAuth Routes (server-side flow)
   app.get('/api/auth/google/start', (req, res, next) => {
-    // Store redirect URL in session before OAuth
+    // Pass redirect URL through OAuth state parameter
     const redirect = req.query.redirect as string;
-    if (redirect && req.session) {
-      (req.session as any).authRedirect = redirect;
-    }
+    const state = redirect ? Buffer.from(JSON.stringify({ redirect })).toString('base64') : undefined;
+
     passport.authenticate('google', {
       scope: ['profile', 'email'],
-      prompt: 'select_account'
+      prompt: 'select_account',
+      state
     })(req, res, next);
   });
 
@@ -762,11 +762,18 @@ export function setupAuth(app: Express) {
           return res.redirect('/auth?pending=true');
         }
 
-        // Get redirect URL from session (if set during /start)
-        const redirectTo = (req.session as any)?.authRedirect || '/';
-        // Clear the stored redirect
-        if (req.session) {
-          delete (req.session as any).authRedirect;
+        // Get redirect URL from OAuth state parameter
+        let redirectTo = '/';
+        const state = req.query.state as string;
+        if (state) {
+          try {
+            const decoded = JSON.parse(Buffer.from(state, 'base64').toString());
+            if (decoded.redirect) {
+              redirectTo = decoded.redirect;
+            }
+          } catch (e) {
+            console.error('[Google OAuth] Failed to decode state:', e);
+          }
         }
 
         // User is authenticated via passport, redirect
