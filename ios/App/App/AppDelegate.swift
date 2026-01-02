@@ -1,6 +1,5 @@
 import UIKit
 import Capacitor
-import CapacitorScreenOrientation
 
 @UIApplicationMain
 class AppDelegate: UIResponder, UIApplicationDelegate {
@@ -9,7 +8,10 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
 
     // Required for ScreenOrientation plugin to control orientation
     func application(_ application: UIApplication, supportedInterfaceOrientationsFor window: UIWindow?) -> UIInterfaceOrientationMask {
-        return ScreenOrientationPlugin.supportedOrientations
+        if let vc = self.window?.rootViewController as? CAPBridgeViewController {
+            return UIInterfaceOrientationMask(rawValue: vc.supportedInterfaceOrientations.rawValue)
+        }
+        return .all
     }
 
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
