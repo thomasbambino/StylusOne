@@ -340,7 +340,8 @@ export function setupAuth(app: Express) {
               isp: ipInfo.isp || null,
               city: ipInfo.city || null,
               region: ipInfo.region || null,
-              country: ipInfo.country || null
+              country: ipInfo.country || null,
+              user_agent: req.headers['user-agent'] || null
             });
           } catch (error) {
             console.error('Failed to record login attempt with geolocation:', error);
@@ -348,7 +349,8 @@ export function setupAuth(app: Express) {
               identifier,
               ip: clientIp,
               type: 'failed',
-              timestamp: new Date()
+              timestamp: new Date(),
+              user_agent: req.headers['user-agent'] || null
             });
           }
 
@@ -370,7 +372,8 @@ export function setupAuth(app: Express) {
               isp: ipInfo.isp || null,
               city: ipInfo.city || null,
               region: ipInfo.region || null,
-              country: ipInfo.country || null
+              country: ipInfo.country || null,
+              user_agent: req.headers['user-agent'] || null
             });
 
             await storage.updateUser({
@@ -940,9 +943,10 @@ export function setupAuth(app: Express) {
             isp: ipInfo.isp || null,
             city: ipInfo.city || null,
             region: ipInfo.region || null,
-            country: ipInfo.country || null
+            country: ipInfo.country || null,
+            user_agent: req.headers['user-agent'] || null
           });
-          
+
           // ALSO record login attempt with username for complete tracking
           await storage.addLoginAttempt({
             identifier: user.username,
@@ -952,7 +956,8 @@ export function setupAuth(app: Express) {
             isp: ipInfo.isp || null,
             city: ipInfo.city || null,
             region: ipInfo.region || null,
-            country: ipInfo.country || null
+            country: ipInfo.country || null,
+            user_agent: req.headers['user-agent'] || null
           });
 
           await storage.updateUser({

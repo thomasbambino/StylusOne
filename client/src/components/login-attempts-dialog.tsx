@@ -5,8 +5,54 @@ import { useQuery } from "@tanstack/react-query";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { LoginAttempt } from "@shared/schema";
 import { format } from "date-fns";
-import { Shield, CheckCircle2, XCircle } from "lucide-react";
+import { Shield, CheckCircle2, XCircle, Monitor, Smartphone, Tablet, Tv } from "lucide-react";
 import { ISPIcon } from "@/components/isp-icons/ISPIcon.js";
+import { Badge } from "@/components/ui/badge";
+
+// Parse user agent to determine device type
+function getDeviceInfo(userAgent: string | null | undefined): { type: string; icon: React.ReactNode; label: string } {
+  if (!userAgent) return { type: 'unknown', icon: <Monitor className="h-4 w-4" />, label: 'Unknown' };
+
+  const ua = userAgent.toLowerCase();
+
+  // Check for TV/Android TV
+  if (ua.includes('android tv') || ua.includes('androidtv') || ua.includes('tv')) {
+    return { type: 'tv', icon: <Tv className="h-4 w-4" />, label: 'Android TV' };
+  }
+
+  // Check for iOS
+  if (ua.includes('iphone')) {
+    return { type: 'ios', icon: <Smartphone className="h-4 w-4" />, label: 'iOS (iPhone)' };
+  }
+  if (ua.includes('ipad')) {
+    return { type: 'ios', icon: <Tablet className="h-4 w-4" />, label: 'iOS (iPad)' };
+  }
+
+  // Check for Android mobile/tablet
+  if (ua.includes('android')) {
+    if (ua.includes('mobile')) {
+      return { type: 'android', icon: <Smartphone className="h-4 w-4" />, label: 'Android' };
+    }
+    return { type: 'android', icon: <Tablet className="h-4 w-4" />, label: 'Android Tablet' };
+  }
+
+  // Check for Mac
+  if (ua.includes('macintosh') || ua.includes('mac os')) {
+    return { type: 'web', icon: <Monitor className="h-4 w-4" />, label: 'Web (Mac)' };
+  }
+
+  // Check for Windows
+  if (ua.includes('windows')) {
+    return { type: 'web', icon: <Monitor className="h-4 w-4" />, label: 'Web (Windows)' };
+  }
+
+  // Check for Linux
+  if (ua.includes('linux')) {
+    return { type: 'web', icon: <Monitor className="h-4 w-4" />, label: 'Web (Linux)' };
+  }
+
+  return { type: 'web', icon: <Monitor className="h-4 w-4" />, label: 'Web' };
+}
 
 export function LoginAttemptsDialog() {
   const { data: loginAttempts = [] } = useQuery<LoginAttempt[]>({
@@ -47,10 +93,19 @@ export function LoginAttemptsDialog() {
                       {format(new Date(attempt.timestamp), "PPp")}
                     </p>
                   </div>
-                  <div className="text-right">
+                  <div className="text-right space-y-1">
                     <p className="text-sm font-medium">
                       {attempt.type === 'success' ? 'Successful Login' : 'Failed Attempt'}
                     </p>
+                    {(() => {
+                      const deviceInfo = getDeviceInfo((attempt as any).user_agent);
+                      return (
+                        <Badge variant="outline" className="flex items-center gap-1 w-fit ml-auto">
+                          {deviceInfo.icon}
+                          <span>{deviceInfo.label}</span>
+                        </Badge>
+                      );
+                    })()}
                   </div>
                 </div>
                 <div className="bg-muted p-3 rounded-md space-y-1">

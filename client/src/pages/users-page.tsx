@@ -378,7 +378,12 @@ export default function UsersPage() {
                             <Select
                               value={u.role}
                               onValueChange={(value) =>
-                                updateUserMutation.mutate({ id: u.id, role: value })
+                                updateUserMutation.mutate({
+                                  id: u.id,
+                                  role: value,
+                                  // When changing from pending to user/admin, auto-approve
+                                  approved: value !== 'pending' ? true : false
+                                })
                               }
                               disabled={!canModifyUser(u)}
                             >

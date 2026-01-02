@@ -141,6 +141,7 @@ export const loginAttempts = pgTable("loginAttempts", {
   city: text("city"),
   region: text("region"),
   country: text("country"),
+  user_agent: text("user_agent"), // Browser/device user agent string
 });
 
 export const books = pgTable("books", {
