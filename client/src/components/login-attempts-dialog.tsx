@@ -16,16 +16,22 @@ function getDeviceInfo(userAgent: string | null | undefined): { type: string; ic
   const ua = userAgent.toLowerCase();
 
   // Check for TV/Android TV
-  if (ua.includes('android tv') || ua.includes('androidtv') || ua.includes('tv')) {
+  if (ua.includes('android tv') || ua.includes('androidtv') || ua.includes('googletv')) {
     return { type: 'tv', icon: <Tv className="h-4 w-4" />, label: 'Android TV' };
   }
 
-  // Check for iOS
+  // Check for iOS - multiple patterns to catch various iOS user agents
+  // Standard iPhone Safari: "Mozilla/5.0 (iPhone; CPU iPhone OS..."
+  // Capacitor/WKWebView: May include "Mobile" with "like Mac OS X"
   if (ua.includes('iphone')) {
     return { type: 'ios', icon: <Smartphone className="h-4 w-4" />, label: 'iOS (iPhone)' };
   }
   if (ua.includes('ipad')) {
     return { type: 'ios', icon: <Tablet className="h-4 w-4" />, label: 'iOS (iPad)' };
+  }
+  // Catch iOS devices that report as "like Mac OS X" with Mobile indicator
+  if (ua.includes('like mac os x') && (ua.includes('mobile') || ua.includes('crios') || ua.includes('fxios'))) {
+    return { type: 'ios', icon: <Smartphone className="h-4 w-4" />, label: 'iOS' };
   }
 
   // Check for Android mobile/tablet
@@ -36,8 +42,8 @@ function getDeviceInfo(userAgent: string | null | undefined): { type: string; ic
     return { type: 'android', icon: <Tablet className="h-4 w-4" />, label: 'Android Tablet' };
   }
 
-  // Check for Mac
-  if (ua.includes('macintosh') || ua.includes('mac os')) {
+  // Check for Mac (desktop - after iOS check)
+  if (ua.includes('macintosh') || (ua.includes('mac os') && !ua.includes('like mac os'))) {
     return { type: 'web', icon: <Monitor className="h-4 w-4" />, label: 'Web (Mac)' };
   }
 

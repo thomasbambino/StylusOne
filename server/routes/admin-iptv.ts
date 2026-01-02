@@ -392,6 +392,34 @@ router.post('/iptv-credentials/:id/disconnect-all', requireSuperAdmin, async (re
   }
 });
 
+/**
+ * POST /api/admin/iptv-credentials/cleanup-stale
+ * Clean up all stale streams across all credentials
+ */
+router.post('/iptv-credentials/cleanup-stale', requireSuperAdmin, async (req, res) => {
+  try {
+    const count = await streamTrackerService.cleanupStaleStreams();
+    res.json({ success: true, cleaned: count });
+  } catch (error) {
+    console.error('Error cleaning up stale streams:', error);
+    res.status(500).json({ error: 'Failed to cleanup stale streams' });
+  }
+});
+
+/**
+ * GET /api/admin/iptv-credentials/all-streams
+ * Get all active streams with details for debugging
+ */
+router.get('/iptv-credentials/all-streams', requireSuperAdmin, async (req, res) => {
+  try {
+    const streams = await streamTrackerService.getAllActiveStreams();
+    res.json(streams);
+  } catch (error) {
+    console.error('Error fetching all streams:', error);
+    res.status(500).json({ error: 'Failed to fetch streams' });
+  }
+});
+
 // ============================================
 // Plan-Credential Assignment Endpoints
 // ============================================
