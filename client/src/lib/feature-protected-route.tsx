@@ -5,7 +5,7 @@ import { PageTransition } from "@/components/page-transition";
 import { NavigationBar } from "@/components/navigation-bar";
 import { useQuery } from "@tanstack/react-query";
 import { FeatureGate } from "./feature-gate";
-import { buildApiUrl, getDeviceType } from "@/lib/capacitor";
+import { isNativePlatform, getDeviceType } from "@/lib/capacitor";
 import { useEffect, useState } from "react";
 
 interface FeatureProtectedRouteProps {
@@ -69,12 +69,13 @@ export function FeatureProtectedRoute({
       <Component />
     );
 
-    // On TV devices or fullscreen mode, don't show navigation bar or page transitions
-    if (isTVDevice || fullscreen) {
+    // On native mobile apps, TV devices, or fullscreen mode, don't show navigation bar
+    const isNative = isNativePlatform();
+    if (isTVDevice || fullscreen || isNative) {
       return content;
     }
 
-    // On other devices, show full UI with navigation
+    // On web, show full UI with navigation
     return (
       <>
         <NavigationBar settings={settings} />

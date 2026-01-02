@@ -4,7 +4,7 @@ import { queryClient } from "./lib/queryClient";
 import { Toaster } from "@/components/ui/toaster";
 import NotFound from "@/pages/not-found";
 import { AuthProvider } from "./hooks/use-auth";
-import AuthPage from "@/pages/auth-page";
+import AuthAdaptive from "@/pages/auth-adaptive";
 import HomePage from "@/pages/home-page";
 import Dashboard from "@/pages/dashboard";
 import UsersPage from "@/pages/users-page";
@@ -46,7 +46,7 @@ function Router() {
       <ProtectedRoute path="/my-subscription" component={MySubscriptionPage} />
       <ProtectedRoute path="/my-referrals" component={MyReferralsPage} />
       <Route path="/server/:serverId" component={ServerSharePage} />
-      <Route path="/auth" component={AuthPage} />
+      <Route path="/auth" component={AuthAdaptive} />
       <Route path="/auth-tv" component={AuthTvPage} />
       <Route path="/tvcode" component={TvCodePage} />
       <Route path="/pending" component={PendingPage} />

@@ -290,7 +290,7 @@ export default function AuthTvPage() {
   }));
 
   return (
-    <div className="fixed inset-0 bg-gradient-to-br from-gray-950 via-gray-900 to-black flex overflow-hidden">
+    <div className="fixed inset-0 bg-gradient-to-br from-gray-950 via-gray-900 to-black flex flex-col md:flex-row overflow-hidden">
       {/* Animated background particles */}
       <div className="absolute inset-0 pointer-events-none overflow-hidden">
         {particles.map((p, i) => (
@@ -302,23 +302,23 @@ export default function AuthTvPage() {
       <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-black/40 pointer-events-none" />
 
       <AnimatePresence mode="wait">
-        {/* Menu View - Two Column Layout */}
+        {/* Menu View - Responsive Layout */}
         {view === 'menu' && (
           <>
-            {/* Left Side - Sign In Options */}
+            {/* Sign In Options - Full width on mobile, half on desktop */}
             <motion.div
               key="menu-left"
               initial={{ opacity: 0, x: -50 }}
               animate={{ opacity: 1, x: 0 }}
               exit={{ opacity: 0, x: -50 }}
               transition={{ duration: 0.5 }}
-              className="w-1/2 flex flex-col justify-center pl-16 pr-12 z-10"
+              className="w-full md:w-1/2 flex flex-col justify-center px-6 md:pl-16 md:pr-12 z-10 order-2 md:order-1"
             >
               <motion.h2
                 initial={{ opacity: 0, y: -20 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: 0.2 }}
-                className="text-3xl font-bold text-white mb-8"
+                className="text-2xl md:text-3xl font-bold text-white mb-6 md:mb-8"
               >
                 Sign In
               </motion.h2>
@@ -414,7 +414,7 @@ export default function AuthTvPage() {
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 transition={{ delay: 0.7 }}
-                className="text-white/30 text-sm mt-8 flex items-center gap-3"
+                className="hidden md:flex text-white/30 text-sm mt-8 items-center gap-3"
               >
                 <span className="px-2 py-1 bg-white/10 rounded text-xs">↑↓</span>
                 Navigate
@@ -423,14 +423,14 @@ export default function AuthTvPage() {
               </motion.p>
             </motion.div>
 
-            {/* Right Side - Branding */}
+            {/* Branding - Top on mobile, right side on desktop */}
             <motion.div
               key="menu-right"
-              initial={{ opacity: 0, x: 50 }}
-              animate={{ opacity: 1, x: 0 }}
-              exit={{ opacity: 0, x: 50 }}
+              initial={{ opacity: 0, y: -30 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -30 }}
               transition={{ duration: 0.5, delay: 0.1 }}
-              className="w-1/2 flex flex-col items-center justify-center pr-16 z-10 border-l border-white/5"
+              className="w-full md:w-1/2 flex flex-col items-center justify-center py-8 md:py-0 md:pr-16 z-10 md:border-l border-white/5 order-1 md:order-2"
             >
               {/* Decorative glow behind logo */}
               <div className="absolute w-64 h-64 bg-red-600/10 rounded-full blur-3xl" />
@@ -440,7 +440,7 @@ export default function AuthTvPage() {
                   <motion.img
                     src={settings.logo_url_large}
                     alt="Logo"
-                    className="h-20 w-20 mb-5 object-contain drop-shadow-2xl"
+                    className="h-16 w-16 md:h-20 md:w-20 mb-3 md:mb-5 object-contain drop-shadow-2xl"
                     initial={{ scale: 0.8, opacity: 0 }}
                     animate={{ scale: 1, opacity: 1 }}
                     transition={{ duration: 0.5, delay: 0.3 }}
@@ -450,16 +450,16 @@ export default function AuthTvPage() {
                     initial={{ scale: 0.8, opacity: 0 }}
                     animate={{ scale: 1, opacity: 1 }}
                     transition={{ duration: 0.5, delay: 0.3 }}
-                    className="relative mb-5"
+                    className="relative mb-3 md:mb-5"
                   >
-                    <Tv className="h-20 w-20 text-red-500 drop-shadow-2xl" />
+                    <Tv className="h-16 w-16 md:h-20 md:w-20 text-red-500 drop-shadow-2xl" />
                     <div className="absolute inset-0 bg-red-500/30 blur-2xl rounded-full" />
                   </motion.div>
                 )}
               </div>
 
               <motion.h1
-                className="text-3xl font-bold text-white tracking-tight text-center"
+                className="text-2xl md:text-3xl font-bold text-white tracking-tight text-center"
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: 0.4 }}
@@ -468,7 +468,7 @@ export default function AuthTvPage() {
               </motion.h1>
 
               <motion.p
-                className="text-base text-white/40 mt-3 text-center max-w-sm"
+                className="hidden md:block text-base text-white/40 mt-3 text-center max-w-sm"
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 transition={{ delay: 0.5 }}
@@ -476,30 +476,30 @@ export default function AuthTvPage() {
                 Stream live TV, movies, and more on your big screen
               </motion.p>
 
-              {/* Version footer */}
+              {/* Version footer - hidden on mobile */}
               <motion.p
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 transition={{ delay: 0.8 }}
-                className="absolute bottom-8 text-white/20 text-sm"
+                className="hidden md:block absolute bottom-8 text-white/20 text-sm"
               >
-                {settings?.site_title || 'Stylus One'} for Android TV
+                {settings?.site_title || 'Stylus One'}
               </motion.p>
             </motion.div>
           </>
         )}
 
-        {/* Code View - Two Column Layout */}
+        {/* Code View - Responsive Layout */}
         {view === 'code' && tvCode && (
           <>
-            {/* Left Side - Code Display */}
+            {/* Code Display - Full width on mobile, half on desktop */}
             <motion.div
               key="code-left"
               initial={{ opacity: 0, x: -50 }}
               animate={{ opacity: 1, x: 0 }}
               exit={{ opacity: 0, x: -50 }}
               transition={{ duration: 0.4 }}
-              className="w-1/2 flex flex-col justify-center pl-12 pr-8 z-10"
+              className="w-full md:w-1/2 flex flex-col justify-center px-6 md:pl-12 md:pr-8 z-10 order-2 md:order-1"
             >
               <motion.h2
                 initial={{ opacity: 0, y: -20 }}
@@ -561,14 +561,14 @@ export default function AuthTvPage() {
               </motion.button>
             </motion.div>
 
-            {/* Right Side - QR Code and Instructions */}
+            {/* QR Code and Instructions - Top on mobile, right side on desktop */}
             <motion.div
               key="code-right"
-              initial={{ opacity: 0, x: 50 }}
-              animate={{ opacity: 1, x: 0 }}
-              exit={{ opacity: 0, x: 50 }}
+              initial={{ opacity: 0, y: -30 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -30 }}
               transition={{ duration: 0.4, delay: 0.1 }}
-              className="w-1/2 flex flex-col items-center justify-center pr-12 z-10 border-l border-white/5"
+              className="w-full md:w-1/2 flex flex-col items-center justify-center py-6 md:py-0 md:pr-12 z-10 md:border-l border-white/5 order-1 md:order-2"
             >
               <div className="absolute w-64 h-64 bg-red-600/10 rounded-full blur-3xl" />
 
@@ -615,23 +615,23 @@ export default function AuthTvPage() {
                 transition={{ delay: 0.8 }}
                 className="absolute bottom-6 text-white/20 text-xs"
               >
-                {settings?.site_title || 'Stylus One'} for Android TV
+                {settings?.site_title || 'Stylus One'}
               </motion.p>
             </motion.div>
           </>
         )}
 
-        {/* Pending Approval View - Two Column Layout */}
+        {/* Pending Approval View - Responsive Layout */}
         {view === 'pending' && (
           <>
-            {/* Left Side - Message */}
+            {/* Message - Full width on mobile, half on desktop */}
             <motion.div
               key="pending-left"
               initial={{ opacity: 0, x: -50 }}
               animate={{ opacity: 1, x: 0 }}
               exit={{ opacity: 0, x: -50 }}
               transition={{ duration: 0.4 }}
-              className="w-1/2 flex flex-col justify-center pl-16 pr-12 z-10"
+              className="w-full md:w-1/2 flex flex-col justify-center px-6 md:pl-16 md:pr-12 z-10 order-2 md:order-1"
             >
               <motion.div
                 initial={{ scale: 0 }}
@@ -683,14 +683,14 @@ export default function AuthTvPage() {
               </motion.button>
             </motion.div>
 
-            {/* Right Side - Branding */}
+            {/* Branding - Top on mobile, right side on desktop */}
             <motion.div
               key="pending-right"
-              initial={{ opacity: 0, x: 50 }}
-              animate={{ opacity: 1, x: 0 }}
-              exit={{ opacity: 0, x: 50 }}
+              initial={{ opacity: 0, y: -30 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -30 }}
               transition={{ duration: 0.4, delay: 0.1 }}
-              className="w-1/2 flex flex-col items-center justify-center pr-16 z-10 border-l border-white/5"
+              className="w-full md:w-1/2 flex flex-col items-center justify-center py-8 md:py-0 md:pr-16 z-10 md:border-l border-white/5 order-1 md:order-2"
             >
               <div className="absolute w-80 h-80 bg-amber-600/10 rounded-full blur-3xl" />
 
@@ -732,7 +732,7 @@ export default function AuthTvPage() {
                 transition={{ delay: 0.8 }}
                 className="absolute bottom-8 text-white/20 text-sm"
               >
-                {settings?.site_title || 'Stylus One'} for Android TV
+                {settings?.site_title || 'Stylus One'}
               </motion.p>
             </motion.div>
           </>

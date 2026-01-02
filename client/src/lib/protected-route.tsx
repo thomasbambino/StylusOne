@@ -4,6 +4,7 @@ import { Redirect, Route } from "wouter";
 import { PageTransition } from "@/components/page-transition";
 import { NavigationBar } from "@/components/navigation-bar";
 import { useQuery } from "@tanstack/react-query";
+import { isNativePlatform } from "@/lib/capacitor";
 
 interface ProtectedRouteProps {
   path: string;
@@ -40,10 +41,13 @@ export function ProtectedRoute({
       return <Redirect to="/pending" />;
     }
 
+    // Hide navigation bar on native mobile apps
+    const isNative = isNativePlatform();
+
     return (
       <>
-        <NavigationBar settings={settings} />
-        <div className="pt-20">
+        {!isNative && <NavigationBar settings={settings} />}
+        <div className={isNative ? "" : "pt-20"}>
           <PageTransition>
             <Component />
           </PageTransition>
