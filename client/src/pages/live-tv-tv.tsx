@@ -746,6 +746,14 @@ export default function LiveTVTvPage() {
   // Auth
   const { logoutMutation } = useAuth();
 
+  // Portrait mode detection for native platforms
+  const [isPortrait, setIsPortrait] = useState(() => {
+    if (typeof window !== 'undefined') {
+      return window.innerHeight > window.innerWidth;
+    }
+    return false;
+  });
+
   // View state: 'player' (fullscreen) or 'guide' (with PiP)
   const [viewMode, setViewMode] = useState<'player' | 'guide'>('player');
   const [showOverlay, setShowOverlay] = useState(true);
@@ -1303,6 +1311,27 @@ export default function LiveTVTvPage() {
     }
   }, []);
 
+  // Detect portrait/landscape orientation changes on native platforms
+  useEffect(() => {
+    if (!isNativePlatform()) return;
+
+    const handleResize = () => {
+      const portrait = window.innerHeight > window.innerWidth;
+      setIsPortrait(portrait);
+    };
+
+    window.addEventListener('resize', handleResize);
+    window.addEventListener('orientationchange', handleResize);
+
+    // Initial check
+    handleResize();
+
+    return () => {
+      window.removeEventListener('resize', handleResize);
+      window.removeEventListener('orientationchange', handleResize);
+    };
+  }, []);
+
   // Auto-play first channel with delay to prevent overwhelming emulator
   useEffect(() => {
     if (channels.length > 0 && !selectedChannel) {
@@ -1335,6 +1364,27 @@ export default function LiveTVTvPage() {
   // ============================================================================
   // RENDER
   // ============================================================================
+
+  // Portrait mode blocker for native platforms
+  if (isPortrait && isNativePlatform()) {
+    return (
+      <div className="fixed inset-0 bg-black flex flex-col items-center justify-center z-50">
+        <div className="text-white/80 mb-6">
+          <svg xmlns="http://www.w3.org/2000/svg" className="w-24 h-24 animate-pulse" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+            <rect x="4" y="2" width="16" height="20" rx="2" />
+            <path d="M12 18h.01" />
+            <path d="M15 6H9" strokeLinecap="round" />
+            {/* Rotation arrow */}
+            <path d="M20 12a8 8 0 0 1-8 8M4 12a8 8 0 0 1 8-8" strokeLinecap="round" className="origin-center" style={{ transform: 'translateX(12px) translateY(-8px)' }} />
+          </svg>
+        </div>
+        <h2 className="text-white text-2xl font-bold mb-2">Rotate Your Device</h2>
+        <p className="text-white/60 text-center px-8">
+          Please rotate your device to landscape mode to watch live TV
+        </p>
+      </div>
+    );
+  }
 
   return (
     <div
