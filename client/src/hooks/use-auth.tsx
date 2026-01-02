@@ -37,6 +37,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   } = useQuery<AuthUser | undefined, Error>({
     queryKey: ["/api/user"],
     queryFn: getQueryFn({ on401: "returnNull" }),
+    // Override global defaults to ensure user data stays fresh
+    // This fixes issues where role changes aren't reflected across devices
+    staleTime: 30 * 1000, // 30 seconds - user data becomes stale after this
+    refetchOnWindowFocus: true, // Refresh when tab/window gains focus
+    refetchOnMount: true, // Refresh when component mounts
   });
 
   const loginMutation = useMutation({
