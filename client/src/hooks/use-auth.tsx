@@ -1,4 +1,4 @@
-import { createContext, ReactNode, useContext } from "react";
+import { createContext, ReactNode, useContext, useEffect } from "react";
 import {
   useQuery,
   useMutation,
@@ -34,15 +34,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     data: user,
     error,
     isLoading,
+    refetch,
   } = useQuery<AuthUser | undefined, Error>({
     queryKey: ["/api/user"],
     queryFn: getQueryFn({ on401: "returnNull" }),
     // Override global defaults to ensure user data stays fresh
     // This fixes issues where role changes aren't reflected across devices
-    staleTime: 30 * 1000, // 30 seconds - user data becomes stale after this
+    staleTime: 0, // Always consider stale - always refetch
+    gcTime: 0, // Don't cache user data
     refetchOnWindowFocus: true, // Refresh when tab/window gains focus
-    refetchOnMount: true, // Refresh when component mounts
+    refetchOnMount: 'always', // Always refresh when component mounts
+    refetchOnReconnect: true, // Refresh when network reconnects
   });
+
+  // Force immediate refetch on app load to ensure fresh user data
+  useEffect(() => {
+    refetch();
+  }, [refetch]);
 
   const loginMutation = useMutation({
     mutationFn: async (credentials: LoginData) => {
