@@ -34,7 +34,7 @@ export const users = pgTable("users", {
 
 // Session table managed by connect-pg-simple - defined here so Drizzle doesn't try to delete it
 export const userSessions = pgTable("user_sessions", {
-  sid: varchar("sid", { length: 255 }).primaryKey(),
+  sid: varchar("sid").primaryKey(),
   sess: json("sess").notNull(),
   expire: timestamp("expire", { precision: 6 }).notNull(),
 });
