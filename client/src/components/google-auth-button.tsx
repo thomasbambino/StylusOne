@@ -4,8 +4,18 @@ import { buildApiUrl, isNativePlatform } from "@/lib/capacitor";
 import { GoogleAuth } from '@codetrix-studio/capacitor-google-auth';
 import { useToast } from "@/hooks/use-toast";
 import { Loader2 } from "lucide-react";
-import { CapacitorHttp } from '@capacitor/core';
+import { CapacitorHttp, Capacitor } from '@capacitor/core';
 import { queryClient } from "@/lib/queryClient";
+
+// Check if Google Auth is configured for the current platform
+const isGoogleAuthConfigured = () => {
+  if (!isNativePlatform()) return true; // Web always uses OAuth redirect
+  const platform = Capacitor.getPlatform();
+  const clientId = platform === 'ios'
+    ? import.meta.env.VITE_GOOGLE_IOS_CLIENT_ID
+    : import.meta.env.VITE_GOOGLE_CLIENT_ID;
+  return !!clientId;
+};
 
 export function GoogleAuthButton() {
   const [isLoading, setIsLoading] = useState(false);
@@ -16,6 +26,17 @@ export function GoogleAuthButton() {
 
     try {
       if (isNativePlatform()) {
+        // Check if Google Auth is configured for this platform
+        if (!isGoogleAuthConfigured()) {
+          toast({
+            title: "Google Sign-In Not Available",
+            description: "Google Sign-In is not configured for this platform yet.",
+            variant: "destructive"
+          });
+          setIsLoading(false);
+          return;
+        }
+
         // Use native Google Sign-In on mobile
         console.log('Starting native Google sign-in...');
         const result = await GoogleAuth.signIn();
