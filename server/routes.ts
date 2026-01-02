@@ -2187,20 +2187,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
     try {
       const categoryId = req.query.category as string | undefined;
+      const userId = (req.user as any).id;
 
       const { xtreamCodesService } = await import('./services/xtream-codes-service');
-      
+
 
       if (!xtreamCodesService.isConfigured()) {
         return res.json({ configured: false, channels: [] });
       }
 
-      
+
       if (!xtreamCodesService.isInitialized()) {
         return res.status(500).json({ message: "Failed to initialize IPTV service" });
       }
 
-      const channels = await xtreamCodesService.getChannels(categoryId);
+      // Get channels based on user's subscription plan IPTV credentials
+      const channels = await xtreamCodesService.getMergedChannels(userId, categoryId);
       res.json({ configured: true, channels });
     } catch (error) {
       console.error('Error fetching IPTV channels:', error);
@@ -2587,8 +2589,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
         existingStream.lastAccessed = new Date();
         console.log(`🔄 Fetching fresh manifest (cached was ${Math.round(manifestAge / 1000)}s old) for stream ${streamId} (${existingStream.users.size} users)`);
 
-        // Fetch fresh manifest from source
-        let freshStreamUrl = xtreamCodesService.getHLSStreamUrl(streamId);
+        // Fetch fresh manifest from source using user's credential
+        const refreshClient = await xtreamCodesService.getClientForStream(userId, streamId);
+        if (!refreshClient) {
+          console.error(`No IPTV credential available for user ${userId} stream ${streamId}`);
+          return res.status(403).send('No IPTV access for this channel');
+        }
+        let freshStreamUrl = refreshClient.getHLSStreamUrl(streamId);
         console.log(`Fetching fresh HLS manifest from: ${freshStreamUrl}`);
         let freshResponse = await fetch(freshStreamUrl);
 
@@ -2652,7 +2659,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // No existing stream, fetch from provider
       console.log(`🆕 Creating new stream ${streamId} for user ${userIdString}`);
-      let streamUrl = xtreamCodesService.getHLSStreamUrl(streamId);
+
+      // Get the appropriate client based on user's subscription
+      const client = await xtreamCodesService.getClientForStream(userId, streamId);
+      if (!client) {
+        console.error(`No IPTV credential available for user ${userId} stream ${streamId}`);
+        return res.status(403).send('No IPTV access for this channel');
+      }
+
+      let streamUrl = client.getHLSStreamUrl(streamId);
       console.log(`Fetching HLS manifest from: ${streamUrl}`);
       let response = await fetch(streamUrl);
 
@@ -2762,14 +2777,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
     const { token } = req.query;
     const { streamId } = req.params;
 
+    let userId: number | null = null;
+
     if (token && typeof token === 'string') {
       // Token-based authentication
-      const userId = validateStreamToken(token, streamId);
+      userId = validateStreamToken(token, streamId);
       if (!userId) {
         console.log(`❌ Invalid or expired token for TS stream ${streamId}`);
         return res.sendStatus(401);
       }
-    } else if (!req.isAuthenticated()) {
+    } else if (req.isAuthenticated()) {
+      userId = req.user!.id;
+    } else {
       // No valid authentication
       console.log(`❌ No authentication provided for TS stream ${streamId}`);
       return res.sendStatus(401);
@@ -2782,11 +2801,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).send('IPTV not configured');
       }
 
-      // Get the direct TS stream URL
-      const baseUrl = xtreamCodesService.getServerUrl();
-      const username = xtreamCodesService.getUsername();
-      const password = xtreamCodesService.getPassword();
-      const streamUrl = `${baseUrl}/live/${username}/${password}/${streamId}.ts`;
+      // Get the appropriate client based on user's subscription
+      const client = await xtreamCodesService.getClientForStream(userId, streamId);
+      if (!client) {
+        console.error(`No IPTV credential available for user ${userId} stream ${streamId}`);
+        return res.status(403).send('No IPTV access for this channel');
+      }
+
+      // Get the direct TS stream URL from user's credential
+      const streamUrl = client.getStreamUrl(streamId, 'ts');
 
       console.log(`Proxying TS stream ${streamId} from: ${streamUrl}`);
 
