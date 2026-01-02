@@ -270,23 +270,23 @@ export default function IptvCredentialsPage() {
     },
   });
 
-  const cleanupStaleMutation = useMutation({
+  const clearAllStreamsMutation = useMutation({
     mutationFn: async () => {
-      const res = await fetch(buildApiUrl('/api/admin/iptv-credentials/cleanup-stale'), {
+      const res = await fetch(buildApiUrl('/api/admin/iptv-credentials/clear-all-streams'), {
         method: 'POST',
         credentials: 'include',
       });
       if (!res.ok) {
         const error = await res.json();
-        throw new Error(error.error || 'Failed to cleanup stale streams');
+        throw new Error(error.error || 'Failed to clear streams');
       }
       return res.json();
     },
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ['/api/admin/iptv-credentials'] });
       toast({
-        title: 'Cleanup Complete',
-        description: `${data.cleaned} stale stream(s) removed`,
+        title: 'Streams Cleared',
+        description: `${data.cleared} stream(s) removed`,
       });
     },
     onError: (error: Error) => {
@@ -360,15 +360,15 @@ export default function IptvCredentialsPage() {
           {totalActiveStreams > 0 && (
             <Button
               variant="outline"
-              onClick={() => cleanupStaleMutation.mutate()}
-              disabled={cleanupStaleMutation.isPending}
+              onClick={() => clearAllStreamsMutation.mutate()}
+              disabled={clearAllStreamsMutation.isPending}
             >
-              {cleanupStaleMutation.isPending ? (
+              {clearAllStreamsMutation.isPending ? (
                 <Loader2 className="h-4 w-4 mr-2 animate-spin" />
               ) : (
-                <RefreshCw className="h-4 w-4 mr-2" />
+                <WifiOff className="h-4 w-4 mr-2" />
               )}
-              Cleanup Stale
+              Clear All Streams
             </Button>
           )}
           <Button onClick={() => setIsCreateDialogOpen(true)}>

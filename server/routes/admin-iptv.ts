@@ -407,6 +407,21 @@ router.post('/iptv-credentials/cleanup-stale', requireSuperAdmin, async (req, re
 });
 
 /**
+ * POST /api/admin/iptv-credentials/clear-all-streams
+ * Force clear ALL active streams (use with caution)
+ */
+router.post('/iptv-credentials/clear-all-streams', requireSuperAdmin, async (req, res) => {
+  try {
+    const result = await db.delete(activeIptvStreams).returning();
+    console.log(`Force cleared ${result.length} streams`);
+    res.json({ success: true, cleared: result.length });
+  } catch (error) {
+    console.error('Error clearing all streams:', error);
+    res.status(500).json({ error: 'Failed to clear streams' });
+  }
+});
+
+/**
  * GET /api/admin/iptv-credentials/all-streams
  * Get all active streams with details for debugging
  */
