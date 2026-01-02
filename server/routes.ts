@@ -3132,9 +3132,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // IPTV Stream Heartbeat - keep stream session alive
+  // No session auth required - sessionToken itself is the authentication
   app.post("/api/iptv/stream/heartbeat", async (req, res) => {
-    if (!req.isAuthenticated()) return res.sendStatus(401);
-
     try {
       const { sessionToken } = req.body;
 
