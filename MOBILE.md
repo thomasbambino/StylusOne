@@ -1,6 +1,6 @@
 # Mobile App Development Guide
 
-This guide covers building and deploying the Stylus One Android app using Capacitor.
+This guide covers building and deploying the Stylus One mobile apps (Android & iOS) using Capacitor.
 
 ## Prerequisites
 
@@ -30,6 +30,23 @@ This guide covers building and deploying the Stylus One Android app using Capaci
      export PATH=$PATH:$ANDROID_HOME/platform-tools
      export PATH=$PATH:$ANDROID_HOME/tools
      ```
+
+### iOS Development (macOS only)
+
+5. **Xcode** (Latest stable version)
+   - Download from: Mac App Store
+   - After installing, set command line tools:
+     ```bash
+     sudo xcode-select --switch /Applications/Xcode.app/Contents/Developer
+     ```
+
+6. **CocoaPods**
+   ```bash
+   sudo gem install cocoapods
+   ```
+
+7. **Apple Developer Account** ($99/year for App Store distribution)
+   - Sign up at: https://developer.apple.com
 
 ## Environment Configuration
 
@@ -87,6 +104,58 @@ In Android Studio:
 1. Select your device/emulator from the dropdown
 2. Click the "Run" button (green play icon)
 3. The app will install and launch
+
+---
+
+## iOS Development
+
+### 1. Install Dependencies
+
+After installing Xcode and CocoaPods, install iOS dependencies:
+
+```bash
+cd ios/App
+pod install
+cd ../..
+```
+
+### 2. Sync with iOS
+
+Sync the web assets to the iOS project:
+
+```bash
+npm run build
+npx cap sync ios
+```
+
+### 3. Open in Xcode
+
+```bash
+npx cap open ios
+```
+
+### 4. Configure Signing
+
+In Xcode:
+1. Select the "App" project in the navigator
+2. Go to "Signing & Capabilities" tab
+3. Select your Team (requires Apple Developer account)
+4. Xcode will automatically manage signing
+
+### 5. Run on Device/Simulator
+
+In Xcode:
+1. Select your device/simulator from the dropdown (top left)
+2. Click the "Run" button (play icon)
+3. The app will install and launch
+
+### iOS-Specific Notes
+
+- **HLS Video**: Works natively on iOS, no additional setup needed
+- **Cookies/Sessions**: May need to configure `WKWebViewConfiguration` for cookie persistence
+- **App Transport Security**: HTTPS is required by default on iOS
+
+---
 
 ## Building APK
 
@@ -191,6 +260,61 @@ Output: `android/app/build/outputs/bundle/release/app-release.aab`
 2. Complete all required sections
 3. Submit for review (typically takes 1-7 days)
 
+---
+
+## Publishing to Apple App Store
+
+### 1. Create App Store Connect Account
+
+- Go to: https://appstoreconnect.apple.com
+- Requires Apple Developer Program membership ($99/year)
+- Set up your developer profile
+
+### 2. Create App in App Store Connect
+
+1. Click "My Apps" → "+" → "New App"
+2. Fill in app details:
+   - Platform: iOS
+   - Name: Stylus One
+   - Primary Language: English (U.S.)
+   - Bundle ID: com.stylusone.app
+   - SKU: stylusone-ios-001
+
+### 3. Prepare Store Listing
+
+Required assets:
+- **App icon**: 1024x1024 PNG (no transparency, no rounded corners)
+- **Screenshots**:
+  - iPhone 6.7" (1290x2796) - Required
+  - iPhone 6.5" (1284x2778) - Required
+  - iPad 12.9" (2048x2732) - If supporting iPad
+- **Privacy policy URL**: Required
+- **App description**: Up to 4000 characters
+
+### 4. Archive and Upload from Xcode
+
+1. In Xcode, select "Any iOS Device" as build target
+2. Go to Product → Archive
+3. Once complete, click "Distribute App"
+4. Select "App Store Connect" → "Upload"
+5. Follow the prompts to upload
+
+### 5. Submit for Review
+
+1. In App Store Connect, select your build
+2. Complete all required metadata
+3. Submit for review (typically takes 1-3 days)
+
+### TestFlight (Beta Testing)
+
+Before releasing publicly, test with TestFlight:
+1. Upload a build to App Store Connect
+2. Go to TestFlight tab
+3. Add internal testers (up to 100) or external testers (up to 10,000)
+4. Testers install via TestFlight app
+
+---
+
 ## Capacitor Configuration
 
 The app configuration is in `capacitor.config.ts`:
@@ -235,6 +359,10 @@ const config: CapacitorConfig = {
 | `npm run cap:run` | Build, sync, and open Android Studio |
 | `npm run android:build` | Build debug APK |
 | `npx cap sync` | Sync changes to native projects |
+| `npx cap sync ios` | Sync changes to iOS only |
+| `npx cap sync android` | Sync changes to Android only |
+| `npx cap open ios` | Open Xcode |
+| `npx cap open android` | Open Android Studio |
 | `npx cap copy` | Copy web assets only |
 | `npx cap update` | Update Capacitor plugins |
 
@@ -383,6 +511,7 @@ The app includes live TV streaming via HDHomeRun and IPTV. For mobile:
 
 ## Next Steps
 
+### Android
 1. Test on physical Android device
 2. Add app icon and splash screen
 3. Implement push notifications (if needed)
@@ -390,9 +519,26 @@ The app includes live TV streaming via HDHomeRun and IPTV. For mobile:
 5. Add offline support (Service Worker)
 6. Submit to Google Play Store
 
+### iOS
+1. Install Xcode and CocoaPods
+2. Run `cd ios/App && pod install`
+3. Test on iOS Simulator
+4. Test on physical iOS device
+5. Add iOS app icons (all required sizes)
+6. Configure splash screen for iOS
+7. Submit to App Store via TestFlight
+
 ## Resources
 
 - [Capacitor Documentation](https://capacitorjs.com/docs)
+- [Capacitor Plugins](https://capacitorjs.com/docs/plugins)
+
+### Android
 - [Android Developer Guide](https://developer.android.com)
 - [Google Play Console](https://play.google.com/console)
-- [Capacitor Plugins](https://capacitorjs.com/docs/plugins)
+
+### iOS
+- [Apple Developer Documentation](https://developer.apple.com/documentation/)
+- [App Store Connect](https://appstoreconnect.apple.com)
+- [Human Interface Guidelines](https://developer.apple.com/design/human-interface-guidelines/)
+- [TestFlight Documentation](https://developer.apple.com/testflight/)
