@@ -60,7 +60,7 @@ router.get('/iptv-credentials', requireSuperAdmin, async (req, res) => {
     const credentialsWithStats = await Promise.all(
       credentials.map(async (cred) => {
         const activeStreams = await db
-          .select({ count: sql<number>`count(*)` })
+          .select({ count: sql<number>`count(*)::int` })
           .from(activeIptvStreams)
           .where(eq(activeIptvStreams.credentialId, cred.id));
 
@@ -74,7 +74,7 @@ router.get('/iptv-credentials', requireSuperAdmin, async (req, res) => {
           notes: cred.notes,
           healthStatus: cred.healthStatus,
           lastHealthCheck: cred.lastHealthCheck,
-          activeStreams: activeStreams[0]?.count || 0,
+          activeStreams: Number(activeStreams[0]?.count) || 0,
           createdAt: cred.createdAt,
           updatedAt: cred.updatedAt,
         };
