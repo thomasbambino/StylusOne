@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef, useMemo, memo } from 'react';
 import { useQuery, useQueries, useMutation, useQueryClient } from '@tanstack/react-query';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ChevronDown, ChevronUp, Play, Pause, Volume2, VolumeX, Info, Plus, MoreHorizontal, Star, X, Check, CreditCard, Calendar, ExternalLink, LogOut, LayoutGrid } from 'lucide-react';
+import { ChevronDown, ChevronUp, Play, Pause, Volume2, VolumeX, Info, Plus, MoreHorizontal, Star, X, Check, CreditCard, Calendar, ExternalLink, LogOut, LayoutGrid, Airplay } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { getQueryFn, apiRequest, queryClient } from '@/lib/queryClient';
 import { buildApiUrl, isNativePlatform } from '@/lib/capacitor';
@@ -152,16 +152,18 @@ const PlaybackControls = memo(({
 ));
 PlaybackControls.displayName = 'PlaybackControls';
 
-// Action Buttons (Add, Info, More)
+// Action Buttons (Add, Info, AirPlay, More)
 const ActionButtons = memo(({
   isFavorite,
   onToggleFavorite,
   onShowInfo,
+  onAirPlay,
   onShowMenu
 }: {
   isFavorite: boolean;
   onToggleFavorite: () => void;
   onShowInfo: () => void;
+  onAirPlay: () => void;
   onShowMenu: () => void;
 }) => (
   <div className="flex items-center gap-6">
@@ -181,6 +183,15 @@ const ActionButtons = memo(({
     >
       <Info className="w-7 h-7 text-white/80" />
     </button>
+    {/* AirPlay button - iOS only */}
+    {isNativePlatform() && (
+      <button
+        className="p-3 hover:bg-white/10 rounded-full transition-colors"
+        onClick={onAirPlay}
+      >
+        <Airplay className="w-7 h-7 text-white/80" />
+      </button>
+    )}
     <button
       className="p-3 hover:bg-white/10 rounded-full transition-colors"
       onClick={onShowMenu}
@@ -877,6 +888,20 @@ export default function LiveTVTvPage() {
     }
   }, [selectedChannel, isFavorite, addFavoriteMutation, removeFavoriteMutation]);
 
+  // Handle AirPlay - unfortunately HLS.js doesn't support AirPlay video, only audio
+  // This shows the picker but video won't work until we can use native HLS
+  const handleAirPlay = useCallback(() => {
+    if (videoRef.current) {
+      const video = videoRef.current as any;
+      if (video.webkitShowPlaybackTargetPicker) {
+        console.log('📺 Showing AirPlay picker');
+        video.webkitShowPlaybackTargetPicker();
+      } else {
+        console.log('AirPlay picker not available');
+      }
+    }
+  }, []);
+
   // EPG queries - always load for current channel, load more when guide opens
   // Use epgId (XMLTV channel ID) and /api/epg/upcoming endpoint like the web version
   const visibleEpgIds = useMemo(() => {
@@ -1103,7 +1128,89 @@ export default function LiveTVTvPage() {
         }
       }
 
-      if (Hls.isSupported()) {
+      // On iOS, use native HLS for AirPlay support (HLS.js doesn't support AirPlay video)
+      const canPlayNativeHLS = video.canPlayType('application/vnd.apple.mpegurl');
+      const useNativeHLS = isNativePlatform() && canPlayNativeHLS;
+
+      console.log('[TV] Playback decision:', {
+        isNative: isNativePlatform(),
+        canPlayNativeHLS,
+        useNativeHLS,
+        hlsSupported: Hls.isSupported(),
+        streamUrl
+      });
+
+      if (useNativeHLS) {
+        // Native iOS HLS - supports AirPlay with video
+        console.log('[TV] 📱 Using NATIVE HLS for AirPlay support');
+        console.log('[TV] Stream URL:', streamUrl);
+
+        // Add error handlers before setting src
+        const handleError = (e: Event) => {
+          const mediaError = video.error;
+          console.error('[TV] Native HLS error event:', e);
+          console.error('[TV] Video error code:', mediaError?.code);
+          console.error('[TV] Video error message:', mediaError?.message);
+          console.error('[TV] Network state:', video.networkState);
+          console.error('[TV] Ready state:', video.readyState);
+          setIsLoading(false);
+        };
+
+        const handleLoadedMetadata = () => {
+          console.log('[TV] Native HLS: metadata loaded');
+          console.log('[TV] Duration:', video.duration);
+          console.log('[TV] Video dimensions:', video.videoWidth, 'x', video.videoHeight);
+        };
+
+        const handleCanPlay = () => {
+          console.log('[TV] Native HLS: can play');
+        };
+
+        const handlePlaying = () => {
+          console.log('[TV] Native HLS: playing');
+          setIsPlaying(true);
+          setIsLoading(false);
+        };
+
+        const handleWaiting = () => {
+          console.log('[TV] Native HLS: waiting/buffering');
+        };
+
+        const handleStalled = () => {
+          console.log('[TV] Native HLS: stalled');
+        };
+
+        // Clean up old listeners
+        video.removeEventListener('error', handleError);
+        video.removeEventListener('loadedmetadata', handleLoadedMetadata);
+        video.removeEventListener('canplay', handleCanPlay);
+        video.removeEventListener('playing', handlePlaying);
+        video.removeEventListener('waiting', handleWaiting);
+        video.removeEventListener('stalled', handleStalled);
+
+        // Add new listeners
+        video.addEventListener('error', handleError);
+        video.addEventListener('loadedmetadata', handleLoadedMetadata);
+        video.addEventListener('canplay', handleCanPlay);
+        video.addEventListener('playing', handlePlaying);
+        video.addEventListener('waiting', handleWaiting);
+        video.addEventListener('stalled', handleStalled);
+
+        video.src = streamUrl;
+        video.load(); // Explicitly load
+
+        video.play().then(() => {
+          console.log('[TV] Native HLS: play() succeeded');
+          setIsPlaying(true);
+          setIsLoading(false);
+        }).catch((err) => {
+          console.error('[TV] Native HLS play() error:', err);
+          console.error('[TV] Error name:', err.name);
+          console.error('[TV] Error message:', err.message);
+          setIsLoading(false);
+        });
+      } else if (Hls.isSupported()) {
+        console.log('[TV] Using HLS.js');
         const hls = new Hls({
           lowLatencyMode: false,
           backBufferLength: 90,
@@ -1139,7 +1246,9 @@ export default function LiveTVTvPage() {
 
         hls.attachMedia(video);
         hls.loadSource(streamUrl);
-      } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
+      } else if (canPlayNativeHLS) {
+        // Fallback for non-native platforms with native HLS support (Safari desktop)
+        console.log('[TV] Using native HLS fallback');
         video.src = streamUrl;
         video.play().then(() => {
           setIsPlaying(true);
@@ -1670,6 +1779,7 @@ export default function LiveTVTvPage() {
                 isFavorite={isFavorite}
                 onToggleFavorite={toggleFavorite}
                 onShowInfo={() => setShowInfoModal(true)}
+                onAirPlay={handleAirPlay}
                 onShowMenu={() => setShowMenuPopup(true)}
               />
             </div>

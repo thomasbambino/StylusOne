@@ -2615,6 +2615,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           res.set({
             'Content-Type': 'application/vnd.apple.mpegurl',
             'Access-Control-Allow-Origin': '*',
+            'Cross-Origin-Resource-Policy': 'cross-origin',
             'Cache-Control': 'no-cache, no-store, must-revalidate'
           });
 
@@ -2643,6 +2644,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           res.set({
             'Content-Type': 'application/vnd.apple.mpegurl',
             'Access-Control-Allow-Origin': '*',
+            'Cross-Origin-Resource-Policy': 'cross-origin',
             'Cache-Control': 'no-cache, no-store, must-revalidate'
           });
 
@@ -2716,6 +2718,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         res.set({
           'Content-Type': 'application/vnd.apple.mpegurl',
           'Access-Control-Allow-Origin': '*',
+          'Cross-Origin-Resource-Policy': 'cross-origin',
           'Cache-Control': 'no-cache, no-store, must-revalidate'
         });
 
@@ -2826,6 +2829,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.set({
         'Content-Type': 'application/vnd.apple.mpegurl',
         'Access-Control-Allow-Origin': '*',
+        'Cross-Origin-Resource-Policy': 'cross-origin',
         'Cache-Control': 'no-cache, no-store, must-revalidate'
       });
 
@@ -2890,6 +2894,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.set({
         'Content-Type': 'video/MP2T',
         'Access-Control-Allow-Origin': '*',
+        'Cross-Origin-Resource-Policy': 'cross-origin',
         'Cache-Control': 'no-cache, no-store, must-revalidate'
       });
 
@@ -2971,6 +2976,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.set({
         'Content-Type': 'video/MP2T',
         'Access-Control-Allow-Origin': '*',
+        'Cross-Origin-Resource-Policy': 'cross-origin',
         'Cache-Control': 'public, max-age=31536000' // Segments can be cached
       });
 
