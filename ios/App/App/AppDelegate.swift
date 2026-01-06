@@ -8,7 +8,7 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
 
     // Required for ScreenOrientation plugin to control orientation
     func application(_ application: UIApplication, supportedInterfaceOrientationsFor window: UIWindow?) -> UIInterfaceOrientationMask {
-        if let vc = self.window?.rootViewController as? CAPBridgeViewController {
+        if let vc = self.window?.rootViewController as? PiPBridgeViewController {
             return UIInterfaceOrientationMask(rawValue: vc.supportedInterfaceOrientations.rawValue)
         }
         return .all

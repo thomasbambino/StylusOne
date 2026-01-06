@@ -14,6 +14,11 @@ import { cn } from '@/lib/utils';
 
 type AuthView = 'menu' | 'code' | 'email' | 'pending';
 
+interface EmailFormData {
+  email: string;
+  password: string;
+}
+
 interface TvCodeResponse {
   code: string;
   expiresAt: string;
@@ -59,6 +64,9 @@ export default function AuthTvPage() {
   const [timeRemaining, setTimeRemaining] = useState<number>(0);
   const pollingRef = useRef<NodeJS.Timeout | null>(null);
 
+  // Email form state
+  const [emailForm, setEmailForm] = useState<EmailFormData>({ email: '', password: '' });
+
   const { data: settings } = useQuery<Settings>({
     queryKey: ["/api/settings"],
   });
@@ -93,6 +101,11 @@ export default function AuthTvPage() {
         if (e.key === 'Escape' || e.key === 'Backspace') {
           e.preventDefault();
           cancelCodeLogin();
+        }
+      } else if (view === 'email') {
+        if (e.key === 'Escape') {
+          e.preventDefault();
+          setView('menu');
         }
       }
     };
@@ -260,6 +273,40 @@ export default function AuthTvPage() {
     }
   };
 
+  const handleEmailSignIn = async () => {
+    if (!emailForm.email || !emailForm.password) {
+      setError('Please enter email and password');
+      return;
+    }
+
+    try {
+      setIsLoading(true);
+      setError(null);
+
+      const response = await CapacitorHttp.post({
+        url: buildApiUrl('/api/login'),
+        headers: { 'Content-Type': 'application/json' },
+        data: { email: emailForm.email, password: emailForm.password },
+      });
+
+      if (response.status !== 200) {
+        if (response.status === 403 && response.data?.requiresApproval) {
+          setView('pending');
+          return;
+        }
+        throw new Error(response.data?.message || 'Invalid email or password');
+      }
+
+      queryClient.setQueryData(["/api/user"], response.data);
+      window.location.href = '/';
+    } catch (err) {
+      console.error('Email sign-in error:', err);
+      setError(err instanceof Error ? err.message : 'Sign in failed');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   const handleButtonSelect = (id: string) => {
     switch (id) {
       case 'code':
@@ -269,8 +316,9 @@ export default function AuthTvPage() {
         handleGoogleSignIn();
         break;
       case 'email':
-        // For now, redirect to regular auth page for email login
-        window.location.href = '/auth';
+        setError(null);
+        setEmailForm({ email: '', password: '' });
+        setView('email');
         break;
     }
   };
@@ -295,7 +343,7 @@ export default function AuthTvPage() {
   }));
 
   return (
-    <div className="fixed inset-0 bg-gradient-to-br from-gray-950 via-gray-900 to-black flex flex-col md:flex-row overflow-hidden">
+    <div className="fixed inset-0 bg-gradient-to-br from-gray-950 via-gray-900 to-black flex flex-col md:flex-row overflow-hidden justify-center">
       {/* Animated background particles */}
       <div className="absolute inset-0 pointer-events-none overflow-hidden">
         {particles.map((p, i) => (
@@ -317,7 +365,7 @@ export default function AuthTvPage() {
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: 30 }}
               transition={{ duration: 0.5 }}
-              className="w-full md:w-1/2 flex flex-col justify-start md:justify-center px-6 md:pl-16 md:pr-12 z-10 order-2 md:order-1"
+              className="w-full md:w-1/2 flex flex-col justify-center px-6 md:pl-16 md:pr-12 z-10 order-2 md:order-1"
             >
               <motion.h2
                 initial={{ opacity: 0, y: -20 }}
@@ -435,7 +483,7 @@ export default function AuthTvPage() {
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -30 }}
               transition={{ duration: 0.5, delay: 0.1 }}
-              className="w-full md:w-1/2 flex flex-col items-center justify-end md:justify-center pt-20 pb-6 md:py-0 md:pr-16 z-10 md:border-l border-white/5 order-1 md:order-2"
+              className="w-full md:w-1/2 flex flex-col items-center justify-center pt-8 pb-4 md:py-0 md:pr-16 z-10 md:border-l border-white/5 order-1 md:order-2"
             >
               {/* Decorative glow behind logo */}
               <div className="absolute w-64 h-64 bg-red-600/10 rounded-full blur-3xl" />
@@ -739,6 +787,150 @@ export default function AuthTvPage() {
               >
                 {settings?.site_title || 'Stylus One'}
               </motion.p>
+            </motion.div>
+          </>
+        )}
+
+        {/* Email View - Responsive Layout */}
+        {view === 'email' && (
+          <>
+            {/* Email Form - Below branding on mobile, left side on desktop */}
+            <motion.div
+              key="email-left"
+              initial={{ opacity: 0, y: 30 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: 30 }}
+              transition={{ duration: 0.4 }}
+              className="w-full md:w-1/2 flex flex-col justify-center px-6 md:pl-16 md:pr-12 z-10 order-2 md:order-1"
+            >
+              <motion.h2
+                initial={{ opacity: 0, y: -20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.1 }}
+                className="text-2xl md:text-3xl font-bold text-white mb-6"
+              >
+                Sign in with Email
+              </motion.h2>
+
+              {error && (
+                <motion.div
+                  initial={{ opacity: 0, scale: 0.95 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  className="bg-red-500/20 border border-red-500/40 rounded-xl px-5 py-3 text-red-400 text-center mb-6 backdrop-blur-sm"
+                >
+                  {error}
+                </motion.div>
+              )}
+
+              <div className="flex flex-col gap-4 max-w-sm">
+                <motion.div
+                  initial={{ opacity: 0, x: -20 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  transition={{ delay: 0.2 }}
+                >
+                  <label className="block text-white/60 text-sm mb-2">Email</label>
+                  <input
+                    type="email"
+                    value={emailForm.email}
+                    onChange={(e) => setEmailForm(prev => ({ ...prev, email: e.target.value }))}
+                    onKeyDown={(e) => { if (e.key === 'Enter') handleEmailSignIn(); }}
+                    placeholder="Enter your email"
+                    className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-lg text-white placeholder:text-white/40 focus:outline-none focus:ring-2 focus:ring-white/30"
+                    autoComplete="email"
+                    autoFocus
+                  />
+                </motion.div>
+
+                <motion.div
+                  initial={{ opacity: 0, x: -20 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  transition={{ delay: 0.3 }}
+                >
+                  <label className="block text-white/60 text-sm mb-2">Password</label>
+                  <input
+                    type="password"
+                    value={emailForm.password}
+                    onChange={(e) => setEmailForm(prev => ({ ...prev, password: e.target.value }))}
+                    onKeyDown={(e) => { if (e.key === 'Enter') handleEmailSignIn(); }}
+                    placeholder="Enter your password"
+                    className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-lg text-white placeholder:text-white/40 focus:outline-none focus:ring-2 focus:ring-white/30"
+                    autoComplete="current-password"
+                  />
+                </motion.div>
+
+                <motion.button
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: 0.4 }}
+                  className="mt-2 px-6 py-3 bg-white text-gray-900 rounded-lg font-semibold transition-all duration-300 hover:bg-white/90 active:scale-95 disabled:opacity-50 flex items-center justify-center gap-2"
+                  onClick={handleEmailSignIn}
+                  disabled={isLoading}
+                >
+                  {isLoading ? (
+                    <>
+                      <Loader2 className="w-5 h-5 animate-spin" />
+                      Signing in...
+                    </>
+                  ) : (
+                    'Sign In'
+                  )}
+                </motion.button>
+
+                <motion.button
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  transition={{ delay: 0.5 }}
+                  className="px-5 py-2 bg-white/10 hover:bg-white/20 rounded-lg text-white text-sm font-medium transition-all duration-300 border border-white/10"
+                  onClick={() => setView('menu')}
+                  disabled={isLoading}
+                >
+                  Back
+                </motion.button>
+              </div>
+            </motion.div>
+
+            {/* Branding - Above form on mobile, right side on desktop */}
+            <motion.div
+              key="email-right"
+              initial={{ opacity: 0, y: -30 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -30 }}
+              transition={{ duration: 0.4, delay: 0.1 }}
+              className="w-full md:w-1/2 flex flex-col items-center justify-center pt-8 pb-4 md:py-0 md:pr-16 z-10 md:border-l border-white/5 order-1 md:order-2"
+            >
+              <div className="absolute w-64 h-64 bg-red-600/10 rounded-full blur-3xl" />
+
+              <div className="relative">
+                {settings?.logo_url_large ? (
+                  <motion.img
+                    src={settings.logo_url_large}
+                    alt="Logo"
+                    className="h-16 w-16 md:h-20 md:w-20 mb-3 object-contain drop-shadow-2xl"
+                    initial={{ scale: 0.8, opacity: 0 }}
+                    animate={{ scale: 1, opacity: 1 }}
+                    transition={{ duration: 0.5, delay: 0.2 }}
+                  />
+                ) : (
+                  <motion.div
+                    initial={{ scale: 0.8, opacity: 0 }}
+                    animate={{ scale: 1, opacity: 1 }}
+                    transition={{ duration: 0.5, delay: 0.2 }}
+                    className="relative mb-3"
+                  >
+                    <Mail className="h-16 w-16 md:h-20 md:w-20 text-red-500 drop-shadow-2xl" />
+                    <div className="absolute inset-0 bg-red-500/30 blur-2xl rounded-full" />
+                  </motion.div>
+                )}
+              </div>
+
+              <motion.h1
+                className="text-xl md:text-2xl font-bold text-white tracking-tight text-center"
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.3 }}
+              >
+                {settings?.site_title || 'Stylus One'}
+              </motion.h1>
             </motion.div>
           </>
         )}

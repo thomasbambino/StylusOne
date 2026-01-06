@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef, useMemo, memo } from 'react';
 import { useQuery, useQueries, useMutation, useQueryClient } from '@tanstack/react-query';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ChevronDown, ChevronUp, Play, Pause, Volume2, VolumeX, Info, Plus, MoreHorizontal, Star, X, Check, CreditCard, Calendar, ExternalLink, LogOut, LayoutGrid, Airplay } from 'lucide-react';
+import { ChevronDown, ChevronUp, Play, Pause, Volume2, VolumeX, Info, Plus, MoreHorizontal, Star, X, Check, CreditCard, Calendar, ExternalLink, LogOut, LayoutGrid, Airplay, Search, Volume1, Minus, Settings, PictureInPicture2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { getQueryFn, apiRequest, queryClient } from '@/lib/queryClient';
 import { buildApiUrl, isNativePlatform } from '@/lib/capacitor';
@@ -105,6 +105,31 @@ const decodeBase64 = (str: string | undefined): string => {
   }
 };
 
+// Update MediaSession for Control Center / Lock Screen metadata
+const updateMediaSession = (channel: Channel | null, program: EPGProgram | null) => {
+  if (!('mediaSession' in navigator)) return;
+
+  try {
+    const title = program?.title || channel?.GuideName || 'Live TV';
+    const artist = channel?.GuideName || '';
+    const album = program?.episodeTitle || '';
+
+    navigator.mediaSession.metadata = new MediaMetadata({
+      title,
+      artist,
+      album,
+      artwork: channel?.logo ? [
+        { src: channel.logo, sizes: '512x512', type: 'image/png' }
+      ] : []
+    });
+
+    // Set playback state
+    navigator.mediaSession.playbackState = 'playing';
+  } catch (e) {
+    console.log('[MediaSession] Error updating metadata:', e);
+  }
+};
+
 // ============================================================================
 // COMPONENTS
 // ============================================================================
@@ -152,48 +177,31 @@ const PlaybackControls = memo(({
 ));
 PlaybackControls.displayName = 'PlaybackControls';
 
-// Action Buttons (Add, Info, AirPlay, More)
+// Action Buttons (Favorites, Info, More) - PiP/AirPlay now in top right corner
 const ActionButtons = memo(({
-  isFavorite,
-  onToggleFavorite,
+  onShowFavorites,
   onShowInfo,
-  onAirPlay,
   onShowMenu
 }: {
-  isFavorite: boolean;
-  onToggleFavorite: () => void;
+  onShowFavorites: () => void;
   onShowInfo: () => void;
-  onAirPlay: () => void;
   onShowMenu: () => void;
 }) => (
   <div className="flex items-center gap-6">
     <button
-      className="p-3 hover:bg-white/10 rounded-full transition-colors focus:bg-white/20 focus:ring-2 focus:ring-white"
-      onClick={onToggleFavorite}
+      className="p-3 hover:bg-white/10 rounded-full transition-colors focus:outline-none"
+      onClick={onShowFavorites}
     >
-      {isFavorite ? (
-        <Star className="w-7 h-7 text-white fill-white" />
-      ) : (
-        <Plus className="w-7 h-7 text-white/80" />
-      )}
+      <Star className="w-7 h-7 text-white/80" />
     </button>
     <button
-      className="p-3 hover:bg-white/10 rounded-full transition-colors"
+      className="p-3 hover:bg-white/10 rounded-full transition-colors focus:outline-none"
       onClick={onShowInfo}
     >
       <Info className="w-7 h-7 text-white/80" />
     </button>
-    {/* AirPlay button - iOS only */}
-    {isNativePlatform() && (
-      <button
-        className="p-3 hover:bg-white/10 rounded-full transition-colors"
-        onClick={onAirPlay}
-      >
-        <Airplay className="w-7 h-7 text-white/80" />
-      </button>
-    )}
     <button
-      className="p-3 hover:bg-white/10 rounded-full transition-colors"
+      className="p-3 hover:bg-white/10 rounded-full transition-colors focus:outline-none"
       onClick={onShowMenu}
     >
       <MoreHorizontal className="w-7 h-7 text-white/80" />
@@ -218,6 +226,7 @@ const InfoModal = memo(({
     exit={{ opacity: 0 }}
     className="absolute inset-0 bg-black/90 z-50 flex items-center justify-center"
     onClick={onClose}
+    onTouchEnd={(e) => { if (e.target === e.currentTarget) { e.preventDefault(); onClose(); } }}
   >
     <motion.div
       initial={{ scale: 0.9, opacity: 0 }}
@@ -225,6 +234,7 @@ const InfoModal = memo(({
       exit={{ scale: 0.9, opacity: 0 }}
       className="bg-zinc-900 rounded-xl p-8 max-w-2xl w-full mx-8"
       onClick={e => e.stopPropagation()}
+      onTouchEnd={e => e.stopPropagation()}
     >
       <div className="flex justify-between items-start mb-4">
         <div>
@@ -238,7 +248,11 @@ const InfoModal = memo(({
             </div>
           )}
         </div>
-        <button onClick={onClose} className="p-2 hover:bg-white/10 rounded-full">
+        <button
+          onClick={onClose}
+          onTouchEnd={(e) => { e.preventDefault(); e.stopPropagation(); onClose(); }}
+          className="p-2 hover:bg-white/10 active:bg-white/20 rounded-full"
+        >
           <X className="w-6 h-6 text-white/60" />
         </button>
       </div>
@@ -264,12 +278,10 @@ InfoModal.displayName = 'InfoModal';
 
 // Menu Popup
 const MenuPopup = memo(({
-  onShowFavorites,
   onShowSubscription,
   onLogout,
   onClose
 }: {
-  onShowFavorites: () => void;
   onShowSubscription: () => void;
   onLogout: () => void;
   onClose: () => void;
@@ -280,6 +292,7 @@ const MenuPopup = memo(({
     exit={{ opacity: 0 }}
     className="absolute inset-0 z-50"
     onClick={onClose}
+    onTouchEnd={(e) => { if (e.target === e.currentTarget) { e.preventDefault(); onClose(); } }}
   >
     <motion.div
       initial={{ opacity: 0, y: 20 }}
@@ -287,33 +300,20 @@ const MenuPopup = memo(({
       exit={{ opacity: 0, y: 20 }}
       className="absolute bottom-20 right-12 bg-zinc-800 rounded-lg shadow-xl overflow-hidden min-w-[200px]"
       onClick={e => e.stopPropagation()}
+      onTouchEnd={e => e.stopPropagation()}
     >
       <button
-        className="w-full px-6 py-4 text-left text-white hover:bg-white/10 flex items-center gap-3 border-b border-white/10"
-        onClick={() => {
-          onShowFavorites();
-          onClose();
-        }}
-      >
-        <Star className="w-5 h-5 text-white fill-white" />
-        <span className="text-lg">Favorites</span>
-      </button>
-      <button
-        className="w-full px-6 py-4 text-left text-white hover:bg-white/10 flex items-center gap-3 border-b border-white/10"
-        onClick={() => {
-          onShowSubscription();
-          onClose();
-        }}
+        className="w-full px-6 py-4 text-left text-white hover:bg-white/10 active:bg-white/20 flex items-center gap-3 border-b border-white/10"
+        onTouchEnd={(e) => { e.preventDefault(); e.stopPropagation(); onShowSubscription(); onClose(); }}
+        onClick={() => { onShowSubscription(); onClose(); }}
       >
         <CreditCard className="w-5 h-5 text-white" />
         <span className="text-lg">My Subscription</span>
       </button>
       <button
-        className="w-full px-6 py-4 text-left text-white hover:bg-white/10 flex items-center gap-3"
-        onClick={() => {
-          onLogout();
-          onClose();
-        }}
+        className="w-full px-6 py-4 text-left text-white hover:bg-white/10 active:bg-white/20 flex items-center gap-3"
+        onTouchEnd={(e) => { e.preventDefault(); e.stopPropagation(); onLogout(); onClose(); }}
+        onClick={() => { onLogout(); onClose(); }}
       >
         <LogOut className="w-5 h-5 text-white" />
         <span className="text-lg">Log Out</span>
@@ -335,6 +335,9 @@ const FavoritesPopup = memo(({
   onSelectChannel: (channel: Channel) => void;
   onClose: () => void;
 }) => {
+  // Track touch for scroll detection
+  const touchStartY = useRef<number | null>(null);
+
   // Map favorites to full channel objects
   const favoriteChannels = useMemo(() => {
     return favorites.map(fav => {
@@ -357,6 +360,7 @@ const FavoritesPopup = memo(({
       exit={{ opacity: 0 }}
       className="absolute inset-0 bg-black/90 z-50 flex items-center justify-center"
       onClick={onClose}
+      onTouchEnd={(e) => { if (e.target === e.currentTarget) { e.preventDefault(); onClose(); } }}
     >
       <motion.div
         initial={{ scale: 0.9, opacity: 0 }}
@@ -364,13 +368,18 @@ const FavoritesPopup = memo(({
         exit={{ scale: 0.9, opacity: 0 }}
         className="bg-zinc-900 rounded-xl p-6 max-w-lg w-full mx-8 max-h-[70vh] overflow-hidden flex flex-col"
         onClick={e => e.stopPropagation()}
+        onTouchEnd={e => e.stopPropagation()}
       >
         <div className="flex justify-between items-center mb-4">
           <h2 className="text-2xl font-bold text-white flex items-center gap-2">
             <Star className="w-6 h-6 text-white fill-white" />
             Favorites
           </h2>
-          <button onClick={onClose} className="p-2 hover:bg-white/10 rounded-full">
+          <button
+            onClick={onClose}
+            onTouchEnd={(e) => { e.preventDefault(); e.stopPropagation(); onClose(); }}
+            className="p-2 hover:bg-white/10 active:bg-white/20 rounded-full"
+          >
             <X className="w-6 h-6 text-white/60" />
           </button>
         </div>
@@ -382,7 +391,25 @@ const FavoritesPopup = memo(({
             {favoriteChannels.map((channel) => (
               <button
                 key={channel.iptvId}
-                className="w-full px-4 py-3 flex items-center gap-4 hover:bg-white/10 rounded-lg transition-colors"
+                className="w-full px-4 py-3 flex items-center gap-4 hover:bg-white/10 active:bg-white/20 rounded-lg transition-colors"
+                onTouchStart={(e) => {
+                  touchStartY.current = e.touches[0].clientY;
+                }}
+                onTouchEnd={(e) => {
+                  e.stopPropagation();
+                  // Only select if it was a tap, not a scroll
+                  if (touchStartY.current !== null) {
+                    const distance = Math.abs(e.changedTouches[0].clientY - touchStartY.current);
+                    if (distance < 10) {
+                      e.preventDefault();
+                      if (channel.URL) {
+                        onSelectChannel(channel);
+                      }
+                      onClose();
+                    }
+                  }
+                  touchStartY.current = null;
+                }}
                 onClick={() => {
                   if (channel.URL) {
                     onSelectChannel(channel);
@@ -449,6 +476,7 @@ const SubscriptionPopup = memo(({
       exit={{ opacity: 0 }}
       className="absolute inset-0 bg-black/90 z-50 flex items-center justify-center"
       onClick={onClose}
+      onTouchEnd={(e) => { if (e.target === e.currentTarget) { e.preventDefault(); onClose(); } }}
     >
       <motion.div
         initial={{ scale: 0.9, opacity: 0 }}
@@ -456,13 +484,18 @@ const SubscriptionPopup = memo(({
         exit={{ scale: 0.9, opacity: 0 }}
         className="bg-zinc-900 rounded-xl p-4 max-w-sm w-full mx-4 max-h-[85vh] overflow-y-auto"
         onClick={e => e.stopPropagation()}
+        onTouchEnd={e => e.stopPropagation()}
       >
         <div className="flex justify-between items-center mb-4">
           <h2 className="text-lg font-bold text-white flex items-center gap-2">
             <CreditCard className="w-5 h-5 text-white" />
             My Subscription
           </h2>
-          <button onClick={onClose} className="p-1.5 hover:bg-white/10 rounded-full">
+          <button
+            onClick={onClose}
+            onTouchEnd={(e) => { e.preventDefault(); e.stopPropagation(); onClose(); }}
+            className="p-1.5 hover:bg-white/10 active:bg-white/20 rounded-full"
+          >
             <X className="w-5 h-5 text-white/60" />
           </button>
         </div>
@@ -536,7 +569,8 @@ const SubscriptionPopup = memo(({
             {/* Manage Link */}
             <button
               onClick={openWebsite}
-              className="w-full mt-4 py-3 bg-white/10 hover:bg-white/20 rounded-lg text-white flex items-center justify-center gap-2 transition-colors"
+              onTouchEnd={(e) => { e.preventDefault(); e.stopPropagation(); openWebsite(); }}
+              className="w-full mt-4 py-3 bg-white/10 hover:bg-white/20 active:bg-white/30 rounded-lg text-white flex items-center justify-center gap-2 transition-colors"
             >
               <ExternalLink className="w-5 h-5" />
               Manage on Website
@@ -588,7 +622,9 @@ const GuideChannelRow = memo(({
   timelineEnd,
   isFocused,
   isPlaying,
-  onSelect
+  isFavorite,
+  onSelect,
+  onToggleFavorite
 }: {
   channel: Channel;
   epgData: ChannelEPG | undefined;
@@ -596,7 +632,9 @@ const GuideChannelRow = memo(({
   timelineEnd: Date;
   isFocused: boolean;
   isPlaying: boolean;
+  isFavorite: boolean;
   onSelect: () => void;
+  onToggleFavorite: () => void;
 }) => {
   const now = new Date();
   const totalMs = timelineEnd.getTime() - timelineStart.getTime();
@@ -658,23 +696,34 @@ const GuideChannelRow = memo(({
     <div
       onClick={onSelect}
       className={cn(
-        "flex h-14 cursor-pointer transition-all border-b border-white/5",
+        "flex h-14 cursor-pointer transition-all border-b border-white/5 select-none",
         isFocused && "bg-white/10 ring-2 ring-white/50"
       )}
     >
+      {/* Favorite Button */}
+      <button
+        onClick={(e) => {
+          e.stopPropagation();
+          onToggleFavorite();
+        }}
+        className="w-10 shrink-0 flex items-center justify-center hover:bg-white/10 active:bg-white/20"
+      >
+        <Star className={cn("w-4 h-4", isFavorite ? "text-yellow-400 fill-yellow-400" : "text-white/30")} />
+      </button>
+
       {/* Channel Info */}
       <div className={cn(
-        "w-48 shrink-0 flex items-center gap-3 px-3 border-r border-white/10",
+        "w-40 shrink-0 flex items-center gap-2 px-2 border-r border-white/10",
         isPlaying && "bg-red-600/20"
       )}>
-        <div className="w-10 h-10 rounded bg-white/10 flex items-center justify-center overflow-hidden shrink-0">
+        <div className="w-8 h-8 rounded bg-white/10 flex items-center justify-center overflow-hidden shrink-0">
           {channel.logo ? (
-            <img src={channel.logo} alt="" className="w-full h-full object-contain p-1" />
+            <img src={channel.logo} alt="" className="w-full h-full object-contain p-0.5" />
           ) : (
             <span className="text-xs font-bold text-white/60">{channel.GuideNumber}</span>
           )}
         </div>
-        <div className="min-w-0">
+        <div className="min-w-0 flex-1">
           <div className="text-sm font-medium text-white truncate">{channel.GuideName}</div>
         </div>
       </div>
@@ -754,18 +803,26 @@ export default function LiveTVTvPage() {
   // Auth
   const { logoutMutation } = useAuth();
 
-  // Portrait mode detection - start as false (assume landscape) to avoid false warning on startup
-  const [isPortrait, setIsPortrait] = useState(false);
+  // Portrait mode detection - check immediately on init
+  const [isPortrait, setIsPortrait] = useState(() => {
+    if (typeof window !== 'undefined') {
+      return window.innerWidth < window.innerHeight;
+    }
+    return false;
+  });
 
   // View state: 'player' (fullscreen) or 'guide' (with PiP)
   const [viewMode, setViewMode] = useState<'player' | 'guide'>('player');
   const [showOverlay, setShowOverlay] = useState(true);
+  const [guideSearchQuery, setGuideSearchQuery] = useState('');
 
   // Playback state
   const [selectedChannel, setSelectedChannel] = useState<Channel | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [isAirPlaying, setIsAirPlaying] = useState(false);
+  const [airPlayEnabled, setAirPlayEnabled] = useState(false); // Only enable AirPlay when user requests it
 
   // Guide navigation
   const [focusedChannelIndex, setFocusedChannelIndex] = useState(0);
@@ -788,6 +845,8 @@ export default function LiveTVTvPage() {
   // Touch/swipe gesture tracking
   const touchStartY = useRef<number | null>(null);
   const touchStartX = useRef<number | null>(null);
+  const longPressTimer = useRef<NodeJS.Timeout | null>(null);
+  const longPressChannel = useRef<Channel | null>(null);
 
   // Stream tracking
   const streamSessionToken = useRef<string | null>(null);
@@ -827,6 +886,16 @@ export default function LiveTVTvPage() {
       categoryName: ch.categoryName
     }));
   }, [channelsData]);
+
+  // Filtered channels for guide search
+  const filteredChannels = useMemo(() => {
+    if (!guideSearchQuery.trim()) return channels;
+    const query = guideSearchQuery.toLowerCase();
+    return channels.filter((ch: Channel) =>
+      ch.GuideName.toLowerCase().includes(query) ||
+      ch.GuideNumber.includes(query)
+    );
+  }, [channels, guideSearchQuery]);
 
   // Favorites query
   const { data: favoritesData } = useQuery({
@@ -888,17 +957,69 @@ export default function LiveTVTvPage() {
     }
   }, [selectedChannel, isFavorite, addFavoriteMutation, removeFavoriteMutation]);
 
-  // Handle AirPlay - unfortunately HLS.js doesn't support AirPlay video, only audio
-  // This shows the picker but video won't work until we can use native HLS
+  // Toggle favorite for any channel (used in guide)
+  const toggleChannelFavorite = useCallback((channel: Channel) => {
+    if (!channel.iptvId) return;
+    if (addFavoriteMutation.isPending || removeFavoriteMutation.isPending) return;
+
+    const isChannelFavorite = favorites.some(f => f.channelId === channel.iptvId);
+    if (isChannelFavorite) {
+      removeFavoriteMutation.mutate(channel.iptvId);
+    } else {
+      addFavoriteMutation.mutate(channel);
+    }
+  }, [favorites, addFavoriteMutation, removeFavoriteMutation]);
+
+  // Handle AirPlay - enable AirPlay on the video element first, then show picker
   const handleAirPlay = useCallback(() => {
     if (videoRef.current) {
       const video = videoRef.current as any;
-      if (video.webkitShowPlaybackTargetPicker) {
-        console.log('📺 Showing AirPlay picker');
-        video.webkitShowPlaybackTargetPicker();
-      } else {
-        console.log('AirPlay picker not available');
+
+      // Enable AirPlay on the video element if not already enabled
+      if (!airPlayEnabled) {
+        console.log('[AirPlay] Enabling AirPlay on video element');
+        video.setAttribute('x-webkit-airplay', 'allow');
+        setAirPlayEnabled(true);
       }
+
+      // Small delay to let the attribute take effect, then show picker
+      setTimeout(() => {
+        if (video.webkitShowPlaybackTargetPicker) {
+          console.log('📺 Showing AirPlay picker');
+          video.webkitShowPlaybackTargetPicker();
+        } else {
+          console.log('AirPlay picker not available');
+        }
+      }, 100);
+    }
+  }, [airPlayEnabled]);
+
+  // Handle Picture-in-Picture
+  const handlePiP = useCallback(async () => {
+    if (!videoRef.current) return;
+
+    const video = videoRef.current as any;
+
+    try {
+      // Check if already in PiP
+      if (document.pictureInPictureElement === video) {
+        await document.exitPictureInPicture();
+        console.log('📺 Exited PiP');
+      } else if (video.webkitSupportsPresentationMode && typeof video.webkitSetPresentationMode === 'function') {
+        // Safari/iOS specific PiP
+        video.webkitSetPresentationMode(
+          video.webkitPresentationMode === 'picture-in-picture' ? 'inline' : 'picture-in-picture'
+        );
+        console.log('📺 Toggled Safari PiP');
+      } else if (document.pictureInPictureEnabled && video.requestPictureInPicture) {
+        // Standard PiP API
+        await video.requestPictureInPicture();
+        console.log('📺 Entered PiP');
+      } else {
+        console.log('PiP not supported');
+      }
+    } catch (err) {
+      console.error('PiP error:', err);
     }
   }, []);
 
@@ -1024,6 +1145,78 @@ export default function LiveTVTvPage() {
   // Current program for selected channel
   const currentEPG = currentChannel?.iptvId ? epgDataMap.get(currentChannel.iptvId) : undefined;
 
+  // Update MediaSession (Control Center / Lock Screen) when channel or program changes
+  useEffect(() => {
+    if (currentChannel && isPlaying) {
+      updateMediaSession(currentChannel, currentEPG?.currentProgram || null);
+    }
+  }, [currentChannel, currentEPG?.currentProgram, isPlaying]);
+
+  // Detect AirPlay status and handle connect/disconnect
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video || !isNativePlatform()) return;
+
+    let wasAirPlaying = (video as any).webkitCurrentPlaybackTargetIsWireless || false;
+
+    const handleAirPlayChange = async () => {
+      const isWireless = (video as any).webkitCurrentPlaybackTargetIsWireless;
+      console.log('[AirPlay] Wireless playback changed:', isWireless, 'was:', wasAirPlaying);
+      setIsAirPlaying(!!isWireless);
+
+      if (isWireless && !wasAirPlaying) {
+        // Just connected to AirPlay - try to ensure playback
+        console.log('[AirPlay] Connected - ensuring playback');
+        try {
+          if (video.paused) {
+            await video.play();
+            console.log('[AirPlay] Play succeeded after connect');
+          }
+        } catch (e) {
+          console.error('[AirPlay] Play failed after connect:', e);
+        }
+      } else if (!isWireless && wasAirPlaying) {
+        // Just disconnected from AirPlay - reload the stream
+        console.log('[AirPlay] Disconnected - reloading stream');
+        if (selectedChannel) {
+          // Show loading spinner
+          setIsLoading(true);
+          // Small delay to let the video element settle
+          setTimeout(() => {
+            if (videoRef.current && selectedChannel) {
+              console.log('[AirPlay] Restarting local playback');
+              // Reload the current source
+              const currentSrc = videoRef.current.src;
+              if (currentSrc) {
+                videoRef.current.load();
+                videoRef.current.play().catch(e => {
+                  console.error('[AirPlay] Failed to restart playback:', e);
+                  setIsLoading(false);
+                });
+              } else {
+                setIsLoading(false);
+              }
+            } else {
+              setIsLoading(false);
+            }
+          }, 500);
+        }
+      }
+
+      wasAirPlaying = isWireless;
+    };
+
+    // Check initial state
+    handleAirPlayChange();
+
+    // Listen for changes
+    video.addEventListener('webkitcurrentplaybacktargetiswirelesschanged', handleAirPlayChange);
+
+    return () => {
+      video.removeEventListener('webkitcurrentplaybacktargetiswirelesschanged', handleAirPlayChange);
+    };
+  }, [selectedChannel]); // Re-attach when channel changes
+
   // Focused channel in guide
   const focusedChannel = channels[focusedChannelIndex] || null;
   const focusedEPG = focusedChannel?.iptvId ? epgDataMap.get(focusedChannel.iptvId) : undefined;
@@ -1112,6 +1305,11 @@ export default function LiveTVTvPage() {
         if (sessionToken) {
           console.log('[TV] Got session token from generate-token:', sessionToken);
           streamSessionToken.current = sessionToken;
+
+          // Clear any existing heartbeat interval before creating new one
+          if (heartbeatIntervalRef.current) {
+            clearInterval(heartbeatIntervalRef.current);
+          }
 
           // Start heartbeat every 30 seconds
           heartbeatIntervalRef.current = setInterval(async () => {
@@ -1420,69 +1618,90 @@ export default function LiveTVTvPage() {
     touchStartX.current = null;
   }, [viewMode, showOverlay, selectedChannel, channels]);
 
-  // Detect portrait/landscape on native platforms
-  // Key: Wait for app to fully initialize before starting detection
+  // Detect portrait/landscape on native platforms with debounce for smooth transitions
   useEffect(() => {
     if (!isNativePlatform()) {
       setIsPortrait(false);
       return;
     }
 
-    let isActive = true;
-    let checkInterval: NodeJS.Timeout | null = null;
+    let debounceTimer: NodeJS.Timeout | null = null;
+    let lastOrientation: boolean | null = null;
 
-    const checkOrientation = () => {
-      if (!isActive) return;
-      // Simple dimension check - this works reliably after app init
+    const checkOrientation = (immediate = false) => {
       const portrait = window.innerWidth < window.innerHeight;
-      setIsPortrait(portrait);
+
+      // Only update if orientation actually changed
+      if (portrait === lastOrientation) return;
+
+      if (immediate) {
+        lastOrientation = portrait;
+        setIsPortrait(portrait);
+      } else {
+        // Debounce to prevent multiple rapid updates during rotation
+        if (debounceTimer) clearTimeout(debounceTimer);
+        debounceTimer = setTimeout(() => {
+          lastOrientation = portrait;
+          setIsPortrait(portrait);
+        }, 150);
+      }
     };
 
-    // Wait 1 second for iOS to fully initialize before starting checks
-    const startupDelay = setTimeout(() => {
-      if (!isActive) return;
+    // Check immediately on mount
+    lastOrientation = window.innerWidth < window.innerHeight;
+    setIsPortrait(lastOrientation);
 
-      // Do initial check
-      checkOrientation();
+    // Listen for resize and orientation events
+    window.addEventListener('resize', () => checkOrientation(false));
+    window.addEventListener('orientationchange', () => {
+      // Delay after orientation change event for dimensions to settle
+      setTimeout(() => checkOrientation(true), 200);
+    });
 
-      // Then check on resize/orientation events
-      window.addEventListener('resize', checkOrientation);
-      window.addEventListener('orientationchange', () => {
-        // Small delay after orientationchange event
-        setTimeout(checkOrientation, 100);
-      });
-
-      // Also poll every 500ms for the first few seconds as backup
-      let pollCount = 0;
-      checkInterval = setInterval(() => {
-        checkOrientation();
-        pollCount++;
-        if (pollCount > 10 && checkInterval) {
-          clearInterval(checkInterval);
-          checkInterval = null;
-        }
-      }, 500);
-    }, 1000);
+    // Re-check when app regains focus (e.g., after PiP closes)
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        setTimeout(() => checkOrientation(true), 100);
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
 
     return () => {
-      isActive = false;
-      clearTimeout(startupDelay);
-      if (checkInterval) clearInterval(checkInterval);
-      window.removeEventListener('resize', checkOrientation);
-      window.removeEventListener('orientationchange', checkOrientation);
+      if (debounceTimer) clearTimeout(debounceTimer);
+      window.removeEventListener('resize', () => checkOrientation(false));
+      window.removeEventListener('orientationchange', () => checkOrientation(true));
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
   }, []);
 
-  // Auto-play first channel with delay to prevent overwhelming emulator
+  // Auto-play last watched channel (or first channel) with delay
   useEffect(() => {
     if (channels.length > 0 && !selectedChannel) {
+      // Try to get last watched channel from localStorage
+      const lastChannelId = localStorage.getItem('lastWatchedChannelId');
+      let channelToPlay = channels[0]; // Default to first channel
+
+      if (lastChannelId) {
+        const savedChannel = channels.find(ch => ch.iptvId === lastChannelId);
+        if (savedChannel) {
+          channelToPlay = savedChannel;
+        }
+      }
+
       // Small delay before auto-playing to let UI settle
       const timer = setTimeout(() => {
-        playStream(channels[0]);
+        playStream(channelToPlay);
       }, 1500);
       return () => clearTimeout(timer);
     }
   }, [channels, selectedChannel, playStream]);
+
+  // Save last watched channel to localStorage
+  useEffect(() => {
+    if (selectedChannel?.iptvId) {
+      localStorage.setItem('lastWatchedChannelId', selectedChannel.iptvId);
+    }
+  }, [selectedChannel]);
 
   // Auto-scroll guide to keep focused channel visible
   useEffect(() => {
@@ -1522,7 +1741,7 @@ export default function LiveTVTvPage() {
       onTouchStart={handleTouchStart}
       onTouchEnd={handleTouchEnd}
     >
-      {/* Video Element - Full screen or PiP */}
+      {/* Video Element - Full screen, PiP, or Portrait top */}
       <motion.div
         className="absolute bg-black"
         initial={{
@@ -1535,26 +1754,50 @@ export default function LiveTVTvPage() {
           zIndex: 0,
           borderRadius: 0
         }}
-        animate={viewMode === 'guide' ? {
-          top: 24,
-          right: 24,
-          left: 'auto',
-          bottom: 'auto',
-          width: 320,
-          height: 180,
-          zIndex: 30,
-          borderRadius: 12
-        } : {
-          top: 0,
-          left: 0,
-          right: 0,
-          bottom: 0,
-          width: '100%',
-          height: '100%',
-          zIndex: 0,
-          borderRadius: 0
-        }}
-        transition={{ duration: 0.15, ease: 'easeOut' }}
+        animate={
+          viewMode === 'guide' && isPortrait && isNativePlatform() ? {
+            // Portrait guide - large video in video area (below search bar)
+            top: 100,
+            left: 16,
+            right: 16,
+            bottom: 'auto',
+            width: 'calc(100vw - 32px)',
+            height: 'calc((100vw - 32px) * 0.5625)',
+            zIndex: 25,
+            borderRadius: 12
+          } : viewMode === 'guide' ? {
+            // Landscape guide - PiP in corner
+            top: 24,
+            right: 24,
+            left: 'auto',
+            bottom: 'auto',
+            width: 320,
+            height: 180,
+            zIndex: 30,
+            borderRadius: 12
+          } : isPortrait && isNativePlatform() && !isAirPlaying ? {
+            // Portrait player mode - video below notch with 16:9 aspect
+            top: 50,
+            left: 0,
+            right: 0,
+            bottom: 'auto',
+            width: '100%',
+            height: '56.25vw',
+            zIndex: 10,
+            borderRadius: 0
+          } : {
+            // Landscape player mode - fullscreen
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            width: '100%',
+            height: '100%',
+            zIndex: 0,
+            borderRadius: 0
+          }
+        }
+        transition={{ duration: 0.3, ease: [0.25, 0.1, 0.25, 1] }}
       >
         <video
           ref={videoRef}
@@ -1566,10 +1809,7 @@ export default function LiveTVTvPage() {
           preload="none"
           poster="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7"
           style={{ WebkitAppearance: 'none' } as React.CSSProperties}
-          // @ts-ignore - AirPlay support for iOS
-          x-webkit-airplay="allow"
-          // @ts-ignore - AirPlay wireless video playback
-          airplay="allow"
+          {...(airPlayEnabled ? { 'x-webkit-airplay': 'allow' } : {})}
         />
         {/* Loading Indicator - inside video container */}
         {isLoading && (
@@ -1589,6 +1829,26 @@ export default function LiveTVTvPage() {
             <p className="text-white/50 text-sm mt-1">Preparing your stream...</p>
           </div>
         )}
+        {/* Tap zone for portrait video to toggle overlay */}
+        {isPortrait && isNativePlatform() && viewMode === 'player' && !isAirPlaying && (
+          <div
+            className="absolute inset-0 z-20"
+            onClick={() => setShowOverlay(prev => !prev)}
+            onTouchEnd={(e) => { e.preventDefault(); setShowOverlay(prev => !prev); }}
+          />
+        )}
+        {/* PiP button - top right corner (portrait player mode, dismisses on tap away) */}
+        {isPortrait && isNativePlatform() && viewMode === 'player' && !isLoading && selectedChannel && showOverlay && (
+          <div className="absolute top-2 right-2 z-30">
+            <button
+              onTouchEnd={(e) => { e.preventDefault(); e.stopPropagation(); handlePiP(); }}
+              onClick={(e) => { e.stopPropagation(); handlePiP(); }}
+              className="w-10 h-10 bg-black/60 backdrop-blur-sm rounded-full flex items-center justify-center active:scale-95"
+            >
+              <PictureInPicture2 className="w-5 h-5 text-white" />
+            </button>
+          </div>
+        )}
         {viewMode === 'guide' && !isLoading && (
           <div className="absolute bottom-2 left-2 right-2">
             <div className="text-xs text-white truncate">{currentChannel?.GuideName}</div>
@@ -1596,23 +1856,493 @@ export default function LiveTVTvPage() {
         )}
       </motion.div>
 
-      {/* Portrait Mode Warning - shown when device is in portrait */}
-      {isPortrait && isNativePlatform() && (
-        <div className="absolute inset-0 bg-black/95 flex flex-col items-center justify-center z-50">
-          <div className="text-white/80 mb-6">
-            <svg xmlns="http://www.w3.org/2000/svg" className="w-16 h-16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
-              <rect x="4" y="2" width="16" height="20" rx="2" />
-              <path d="M12 18h.01" />
-            </svg>
+      {/* Portrait AirPlay Remote UI */}
+      {isPortrait && isNativePlatform() && viewMode === 'player' && isAirPlaying && (
+        <div className="absolute inset-0 bg-black flex flex-col z-40 pt-14">
+          {/* AirPlay Status - small indicator at top */}
+          <div className="flex items-center justify-center gap-2 py-3">
+            <Airplay className="w-4 h-4 text-blue-400" />
+            <span className="text-blue-400 text-xs">AirPlay Connected</span>
           </div>
-          <h2 className="text-white text-xl font-bold mb-2">Rotate Your Device</h2>
-          <p className="text-white/50 text-sm">Turn sideways to watch</p>
+
+          {/* Spacer to push content toward center */}
+          <div className="flex-1" />
+
+          {/* Program Details - Centered in screen */}
+          <div className="px-8 pb-6">
+            {/* Channel Logo & Name */}
+            <div className="flex items-center justify-center gap-3 mb-4">
+              {currentChannel?.logo && (
+                <img
+                  src={currentChannel.logo}
+                  alt=""
+                  className="h-10 w-auto object-contain"
+                  onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                />
+              )}
+              <span className="text-white/60 text-base">{currentChannel?.GuideName}</span>
+            </div>
+            {/* Program Title */}
+            <h2 className="text-white text-2xl font-bold text-center mb-2">{currentEPG?.currentProgram?.title || 'Live TV'}</h2>
+            {/* Description */}
+            {currentEPG?.currentProgram?.description && (
+              <p className="text-white/40 text-sm text-center line-clamp-2 mb-4">{currentEPG.currentProgram.description}</p>
+            )}
+            {/* Timeline */}
+            {currentEPG?.currentProgram && (
+              <div className="max-w-xs mx-auto">
+                <div className="h-1 bg-white/20 rounded-full overflow-hidden">
+                  <div
+                    className="h-full bg-red-500 rounded-full"
+                    style={{ width: `${getProgramProgress(currentEPG.currentProgram)}%` }}
+                  />
+                </div>
+                <div className="flex justify-between mt-1.5 text-xs text-white/40">
+                  <span>{new Date(currentEPG.currentProgram.startTime).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}</span>
+                  <span>{getTimeRemaining(currentEPG.currentProgram.endTime)} left</span>
+                  <span>{new Date(currentEPG.currentProgram.endTime).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}</span>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Controls - Play/Pause centered, Up/Down on sides */}
+          <div className="px-8 pb-6">
+            <div className="flex items-center justify-center gap-10">
+              <button
+                onTouchEnd={(e) => { e.preventDefault(); changeChannel('up'); }}
+                onClick={() => changeChannel('up')}
+                className="w-14 h-14 bg-white/10 rounded-full flex items-center justify-center active:bg-white/20"
+              >
+                <ChevronUp className="w-7 h-7 text-white" />
+              </button>
+              <button
+                onTouchEnd={(e) => {
+                  e.preventDefault();
+                  if (videoRef.current) {
+                    if (isPlaying) {
+                      videoRef.current.pause();
+                      setIsPlaying(false);
+                    } else {
+                      videoRef.current.play();
+                      setIsPlaying(true);
+                    }
+                  }
+                }}
+                onClick={() => {
+                  if (videoRef.current) {
+                    if (isPlaying) {
+                      videoRef.current.pause();
+                      setIsPlaying(false);
+                    } else {
+                      videoRef.current.play();
+                      setIsPlaying(true);
+                    }
+                  }
+                }}
+                className="w-20 h-20 bg-white rounded-full flex items-center justify-center active:scale-95"
+              >
+                {isPlaying ? (
+                  <Pause className="w-10 h-10 text-black" />
+                ) : (
+                  <Play className="w-10 h-10 text-black ml-1" />
+                )}
+              </button>
+              <button
+                onTouchEnd={(e) => { e.preventDefault(); changeChannel('down'); }}
+                onClick={() => changeChannel('down')}
+                className="w-14 h-14 bg-white/10 rounded-full flex items-center justify-center active:bg-white/20"
+              >
+                <ChevronDown className="w-7 h-7 text-white" />
+              </button>
+            </div>
+          </div>
+
+          {/* Volume Controls */}
+          <div className="px-8 pb-6">
+            <div className="flex items-center justify-center gap-4 max-w-xs mx-auto">
+              <button
+                onTouchEnd={() => { setIsMuted(!isMuted); if (videoRef.current) videoRef.current.muted = !isMuted; }}
+                onClick={() => { setIsMuted(!isMuted); if (videoRef.current) videoRef.current.muted = !isMuted; }}
+                className="w-11 h-11 bg-white/10 rounded-full flex items-center justify-center active:bg-white/20 shrink-0"
+              >
+                {isMuted ? <VolumeX className="w-5 h-5 text-white/60" /> : <Volume2 className="w-5 h-5 text-white" />}
+              </button>
+              <div className="flex-1 h-1.5 bg-white/20 rounded-full">
+                <div className={cn("h-full bg-white/60 rounded-full transition-all", isMuted ? "w-0" : "w-3/4")} />
+              </div>
+            </div>
+          </div>
+
+          {/* Spacer */}
+          <div className="flex-1" />
+
+          {/* Bottom Action Bar - Guide, Favorites, AirPlay, Settings */}
+          <div className="px-4 pb-8 flex items-center justify-around border-t border-white/10 pt-4">
+            <button onTouchEnd={(e) => { e.preventDefault(); setViewMode('guide'); }} onClick={() => setViewMode('guide')} className="flex flex-col items-center gap-1.5 py-2 px-4 active:opacity-70">
+              <LayoutGrid className="w-6 h-6 text-white/70" />
+              <span className="text-white/50 text-xs">Guide</span>
+            </button>
+            <button onTouchEnd={(e) => { e.preventDefault(); setShowFavoritesPopup(true); }} onClick={() => setShowFavoritesPopup(true)} className="flex flex-col items-center gap-1.5 py-2 px-4 active:opacity-70">
+              <Star className="w-6 h-6 text-white/70" />
+              <span className="text-white/50 text-xs">Favorites</span>
+            </button>
+            <button onTouchEnd={(e) => { e.preventDefault(); handleAirPlay(); }} onClick={handleAirPlay} className="flex flex-col items-center gap-1.5 py-2 px-4 active:opacity-70">
+              <Airplay className="w-6 h-6 text-blue-400" />
+              <span className="text-blue-400 text-xs">AirPlay</span>
+            </button>
+            <button onTouchEnd={(e) => { e.preventDefault(); setShowMenuPopup(true); }} onClick={() => setShowMenuPopup(true)} className="flex flex-col items-center gap-1.5 py-2 px-4 active:opacity-70">
+              <Settings className="w-6 h-6 text-white/70" />
+              <span className="text-white/50 text-xs">Settings</span>
+            </button>
+          </div>
         </div>
       )}
 
-      {/* Player Overlay - Only in player mode */}
+      {/* Portrait Player UI - Controls positioned BELOW video area (not AirPlaying) */}
+      {isPortrait && isNativePlatform() && viewMode === 'player' && !isAirPlaying && (
+        <div
+          className="absolute left-0 right-0 bottom-0 bg-black flex flex-col"
+          style={{ top: 'calc(50px + 56.25vw)', zIndex: 15 }}
+        >
+          {/* Channel Bar */}
+          <div className="px-4 py-3 flex items-center gap-3 border-b border-white/10">
+            {currentChannel?.logo && (
+              <img
+                src={currentChannel.logo}
+                alt=""
+                className="h-12 w-auto object-contain"
+                onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+              />
+            )}
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-2">
+                <h2 className="text-white text-lg font-semibold truncate">{currentChannel?.GuideName || 'No Channel'}</h2>
+                <span className="text-red-500 text-xs font-bold px-1.5 py-0.5 bg-red-500/20 rounded">LIVE</span>
+              </div>
+              {currentEPG?.currentProgram && (
+                <p className="text-white/60 text-sm truncate mt-0.5">{currentEPG.currentProgram.title}</p>
+              )}
+            </div>
+          </div>
+
+          {/* Program Info & Progress */}
+          {currentEPG?.currentProgram && (
+            <div className="px-4 py-3 border-b border-white/10">
+              <div className="flex justify-between items-center mb-2">
+                <span className="text-white/50 text-sm">
+                  {new Date(currentEPG.currentProgram.startTime).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })} - {new Date(currentEPG.currentProgram.endTime).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}
+                </span>
+                <span className="text-white/50 text-sm">{getTimeRemaining(currentEPG.currentProgram.endTime)} left</span>
+              </div>
+              <div className="h-1.5 bg-white/20 rounded-full overflow-hidden">
+                <div
+                  className="h-full bg-red-500 rounded-full"
+                  style={{ width: `${getProgramProgress(currentEPG.currentProgram)}%` }}
+                />
+              </div>
+              {currentEPG.currentProgram.description && (
+                <p className="text-white/40 text-sm mt-2 line-clamp-2">{currentEPG.currentProgram.description}</p>
+              )}
+            </div>
+          )}
+
+          {/* Playback Controls */}
+          <div className="flex-1 flex flex-col justify-center py-4">
+            <div className="flex items-center justify-center gap-6">
+              <button
+                onTouchEnd={(e) => { e.preventDefault(); e.stopPropagation(); changeChannel('up'); }}
+                onClick={(e) => { e.preventDefault(); e.stopPropagation(); changeChannel('up'); }}
+                className="w-14 h-14 bg-white/10 rounded-full flex items-center justify-center active:scale-95 active:bg-white/20"
+              >
+                <ChevronUp className="w-7 h-7 text-white" />
+              </button>
+              <button
+                onTouchEnd={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  if (videoRef.current) {
+                    if (isPlaying) {
+                      videoRef.current.pause();
+                      setIsPlaying(false);
+                    } else {
+                      videoRef.current.play();
+                      setIsPlaying(true);
+                    }
+                  }
+                }}
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  if (videoRef.current) {
+                    if (isPlaying) {
+                      videoRef.current.pause();
+                      setIsPlaying(false);
+                    } else {
+                      videoRef.current.play();
+                      setIsPlaying(true);
+                    }
+                  }
+                }}
+                className="w-20 h-20 bg-white rounded-full flex items-center justify-center active:scale-95"
+              >
+                {isPlaying ? (
+                  <Pause className="w-10 h-10 text-black" />
+                ) : (
+                  <Play className="w-10 h-10 text-black ml-1" />
+                )}
+              </button>
+              <button
+                onTouchEnd={(e) => { e.preventDefault(); e.stopPropagation(); changeChannel('down'); }}
+                onClick={(e) => { e.preventDefault(); e.stopPropagation(); changeChannel('down'); }}
+                className="w-14 h-14 bg-white/10 rounded-full flex items-center justify-center active:scale-95 active:bg-white/20"
+              >
+                <ChevronDown className="w-7 h-7 text-white" />
+              </button>
+            </div>
+          </div>
+
+          {/* Bottom Action Bar - Guide, Favorites, AirPlay, Settings */}
+          <div className="px-4 pb-8 flex items-center justify-around">
+            <button onTouchEnd={(e) => { e.preventDefault(); setViewMode('guide'); }} onClick={() => setViewMode('guide')} className="flex flex-col items-center gap-1.5 py-2 px-4 active:opacity-70">
+              <LayoutGrid className="w-6 h-6 text-white/70" />
+              <span className="text-white/50 text-xs">Guide</span>
+            </button>
+            <button onTouchEnd={(e) => { e.preventDefault(); setShowFavoritesPopup(true); }} onClick={() => setShowFavoritesPopup(true)} className="flex flex-col items-center gap-1.5 py-2 px-4 active:opacity-70">
+              <Star className="w-6 h-6 text-white/70" />
+              <span className="text-white/50 text-xs">Favorites</span>
+            </button>
+            <button onTouchEnd={(e) => { e.preventDefault(); handleAirPlay(); }} onClick={handleAirPlay} className="flex flex-col items-center gap-1.5 py-2 px-4 active:opacity-70">
+              <Airplay className="w-6 h-6 text-white/70" />
+              <span className="text-white/50 text-xs">AirPlay</span>
+            </button>
+            <button onTouchEnd={(e) => { e.preventDefault(); setShowMenuPopup(true); }} onClick={() => setShowMenuPopup(true)} className="flex flex-col items-center gap-1.5 py-2 px-4 active:opacity-70">
+              <Settings className="w-6 h-6 text-white/70" />
+              <span className="text-white/50 text-xs">Settings</span>
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Portrait Guide View - Plex-style with large video at top */}
+      {isPortrait && isNativePlatform() && viewMode === 'guide' && (
+        <div className="absolute inset-0 bg-black flex flex-col z-20">
+          {/* Header with close button and search */}
+          <div className="shrink-0 pt-14 px-4 flex items-center gap-3">
+            <button
+              onTouchEnd={(e) => { e.preventDefault(); setViewMode('player'); setGuideSearchQuery(''); }}
+              onClick={() => { setViewMode('player'); setGuideSearchQuery(''); }}
+              className="p-2 bg-white/10 rounded-full active:bg-white/20 shrink-0"
+            >
+              <X className="w-5 h-5 text-white" />
+            </button>
+            <div className="flex-1 relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-white/40" />
+              <input
+                type="text"
+                inputMode="search"
+                enterKeyHint="search"
+                placeholder="Search channels..."
+                value={guideSearchQuery}
+                onChange={(e) => setGuideSearchQuery(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') e.currentTarget.blur();
+                  e.stopPropagation();
+                }}
+                className="w-full h-10 pl-10 pr-4 bg-white/10 rounded-full text-white text-sm placeholder:text-white/40 focus:outline-none focus:ring-1 focus:ring-white/30"
+              />
+            </div>
+          </div>
+
+          {/* Video player area - space for the motion.div video */}
+          <div className="relative mx-4 mt-3 aspect-video">
+            {/* Video positioned here via motion.div animate */}
+          </div>
+
+          {/* Now playing info */}
+          <div className="px-4 py-3 flex items-center gap-3">
+            {currentChannel?.logo && (
+              <img
+                src={currentChannel.logo}
+                alt=""
+                className="h-8 w-auto object-contain"
+                onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+              />
+            )}
+            <span className="text-white/70 text-sm">Now on - {currentChannel?.GuideName || 'Live TV'}</span>
+          </div>
+
+          {/* Channel List */}
+          <div className="flex-1 overflow-y-auto">
+            {filteredChannels.map((channel: Channel, index: number) => {
+              const channelEpg = epgDataMap.get(channel.iptvId || '');
+              const isCurrentChannel = selectedChannel?.iptvId === channel.iptvId;
+              const timeRemaining = channelEpg?.currentProgram ? getTimeRemaining(channelEpg.currentProgram.endTime) : '';
+
+              return (
+                <button
+                  key={channel.iptvId || index}
+                  onTouchStart={(e) => {
+                    e.preventDefault();
+                    touchStartY.current = e.touches[0].clientY;
+                    longPressChannel.current = channel;
+                    // Start long press timer
+                    longPressTimer.current = setTimeout(() => {
+                      // Long press - toggle favorite
+                      if (longPressChannel.current) {
+                        const channelId = longPressChannel.current.iptvId || '';
+                        const isAlreadyFavorite = favorites.some(f => f.channelId === channelId);
+                        if (isAlreadyFavorite) {
+                          removeFavoriteMutation.mutate(channelId);
+                        } else {
+                          addFavoriteMutation.mutate(longPressChannel.current);
+                        }
+                        // Vibrate for feedback if available
+                        if (navigator.vibrate) navigator.vibrate(50);
+                      }
+                      longPressChannel.current = null;
+                    }, 500);
+                  }}
+                  onTouchMove={(e) => {
+                    // Cancel long press if user scrolls
+                    if (touchStartY.current !== null) {
+                      const distance = Math.abs(e.touches[0].clientY - touchStartY.current);
+                      if (distance > 10 && longPressTimer.current) {
+                        clearTimeout(longPressTimer.current);
+                        longPressTimer.current = null;
+                        longPressChannel.current = null;
+                      }
+                    }
+                  }}
+                  onTouchEnd={(e) => {
+                    // Clear long press timer
+                    if (longPressTimer.current) {
+                      clearTimeout(longPressTimer.current);
+                      longPressTimer.current = null;
+                    }
+                    // Only select if it was a tap (not scroll, not long press)
+                    if (touchStartY.current !== null && longPressChannel.current) {
+                      const touchEndY = e.changedTouches[0].clientY;
+                      const distance = Math.abs(touchEndY - touchStartY.current);
+                      if (distance < 10) {
+                        playStream(channel);
+                        setViewMode('player');
+                        setGuideSearchQuery('');
+                      }
+                    }
+                    touchStartY.current = null;
+                    longPressChannel.current = null;
+                  }}
+                  onClick={() => {
+                    playStream(channel);
+                    setViewMode('player');
+                    setGuideSearchQuery('');
+                  }}
+                  className={cn(
+                    "w-full px-4 py-2.5 flex items-center gap-3 active:bg-white/10 select-none",
+                    isCurrentChannel && "bg-white/5"
+                  )}
+                  style={{ WebkitTouchCallout: 'none', WebkitUserSelect: 'none' } as React.CSSProperties}
+                >
+                  {/* Favorite Star Button */}
+                  <button
+                    onTouchStart={(e) => {
+                      e.stopPropagation();
+                    }}
+                    onTouchEnd={(e) => {
+                      e.stopPropagation();
+                      e.preventDefault();
+                      toggleChannelFavorite(channel);
+                    }}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      e.preventDefault();
+                      toggleChannelFavorite(channel);
+                    }}
+                    className="shrink-0 w-8 flex items-center justify-center"
+                  >
+                    <Star className={cn(
+                      "w-4 h-4",
+                      favorites.some(f => f.channelId === (channel.iptvId || ''))
+                        ? "text-yellow-400 fill-yellow-400"
+                        : "text-white/30"
+                    )} />
+                  </button>
+
+                  {/* Channel Logo */}
+                  <div className="shrink-0 w-12 h-9 flex items-center justify-center bg-white/10 rounded-lg">
+                    {channel.logo ? (
+                      <img
+                        src={channel.logo}
+                        alt=""
+                        className="max-w-[40px] max-h-[32px] object-contain pointer-events-none"
+                        loading="lazy"
+                        draggable={false}
+                        onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                      />
+                    ) : (
+                      <span className="text-white/40 text-xs font-medium">{channel.GuideNumber}</span>
+                    )}
+                  </div>
+
+                  {/* Current Program */}
+                  <div className={cn(
+                    "flex-1 min-w-0 text-left py-1.5 px-3 rounded-lg border",
+                    isCurrentChannel ? "border-white/30 bg-white/10" : "border-white/10"
+                  )}>
+                    <p className={cn(
+                      "text-sm truncate font-medium",
+                      isCurrentChannel ? "text-white" : "text-white/90"
+                    )}>
+                      {channelEpg?.currentProgram?.title || channel.GuideName}
+                    </p>
+                    <p className="text-white/50 text-xs">{timeRemaining ? `${timeRemaining} left` : 'Live'}</p>
+                  </div>
+
+                  {/* Next Program (partially visible) */}
+                  {channelEpg?.nextProgram && (
+                    <div className="shrink-0 w-24 text-left opacity-50">
+                      <p className="text-white/70 text-xs truncate">{channelEpg.nextProgram.title}</p>
+                      <p className="text-white/40 text-[10px]">
+                        {new Date(channelEpg.nextProgram.startTime).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}
+                      </p>
+                    </div>
+                  )}
+                </button>
+              );
+            })}
+            {filteredChannels.length === 0 && guideSearchQuery && (
+              <div className="px-4 py-8 text-center text-white/50">
+                No channels found for "{guideSearchQuery}"
+              </div>
+            )}
+          </div>
+
+          {/* Bottom Tab Bar */}
+          <div className="shrink-0 px-4 pb-8 pt-3 flex items-center justify-around border-t border-white/10 bg-black">
+            <button onTouchEnd={(e) => { e.preventDefault(); setViewMode('player'); setGuideSearchQuery(''); }} onClick={() => { setViewMode('player'); setGuideSearchQuery(''); }} className="flex flex-col items-center gap-1 py-2 px-4 active:opacity-70">
+              <LayoutGrid className="w-6 h-6 text-white" />
+              <span className="text-white text-xs font-medium">Guide</span>
+            </button>
+            <button onTouchEnd={(e) => { e.preventDefault(); setShowFavoritesPopup(!showFavoritesPopup); }} onClick={() => setShowFavoritesPopup(!showFavoritesPopup)} className="flex flex-col items-center gap-1 py-2 px-4 active:opacity-70">
+              <Star className="w-6 h-6 text-white/50" />
+              <span className="text-white/50 text-xs">Favorites</span>
+            </button>
+            <button onTouchEnd={(e) => { e.preventDefault(); handleAirPlay(); }} onClick={handleAirPlay} className="flex flex-col items-center gap-1 py-2 px-4 active:opacity-70">
+              <Airplay className="w-6 h-6 text-white/50" />
+              <span className="text-white/50 text-xs">AirPlay</span>
+            </button>
+            <button onTouchEnd={(e) => { e.preventDefault(); setShowMenuPopup(true); }} onClick={() => setShowMenuPopup(true)} className="flex flex-col items-center gap-1 py-2 px-4 active:opacity-70">
+              <Settings className="w-6 h-6 text-white/50" />
+              <span className="text-white/50 text-xs">Settings</span>
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Player Overlay - Only in landscape player mode */}
       <AnimatePresence>
-        {viewMode === 'player' && showOverlay && (
+        {viewMode === 'player' && showOverlay && !(isPortrait && isNativePlatform()) && (
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
@@ -1621,6 +2351,27 @@ export default function LiveTVTvPage() {
           >
             {/* Bottom gradient */}
             <div className="absolute inset-x-0 bottom-0 h-96 bg-gradient-to-t from-black via-black/80 to-transparent" />
+
+            {/* PiP & AirPlay - Top Right (landscape) */}
+            {isNativePlatform() && (
+              <div className="absolute top-8 right-8 flex items-center gap-3 z-20">
+                <button
+                  onClick={(e) => { e.stopPropagation(); handlePiP(); }}
+                  className="w-12 h-12 bg-black/50 backdrop-blur-sm rounded-full flex items-center justify-center active:scale-95 hover:bg-black/70"
+                >
+                  <PictureInPicture2 className="w-6 h-6 text-white" />
+                </button>
+                <button
+                  onClick={(e) => { e.stopPropagation(); handleAirPlay(); }}
+                  className={cn(
+                    "w-12 h-12 backdrop-blur-sm rounded-full flex items-center justify-center active:scale-95 hover:bg-black/70",
+                    isAirPlaying ? "bg-blue-500" : "bg-black/50"
+                  )}
+                >
+                  <Airplay className="w-6 h-6 text-white" />
+                </button>
+              </div>
+            )}
 
             {/* YouTube TV Style Program Info - Only show if EPG data available */}
             {currentEPG?.currentProgram && (
@@ -1769,17 +2520,15 @@ export default function LiveTVTvPage() {
                     : 0;
                   setFocusedChannelIndex(Math.max(0, currentIdx));
                 }}
-                className="flex items-center gap-2 px-4 py-2 bg-white/20 hover:bg-white/30 rounded-lg text-white transition-all active:scale-95"
+                className="flex items-center gap-2 px-4 py-2 hover:bg-white/20 rounded-lg text-white transition-all active:scale-95 active:bg-white/10"
               >
                 <LayoutGrid className="w-5 h-5" />
                 <span className="text-sm font-medium">Guide</span>
               </button>
 
               <ActionButtons
-                isFavorite={isFavorite}
-                onToggleFavorite={toggleFavorite}
+                onShowFavorites={() => setShowFavoritesPopup(true)}
                 onShowInfo={() => setShowInfoModal(true)}
-                onAirPlay={handleAirPlay}
                 onShowMenu={() => setShowMenuPopup(true)}
               />
             </div>
@@ -1787,7 +2536,8 @@ export default function LiveTVTvPage() {
         )}
       </AnimatePresence>
 
-      {/* Guide View - Always rendered, slides in/out */}
+      {/* Guide View - Only for landscape or non-native (slides in/out) */}
+      {!(isPortrait && isNativePlatform()) && (
       <div
         className={`absolute inset-0 bg-black/95 z-20 flex flex-col transition-transform duration-150 ease-out ${
           viewMode === 'guide' ? 'translate-y-0' : 'translate-y-full'
@@ -1795,17 +2545,33 @@ export default function LiveTVTvPage() {
         style={{ willChange: 'transform' }}
       >
             {/* Top section - Program details on left, PiP space on right */}
-            <div className="h-52 shrink-0 flex relative">
-              {/* Close Button - Top Left */}
-              <button
-                onClick={() => setViewMode('player')}
-                className="absolute top-4 left-4 p-2 bg-white/10 hover:bg-white/20 rounded-full text-white transition-all active:scale-95 z-10"
-              >
-                <X className="w-5 h-5" />
-              </button>
+            <div className="h-60 shrink-0 flex relative">
+              {/* Close Button + Search - Top Left */}
+              <div className="absolute top-6 left-6 flex items-center gap-4 z-10">
+                <button
+                  onClick={() => { setViewMode('player'); setGuideSearchQuery(''); }}
+                  className="p-2 bg-white/10 hover:bg-white/20 rounded-full text-white transition-all active:scale-95"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+                <div className="relative">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-white/40" />
+                  <input
+                    type="text"
+                    placeholder="Search channels..."
+                    value={guideSearchQuery}
+                    onChange={(e) => setGuideSearchQuery(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') e.currentTarget.blur();
+                      e.stopPropagation();
+                    }}
+                    className="w-64 h-10 pl-9 pr-3 bg-white/10 hover:bg-white/15 rounded-lg text-white text-sm placeholder:text-white/40 focus:outline-none focus:ring-1 focus:ring-white/30 transition-colors"
+                  />
+                </div>
+              </div>
 
-              {/* Program Details - fills left side */}
-              <div className="flex-1 flex items-end pb-4 pl-16">
+              {/* Program Details - fills left side, positioned below search */}
+              <div className="flex-1 flex items-end pb-4 pl-6 pt-24">
                 <FocusedProgramPanel channel={focusedChannel} program={focusedEPG?.currentProgram || null} />
               </div>
               {/* Space for PiP video (320px + padding) */}
@@ -1819,7 +2585,7 @@ export default function LiveTVTvPage() {
 
             {/* Channel Grid - takes remaining space */}
             <div ref={guideScrollRef} className="flex-1 overflow-y-auto">
-              {channels.map((channel: Channel, index: number) => (
+              {filteredChannels.map((channel: Channel, index: number) => (
                 <GuideChannelRow
                   key={channel.iptvId || channel.GuideNumber}
                   channel={channel}
@@ -1828,12 +2594,20 @@ export default function LiveTVTvPage() {
                   timelineEnd={timelineEnd}
                   isFocused={focusedChannelIndex === index}
                   isPlaying={selectedChannel?.iptvId === channel.iptvId}
+                  isFavorite={favorites.some(f => f.channelId === (channel.iptvId || ''))}
                   onSelect={() => selectChannelFromGuide(channel)}
+                  onToggleFavorite={() => toggleChannelFavorite(channel)}
                 />
               ))}
+              {filteredChannels.length === 0 && guideSearchQuery && (
+                <div className="px-8 py-12 text-center text-white/50">
+                  No channels found for "{guideSearchQuery}"
+                </div>
+              )}
             </div>
 
       </div>
+      )}
 
       {/* Info Modal */}
       <AnimatePresence>
@@ -1850,7 +2624,6 @@ export default function LiveTVTvPage() {
       <AnimatePresence>
         {showMenuPopup && (
           <MenuPopup
-            onShowFavorites={() => setShowFavoritesPopup(true)}
             onShowSubscription={() => setShowSubscriptionPopup(true)}
             onLogout={() => logoutMutation.mutate()}
             onClose={() => setShowMenuPopup(false)}
