@@ -5,6 +5,7 @@ import { ChevronDown, ChevronUp, Play, Pause, Volume2, VolumeX, Info, Plus, More
 import { cn } from '@/lib/utils';
 import { getQueryFn, apiRequest, queryClient } from '@/lib/queryClient';
 import { buildApiUrl, isNativePlatform } from '@/lib/capacitor';
+import { haptics } from '@/lib/haptics';
 import { useAuth } from '@/hooks/use-auth';
 import Hls from 'hls.js';
 import { ScreenOrientation } from '@capacitor/screen-orientation';
@@ -328,19 +329,32 @@ const FavoritesPopup = memo(({
   favorites,
   channels,
   onSelectChannel,
-  onClose
+  onClose,
+  onReorder
 }: {
   favorites: any[];
   channels: Channel[];
   onSelectChannel: (channel: Channel) => void;
   onClose: () => void;
+  onReorder?: (newOrder: string[]) => void;
 }) => {
   // Track touch for scroll detection
   const touchStartY = useRef<number | null>(null);
+  const [isReorderMode, setIsReorderMode] = useState(false);
 
-  // Map favorites to full channel objects
+  // Get saved order from localStorage
+  const savedOrder = useMemo(() => {
+    try {
+      const order = localStorage.getItem('favoriteOrder');
+      return order ? JSON.parse(order) : [];
+    } catch {
+      return [];
+    }
+  }, []);
+
+  // Map favorites to full channel objects with custom order
   const favoriteChannels = useMemo(() => {
-    return favorites.map(fav => {
+    const mapped = favorites.map(fav => {
       const channel = channels.find(ch => ch.iptvId === fav.channelId);
       return channel || {
         GuideName: fav.channelName,
@@ -351,7 +365,41 @@ const FavoritesPopup = memo(({
         logo: fav.channelLogo
       };
     }).filter(Boolean);
-  }, [favorites, channels]);
+
+    // Sort by saved order if available
+    if (savedOrder.length > 0) {
+      return mapped.sort((a, b) => {
+        const aIdx = savedOrder.indexOf(a.iptvId);
+        const bIdx = savedOrder.indexOf(b.iptvId);
+        if (aIdx === -1 && bIdx === -1) return 0;
+        if (aIdx === -1) return 1;
+        if (bIdx === -1) return -1;
+        return aIdx - bIdx;
+      });
+    }
+
+    return mapped;
+  }, [favorites, channels, savedOrder]);
+
+  // Move favorite up or down
+  const moveItem = (index: number, direction: 'up' | 'down') => {
+    const newOrder = favoriteChannels.map(c => c.iptvId);
+    const newIndex = direction === 'up' ? index - 1 : index + 1;
+    if (newIndex < 0 || newIndex >= newOrder.length) return;
+
+    // Swap
+    [newOrder[index], newOrder[newIndex]] = [newOrder[newIndex], newOrder[index]];
+
+    // Save to localStorage
+    try {
+      localStorage.setItem('favoriteOrder', JSON.stringify(newOrder));
+    } catch (e) {
+      console.warn('[TV] Failed to save favorite order:', e);
+    }
+
+    // Trigger re-render
+    if (onReorder) onReorder(newOrder);
+  };
 
   return (
     <motion.div
@@ -375,57 +423,106 @@ const FavoritesPopup = memo(({
             <Star className="w-6 h-6 text-white fill-white" />
             Favorites
           </h2>
-          <button
-            onClick={onClose}
-            onTouchEnd={(e) => { e.preventDefault(); e.stopPropagation(); onClose(); }}
-            className="p-2 hover:bg-white/10 active:bg-white/20 rounded-full"
-          >
-            <X className="w-6 h-6 text-white/60" />
-          </button>
+          <div className="flex items-center gap-2">
+            {favoriteChannels.length > 1 && (
+              <button
+                onClick={() => setIsReorderMode(!isReorderMode)}
+                onTouchEnd={(e) => { e.preventDefault(); e.stopPropagation(); setIsReorderMode(!isReorderMode); }}
+                className={cn(
+                  "px-3 py-1.5 rounded-full text-sm transition-colors",
+                  isReorderMode ? "bg-white text-black" : "bg-white/10 text-white/70 hover:bg-white/20"
+                )}
+              >
+                {isReorderMode ? 'Done' : 'Reorder'}
+              </button>
+            )}
+            <button
+              onClick={onClose}
+              onTouchEnd={(e) => { e.preventDefault(); e.stopPropagation(); onClose(); }}
+              className="p-2 hover:bg-white/10 active:bg-white/20 rounded-full"
+            >
+              <X className="w-6 h-6 text-white/60" />
+            </button>
+          </div>
         </div>
 
         {favoriteChannels.length === 0 ? (
-          <p className="text-white/50 text-center py-8">No favorite channels yet. Press + on a channel to add it.</p>
+          <p className="text-white/50 text-center py-8">No favorite channels yet. Press ★ on a channel to add it.</p>
         ) : (
           <div className="overflow-y-auto flex-1 -mx-2">
-            {favoriteChannels.map((channel) => (
-              <button
+            {favoriteChannels.map((channel, index) => (
+              <div
                 key={channel.iptvId}
                 className="w-full px-4 py-3 flex items-center gap-4 hover:bg-white/10 active:bg-white/20 rounded-lg transition-colors"
-                onTouchStart={(e) => {
-                  touchStartY.current = e.touches[0].clientY;
-                }}
-                onTouchEnd={(e) => {
-                  e.stopPropagation();
-                  // Only select if it was a tap, not a scroll
-                  if (touchStartY.current !== null) {
-                    const distance = Math.abs(e.changedTouches[0].clientY - touchStartY.current);
-                    if (distance < 10) {
-                      e.preventDefault();
-                      if (channel.URL) {
-                        onSelectChannel(channel);
-                      }
-                      onClose();
-                    }
-                  }
-                  touchStartY.current = null;
-                }}
-                onClick={() => {
-                  if (channel.URL) {
-                    onSelectChannel(channel);
-                  }
-                  onClose();
-                }}
               >
-                {channel.logo ? (
-                  <img src={channel.logo} alt="" className="w-12 h-9 object-contain" />
-                ) : (
-                  <div className="w-12 h-9 bg-white/10 rounded flex items-center justify-center">
-                    <Star className="w-5 h-5 text-white/30" />
+                {/* Reorder buttons */}
+                {isReorderMode && (
+                  <div className="flex flex-col gap-1 shrink-0">
+                    <button
+                      onClick={(e) => { e.stopPropagation(); moveItem(index, 'up'); }}
+                      onTouchEnd={(e) => { e.preventDefault(); e.stopPropagation(); moveItem(index, 'up'); }}
+                      disabled={index === 0}
+                      className={cn(
+                        "p-1 rounded",
+                        index === 0 ? "opacity-30" : "hover:bg-white/20 active:bg-white/30"
+                      )}
+                    >
+                      <ChevronUp className="w-4 h-4 text-white" />
+                    </button>
+                    <button
+                      onClick={(e) => { e.stopPropagation(); moveItem(index, 'down'); }}
+                      onTouchEnd={(e) => { e.preventDefault(); e.stopPropagation(); moveItem(index, 'down'); }}
+                      disabled={index === favoriteChannels.length - 1}
+                      className={cn(
+                        "p-1 rounded",
+                        index === favoriteChannels.length - 1 ? "opacity-30" : "hover:bg-white/20 active:bg-white/30"
+                      )}
+                    >
+                      <ChevronDown className="w-4 h-4 text-white" />
+                    </button>
                   </div>
                 )}
-                <span className="text-white text-lg">{channel.GuideName}</span>
-              </button>
+
+                {/* Channel button */}
+                <button
+                  className="flex-1 flex items-center gap-4"
+                  onTouchStart={(e) => {
+                    if (!isReorderMode) touchStartY.current = e.touches[0].clientY;
+                  }}
+                  onTouchEnd={(e) => {
+                    if (isReorderMode) return;
+                    e.stopPropagation();
+                    // Only select if it was a tap, not a scroll
+                    if (touchStartY.current !== null) {
+                      const distance = Math.abs(e.changedTouches[0].clientY - touchStartY.current);
+                      if (distance < 10) {
+                        e.preventDefault();
+                        if (channel.URL) {
+                          onSelectChannel(channel);
+                        }
+                        onClose();
+                      }
+                    }
+                    touchStartY.current = null;
+                  }}
+                  onClick={() => {
+                    if (isReorderMode) return;
+                    if (channel.URL) {
+                      onSelectChannel(channel);
+                    }
+                    onClose();
+                  }}
+                >
+                  {channel.logo ? (
+                    <img src={channel.logo} alt="" className="w-12 h-9 object-contain shrink-0" />
+                  ) : (
+                    <div className="w-12 h-9 bg-white/10 rounded flex items-center justify-center shrink-0">
+                      <Star className="w-5 h-5 text-white/30" />
+                    </div>
+                  )}
+                  <span className="text-white text-lg">{channel.GuideName}</span>
+                </button>
+              </div>
             ))}
           </div>
         )}
@@ -815,6 +912,7 @@ export default function LiveTVTvPage() {
   const [viewMode, setViewMode] = useState<'player' | 'guide'>('player');
   const [showOverlay, setShowOverlay] = useState(true);
   const [guideSearchQuery, setGuideSearchQuery] = useState('');
+  const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
 
   // Playback state
   const [selectedChannel, setSelectedChannel] = useState<Channel | null>(null);
@@ -834,6 +932,7 @@ export default function LiveTVTvPage() {
   const [showInfoModal, setShowInfoModal] = useState(false);
   const [showMenuPopup, setShowMenuPopup] = useState(false);
   const [showFavoritesPopup, setShowFavoritesPopup] = useState(false);
+  const [favoriteOrderVersion, setFavoriteOrderVersion] = useState(0); // Trigger re-render on reorder
   const [showSubscriptionPopup, setShowSubscriptionPopup] = useState(false);
 
   // Refs
@@ -841,6 +940,16 @@ export default function LiveTVTvPage() {
   const hlsRef = useRef<Hls | null>(null);
   const overlayTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const guideScrollRef = useRef<HTMLDivElement>(null);
+
+  // Stream retry state
+  const retryCountRef = useRef(0);
+  const retryTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const MAX_RETRIES = 5;
+  const [streamError, setStreamError] = useState<string | null>(null);
+
+  // Network status
+  const [isOnline, setIsOnline] = useState(typeof navigator !== 'undefined' ? navigator.onLine : true);
+  const [showOfflineIndicator, setShowOfflineIndicator] = useState(false);
 
   // Touch/swipe gesture tracking
   const touchStartY = useRef<number | null>(null);
@@ -863,44 +972,130 @@ export default function LiveTVTvPage() {
     return () => clearInterval(interval);
   }, []);
 
+  // Network status monitoring
+  useEffect(() => {
+    const handleOnline = () => {
+      setIsOnline(true);
+      // Show "back online" briefly
+      setShowOfflineIndicator(true);
+      setTimeout(() => setShowOfflineIndicator(false), 2000);
+    };
+
+    const handleOffline = () => {
+      setIsOnline(false);
+      setShowOfflineIndicator(true);
+      haptics.warning();
+    };
+
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, []);
+
   // ============================================================================
   // DATA FETCHING
   // ============================================================================
 
-  const { data: channelsData } = useQuery({
+  const { data: channelsData, isLoading: channelsLoading } = useQuery({
     queryKey: ['/api/iptv/channels'],
     queryFn: getQueryFn({ on401: "returnNull" }),
+    staleTime: 5 * 60 * 1000, // Consider data fresh for 5 minutes
   });
 
+  // Cache channels to localStorage for offline/faster startup
   const channels = useMemo(() => {
     const raw = (channelsData as any)?.channels || [];
-    return raw.filter((ch: any) => !ch.hidden).map((ch: any) => ({
-      GuideName: ch.name,
-      GuideNumber: ch.number || String(ch.id),
-      URL: ch.streamUrl,
-      source: 'iptv' as const,
-      iptvId: String(ch.id),
-      epgId: ch.epgId,
-      logo: ch.logo,
-      categoryId: ch.categoryId,
-      categoryName: ch.categoryName
-    }));
+
+    if (raw.length > 0) {
+      // Process and cache fresh data
+      const processed = raw.filter((ch: any) => !ch.hidden).map((ch: any) => ({
+        GuideName: ch.name,
+        GuideNumber: ch.number || String(ch.id),
+        URL: ch.streamUrl,
+        source: 'iptv' as const,
+        iptvId: String(ch.id),
+        epgId: ch.epgId,
+        logo: ch.logo,
+        categoryId: ch.categoryId,
+        categoryName: ch.categoryName
+      }));
+
+      // Cache to localStorage
+      try {
+        localStorage.setItem('cachedChannels', JSON.stringify({
+          channels: processed,
+          timestamp: Date.now()
+        }));
+      } catch (e) {
+        console.warn('[TV] Failed to cache channels:', e);
+      }
+
+      return processed;
+    }
+
+    // Try loading from cache if no fresh data
+    try {
+      const cached = localStorage.getItem('cachedChannels');
+      if (cached) {
+        const { channels: cachedChannels, timestamp } = JSON.parse(cached);
+        const age = Date.now() - timestamp;
+        // Use cache if less than 24 hours old
+        if (age < 24 * 60 * 60 * 1000 && Array.isArray(cachedChannels)) {
+          console.log('[TV] Using cached channels from', Math.round(age / 60000), 'minutes ago');
+          return cachedChannels;
+        }
+      }
+    } catch (e) {
+      console.warn('[TV] Failed to load cached channels:', e);
+    }
+
+    return [];
   }, [channelsData]);
 
-  // Filtered channels for guide search
+  // Extract unique categories from channels
+  const categories = useMemo(() => {
+    const categoryMap = new Map<string, string>();
+    channels.forEach((ch: Channel) => {
+      if (ch.categoryId && ch.categoryName) {
+        categoryMap.set(ch.categoryId, ch.categoryName);
+      }
+    });
+    // Sort alphabetically by name
+    return Array.from(categoryMap.entries())
+      .map(([id, name]) => ({ id, name }))
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }, [channels]);
+
+  // Filtered channels for guide search and category
   const filteredChannels = useMemo(() => {
-    if (!guideSearchQuery.trim()) return channels;
-    const query = guideSearchQuery.toLowerCase();
-    return channels.filter((ch: Channel) =>
-      ch.GuideName.toLowerCase().includes(query) ||
-      ch.GuideNumber.includes(query)
-    );
-  }, [channels, guideSearchQuery]);
+    let filtered = channels;
+
+    // Filter by category first
+    if (selectedCategory) {
+      filtered = filtered.filter((ch: Channel) => ch.categoryId === selectedCategory);
+    }
+
+    // Then filter by search query
+    if (guideSearchQuery.trim()) {
+      const query = guideSearchQuery.toLowerCase();
+      filtered = filtered.filter((ch: Channel) =>
+        ch.GuideName.toLowerCase().includes(query) ||
+        ch.GuideNumber.includes(query)
+      );
+    }
+
+    return filtered;
+  }, [channels, guideSearchQuery, selectedCategory]);
 
   // Favorites query
   const { data: favoritesData } = useQuery({
     queryKey: ['/api/favorite-channels'],
     queryFn: getQueryFn({ on401: "returnNull" }),
+    staleTime: 60 * 1000, // Consider fresh for 1 minute
   });
 
   // Subscription query
@@ -910,9 +1105,32 @@ export default function LiveTVTvPage() {
     enabled: showSubscriptionPopup, // Only fetch when popup is opened
   });
 
+  // Cache favorites to localStorage for offline/faster startup
   const favorites = useMemo(() => {
-    // API returns array directly, not { favorites: [...] }
-    return Array.isArray(favoritesData) ? favoritesData : [];
+    if (Array.isArray(favoritesData) && favoritesData.length >= 0) {
+      // Cache favorites
+      try {
+        localStorage.setItem('cachedFavorites', JSON.stringify(favoritesData));
+      } catch (e) {
+        console.warn('[TV] Failed to cache favorites:', e);
+      }
+      return favoritesData;
+    }
+
+    // Try loading from cache
+    try {
+      const cached = localStorage.getItem('cachedFavorites');
+      if (cached) {
+        const cachedFavorites = JSON.parse(cached);
+        if (Array.isArray(cachedFavorites)) {
+          return cachedFavorites;
+        }
+      }
+    } catch (e) {
+      console.warn('[TV] Failed to load cached favorites:', e);
+    }
+
+    return [];
   }, [favoritesData]);
 
   const isFavorite = useMemo(() => {
@@ -961,6 +1179,9 @@ export default function LiveTVTvPage() {
   const toggleChannelFavorite = useCallback((channel: Channel) => {
     if (!channel.iptvId) return;
     if (addFavoriteMutation.isPending || removeFavoriteMutation.isPending) return;
+
+    // Haptic feedback on favorite toggle
+    haptics.medium();
 
     const isChannelFavorite = favorites.some(f => f.channelId === channel.iptvId);
     if (isChannelFavorite) {
@@ -1246,12 +1467,24 @@ export default function LiveTVTvPage() {
     }
   }, []);
 
-  const playStream = useCallback(async (channel: Channel) => {
+  const playStream = useCallback(async (channel: Channel, isRetry = false) => {
     if (!videoRef.current) return;
 
     const video = videoRef.current;
     setIsLoading(true);
     setSelectedChannel(channel);
+    setStreamError(null);
+
+    // Reset retry count for new channel (not retries)
+    if (!isRetry) {
+      retryCountRef.current = 0;
+      if (retryTimeoutRef.current) {
+        clearTimeout(retryTimeoutRef.current);
+        retryTimeoutRef.current = null;
+      }
+      // Haptic feedback on channel change (not on retry)
+      haptics.light();
+    }
 
     // Release previous stream
     await releaseCurrentStream();
@@ -1351,7 +1584,27 @@ export default function LiveTVTvPage() {
           console.error('[TV] Video error message:', mediaError?.message);
           console.error('[TV] Network state:', video.networkState);
           console.error('[TV] Ready state:', video.readyState);
-          setIsLoading(false);
+
+          // Trigger retry with exponential backoff
+          if (retryCountRef.current < MAX_RETRIES) {
+            retryCountRef.current++;
+            const delay = Math.min(1000 * Math.pow(2, retryCountRef.current - 1), 10000);
+            console.log(`[TV] Retrying stream in ${delay}ms (attempt ${retryCountRef.current}/${MAX_RETRIES})`);
+            setStreamError(`Reconnecting... (${retryCountRef.current}/${MAX_RETRIES})`);
+            setIsLoading(true);
+
+            retryTimeoutRef.current = setTimeout(() => {
+              if (channel) {
+                video.src = streamUrl;
+                video.load();
+                video.play().catch(() => {});
+              }
+            }, delay);
+          } else {
+            setIsLoading(false);
+            setStreamError('Unable to connect. Please try again.');
+            haptics.error();
+          }
         };
 
         const handleLoadedMetadata = () => {
@@ -1455,9 +1708,43 @@ export default function LiveTVTvPage() {
       }
     } catch (error) {
       console.error('[TV] Stream error:', error);
-      setIsLoading(false);
+      handleStreamError('Failed to start stream');
     }
   }, [releaseCurrentStream]);
+
+  // Retry stream with exponential backoff
+  const retryStream = useCallback(() => {
+    if (!selectedChannel) return;
+    if (retryCountRef.current >= MAX_RETRIES) {
+      console.log('[TV] Max retries reached, giving up');
+      setStreamError('Unable to connect. Please try again later.');
+      haptics.error();
+      return;
+    }
+
+    retryCountRef.current++;
+    const delay = Math.min(1000 * Math.pow(2, retryCountRef.current - 1), 10000); // 1s, 2s, 4s, 8s, 10s
+    console.log(`[TV] Retrying stream in ${delay}ms (attempt ${retryCountRef.current}/${MAX_RETRIES})`);
+
+    setStreamError(`Reconnecting... (${retryCountRef.current}/${MAX_RETRIES})`);
+
+    retryTimeoutRef.current = setTimeout(() => {
+      playStream(selectedChannel, true);
+    }, delay);
+  }, [selectedChannel, playStream]);
+
+  // Handle stream errors with retry
+  const handleStreamError = useCallback((errorMessage: string) => {
+    console.error('[TV] Stream error:', errorMessage);
+    setIsLoading(false);
+
+    if (retryCountRef.current < MAX_RETRIES) {
+      retryStream();
+    } else {
+      setStreamError(errorMessage);
+      haptics.error();
+    }
+  }, [retryStream]);
 
   // ============================================================================
   // CHANNEL NAVIGATION
@@ -1741,6 +2028,24 @@ export default function LiveTVTvPage() {
       onTouchStart={handleTouchStart}
       onTouchEnd={handleTouchEnd}
     >
+      {/* Network Status Indicator */}
+      <AnimatePresence>
+        {showOfflineIndicator && (
+          <motion.div
+            initial={{ y: -50, opacity: 0 }}
+            animate={{ y: 0, opacity: 1 }}
+            exit={{ y: -50, opacity: 0 }}
+            className={cn(
+              "fixed top-0 left-0 right-0 z-50 py-2 px-4 text-center text-sm font-medium",
+              isOnline ? "bg-green-600 text-white" : "bg-red-600 text-white"
+            )}
+            style={{ paddingTop: isNativePlatform() ? 'calc(env(safe-area-inset-top) + 8px)' : '8px' }}
+          >
+            {isOnline ? 'Back Online' : 'No Internet Connection'}
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* Video Element - Full screen, PiP, or Portrait top */}
       <motion.div
         className="absolute bg-black"
@@ -1815,10 +2120,31 @@ export default function LiveTVTvPage() {
         {isLoading && (
           <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/90 rounded-xl">
             <div className="w-12 h-12 border-4 border-white/30 border-t-white rounded-full animate-spin mb-4" />
-            <p className="text-white text-lg font-medium">Loading Stream</p>
+            <p className="text-white text-lg font-medium">
+              {streamError ? streamError : 'Loading Stream'}
+            </p>
             {currentChannel && (
               <p className="text-white/60 text-sm mt-1">{currentChannel.GuideName}</p>
             )}
+          </div>
+        )}
+        {/* Stream Error - when max retries reached */}
+        {!isLoading && streamError && (
+          <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/90 rounded-xl">
+            <div className="w-12 h-12 mb-4 text-red-400">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <circle cx="12" cy="12" r="10" />
+                <line x1="12" y1="8" x2="12" y2="12" />
+                <line x1="12" y1="16" x2="12.01" y2="16" />
+              </svg>
+            </div>
+            <p className="text-white text-lg font-medium">{streamError}</p>
+            <button
+              onClick={() => { setStreamError(null); retryCountRef.current = 0; if (selectedChannel) playStream(selectedChannel); }}
+              className="mt-4 px-6 py-2 bg-white/20 hover:bg-white/30 rounded-full text-white text-sm transition-colors"
+            >
+              Try Again
+            </button>
           </div>
         )}
         {/* Initial startup indicator - before first channel loads */}
@@ -1979,11 +2305,11 @@ export default function LiveTVTvPage() {
 
           {/* Bottom Action Bar - Guide, Favorites, AirPlay, Settings */}
           <div className="px-4 pb-8 flex items-center justify-around border-t border-white/10 pt-4">
-            <button onTouchEnd={(e) => { e.preventDefault(); setViewMode('guide'); }} onClick={() => setViewMode('guide')} className="flex flex-col items-center gap-1.5 py-2 px-4 active:opacity-70">
+            <button onTouchEnd={(e) => { e.preventDefault(); haptics.light(); setViewMode('guide'); }} onClick={() => { haptics.light(); setViewMode('guide'); }} className="flex flex-col items-center gap-1.5 py-2 px-4 active:opacity-70">
               <LayoutGrid className="w-6 h-6 text-white/70" />
               <span className="text-white/50 text-xs">Guide</span>
             </button>
-            <button onTouchEnd={(e) => { e.preventDefault(); setShowFavoritesPopup(true); }} onClick={() => setShowFavoritesPopup(true)} className="flex flex-col items-center gap-1.5 py-2 px-4 active:opacity-70">
+            <button onTouchEnd={(e) => { e.preventDefault(); haptics.light(); setShowFavoritesPopup(true); }} onClick={() => { haptics.light(); setShowFavoritesPopup(true); }} className="flex flex-col items-center gap-1.5 py-2 px-4 active:opacity-70">
               <Star className="w-6 h-6 text-white/70" />
               <span className="text-white/50 text-xs">Favorites</span>
             </button>
@@ -2104,11 +2430,11 @@ export default function LiveTVTvPage() {
 
           {/* Bottom Action Bar - Guide, Favorites, AirPlay, Settings */}
           <div className="px-4 pb-8 flex items-center justify-around">
-            <button onTouchEnd={(e) => { e.preventDefault(); setViewMode('guide'); }} onClick={() => setViewMode('guide')} className="flex flex-col items-center gap-1.5 py-2 px-4 active:opacity-70">
+            <button onTouchEnd={(e) => { e.preventDefault(); haptics.light(); setViewMode('guide'); }} onClick={() => { haptics.light(); setViewMode('guide'); }} className="flex flex-col items-center gap-1.5 py-2 px-4 active:opacity-70">
               <LayoutGrid className="w-6 h-6 text-white/70" />
               <span className="text-white/50 text-xs">Guide</span>
             </button>
-            <button onTouchEnd={(e) => { e.preventDefault(); setShowFavoritesPopup(true); }} onClick={() => setShowFavoritesPopup(true)} className="flex flex-col items-center gap-1.5 py-2 px-4 active:opacity-70">
+            <button onTouchEnd={(e) => { e.preventDefault(); haptics.light(); setShowFavoritesPopup(true); }} onClick={() => { haptics.light(); setShowFavoritesPopup(true); }} className="flex flex-col items-center gap-1.5 py-2 px-4 active:opacity-70">
               <Star className="w-6 h-6 text-white/70" />
               <span className="text-white/50 text-xs">Favorites</span>
             </button>
@@ -2130,8 +2456,8 @@ export default function LiveTVTvPage() {
           {/* Header with close button and search */}
           <div className="shrink-0 pt-14 px-4 flex items-center gap-3">
             <button
-              onTouchEnd={(e) => { e.preventDefault(); setViewMode('player'); setGuideSearchQuery(''); }}
-              onClick={() => { setViewMode('player'); setGuideSearchQuery(''); }}
+              onTouchEnd={(e) => { e.preventDefault(); setViewMode('player'); setGuideSearchQuery(''); setSelectedCategory(null); }}
+              onClick={() => { setViewMode('player'); setGuideSearchQuery(''); setSelectedCategory(null); }}
               className="p-2 bg-white/10 rounded-full active:bg-white/20 shrink-0"
             >
               <X className="w-5 h-5 text-white" />
@@ -2153,6 +2479,41 @@ export default function LiveTVTvPage() {
               />
             </div>
           </div>
+
+          {/* Category Filter Chips */}
+          {categories.length > 0 && (
+            <div className="px-4 pt-2 overflow-x-auto scrollbar-hide">
+              <div className="flex gap-2">
+                <button
+                  onTouchEnd={(e) => { e.preventDefault(); haptics.selection(); setSelectedCategory(null); }}
+                  onClick={() => { haptics.selection(); setSelectedCategory(null); }}
+                  className={cn(
+                    "shrink-0 px-3 py-1.5 rounded-full text-xs font-medium transition-colors",
+                    selectedCategory === null
+                      ? "bg-white text-black"
+                      : "bg-white/10 text-white/70 active:bg-white/20"
+                  )}
+                >
+                  All
+                </button>
+                {categories.map((cat) => (
+                  <button
+                    key={cat.id}
+                    onTouchEnd={(e) => { e.preventDefault(); haptics.selection(); setSelectedCategory(cat.id); }}
+                    onClick={() => { haptics.selection(); setSelectedCategory(cat.id); }}
+                    className={cn(
+                      "shrink-0 px-3 py-1.5 rounded-full text-xs font-medium transition-colors whitespace-nowrap",
+                      selectedCategory === cat.id
+                        ? "bg-white text-black"
+                        : "bg-white/10 text-white/70 active:bg-white/20"
+                    )}
+                  >
+                    {cat.name}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* Video player area - space for the motion.div video */}
           <div className="relative mx-4 mt-3 aspect-video">
@@ -2197,8 +2558,8 @@ export default function LiveTVTvPage() {
                         } else {
                           addFavoriteMutation.mutate(longPressChannel.current);
                         }
-                        // Vibrate for feedback if available
-                        if (navigator.vibrate) navigator.vibrate(50);
+                        // Haptic feedback for long press
+                        haptics.heavy();
                       }
                       longPressChannel.current = null;
                     }, 500);
@@ -2320,7 +2681,7 @@ export default function LiveTVTvPage() {
 
           {/* Bottom Tab Bar */}
           <div className="shrink-0 px-4 pb-8 pt-3 flex items-center justify-around border-t border-white/10 bg-black">
-            <button onTouchEnd={(e) => { e.preventDefault(); setViewMode('player'); setGuideSearchQuery(''); }} onClick={() => { setViewMode('player'); setGuideSearchQuery(''); }} className="flex flex-col items-center gap-1 py-2 px-4 active:opacity-70">
+            <button onTouchEnd={(e) => { e.preventDefault(); setViewMode('player'); setGuideSearchQuery(''); setSelectedCategory(null); }} onClick={() => { setViewMode('player'); setGuideSearchQuery(''); setSelectedCategory(null); }} className="flex flex-col items-center gap-1 py-2 px-4 active:opacity-70">
               <LayoutGrid className="w-6 h-6 text-white" />
               <span className="text-white text-xs font-medium">Guide</span>
             </button>
@@ -2544,7 +2905,7 @@ export default function LiveTVTvPage() {
               {/* Close Button + Search - Top Left */}
               <div className="absolute top-6 left-6 flex items-center gap-4 z-10">
                 <button
-                  onClick={() => { setViewMode('player'); setGuideSearchQuery(''); }}
+                  onClick={() => { setViewMode('player'); setGuideSearchQuery(''); setSelectedCategory(null); }}
                   className="p-2 bg-white/10 hover:bg-white/20 rounded-full text-white transition-all active:scale-95"
                 >
                   <X className="w-5 h-5" />
@@ -2563,6 +2924,22 @@ export default function LiveTVTvPage() {
                     className="w-64 h-10 pl-9 pr-3 bg-white/10 hover:bg-white/15 rounded-lg text-white text-sm placeholder:text-white/40 focus:outline-none focus:ring-1 focus:ring-white/30 transition-colors"
                   />
                 </div>
+                {/* Category Filter Dropdown */}
+                {categories.length > 0 && (
+                  <select
+                    value={selectedCategory || ''}
+                    onChange={(e) => { haptics.selection(); setSelectedCategory(e.target.value || null); }}
+                    className="h-10 px-3 bg-white/10 hover:bg-white/15 rounded-lg text-white text-sm focus:outline-none focus:ring-1 focus:ring-white/30 transition-colors cursor-pointer appearance-none"
+                    style={{ minWidth: '140px' }}
+                  >
+                    <option value="" className="bg-black text-white">All Categories</option>
+                    {categories.map((cat) => (
+                      <option key={cat.id} value={cat.id} className="bg-black text-white">
+                        {cat.name}
+                      </option>
+                    ))}
+                  </select>
+                )}
               </div>
 
               {/* Program Details - fills left side, positioned below search */}
@@ -2630,6 +3007,7 @@ export default function LiveTVTvPage() {
       <AnimatePresence>
         {showFavoritesPopup && (
           <FavoritesPopup
+            key={favoriteOrderVersion}
             favorites={favorites}
             channels={channels}
             onSelectChannel={(channel) => {
@@ -2637,6 +3015,7 @@ export default function LiveTVTvPage() {
               setShowFavoritesPopup(false);
             }}
             onClose={() => setShowFavoritesPopup(false)}
+            onReorder={() => setFavoriteOrderVersion(v => v + 1)}
           />
         )}
       </AnimatePresence>

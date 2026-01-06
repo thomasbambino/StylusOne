@@ -7,18 +7,7 @@ import { AuthProvider } from "./hooks/use-auth";
 import AuthAdaptive from "@/pages/auth-adaptive";
 import HomePage from "@/pages/home-page";
 import Dashboard from "@/pages/dashboard";
-import UsersPage from "@/pages/users-page";
 import PendingPage from "@/pages/pending-page";
-import SettingsPage from "@/pages/settings-page";
-import GameServersPage from "@/pages/game-servers-page";
-import PlexPage from "@/pages/plex-page";
-import LiveTVAdaptive from "@/pages/live-tv-adaptive";
-import BooksPage from "@/pages/books-page";
-import ServerSharePage from "@/pages/server-share-page";
-import SubscriptionPlansPage from "@/pages/subscription-plans-page";
-import IptvCredentialsPage from "@/pages/iptv-credentials-page";
-import MySubscriptionPage from "@/pages/my-subscription-page";
-import MyReferralsPage from "@/pages/my-referrals-page";
 import AuthTvPage from "@/pages/auth-tv-page";
 import TvCodePage from "@/pages/tvcode-page";
 import { ProtectedRoute } from "./lib/protected-route";
@@ -27,31 +16,53 @@ import { ThemeProvider } from "@/components/theme-provider";
 import { FaviconUpdater } from "@/components/favicon-updater";
 import { CacheUpdater } from "@/components/cache-updater";
 import { getDeviceType } from "@/lib/capacitor";
-import { useEffect, useState } from "react";
+import { useEffect, useState, lazy, Suspense } from "react";
+
+// Lazy load larger pages for code splitting
+const UsersPage = lazy(() => import("@/pages/users-page"));
+const SettingsPage = lazy(() => import("@/pages/settings-page"));
+const GameServersPage = lazy(() => import("@/pages/game-servers-page"));
+const PlexPage = lazy(() => import("@/pages/plex-page"));
+const LiveTVAdaptive = lazy(() => import("@/pages/live-tv-adaptive"));
+const BooksPage = lazy(() => import("@/pages/books-page"));
+const ServerSharePage = lazy(() => import("@/pages/server-share-page"));
+const SubscriptionPlansPage = lazy(() => import("@/pages/subscription-plans-page"));
+const IptvCredentialsPage = lazy(() => import("@/pages/iptv-credentials-page"));
+const MySubscriptionPage = lazy(() => import("@/pages/my-subscription-page"));
+const MyReferralsPage = lazy(() => import("@/pages/my-referrals-page"));
+
+// Loading fallback component
+const PageLoader = () => (
+  <div className="flex items-center justify-center min-h-screen bg-background">
+    <div className="w-8 h-8 border-4 border-primary/30 border-t-primary rounded-full animate-spin" />
+  </div>
+);
 
 function Router() {
   return (
-    <Switch>
-      {/* Homepage as primary screen */}
-      <ProtectedRoute path="/" component={HomePage} />
-      <ProtectedRoute path="/dashboard" component={Dashboard} />
-      <FeatureProtectedRoute path="/plex" component={PlexPage} feature="plex_access" />
-      <FeatureProtectedRoute path="/game-servers" component={GameServersPage} feature="game_servers_access" />
-      <FeatureProtectedRoute path="/live-tv" component={LiveTVAdaptive} feature="live_tv_access" />
-      <FeatureProtectedRoute path="/books" component={BooksPage} feature="books_access" />
-      <ProtectedRoute path="/users" component={UsersPage} />
-      <ProtectedRoute path="/settings" component={SettingsPage} />
-      <ProtectedRoute path="/subscription-plans" component={SubscriptionPlansPage} />
-      <ProtectedRoute path="/iptv-credentials" component={IptvCredentialsPage} />
-      <ProtectedRoute path="/my-subscription" component={MySubscriptionPage} />
-      <ProtectedRoute path="/my-referrals" component={MyReferralsPage} />
-      <Route path="/server/:serverId" component={ServerSharePage} />
-      <Route path="/auth" component={AuthAdaptive} />
-      <Route path="/auth-tv" component={AuthTvPage} />
-      <Route path="/tvcode" component={TvCodePage} />
-      <Route path="/pending" component={PendingPage} />
-      <Route component={NotFound} />
-    </Switch>
+    <Suspense fallback={<PageLoader />}>
+      <Switch>
+        {/* Homepage as primary screen */}
+        <ProtectedRoute path="/" component={HomePage} />
+        <ProtectedRoute path="/dashboard" component={Dashboard} />
+        <FeatureProtectedRoute path="/plex" component={PlexPage} feature="plex_access" />
+        <FeatureProtectedRoute path="/game-servers" component={GameServersPage} feature="game_servers_access" />
+        <FeatureProtectedRoute path="/live-tv" component={LiveTVAdaptive} feature="live_tv_access" />
+        <FeatureProtectedRoute path="/books" component={BooksPage} feature="books_access" />
+        <ProtectedRoute path="/users" component={UsersPage} />
+        <ProtectedRoute path="/settings" component={SettingsPage} />
+        <ProtectedRoute path="/subscription-plans" component={SubscriptionPlansPage} />
+        <ProtectedRoute path="/iptv-credentials" component={IptvCredentialsPage} />
+        <ProtectedRoute path="/my-subscription" component={MySubscriptionPage} />
+        <ProtectedRoute path="/my-referrals" component={MyReferralsPage} />
+        <Route path="/server/:serverId" component={ServerSharePage} />
+        <Route path="/auth" component={AuthAdaptive} />
+        <Route path="/auth-tv" component={AuthTvPage} />
+        <Route path="/tvcode" component={TvCodePage} />
+        <Route path="/pending" component={PendingPage} />
+        <Route component={NotFound} />
+      </Switch>
+    </Suspense>
   );
 }
 
