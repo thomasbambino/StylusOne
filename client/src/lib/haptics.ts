@@ -11,7 +11,7 @@ const triggerHaptic = async (action: () => Promise<void>) => {
   try {
     await action();
   } catch (e) {
-    console.warn('[Haptics] Failed:', e);
+    // Silently fail - haptics are optional
   }
 };
 

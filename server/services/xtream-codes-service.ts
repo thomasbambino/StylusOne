@@ -309,25 +309,38 @@ export class XtreamCodesClient {
       const categoriesResponse = await axios.get(categoriesUrl, { timeout: 10000 });
       this.categoriesCache = categoriesResponse.data || [];
 
+      // Build category ID to name lookup map (convert to string to handle API returning numbers)
+      const categoryNameMap = new Map<string, string>();
+      for (const cat of this.categoriesCache) {
+        if (cat.category_id && cat.category_name) {
+          categoryNameMap.set(String(cat.category_id), cat.category_name);
+        }
+      }
+
       // Fetch all live streams
       const streamsUrl = `${this.serverUrl}/player_api.php?username=${this.username}&password=${this.password}&action=get_live_streams`;
       const streamsResponse = await axios.get(streamsUrl, { timeout: 15000 });
       const streams: XtreamChannel[] = streamsResponse.data || [];
 
       // Convert to IPTVChannel format with credentialId
-      this.channelsCache = streams.map(stream => ({
-        id: stream.stream_id.toString(),
-        number: stream.num ? stream.num.toString() : stream.stream_id.toString(),
-        name: stream.name,
-        streamUrl: `/api/iptv/stream/${stream.stream_id}.m3u8`,
-        logo: stream.stream_icon || '',
-        epgId: stream.epg_channel_id || '',
-        categoryName: stream.category_name || 'Unknown',
-        categoryId: stream.category_id || '',
-        hasArchive: stream.tv_archive === 1,
-        archiveDays: stream.tv_archive_duration || 0,
-        credentialId: this.credentialId || undefined
-      }));
+      // Look up category name from the categories cache since get_live_streams doesn't include it
+      this.channelsCache = streams.map(stream => {
+        const categoryId = stream.category_id?.toString() || '';
+        const categoryName = categoryNameMap.get(categoryId) || stream.category_name || 'Unknown';
+        return {
+          id: stream.stream_id.toString(),
+          number: stream.num ? stream.num.toString() : stream.stream_id.toString(),
+          name: stream.name,
+          streamUrl: `/api/iptv/stream/${stream.stream_id}.m3u8`,
+          logo: stream.stream_icon || '',
+          epgId: stream.epg_channel_id || '',
+          categoryName,
+          categoryId,
+          hasArchive: stream.tv_archive === 1,
+          archiveDays: stream.tv_archive_duration || 0,
+          credentialId: this.credentialId || undefined
+        };
+      });
 
       this.cacheTimestamp = Date.now();
     } catch (error) {

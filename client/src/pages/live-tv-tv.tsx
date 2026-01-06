@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef, useMemo, memo } from 'react';
 import { useQuery, useQueries, useMutation, useQueryClient } from '@tanstack/react-query';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ChevronDown, ChevronUp, Play, Pause, Volume2, VolumeX, Info, Plus, MoreHorizontal, Star, X, Check, CreditCard, Calendar, ExternalLink, LogOut, LayoutGrid, Airplay, Search, Volume1, Minus, Settings, PictureInPicture2 } from 'lucide-react';
+import { ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Play, Pause, Volume2, VolumeX, Info, Plus, MoreHorizontal, Star, X, Check, CreditCard, Calendar, ExternalLink, LogOut, LayoutGrid, Airplay, Search, Volume1, Minus, Settings, PictureInPicture2, Filter } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { getQueryFn, apiRequest, queryClient } from '@/lib/queryClient';
 import { buildApiUrl, isNativePlatform } from '@/lib/capacitor';
@@ -9,6 +9,7 @@ import { haptics } from '@/lib/haptics';
 import { useAuth } from '@/hooks/use-auth';
 import Hls from 'hls.js';
 import { ScreenOrientation } from '@capacitor/screen-orientation';
+import { KeepAwake } from '@capacitor-community/keep-awake';
 
 // ============================================================================
 // TYPES & INTERFACES
@@ -40,6 +41,7 @@ interface EPGProgram {
 interface ChannelEPG {
   currentProgram: EPGProgram | null;
   nextProgram: EPGProgram | null;
+  programs: EPGProgram[]; // All programs for time-shifting
 }
 
 interface Category {
@@ -193,7 +195,7 @@ const ActionButtons = memo(({
       className="p-3 hover:bg-white/10 rounded-full transition-colors focus:outline-none"
       onClick={onShowFavorites}
     >
-      <Star className="w-7 h-7 text-white/80" />
+      <Star className="w-7 h-7 text-white/70 fill-white/70" />
     </button>
     <button
       className="p-3 hover:bg-white/10 rounded-full transition-colors focus:outline-none"
@@ -697,9 +699,34 @@ const SubscriptionPopup = memo(({
 SubscriptionPopup.displayName = 'SubscriptionPopup';
 
 // Timeline Header
-const TimelineHeader = memo(({ slots }: { slots: Date[] }) => (
+const TimelineHeader = memo(({ slots, onPrev, onNext, canGoPrev, canGoNext }: {
+  slots: Date[];
+  onPrev?: () => void;
+  onNext?: () => void;
+  canGoPrev?: boolean;
+  canGoNext?: boolean;
+}) => (
   <div className="flex h-10 border-b border-white/10">
-    <div className="w-48 shrink-0" /> {/* Channel column spacer */}
+    <div className="w-48 shrink-0 flex items-center justify-between px-4">
+      {/* Today label + nav arrows */}
+      <span className="text-sm text-white/70 font-medium">Today</span>
+      <div className="flex items-center gap-1">
+        <button
+          onClick={onPrev}
+          disabled={!canGoPrev}
+          className={cn("p-1 rounded", canGoPrev ? "hover:bg-white/10 active:bg-white/20" : "opacity-30")}
+        >
+          <ChevronLeft className="w-4 h-4 text-white/70" />
+        </button>
+        <button
+          onClick={onNext}
+          disabled={!canGoNext}
+          className={cn("p-1 rounded", canGoNext ? "hover:bg-white/10 active:bg-white/20" : "opacity-30")}
+        >
+          <ChevronRight className="w-4 h-4 text-white/70" />
+        </button>
+      </div>
+    </div>
     <div className="flex-1 flex">
       {slots.map((slot, index) => (
         <div key={index} className="flex-1 px-4 flex items-center border-l border-white/10">
@@ -815,7 +842,7 @@ const GuideChannelRow = memo(({
       )}>
         <div className="w-8 h-8 rounded bg-white/10 flex items-center justify-center overflow-hidden shrink-0">
           {channel.logo ? (
-            <img src={channel.logo} alt="" className="w-full h-full object-contain p-0.5" />
+            <img src={channel.logo} alt="" className="w-full h-full object-contain p-0.5" loading="lazy" />
           ) : (
             <span className="text-xs font-bold text-white/60">{channel.GuideNumber}</span>
           )}
@@ -825,7 +852,7 @@ const GuideChannelRow = memo(({
         </div>
       </div>
 
-      {/* Programs */}
+      {/* Programs - scrolls horizontally */}
       <div className="flex-1 relative">
         {/* Now indicator */}
         <div
@@ -864,7 +891,7 @@ const FocusedProgramPanel = memo(({
       <div className="flex items-center gap-3 mb-2">
         {channel.logo && (
           <div className="w-12 h-9 flex items-center justify-center overflow-hidden shrink-0">
-            <img src={channel.logo} alt="" className="w-full h-full object-contain" />
+            <img src={channel.logo} alt="" className="w-full h-full object-contain" loading="lazy" />
           </div>
         )}
         <span className="text-white text-xl font-bold">{channel.GuideName}</span>
@@ -908,6 +935,9 @@ export default function LiveTVTvPage() {
     return false;
   });
 
+  // Track rotation to show black screen during transition
+  const [isRotating, setIsRotating] = useState(false);
+
   // View state: 'player' (fullscreen) or 'guide' (with PiP)
   const [viewMode, setViewMode] = useState<'player' | 'guide'>('player');
   const [showOverlay, setShowOverlay] = useState(true);
@@ -924,6 +954,11 @@ export default function LiveTVTvPage() {
 
   // Guide navigation
   const [focusedChannelIndex, setFocusedChannelIndex] = useState(0);
+  const [guideTimeOffset, setGuideTimeOffset] = useState(0); // Offset in 30-minute increments from now
+  const [showCategoryDropdown, setShowCategoryDropdown] = useState(false);
+
+  // Progressive rendering - start with fewer channels for faster initial load
+  const [renderLimit, setRenderLimit] = useState(30);
 
   // Time ticker for auto-updating program info (updates every 30 seconds)
   const [currentTime, setCurrentTime] = useState(Date.now());
@@ -944,6 +979,8 @@ export default function LiveTVTvPage() {
   // Stream retry state
   const retryCountRef = useRef(0);
   const retryTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const channelVersionRef = useRef(0); // Track channel changes to prevent stale event handlers
+  const loadingTimeoutRef = useRef<NodeJS.Timeout | null>(null); // Debounce loading spinner
   const MAX_RETRIES = 5;
   const [streamError, setStreamError] = useState<string | null>(null);
 
@@ -971,6 +1008,16 @@ export default function LiveTVTvPage() {
     }, 30000);
     return () => clearInterval(interval);
   }, []);
+
+  // Progressive rendering - expand limit after guide opens for faster initial load
+  useEffect(() => {
+    if (viewMode === 'guide') {
+      // Start with 30, expand to all after a short delay
+      setRenderLimit(30);
+      const timer = setTimeout(() => setRenderLimit(999), 100);
+      return () => clearTimeout(timer);
+    }
+  }, [viewMode]);
 
   // Track if we need to retry stream when back online
   const needsRetryOnReconnect = useRef(false);
@@ -1005,6 +1052,23 @@ export default function LiveTVTvPage() {
       window.removeEventListener('offline', handleOffline);
     };
   }, []);
+
+  // Keep screen awake while playing or loading
+  useEffect(() => {
+    if (!isNativePlatform()) return;
+
+    const shouldKeepAwake = selectedChannel !== null || isLoading;
+
+    if (shouldKeepAwake) {
+      KeepAwake.keepAwake().catch(console.warn);
+    } else {
+      KeepAwake.allowSleep().catch(console.warn);
+    }
+
+    return () => {
+      KeepAwake.allowSleep().catch(console.warn);
+    };
+  }, [selectedChannel, isLoading]);
 
   // ============================================================================
   // DATA FETCHING
@@ -1254,7 +1318,7 @@ export default function LiveTVTvPage() {
     }
   }, []);
 
-  // EPG queries - always load for current channel, load more when guide opens
+  // EPG queries - pre-load first batch for faster guide opening
   // Use epgId (XMLTV channel ID) and /api/epg/upcoming endpoint like the web version
   const visibleEpgIds = useMemo(() => {
     const idsSet = new Set<string>();
@@ -1264,7 +1328,12 @@ export default function LiveTVTvPage() {
       idsSet.add(selectedChannel.epgId);
     }
 
-    // When guide is open, load first 50 + around focused channel
+    // Pre-load first 20 channels' EPG data even before guide opens (for faster initial load)
+    channels.slice(0, 20).forEach((ch: Channel) => {
+      if (ch.epgId) idsSet.add(ch.epgId);
+    });
+
+    // When guide is open, load more channels
     if (viewMode === 'guide') {
       // First 50 channels
       channels.slice(0, 50).forEach((ch: Channel) => {
@@ -1300,18 +1369,29 @@ export default function LiveTVTvPage() {
       const epgId = visibleEpgIds[index];
       // API returns { programs: [...] }, not a raw array
       const responseData = query.data as any;
-      const programs = responseData?.programs;
-      if (programs && Array.isArray(programs)) {
+      const rawPrograms = responseData?.programs;
+      if (rawPrograms && Array.isArray(rawPrograms)) {
+        // Convert all programs to EPGProgram format
+        const allPrograms: EPGProgram[] = rawPrograms.map(p => ({
+          title: p.title || '',
+          startTime: p.startTime,
+          endTime: p.endTime,
+          description: p.description || '',
+          episodeTitle: p.episodeTitle || '',
+          season: p.season,
+          episode: p.episode,
+          rating: p.rating
+        }));
 
         // Find current program (startTime <= now < endTime)
-        const currentProgram = programs.find(p => {
+        const currentProgram = allPrograms.find(p => {
           const start = new Date(p.startTime).getTime();
           const end = new Date(p.endTime).getTime();
           return start <= now && now < end;
         });
 
         // Find next program (starts after current ends, or first future program)
-        const nextProgram = programs.find(p => {
+        const nextProgram = allPrograms.find(p => {
           const start = new Date(p.startTime).getTime();
           return start > now && (!currentProgram || start >= new Date(currentProgram.endTime).getTime());
         });
@@ -1320,26 +1400,9 @@ export default function LiveTVTvPage() {
         const channel = channels.find((ch: Channel) => ch.epgId === epgId);
         if (channel?.iptvId) {
           map.set(channel.iptvId, {
-            currentProgram: currentProgram ? {
-              title: currentProgram.title || '',
-              startTime: currentProgram.startTime,
-              endTime: currentProgram.endTime,
-              description: currentProgram.description || '',
-              episodeTitle: currentProgram.episodeTitle || '',
-              season: currentProgram.season,
-              episode: currentProgram.episode,
-              rating: currentProgram.rating
-            } : null,
-            nextProgram: nextProgram ? {
-              title: nextProgram.title || '',
-              startTime: nextProgram.startTime,
-              endTime: nextProgram.endTime,
-              description: nextProgram.description || '',
-              episodeTitle: nextProgram.episodeTitle || '',
-              season: nextProgram.season,
-              episode: nextProgram.episode,
-              rating: nextProgram.rating
-            } : null
+            currentProgram: currentProgram || null,
+            nextProgram: nextProgram || null,
+            programs: allPrograms
           });
         }
       }
@@ -1348,11 +1411,13 @@ export default function LiveTVTvPage() {
     return map;
   }, [epgQueries, visibleEpgIds, channels, currentTime]);
 
-  // Timeline slots
+  // Timeline slots - adjusted by guideTimeOffset
   const timelineSlots = useMemo(() => {
     const now = new Date();
     const startTime = new Date(now);
     startTime.setMinutes(Math.floor(now.getMinutes() / 30) * 30, 0, 0);
+    // Apply offset
+    startTime.setTime(startTime.getTime() + guideTimeOffset * 30 * 60 * 1000);
 
     const slots: Date[] = [];
     for (let i = 0; i < 4; i++) {
@@ -1361,7 +1426,7 @@ export default function LiveTVTvPage() {
       slots.push(slot);
     }
     return slots;
-  }, []);
+  }, [guideTimeOffset]);
 
   const timelineStart = timelineSlots[0];
   const timelineEnd = new Date(timelineSlots[0]);
@@ -1488,6 +1553,12 @@ export default function LiveTVTvPage() {
     // Reset retry count for new channel (not retries)
     if (!isRetry) {
       retryCountRef.current = 0;
+      channelVersionRef.current++; // Increment version to invalidate old event handlers
+      // Clear any pending loading spinner timeout
+      if (loadingTimeoutRef.current) {
+        clearTimeout(loadingTimeoutRef.current);
+        loadingTimeoutRef.current = null;
+      }
       if (retryTimeoutRef.current) {
         clearTimeout(retryTimeoutRef.current);
         retryTimeoutRef.current = null;
@@ -1495,6 +1566,9 @@ export default function LiveTVTvPage() {
       // Haptic feedback on channel change (not on retry)
       haptics.light();
     }
+
+    // Capture current version for this playStream call
+    const thisVersion = channelVersionRef.current;
 
     // Release previous stream
     await releaseCurrentStream();
@@ -1587,7 +1661,13 @@ export default function LiveTVTvPage() {
         console.log('[TV] Stream URL:', streamUrl);
 
         // Add error handlers before setting src
+        // All handlers check thisVersion to prevent stale updates from rapid channel changes
         const handleError = (e: Event) => {
+          // Ignore events from previous channel
+          if (channelVersionRef.current !== thisVersion) {
+            console.log('[TV] Ignoring error from stale channel version');
+            return;
+          }
           const mediaError = video.error;
           console.error('[TV] Native HLS error event:', e);
           console.error('[TV] Video error code:', mediaError?.code);
@@ -1604,7 +1684,7 @@ export default function LiveTVTvPage() {
             setIsLoading(true);
 
             retryTimeoutRef.current = setTimeout(() => {
-              if (channel) {
+              if (channel && channelVersionRef.current === thisVersion) {
                 video.src = streamUrl;
                 video.load();
                 video.play().catch(() => {});
@@ -1618,30 +1698,79 @@ export default function LiveTVTvPage() {
         };
 
         const handleLoadedMetadata = () => {
+          if (channelVersionRef.current !== thisVersion) return;
           console.log('[TV] Native HLS: metadata loaded');
           console.log('[TV] Duration:', video.duration);
           console.log('[TV] Video dimensions:', video.videoWidth, 'x', video.videoHeight);
         };
 
         const handleCanPlay = () => {
+          if (channelVersionRef.current !== thisVersion) return;
           console.log('[TV] Native HLS: can play');
+          // Cancel pending loading spinner and hide immediately
+          if (loadingTimeoutRef.current) {
+            clearTimeout(loadingTimeoutRef.current);
+            loadingTimeoutRef.current = null;
+          }
           setIsLoading(false);
+          setStreamError(null); // Clear any error when stream is ready
         };
 
         const handlePlaying = () => {
+          if (channelVersionRef.current !== thisVersion) return;
           console.log('[TV] Native HLS: playing');
+          // Cancel pending loading spinner and hide immediately
+          if (loadingTimeoutRef.current) {
+            clearTimeout(loadingTimeoutRef.current);
+            loadingTimeoutRef.current = null;
+          }
           setIsPlaying(true);
           setIsLoading(false);
+          setStreamError(null); // Clear any error when stream is playing
+          retryCountRef.current = 0; // Reset retry count on successful play
         };
 
         const handleWaiting = () => {
-          console.log('[TV] Native HLS: waiting/buffering');
-          setIsLoading(true);
+          if (channelVersionRef.current !== thisVersion) return;
+          // Debounce loading spinner - only show if buffering persists for 500ms
+          if (!loadingTimeoutRef.current) {
+            loadingTimeoutRef.current = setTimeout(() => {
+              if (channelVersionRef.current === thisVersion) {
+                console.log('[TV] Native HLS: waiting/buffering (showing spinner)');
+                setIsLoading(true);
+              }
+              loadingTimeoutRef.current = null;
+            }, 500);
+          }
         };
 
         const handleStalled = () => {
-          console.log('[TV] Native HLS: stalled');
-          setIsLoading(true);
+          if (channelVersionRef.current !== thisVersion) return;
+          // Debounce loading spinner - only show if stalled persists for 500ms
+          if (!loadingTimeoutRef.current) {
+            loadingTimeoutRef.current = setTimeout(() => {
+              if (channelVersionRef.current === thisVersion) {
+                console.log('[TV] Native HLS: stalled (showing spinner)');
+                setIsLoading(true);
+              }
+              loadingTimeoutRef.current = null;
+            }, 500);
+          }
+        };
+
+        // Fallback: clear loading when video is actually progressing
+        const handleTimeUpdate = () => {
+          if (channelVersionRef.current !== thisVersion) return;
+          // If video is playing (has currentTime > 0), clear loading state
+          if (video.currentTime > 0 && !video.paused) {
+            // Cancel pending loading spinner
+            if (loadingTimeoutRef.current) {
+              clearTimeout(loadingTimeoutRef.current);
+              loadingTimeoutRef.current = null;
+            }
+            setIsLoading(false);
+            setStreamError(null);
+          }
         };
 
         // Clean up old listeners
@@ -1651,6 +1780,7 @@ export default function LiveTVTvPage() {
         video.removeEventListener('playing', handlePlaying);
         video.removeEventListener('waiting', handleWaiting);
         video.removeEventListener('stalled', handleStalled);
+        video.removeEventListener('timeupdate', handleTimeUpdate);
 
         // Add new listeners
         video.addEventListener('error', handleError);
@@ -1659,6 +1789,7 @@ export default function LiveTVTvPage() {
         video.addEventListener('playing', handlePlaying);
         video.addEventListener('waiting', handleWaiting);
         video.addEventListener('stalled', handleStalled);
+        video.addEventListener('timeupdate', handleTimeUpdate);
 
         video.src = streamUrl;
         video.load(); // Explicitly load
@@ -1929,32 +2060,26 @@ export default function LiveTVTvPage() {
     touchStartX.current = null;
   }, [viewMode, showOverlay, selectedChannel, channels]);
 
-  // Detect portrait/landscape on native platforms with debounce for smooth transitions
+  // Detect portrait/landscape on native platforms using Capacitor ScreenOrientation API
   useEffect(() => {
     if (!isNativePlatform()) {
       setIsPortrait(false);
       return;
     }
 
-    let debounceTimer: NodeJS.Timeout | null = null;
     let lastOrientation: boolean | null = null;
+    let rotationTimeout: ReturnType<typeof setTimeout> | null = null;
 
-    const checkOrientation = (immediate = false) => {
+    const checkOrientation = (fromRotation = false) => {
       const portrait = window.innerWidth < window.innerHeight;
-
-      // Only update if orientation actually changed
-      if (portrait === lastOrientation) return;
-
-      if (immediate) {
+      if (portrait !== lastOrientation) {
         lastOrientation = portrait;
         setIsPortrait(portrait);
-      } else {
-        // Debounce to prevent multiple rapid updates during rotation
-        if (debounceTimer) clearTimeout(debounceTimer);
-        debounceTimer = setTimeout(() => {
-          lastOrientation = portrait;
-          setIsPortrait(portrait);
-        }, 150);
+      }
+      // Clear rotating state after a short delay to allow React to render new guide
+      if (fromRotation) {
+        if (rotationTimeout) clearTimeout(rotationTimeout);
+        rotationTimeout = setTimeout(() => setIsRotating(false), 150);
       }
     };
 
@@ -1962,26 +2087,53 @@ export default function LiveTVTvPage() {
     lastOrientation = window.innerWidth < window.innerHeight;
     setIsPortrait(lastOrientation);
 
-    // Listen for resize and orientation events
-    window.addEventListener('resize', () => checkOrientation(false));
-    window.addEventListener('orientationchange', () => {
-      // Delay after orientation change event for dimensions to settle
-      setTimeout(() => checkOrientation(true), 200);
-    });
+    // Use Capacitor ScreenOrientation API for reliable detection
+    const setupOrientationListener = async () => {
+      try {
+        await ScreenOrientation.addListener('screenOrientationChange', (info) => {
+          setIsRotating(true); // Show black screen immediately
+          // Update state based on new orientation
+          const portrait = info.type.includes('portrait');
+          if (portrait !== lastOrientation) {
+            lastOrientation = portrait;
+            setIsPortrait(portrait);
+          }
+          // Clear rotating after React renders
+          if (rotationTimeout) clearTimeout(rotationTimeout);
+          rotationTimeout = setTimeout(() => setIsRotating(false), 150);
+        });
+      } catch (e) {
+        // Fallback to window events if Capacitor API fails
+        console.log('ScreenOrientation API not available, using fallback');
+      }
+    };
+    setupOrientationListener();
 
-    // Re-check when app regains focus (e.g., after PiP closes)
+    // Fallback: Listen for resize as backup
+    const handleResize = () => checkOrientation(false);
+    window.addEventListener('resize', handleResize);
+
+    // Fallback: window orientationchange event
+    const handleOrientationChange = () => {
+      setIsRotating(true); // Show black screen immediately
+      setTimeout(() => checkOrientation(true), 50);
+    };
+    window.addEventListener('orientationchange', handleOrientationChange);
+
+    // Re-check when app regains focus
     const handleVisibilityChange = () => {
       if (document.visibilityState === 'visible') {
-        setTimeout(() => checkOrientation(true), 100);
+        checkOrientation(false);
       }
     };
     document.addEventListener('visibilitychange', handleVisibilityChange);
 
     return () => {
-      if (debounceTimer) clearTimeout(debounceTimer);
-      window.removeEventListener('resize', () => checkOrientation(false));
-      window.removeEventListener('orientationchange', () => checkOrientation(true));
+      window.removeEventListener('resize', handleResize);
+      window.removeEventListener('orientationchange', handleOrientationChange);
       document.removeEventListener('visibilitychange', handleVisibilityChange);
+      if (rotationTimeout) clearTimeout(rotationTimeout);
+      ScreenOrientation.removeAllListeners();
     };
   }, []);
 
@@ -1993,7 +2145,7 @@ export default function LiveTVTvPage() {
       let channelToPlay = channels[0]; // Default to first channel
 
       if (lastChannelId) {
-        const savedChannel = channels.find(ch => ch.iptvId === lastChannelId);
+        const savedChannel = channels.find((ch: Channel) => ch.iptvId === lastChannelId);
         if (savedChannel) {
           channelToPlay = savedChannel;
         }
@@ -2094,7 +2246,7 @@ export default function LiveTVTvPage() {
             bottom: 'auto',
             width: 'calc(100vw - 32px)',
             height: 'calc((100vw - 32px) * 0.5625)',
-            zIndex: 25,
+            zIndex: 35,
             borderRadius: 12
           } : viewMode === 'guide' ? {
             // Landscape guide - PiP in corner
@@ -2144,7 +2296,7 @@ export default function LiveTVTvPage() {
         />
         {/* Loading Indicator - inside video container */}
         {isLoading && (
-          <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/90 rounded-xl">
+          <div className="absolute inset-0 flex flex-col items-center justify-center bg-black z-30">
             <div className="w-12 h-12 border-4 border-white/30 border-t-white rounded-full animate-spin mb-4" />
             <p className="text-white text-lg font-medium">
               {streamError ? streamError : 'Loading Stream'}
@@ -2156,7 +2308,7 @@ export default function LiveTVTvPage() {
         )}
         {/* Stream Error - when max retries reached */}
         {!isLoading && streamError && (
-          <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/90 rounded-xl">
+          <div className="absolute inset-0 flex flex-col items-center justify-center bg-black z-30">
             <div className="w-12 h-12 mb-4 text-red-400">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                 <circle cx="12" cy="12" r="10" />
@@ -2166,8 +2318,9 @@ export default function LiveTVTvPage() {
             </div>
             <p className="text-white text-lg font-medium">{streamError}</p>
             <button
-              onClick={() => { setStreamError(null); retryCountRef.current = 0; if (selectedChannel) playStream(selectedChannel); }}
-              className="mt-4 px-6 py-2 bg-white/20 hover:bg-white/30 rounded-full text-white text-sm transition-colors"
+              onClick={(e) => { e.stopPropagation(); setStreamError(null); retryCountRef.current = 0; if (selectedChannel) playStream(selectedChannel); }}
+              onTouchEnd={(e) => { e.preventDefault(); e.stopPropagation(); setStreamError(null); retryCountRef.current = 0; if (selectedChannel) playStream(selectedChannel); }}
+              className="mt-4 px-6 py-2 bg-white/20 hover:bg-white/30 active:bg-white/40 rounded-full text-white text-sm transition-colors"
             >
               Try Again
             </button>
@@ -2228,7 +2381,7 @@ export default function LiveTVTvPage() {
                 <img
                   src={currentChannel.logo}
                   alt=""
-                  className="h-10 w-auto object-contain"
+                  className="h-10 max-w-24 object-contain"
                   onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
                 />
               )}
@@ -2336,7 +2489,7 @@ export default function LiveTVTvPage() {
               <span className="text-white/50 text-xs">Guide</span>
             </button>
             <button onTouchEnd={(e) => { e.preventDefault(); haptics.light(); setShowFavoritesPopup(true); }} onClick={() => { haptics.light(); setShowFavoritesPopup(true); }} className="flex flex-col items-center gap-1.5 py-2 px-4 active:opacity-70">
-              <Star className="w-6 h-6 text-white/70" />
+              <Star className="w-6 h-6 text-white/70 fill-white/70" />
               <span className="text-white/50 text-xs">Favorites</span>
             </button>
             <button onTouchEnd={(e) => { e.preventDefault(); handleAirPlay(); }} onClick={handleAirPlay} className="flex flex-col items-center gap-1.5 py-2 px-4 active:opacity-70">
@@ -2359,27 +2512,49 @@ export default function LiveTVTvPage() {
         >
           {/* Channel Bar */}
           <div className="px-4 py-3 flex items-center gap-3 border-b border-white/10">
-            {currentChannel?.logo && (
-              <img
-                src={currentChannel.logo}
-                alt=""
-                className="h-12 w-auto object-contain"
-                onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
-              />
+            {channelsLoading || !currentChannel ? (
+              <>
+                {/* Skeleton loader */}
+                <div className="h-12 w-16 bg-white/10 rounded animate-pulse" />
+                <div className="flex-1 min-w-0">
+                  <div className="h-5 w-32 bg-white/10 rounded animate-pulse mb-2" />
+                  <div className="h-4 w-48 bg-white/10 rounded animate-pulse" />
+                </div>
+              </>
+            ) : (
+              <>
+                {currentChannel.logo && (
+                  <img
+                    src={currentChannel.logo}
+                    alt=""
+                    className="h-12 max-w-24 object-contain"
+                    onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                  />
+                )}
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2">
+                    <h2 className="text-white text-lg font-semibold truncate">{currentChannel.GuideName}</h2>
+                    <span className="text-red-500 text-xs font-bold px-1.5 py-0.5 bg-red-500/20 rounded">LIVE</span>
+                  </div>
+                  {currentEPG?.currentProgram && (
+                    <p className="text-white/60 text-sm truncate mt-0.5">{currentEPG.currentProgram.title}</p>
+                  )}
+                </div>
+              </>
             )}
-            <div className="flex-1 min-w-0">
-              <div className="flex items-center gap-2">
-                <h2 className="text-white text-lg font-semibold truncate">{currentChannel?.GuideName || 'No Channel'}</h2>
-                <span className="text-red-500 text-xs font-bold px-1.5 py-0.5 bg-red-500/20 rounded">LIVE</span>
-              </div>
-              {currentEPG?.currentProgram && (
-                <p className="text-white/60 text-sm truncate mt-0.5">{currentEPG.currentProgram.title}</p>
-              )}
-            </div>
           </div>
 
           {/* Program Info & Progress */}
-          {currentEPG?.currentProgram && (
+          {channelsLoading || !currentChannel ? (
+            <div className="px-4 py-3 border-b border-white/10">
+              <div className="flex justify-between items-center mb-2">
+                <div className="h-4 w-24 bg-white/10 rounded animate-pulse" />
+                <div className="h-4 w-16 bg-white/10 rounded animate-pulse" />
+              </div>
+              <div className="h-1.5 bg-white/10 rounded-full animate-pulse" />
+              <div className="h-4 w-full bg-white/10 rounded animate-pulse mt-2" />
+            </div>
+          ) : currentEPG?.currentProgram ? (
             <div className="px-4 py-3 border-b border-white/10">
               <div className="flex justify-between items-center mb-2">
                 <span className="text-white/50 text-sm">
@@ -2397,7 +2572,7 @@ export default function LiveTVTvPage() {
                 <p className="text-white/40 text-sm mt-2 line-clamp-2">{currentEPG.currentProgram.description}</p>
               )}
             </div>
-          )}
+          ) : null}
 
           {/* Playback Controls */}
           <div className="flex-1 flex flex-col justify-center py-4">
@@ -2461,7 +2636,7 @@ export default function LiveTVTvPage() {
               <span className="text-white/50 text-xs">Guide</span>
             </button>
             <button onTouchEnd={(e) => { e.preventDefault(); haptics.light(); setShowFavoritesPopup(true); }} onClick={() => { haptics.light(); setShowFavoritesPopup(true); }} className="flex flex-col items-center gap-1.5 py-2 px-4 active:opacity-70">
-              <Star className="w-6 h-6 text-white/70" />
+              <Star className="w-6 h-6 text-white/70 fill-white/70" />
               <span className="text-white/50 text-xs">Favorites</span>
             </button>
             <button onTouchEnd={(e) => { e.preventDefault(); handleAirPlay(); }} onClick={handleAirPlay} className="flex flex-col items-center gap-1.5 py-2 px-4 active:opacity-70">
@@ -2476,14 +2651,27 @@ export default function LiveTVTvPage() {
         </div>
       )}
 
+      {/* Blur overlay during rotation - smooth transition between guides */}
+      <div
+        className={cn(
+          "absolute inset-0 bg-black/80 backdrop-blur-md transition-opacity duration-150 pointer-events-none",
+          isRotating && viewMode === 'guide' && isNativePlatform() ? "opacity-100" : "opacity-0"
+        )}
+        style={{ zIndex: 50 }}
+      />
+
       {/* Portrait Guide View - Plex-style with large video at top */}
-      {isPortrait && isNativePlatform() && viewMode === 'guide' && (
-        <div className="absolute inset-0 bg-black flex flex-col z-20">
+      {/* CSS landscape:opacity-0 instantly hides when screen rotates, before React state updates */}
+      {!isRotating && isPortrait && isNativePlatform() && viewMode === 'guide' && (
+        <div
+          className="absolute inset-0 bg-black flex flex-col landscape:opacity-0 landscape:pointer-events-none animate-in fade-in duration-150"
+          style={{ zIndex: 30 }}
+        >
           {/* Header with close button and search */}
-          <div className="shrink-0 pt-14 px-4 flex items-center gap-3">
+          <div className="shrink-0 pt-14 px-4 flex items-center gap-2">
             <button
-              onTouchEnd={(e) => { e.preventDefault(); setViewMode('player'); setGuideSearchQuery(''); setSelectedCategory(null); }}
-              onClick={() => { setViewMode('player'); setGuideSearchQuery(''); setSelectedCategory(null); }}
+              onTouchEnd={(e) => { e.preventDefault(); setViewMode('player'); setGuideSearchQuery(''); setSelectedCategory(null); setGuideTimeOffset(0); }}
+              onClick={() => { setViewMode('player'); setGuideSearchQuery(''); setSelectedCategory(null); setGuideTimeOffset(0); }}
               className="p-2 bg-white/10 rounded-full active:bg-white/20 shrink-0"
             >
               <X className="w-5 h-5 text-white" />
@@ -2504,67 +2692,144 @@ export default function LiveTVTvPage() {
                 className="w-full h-10 pl-10 pr-4 bg-white/10 rounded-full text-white text-sm placeholder:text-white/40 focus:outline-none focus:ring-1 focus:ring-white/30"
               />
             </div>
+            {/* Filter button - opens dropdown */}
+            {categories.length > 0 && (
+              <button
+                onTouchEnd={(e) => { e.preventDefault(); setShowCategoryDropdown(!showCategoryDropdown); haptics.light(); }}
+                onClick={() => { setShowCategoryDropdown(!showCategoryDropdown); haptics.light(); }}
+                className={cn(
+                  "shrink-0 h-10 px-3 rounded-full flex items-center gap-1.5",
+                  showCategoryDropdown ? "bg-white/20" : "bg-white/10 active:bg-white/20"
+                )}
+              >
+                <Filter className="w-4 h-4 text-white/70" />
+                <span className="text-white text-sm max-w-20 truncate">
+                  {selectedCategory ? categories.find(c => c.id === selectedCategory)?.name || 'Filter' : 'All'}
+                </span>
+                <ChevronDown className={cn("w-4 h-4 text-white/50 transition-transform", showCategoryDropdown && "rotate-180")} />
+              </button>
+            )}
           </div>
 
-          {/* Category Filter Chips */}
-          {categories.length > 0 && (
-            <div className="px-4 pt-2 overflow-x-auto scrollbar-hide">
-              <div className="flex gap-2">
-                <button
-                  onTouchEnd={(e) => { e.preventDefault(); haptics.selection(); setSelectedCategory(null); }}
-                  onClick={() => { haptics.selection(); setSelectedCategory(null); }}
-                  className={cn(
-                    "shrink-0 px-3 py-1.5 rounded-full text-xs font-medium transition-colors",
-                    selectedCategory === null
-                      ? "bg-white text-black"
-                      : "bg-white/10 text-white/70 active:bg-white/20"
-                  )}
-                >
-                  All
-                </button>
-                {categories.map((cat) => (
-                  <button
-                    key={cat.id}
-                    onTouchEnd={(e) => { e.preventDefault(); haptics.selection(); setSelectedCategory(cat.id); }}
-                    onClick={() => { haptics.selection(); setSelectedCategory(cat.id); }}
-                    className={cn(
-                      "shrink-0 px-3 py-1.5 rounded-full text-xs font-medium transition-colors whitespace-nowrap",
-                      selectedCategory === cat.id
-                        ? "bg-white text-black"
-                        : "bg-white/10 text-white/70 active:bg-white/20"
-                    )}
-                  >
-                    {cat.name}
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Video player area - space for the motion.div video */}
-          <div className="relative mx-4 mt-3 aspect-video">
+          {/* Video player area - more space from header */}
+          <div className="relative mx-4 mt-6 aspect-video">
             {/* Video positioned here via motion.div animate */}
           </div>
 
-          {/* Now playing info */}
-          <div className="px-4 py-3 flex items-center gap-3">
-            {currentChannel?.logo && (
-              <img
-                src={currentChannel.logo}
-                alt=""
-                className="h-8 w-auto object-contain"
-                onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
-              />
+          {/* Current Channel Info */}
+          <div className="px-4 py-2 flex items-center gap-3 border-b border-white/10">
+            {channelsLoading || !currentChannel ? (
+              <>
+                <div className="h-8 w-12 bg-white/10 rounded animate-pulse" />
+                <div className="flex-1 min-w-0">
+                  <div className="h-4 w-24 bg-white/10 rounded animate-pulse mb-1" />
+                  <div className="h-3 w-32 bg-white/10 rounded animate-pulse" />
+                </div>
+              </>
+            ) : (
+              <>
+                {currentChannel.logo && (
+                  <img
+                    src={currentChannel.logo}
+                    alt=""
+                    className="h-8 max-w-16 object-contain"
+                    onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                  />
+                )}
+                <div className="flex-1 min-w-0">
+                  <span className="text-white text-sm font-medium">{currentChannel.GuideName}</span>
+                  {currentEPG?.currentProgram && (
+                    <p className="text-white/50 text-xs truncate">{currentEPG.currentProgram.title}</p>
+                  )}
+                </div>
+              </>
             )}
-            <span className="text-white/70 text-sm">Now on - {currentChannel?.GuideName || 'Live TV'}</span>
           </div>
 
-          {/* Channel List */}
-          <div className="flex-1 overflow-y-auto">
-            {filteredChannels.map((channel: Channel, index: number) => {
+          {/* Timeline Header - "Today" + current time + arrows */}
+          <div className="shrink-0 py-2.5 px-4 flex items-center border-b border-white/10 bg-black/50">
+            {/* Today label */}
+            <div className="shrink-0 bg-white/10 rounded-full px-3 py-1.5">
+              <span className="text-white text-sm font-medium">Today</span>
+            </div>
+            {/* Current time slot */}
+            <div className="flex-1 px-4">
+              <span className="text-white/70 text-sm">
+                {(() => {
+                  const now = new Date();
+                  const displayTime = new Date(now);
+                  displayTime.setMinutes(now.getMinutes() < 30 ? 0 : 30, 0, 0);
+                  displayTime.setTime(displayTime.getTime() + guideTimeOffset * 30 * 60 * 1000);
+                  return displayTime.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+                })()}
+              </span>
+            </div>
+            {/* Navigation arrows */}
+            <div className="flex items-center gap-1 shrink-0">
+              <button
+                onTouchEnd={(e) => { e.preventDefault(); if (guideTimeOffset > 0) { setGuideTimeOffset(guideTimeOffset - 1); haptics.light(); } }}
+                onClick={() => { if (guideTimeOffset > 0) { setGuideTimeOffset(guideTimeOffset - 1); haptics.light(); } }}
+                className={cn("p-2 rounded-full bg-white/10", guideTimeOffset > 0 ? "active:bg-white/20" : "opacity-30")}
+                disabled={guideTimeOffset === 0}
+              >
+                <ChevronLeft className="w-4 h-4 text-white" />
+              </button>
+              <button
+                onTouchEnd={(e) => { e.preventDefault(); if (guideTimeOffset < 8) { setGuideTimeOffset(guideTimeOffset + 1); haptics.light(); } }}
+                onClick={() => { if (guideTimeOffset < 8) { setGuideTimeOffset(guideTimeOffset + 1); haptics.light(); } }}
+                className={cn("p-2 rounded-full bg-white/10", guideTimeOffset < 8 ? "active:bg-white/20" : "opacity-30")}
+                disabled={guideTimeOffset >= 8}
+              >
+                <ChevronRight className="w-4 h-4 text-white" />
+              </button>
+            </div>
+          </div>
+
+          {/* Channel List with red time indicator */}
+          <div className="flex-1 overflow-y-auto relative">
+            {/* Red current time line - only in channel list area */}
+            {guideTimeOffset === 0 && (
+              <div
+                className="absolute top-0 bottom-0 w-0.5 bg-red-500 z-10 pointer-events-none"
+                style={{
+                  // Position based on time remaining in current 30-min block
+                  // Logo section is ~88px, then programs fill the rest
+                  left: (() => {
+                    const now = new Date();
+                    const minutesIntoBlock = now.getMinutes() % 30;
+                    const percentIntoBlock = minutesIntoBlock / 30;
+                    // Current program takes ~60% width, line should be at the boundary
+                    return `calc(88px + (100% - 88px - 8px) * 0.55 * ${1 - percentIntoBlock})`;
+                  })()
+                }}
+              />
+            )}
+            {filteredChannels.slice(0, renderLimit).map((channel: Channel, index: number) => {
               const channelEpg = epgDataMap.get(channel.iptvId || '');
               const isCurrentChannel = selectedChannel?.iptvId === channel.iptvId;
-              const timeRemaining = channelEpg?.currentProgram ? getTimeRemaining(channelEpg.currentProgram.endTime) : '';
+
+              // Calculate time-shifted programs based on guideTimeOffset
+              const offsetTime = new Date();
+              offsetTime.setMinutes(offsetTime.getMinutes() < 30 ? 0 : 30, 0, 0);
+              offsetTime.setTime(offsetTime.getTime() + guideTimeOffset * 30 * 60 * 1000);
+              const offsetMs = offsetTime.getTime();
+
+              // Find program playing at offset time
+              const shiftedCurrentProgram = channelEpg?.programs?.find(p => {
+                const start = new Date(p.startTime).getTime();
+                const end = new Date(p.endTime).getTime();
+                return start <= offsetMs && offsetMs < end;
+              }) || null;
+
+              // Find next program after current
+              const shiftedNextProgram = channelEpg?.programs?.find(p => {
+                const start = new Date(p.startTime).getTime();
+                return shiftedCurrentProgram
+                  ? start >= new Date(shiftedCurrentProgram.endTime).getTime()
+                  : start > offsetMs;
+              }) || null;
+
+              const timeRemaining = shiftedCurrentProgram ? getTimeRemaining(shiftedCurrentProgram.endTime) : '';
 
               return (
                 <button
@@ -2626,75 +2891,90 @@ export default function LiveTVTvPage() {
                     setGuideSearchQuery('');
                   }}
                   className={cn(
-                    "w-full px-4 py-2.5 flex items-center gap-3 active:bg-white/10 select-none",
+                    "w-full flex items-stretch select-none",
                     isCurrentChannel && "bg-white/5"
                   )}
                   style={{ WebkitTouchCallout: 'none', WebkitUserSelect: 'none' } as React.CSSProperties}
                 >
-                  {/* Favorite Star Button */}
-                  <button
-                    onTouchStart={(e) => {
-                      e.stopPropagation();
-                    }}
-                    onTouchEnd={(e) => {
-                      e.stopPropagation();
-                      e.preventDefault();
-                      toggleChannelFavorite(channel);
-                    }}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      e.preventDefault();
-                      toggleChannelFavorite(channel);
-                    }}
-                    className="shrink-0 w-8 flex items-center justify-center"
-                  >
-                    <Star className={cn(
-                      "w-4 h-4",
-                      favorites.some(f => f.channelId === (channel.iptvId || ''))
-                        ? "text-yellow-400 fill-yellow-400"
-                        : "text-white/30"
-                    )} />
-                  </button>
+                  {/* Fixed Left Section - Favorite + Logo */}
+                  <div className="shrink-0 flex items-center gap-1 pl-2 pr-1 py-2">
+                    {/* Favorite Star Button */}
+                    <button
+                      onTouchStart={(e) => {
+                        e.stopPropagation();
+                        e.preventDefault();
+                        touchStartY.current = null;
+                        longPressChannel.current = null;
+                        if (longPressTimer.current) {
+                          clearTimeout(longPressTimer.current);
+                          longPressTimer.current = null;
+                        }
+                      }}
+                      onTouchEnd={(e) => {
+                        e.stopPropagation();
+                        e.preventDefault();
+                        toggleChannelFavorite(channel);
+                      }}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        e.preventDefault();
+                        toggleChannelFavorite(channel);
+                      }}
+                      className="shrink-0 w-7 flex items-center justify-center"
+                    >
+                      <Star className={cn(
+                        "w-4 h-4",
+                        favorites.some(f => f.channelId === (channel.iptvId || ''))
+                          ? "text-yellow-400 fill-yellow-400"
+                          : "text-white/30"
+                      )} />
+                    </button>
 
-                  {/* Channel Logo */}
-                  <div className="shrink-0 w-12 h-9 flex items-center justify-center bg-white/10 rounded-lg">
-                    {channel.logo ? (
-                      <img
-                        src={channel.logo}
-                        alt=""
-                        className="max-w-[40px] max-h-[32px] object-contain pointer-events-none"
-                        loading="lazy"
-                        draggable={false}
-                        onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
-                      />
-                    ) : (
-                      <span className="text-white/40 text-xs font-medium">{channel.GuideNumber}</span>
-                    )}
-                  </div>
-
-                  {/* Current Program */}
-                  <div className={cn(
-                    "flex-1 min-w-0 text-left py-1.5 px-3 rounded-lg border",
-                    isCurrentChannel ? "border-white/30 bg-white/10" : "border-white/10"
-                  )}>
-                    <p className={cn(
-                      "text-sm truncate font-medium",
-                      isCurrentChannel ? "text-white" : "text-white/90"
-                    )}>
-                      {channelEpg?.currentProgram?.title || channel.GuideName}
-                    </p>
-                    <p className="text-white/50 text-xs">{timeRemaining ? `${timeRemaining} left` : 'Live'}</p>
-                  </div>
-
-                  {/* Next Program (partially visible) */}
-                  {channelEpg?.nextProgram && (
-                    <div className="shrink-0 w-24 text-left opacity-50">
-                      <p className="text-white/70 text-xs truncate">{channelEpg.nextProgram.title}</p>
-                      <p className="text-white/40 text-[10px]">
-                        {new Date(channelEpg.nextProgram.startTime).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}
-                      </p>
+                    {/* Channel Logo */}
+                    <div className="shrink-0 w-11 h-8 flex items-center justify-center bg-white/10 rounded">
+                      {channel.logo ? (
+                        <img
+                          src={channel.logo}
+                          alt=""
+                          className="max-w-[36px] max-h-[28px] object-contain pointer-events-none"
+                          loading="lazy"
+                          draggable={false}
+                          onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                        />
+                      ) : (
+                        <span className="text-white/40 text-xs font-medium">{channel.GuideNumber}</span>
+                      )}
                     </div>
-                  )}
+                  </div>
+
+                  {/* Scrollable Programs Section */}
+                  <div className="flex-1 overflow-x-auto scrollbar-hide py-2 pr-2">
+                    <div className="flex gap-2 min-w-max">
+                      {/* Current Program (at offset time) */}
+                      <div className={cn(
+                        "w-40 shrink-0 text-left py-1.5 px-2.5 rounded-lg border",
+                        isCurrentChannel ? "border-white/30 bg-white/10" : "border-white/10"
+                      )}>
+                        <p className={cn(
+                          "text-sm truncate font-medium",
+                          isCurrentChannel ? "text-white" : "text-white/90"
+                        )}>
+                          {shiftedCurrentProgram?.title || channel.GuideName}
+                        </p>
+                        <p className="text-white/50 text-xs">{timeRemaining ? `${timeRemaining} left` : 'Live'}</p>
+                      </div>
+
+                      {/* Next Program (at offset time) */}
+                      {shiftedNextProgram && (
+                        <div className="w-36 shrink-0 text-left py-1.5 px-2.5 rounded-lg border border-white/5 bg-white/5">
+                          <p className="text-white/70 text-sm truncate">{shiftedNextProgram.title}</p>
+                          <p className="text-white/40 text-xs">
+                            {new Date(shiftedNextProgram.startTime).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                  </div>
                 </button>
               );
             })}
@@ -2712,7 +2992,7 @@ export default function LiveTVTvPage() {
               <span className="text-white text-xs font-medium">Guide</span>
             </button>
             <button onTouchEnd={(e) => { e.preventDefault(); setShowFavoritesPopup(!showFavoritesPopup); }} onClick={() => setShowFavoritesPopup(!showFavoritesPopup)} className="flex flex-col items-center gap-1 py-2 px-4 active:opacity-70">
-              <Star className="w-6 h-6 text-white/50" />
+              <Star className="w-6 h-6 text-white/50 fill-white/50" />
               <span className="text-white/50 text-xs">Favorites</span>
             </button>
             <button onTouchEnd={(e) => { e.preventDefault(); handleAirPlay(); }} onClick={handleAirPlay} className="flex flex-col items-center gap-1 py-2 px-4 active:opacity-70">
@@ -2724,6 +3004,38 @@ export default function LiveTVTvPage() {
               <span className="text-white/50 text-xs">Settings</span>
             </button>
           </div>
+        </div>
+      )}
+
+      {/* Portrait Guide Category Dropdown - rendered outside container, positioned below header */}
+      {!isRotating && isPortrait && isNativePlatform() && viewMode === 'guide' && showCategoryDropdown && categories.length > 0 && (
+        <div
+          className="fixed right-4 bg-zinc-900 rounded-xl border border-white/10 shadow-xl max-h-64 overflow-y-auto min-w-40"
+          style={{ zIndex: 9999, top: 'calc(env(safe-area-inset-top, 44px) + 56px + 48px)' }}
+        >
+          <button
+            onTouchEnd={(e) => { e.preventDefault(); haptics.selection(); setSelectedCategory(null); setShowCategoryDropdown(false); }}
+            onClick={() => { haptics.selection(); setSelectedCategory(null); setShowCategoryDropdown(false); }}
+            className={cn(
+              "w-full px-4 py-2.5 text-left text-sm",
+              selectedCategory === null ? "bg-white/10 text-white" : "text-white/70 active:bg-white/5"
+            )}
+          >
+            All Categories
+          </button>
+          {categories.map((cat) => (
+            <button
+              key={cat.id}
+              onTouchEnd={(e) => { e.preventDefault(); haptics.selection(); setSelectedCategory(cat.id); setShowCategoryDropdown(false); }}
+              onClick={() => { haptics.selection(); setSelectedCategory(cat.id); setShowCategoryDropdown(false); }}
+              className={cn(
+                "w-full px-4 py-2.5 text-left text-sm border-t border-white/5",
+                selectedCategory === cat.id ? "bg-white/10 text-white" : "text-white/70 active:bg-white/5"
+              )}
+            >
+              {cat.name}
+            </button>
+          ))}
         </div>
       )}
 
@@ -2762,7 +3074,7 @@ export default function LiveTVTvPage() {
 
             {/* YouTube TV Style Program Info - Only show if EPG data available */}
             {currentEPG?.currentProgram && (
-              <div className="absolute bottom-44 left-12 max-w-2xl">
+              <div className="absolute bottom-44 left-16 max-w-2xl">
                 {/* Time Range */}
                 <div className="text-white/70 text-xl mb-1">
                   {formatTimeRange(currentEPG.currentProgram.startTime, currentEPG.currentProgram.endTime)}
@@ -2824,7 +3136,7 @@ export default function LiveTVTvPage() {
 
             {/* Progress Bar - Full width just above controls */}
             {currentEPG?.currentProgram && (
-              <div className="absolute bottom-24 left-12 right-12">
+              <div className="absolute bottom-24 left-16 right-16">
                 <div className="h-1.5 bg-white/30 rounded-full overflow-hidden">
                   <div
                     className="h-full bg-red-600 transition-all duration-1000"
@@ -2838,8 +3150,8 @@ export default function LiveTVTvPage() {
               </div>
             )}
 
-            {/* Channel Selector - Bottom Left, logo row centered with controls */}
-            <div className="absolute bottom-2 left-8">
+            {/* Channel Selector - Bottom Left, aligned with progress bar */}
+            <div className="absolute bottom-2 left-16">
               <div className="relative flex flex-col items-center">
                 {/* Channel Up - positioned above logo */}
                 <button
@@ -2855,11 +3167,11 @@ export default function LiveTVTvPage() {
                     <img
                       src={currentChannel.logo}
                       alt=""
-                      className="h-6 w-auto object-contain"
+                      className="h-6 max-w-20 object-contain"
                       onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
                     />
                   )}
-                  <span className="text-white text-sm font-medium max-w-[100px] truncate">{currentChannel?.GuideName}</span>
+                  <span className="text-white text-sm font-medium">{currentChannel?.GuideName}</span>
                 </div>
 
                 {/* Channel Down - positioned below logo */}
@@ -2923,13 +3235,17 @@ export default function LiveTVTvPage() {
         )}
       </AnimatePresence>
 
-      {/* Guide View - Only for landscape or non-native */}
-      {!(isPortrait && isNativePlatform()) && viewMode === 'guide' && (
-      <div className="absolute inset-0 bg-black/95 z-20 flex flex-col">
+      {/* Guide View - Landscape on native, always on non-native */}
+      {/* CSS portrait:opacity-0 instantly hides on native when screen rotates to portrait */}
+      {!isRotating && viewMode === 'guide' && !(isPortrait && isNativePlatform()) && (
+      <div className={cn(
+        "absolute inset-0 bg-black/95 z-20 flex flex-col animate-in fade-in duration-150",
+        isNativePlatform() && "portrait:opacity-0 portrait:pointer-events-none"
+      )}>
             {/* Top section - Program details on left, PiP space on right */}
             <div className="h-60 shrink-0 flex relative">
-              {/* Close Button + Search - Top Left */}
-              <div className="absolute top-6 left-6 flex items-center gap-4 z-10">
+              {/* Close Button + Search - Top Left, aligned with channel column */}
+              <div className="absolute top-6 left-16 flex items-center gap-4 z-10">
                 <button
                   onClick={() => { setViewMode('player'); setGuideSearchQuery(''); setSelectedCategory(null); }}
                   className="p-2 bg-white/10 hover:bg-white/20 rounded-full text-white transition-all active:scale-95"
@@ -2968,8 +3284,8 @@ export default function LiveTVTvPage() {
                 )}
               </div>
 
-              {/* Program Details - fills left side, positioned below search */}
-              <div className="flex-1 flex items-end pb-4 pl-6 pt-24">
+              {/* Program Details - fills left side, aligned with search bar */}
+              <div className="flex-1 flex items-end pb-4 pl-16 pt-24">
                 <FocusedProgramPanel channel={focusedChannel} program={focusedEPG?.currentProgram || null} />
               </div>
               {/* Space for PiP video (320px + padding) */}
@@ -2978,12 +3294,18 @@ export default function LiveTVTvPage() {
 
             {/* Timeline Header */}
             <div className="shrink-0 border-t border-white/10">
-              <TimelineHeader slots={timelineSlots} />
+              <TimelineHeader
+                slots={timelineSlots}
+                onPrev={() => { if (guideTimeOffset > 0) { setGuideTimeOffset(guideTimeOffset - 1); haptics.light(); } }}
+                onNext={() => { if (guideTimeOffset < 8) { setGuideTimeOffset(guideTimeOffset + 1); haptics.light(); } }}
+                canGoPrev={guideTimeOffset > 0}
+                canGoNext={guideTimeOffset < 8}
+              />
             </div>
 
-            {/* Channel Grid - takes remaining space */}
-            <div ref={guideScrollRef} className="flex-1 overflow-y-auto">
-              {filteredChannels.map((channel: Channel, index: number) => (
+            {/* Channel Grid - takes remaining space, supports horizontal scrolling */}
+            <div ref={guideScrollRef} className="flex-1 overflow-auto">
+              {filteredChannels.slice(0, renderLimit).map((channel: Channel, index: number) => (
                 <GuideChannelRow
                   key={channel.iptvId || channel.GuideNumber}
                   channel={channel}
