@@ -972,6 +972,9 @@ export default function LiveTVTvPage() {
     return () => clearInterval(interval);
   }, []);
 
+  // Track if we need to retry stream when back online
+  const needsRetryOnReconnect = useRef(false);
+
   // Network status monitoring
   useEffect(() => {
     const handleOnline = () => {
@@ -979,11 +982,18 @@ export default function LiveTVTvPage() {
       // Show "back online" briefly
       setShowOfflineIndicator(true);
       setTimeout(() => setShowOfflineIndicator(false), 2000);
+
+      // If there was a stream error or we were offline, retry the stream
+      if (needsRetryOnReconnect.current) {
+        needsRetryOnReconnect.current = false;
+        // Will retry via the streamError/selectedChannel effect
+      }
     };
 
     const handleOffline = () => {
       setIsOnline(false);
       setShowOfflineIndicator(true);
+      needsRetryOnReconnect.current = true;
       haptics.warning();
     };
 
@@ -1615,6 +1625,7 @@ export default function LiveTVTvPage() {
 
         const handleCanPlay = () => {
           console.log('[TV] Native HLS: can play');
+          setIsLoading(false);
         };
 
         const handlePlaying = () => {
@@ -1625,10 +1636,12 @@ export default function LiveTVTvPage() {
 
         const handleWaiting = () => {
           console.log('[TV] Native HLS: waiting/buffering');
+          setIsLoading(true);
         };
 
         const handleStalled = () => {
           console.log('[TV] Native HLS: stalled');
+          setIsLoading(true);
         };
 
         // Clean up old listeners
@@ -1742,9 +1755,20 @@ export default function LiveTVTvPage() {
       retryStream();
     } else {
       setStreamError(errorMessage);
+      needsRetryOnReconnect.current = true;
       haptics.error();
     }
   }, [retryStream]);
+
+  // Retry stream when coming back online after error
+  useEffect(() => {
+    if (isOnline && streamError && selectedChannel) {
+      console.log('[TV] Back online, retrying stream...');
+      setStreamError(null);
+      retryCountRef.current = 0;
+      playStream(selectedChannel);
+    }
+  }, [isOnline, streamError, selectedChannel, playStream]);
 
   // ============================================================================
   // CHANNEL NAVIGATION
@@ -2028,18 +2052,20 @@ export default function LiveTVTvPage() {
       onTouchStart={handleTouchStart}
       onTouchEnd={handleTouchEnd}
     >
-      {/* Network Status Indicator */}
+      {/* Network Status Indicator - positioned below notch */}
       <AnimatePresence>
         {showOfflineIndicator && (
           <motion.div
-            initial={{ y: -50, opacity: 0 }}
+            initial={{ y: -60, opacity: 0 }}
             animate={{ y: 0, opacity: 1 }}
-            exit={{ y: -50, opacity: 0 }}
+            exit={{ y: -60, opacity: 0 }}
             className={cn(
-              "fixed top-0 left-0 right-0 z-50 py-2 px-4 text-center text-sm font-medium",
+              "fixed left-4 right-4 z-50 py-3 px-4 text-center text-sm font-medium rounded-xl shadow-lg",
               isOnline ? "bg-green-600 text-white" : "bg-red-600 text-white"
             )}
-            style={{ paddingTop: isNativePlatform() ? 'calc(env(safe-area-inset-top) + 8px)' : '8px' }}
+            style={{
+              top: isNativePlatform() ? 'calc(env(safe-area-inset-top, 44px) + 8px)' : '16px'
+            }}
           >
             {isOnline ? 'Back Online' : 'No Internet Connection'}
           </motion.div>

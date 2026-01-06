@@ -1,87 +1,39 @@
 import { Haptics, ImpactStyle, NotificationType } from '@capacitor/haptics';
-import { isNativePlatform } from './capacitor';
+import { Capacitor } from '@capacitor/core';
 
 /**
  * Haptic feedback utilities for native iOS/Android
- * Falls back to navigator.vibrate on web
+ * Uses Capacitor.isNativePlatform() directly for reliability
  */
+
+const triggerHaptic = async (action: () => Promise<void>) => {
+  if (!Capacitor.isNativePlatform()) return;
+  try {
+    await action();
+  } catch (e) {
+    console.warn('[Haptics] Failed:', e);
+  }
+};
 
 export const haptics = {
   /** Light tap - for selections, toggles */
-  light: async () => {
-    if (isNativePlatform()) {
-      try {
-        await Haptics.impact({ style: ImpactStyle.Light });
-      } catch (e) {
-        // Fallback
-        if (navigator.vibrate) navigator.vibrate(10);
-      }
-    }
-  },
+  light: () => triggerHaptic(() => Haptics.impact({ style: ImpactStyle.Light })),
 
   /** Medium tap - for button presses, confirmations */
-  medium: async () => {
-    if (isNativePlatform()) {
-      try {
-        await Haptics.impact({ style: ImpactStyle.Medium });
-      } catch (e) {
-        if (navigator.vibrate) navigator.vibrate(25);
-      }
-    }
-  },
+  medium: () => triggerHaptic(() => Haptics.impact({ style: ImpactStyle.Medium })),
 
   /** Heavy tap - for important actions, errors */
-  heavy: async () => {
-    if (isNativePlatform()) {
-      try {
-        await Haptics.impact({ style: ImpactStyle.Heavy });
-      } catch (e) {
-        if (navigator.vibrate) navigator.vibrate(50);
-      }
-    }
-  },
+  heavy: () => triggerHaptic(() => Haptics.impact({ style: ImpactStyle.Heavy })),
 
   /** Success notification */
-  success: async () => {
-    if (isNativePlatform()) {
-      try {
-        await Haptics.notification({ type: NotificationType.Success });
-      } catch (e) {
-        if (navigator.vibrate) navigator.vibrate([10, 50, 10]);
-      }
-    }
-  },
+  success: () => triggerHaptic(() => Haptics.notification({ type: NotificationType.Success })),
 
   /** Warning notification */
-  warning: async () => {
-    if (isNativePlatform()) {
-      try {
-        await Haptics.notification({ type: NotificationType.Warning });
-      } catch (e) {
-        if (navigator.vibrate) navigator.vibrate([25, 50, 25]);
-      }
-    }
-  },
+  warning: () => triggerHaptic(() => Haptics.notification({ type: NotificationType.Warning })),
 
   /** Error notification */
-  error: async () => {
-    if (isNativePlatform()) {
-      try {
-        await Haptics.notification({ type: NotificationType.Error });
-      } catch (e) {
-        if (navigator.vibrate) navigator.vibrate([50, 100, 50]);
-      }
-    }
-  },
+  error: () => triggerHaptic(() => Haptics.notification({ type: NotificationType.Error })),
 
   /** Selection changed - subtle tick */
-  selection: async () => {
-    if (isNativePlatform()) {
-      try {
-        await Haptics.selectionChanged();
-      } catch (e) {
-        // No fallback for selection - too subtle
-      }
-    }
-  }
+  selection: () => triggerHaptic(() => Haptics.selectionChanged()),
 };
