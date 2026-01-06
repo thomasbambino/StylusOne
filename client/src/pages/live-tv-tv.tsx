@@ -2536,14 +2536,9 @@ export default function LiveTVTvPage() {
         )}
       </AnimatePresence>
 
-      {/* Guide View - Only for landscape or non-native (slides in/out) */}
-      {!(isPortrait && isNativePlatform()) && (
-      <div
-        className={`absolute inset-0 bg-black/95 z-20 flex flex-col transition-transform duration-150 ease-out ${
-          viewMode === 'guide' ? 'translate-y-0' : 'translate-y-full'
-        }`}
-        style={{ willChange: 'transform' }}
-      >
+      {/* Guide View - Only for landscape or non-native */}
+      {!(isPortrait && isNativePlatform()) && viewMode === 'guide' && (
+      <div className="absolute inset-0 bg-black/95 z-20 flex flex-col">
             {/* Top section - Program details on left, PiP space on right */}
             <div className="h-60 shrink-0 flex relative">
               {/* Close Button + Search - Top Left */}
