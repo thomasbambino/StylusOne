@@ -1652,9 +1652,10 @@ export default function LiveTVTvPage() {
         console.log('[TV] Starting stream load for:', channel.iptvId);
       }
 
-      // On iOS, use native HLS for AirPlay support (HLS.js doesn't support AirPlay video)
+      // Use HLS.js by default for faster startup (lowLatencyMode, FRAG_BUFFERED optimizations)
+      // Only use native HLS when actively AirPlaying (required for AirPlay video output)
       const canPlayNativeHLS = video.canPlayType('application/vnd.apple.mpegurl');
-      const useNativeHLS = isNativePlatform() && canPlayNativeHLS;
+      const useNativeHLS = isNativePlatform() && canPlayNativeHLS && isAirPlaying;
 
       console.log('[TV] Playback decision:', {
         isNative: isNativePlatform(),
@@ -1800,8 +1801,12 @@ export default function LiveTVTvPage() {
         video.addEventListener('stalled', handleStalled);
         video.addEventListener('timeupdate', handleTimeUpdate);
 
+        // Optimize for faster native HLS startup
+        video.preload = 'auto';
+        video.playsInline = true;
         video.src = streamUrl;
-        video.load(); // Explicitly load
+        // Don't call load() - just set src and play immediately
+        // load() can cause Safari to restart buffering
 
         video.play().then(() => {
           console.log('[TV] Native HLS: play() succeeded');
