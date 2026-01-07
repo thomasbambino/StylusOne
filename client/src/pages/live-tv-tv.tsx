@@ -994,6 +994,10 @@ export default function LiveTVTvPage() {
   const longPressTimer = useRef<NodeJS.Timeout | null>(null);
   const longPressChannel = useRef<Channel | null>(null);
 
+  // Dropdown scroll tracking - prevent selection when scrolling
+  const dropdownTouchStartY = useRef<number | null>(null);
+  const dropdownDidScroll = useRef(false);
+
   // Stream tracking
   const streamSessionToken = useRef<string | null>(null);
   const heartbeatIntervalRef = useRef<NodeJS.Timeout | null>(null);
@@ -1581,47 +1585,43 @@ export default function LiveTVTvPage() {
     try {
       let streamUrl = buildApiUrl(channel.URL);
 
-      // For IPTV channels, acquire stream session for tracking
+      // For IPTV channels, acquire stream session and token in parallel for faster startup
       if (channel.source === 'iptv' && channel.iptvId) {
-        try {
-          console.log('[TV] Acquiring stream session for:', channel.iptvId);
-          const acquireResponse = await apiRequest('POST', '/api/iptv/stream/acquire', {
-            streamId: channel.iptvId
-          });
-          const data = await acquireResponse.json();
-          console.log('[TV] Stream acquire response:', data);
-          const { sessionToken } = data;
-          streamSessionToken.current = sessionToken;
+        const isNative = isNativePlatform();
 
-          // Start heartbeat every 30 seconds
-          heartbeatIntervalRef.current = setInterval(async () => {
-            if (streamSessionToken.current) {
-              try {
-                await apiRequest('POST', '/api/iptv/stream/heartbeat', {
-                  sessionToken: streamSessionToken.current
-                });
-              } catch (e) {
-                console.log('[TV] Heartbeat error:', e);
-              }
-            }
-          }, 30000);
-        } catch (e) {
-          console.log('[TV] Could not acquire stream session:', e);
-          // Continue anyway - stream might still work
-        }
-      }
-
-      if (isNativePlatform() && channel.source === 'iptv' && channel.iptvId) {
-        const tokenResponse = await apiRequest('POST', '/api/iptv/generate-token', {
+        // Start both requests in parallel
+        const acquirePromise = apiRequest('POST', '/api/iptv/stream/acquire', {
           streamId: channel.iptvId
+        }).then(res => res.json()).catch(e => {
+          console.log('[TV] Could not acquire stream session:', e);
+          return null;
         });
-        const { token, sessionToken } = await tokenResponse.json();
-        streamUrl = `${streamUrl}?token=${token}`;
 
-        // Use sessionToken from generate-token for stream tracking on native platforms
-        if (sessionToken) {
-          console.log('[TV] Got session token from generate-token:', sessionToken);
-          streamSessionToken.current = sessionToken;
+        const tokenPromise = isNative
+          ? apiRequest('POST', '/api/iptv/generate-token', {
+              streamId: channel.iptvId
+            }).then(res => res.json()).catch(e => {
+              console.log('[TV] Could not generate token:', e);
+              return null;
+            })
+          : Promise.resolve(null);
+
+        console.log('[TV] Acquiring stream session' + (isNative ? ' and token' : '') + ' for:', channel.iptvId);
+
+        // Wait for both to complete
+        const [acquireData, tokenData] = await Promise.all([acquirePromise, tokenPromise]);
+
+        // Handle token response (native platforms)
+        if (tokenData?.token) {
+          streamUrl = `${streamUrl}?token=${tokenData.token}`;
+          console.log('[TV] Got token for native platform');
+        }
+
+        // Set up session tracking - prefer token's sessionToken on native
+        const finalSessionToken = tokenData?.sessionToken || acquireData?.sessionToken;
+        if (finalSessionToken) {
+          console.log('[TV] Stream session established:', finalSessionToken);
+          streamSessionToken.current = finalSessionToken;
 
           // Clear any existing heartbeat interval before creating new one
           if (heartbeatIntervalRef.current) {
@@ -1808,6 +1808,8 @@ export default function LiveTVTvPage() {
         console.log('[TV] Using HLS.js');
         const hls = new Hls({
           lowLatencyMode: false,
+          startPosition: -1, // Start at live edge for faster playback start
+          liveSyncDuration: 3, // Stay 3 seconds behind live edge
           backBufferLength: 90,
           maxBufferLength: 60,
           manifestLoadingTimeOut: 30000,
@@ -2154,7 +2156,7 @@ export default function LiveTVTvPage() {
       // Small delay before auto-playing to let UI settle
       const timer = setTimeout(() => {
         playStream(channelToPlay);
-      }, 1500);
+      }, 300);
       return () => clearTimeout(timer);
     }
   }, [channels, selectedChannel, playStream]);
@@ -3012,9 +3014,23 @@ export default function LiveTVTvPage() {
         <div
           className="fixed right-4 bg-zinc-900 rounded-xl border border-white/10 shadow-xl max-h-64 overflow-y-auto min-w-40"
           style={{ zIndex: 9999, top: 'calc(env(safe-area-inset-top, 44px) + 56px + 48px)' }}
+          onTouchStart={(e) => {
+            dropdownTouchStartY.current = e.touches[0].clientY;
+            dropdownDidScroll.current = false;
+          }}
+          onTouchMove={(e) => {
+            if (dropdownTouchStartY.current !== null) {
+              const deltaY = Math.abs(e.touches[0].clientY - dropdownTouchStartY.current);
+              if (deltaY > 10) dropdownDidScroll.current = true;
+            }
+          }}
         >
           <button
-            onTouchEnd={(e) => { e.preventDefault(); haptics.selection(); setSelectedCategory(null); setShowCategoryDropdown(false); }}
+            onTouchEnd={(e) => {
+              e.preventDefault();
+              if (dropdownDidScroll.current) return;
+              haptics.selection(); setSelectedCategory(null); setShowCategoryDropdown(false);
+            }}
             onClick={() => { haptics.selection(); setSelectedCategory(null); setShowCategoryDropdown(false); }}
             className={cn(
               "w-full px-4 py-2.5 text-left text-sm",
@@ -3026,7 +3042,11 @@ export default function LiveTVTvPage() {
           {categories.map((cat) => (
             <button
               key={cat.id}
-              onTouchEnd={(e) => { e.preventDefault(); haptics.selection(); setSelectedCategory(cat.id); setShowCategoryDropdown(false); }}
+              onTouchEnd={(e) => {
+                e.preventDefault();
+                if (dropdownDidScroll.current) return;
+                haptics.selection(); setSelectedCategory(cat.id); setShowCategoryDropdown(false);
+              }}
               onClick={() => { haptics.selection(); setSelectedCategory(cat.id); setShowCategoryDropdown(false); }}
               className={cn(
                 "w-full px-4 py-2.5 text-left text-sm border-t border-white/5",

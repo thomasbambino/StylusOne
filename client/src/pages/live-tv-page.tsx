@@ -1523,6 +1523,7 @@ export default function LiveTVPage() {
         debug: false,
         enableWorker: true,
         lowLatencyMode: false, // Disabled - prioritize smooth playback over ultra-low latency
+        startPosition: -1, // Start at live edge for faster playback start
         // Balanced buffer for smooth live streaming (Netflix prioritizes smoothness)
         backBufferLength: 90, // Keep back buffer for seeking
         maxBufferLength: 45, // 45 seconds forward buffer for stability
@@ -1816,6 +1817,7 @@ export default function LiveTVPage() {
           const hls = new Hls({
             enableWorker: true,
             lowLatencyMode: false, // Disabled - prioritize smooth playback
+            startPosition: -1, // Start at live edge for faster playback start
             backBufferLength: 90,
             liveSyncDurationCount: 4, // 4 segments (24s) for smooth playback
             liveMaxLatencyDurationCount: 12, // Max 72 seconds behind live
