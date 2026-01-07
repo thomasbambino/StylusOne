@@ -1522,33 +1522,28 @@ export default function LiveTVPage() {
       const hls = new Hls({
         debug: false,
         enableWorker: true,
-        lowLatencyMode: false, // Disabled - prioritize smooth playback over ultra-low latency
-        startPosition: -1, // Start at live edge for faster playback start
-        // Balanced buffer for smooth live streaming (Netflix prioritizes smoothness)
-        backBufferLength: 90, // Keep back buffer for seeking
-        maxBufferLength: 45, // 45 seconds forward buffer for stability
-        maxMaxBufferLength: 90, // Cap at 90 seconds
-        maxBufferSize: 80 * 1000 * 1000, // 80MB buffer size
+        lowLatencyMode: true, // Aggressive startup for faster playback
+        startPosition: -1, // Start at live edge
+        liveSyncDuration: 3, // Stay 3 seconds behind live edge
+        liveMaxLatencyDuration: 10, // Max drift before seeking to live
+        backBufferLength: 30, // Reduced for faster startup
+        maxBufferLength: 30, // Reduced - start playing sooner
+        maxMaxBufferLength: 60, // Cap total buffer
+        maxBufferSize: 60 * 1000 * 1000, // 60MB buffer size
         maxBufferHole: 0.8, // Higher tolerance for buffer holes (prevents stalls)
-        highBufferWatchdogPeriod: 3, // Longer watchdog period for stability
-        nudgeOffset: 0.2, // Slightly higher for better stall recovery
+        highBufferWatchdogPeriod: 2, // Faster watchdog for low latency
+        nudgeOffset: 0.2, // Better stall recovery
         nudgeMaxRetry: 5, // More retries for recovery
-        maxFragLookUpTolerance: 0.5,
-        liveSyncDurationCount: 5, // 5 segments (30s) - more buffer = smoother playback
-        liveMaxLatencyDurationCount: 15, // Max 90 seconds behind live (acceptable for smooth playback)
         liveDurationInfinity: true,
-        // Conservative timeouts for reliable streaming
-        fragLoadingTimeOut: 20000, // 20 second timeout
-        fragLoadingMaxRetry: 6, // More retries
-        fragLoadingRetryDelay: 1000, // Standard retry delay
-        manifestLoadingTimeOut: 10000, // 10 seconds
-        manifestLoadingMaxRetry: 4,
-        manifestLoadingRetryDelay: 1000,
-        startFragPrefetch: true, // Prefetch segments (Netflix/YouTube standard)
+        // Faster timeouts for quicker failure/retry
+        fragLoadingTimeOut: 15000, // Reduced from 20s
+        fragLoadingMaxRetry: 4,
+        fragLoadingRetryDelay: 500, // Faster retry
+        manifestLoadingTimeOut: 10000,
+        manifestLoadingMaxRetry: 3,
+        manifestLoadingRetryDelay: 500,
+        startFragPrefetch: true, // Prefetch segments
         progressive: true, // Progressive streaming for faster startup
-        abrEwmaDefaultEstimate: 1000000, // 1 Mbps initial estimate for adaptive bitrate
-        abrBandWidthFactor: 0.95, // Conservative bandwidth factor
-        abrBandWidthUpFactor: 0.7, // Conservative upward adjustment
         xhrSetup: function(xhr: XMLHttpRequest) {
           // Include credentials (cookies) with all HLS requests for authentication
           xhr.withCredentials = true;
@@ -1570,34 +1565,19 @@ export default function LiveTVPage() {
         console.log('Direct stream HLS manifest loaded:', data);
       });
 
+      // Track if we've started playback to avoid duplicate play() calls
+      let playbackStarted = false;
+
       hls.on(Hls.Events.MANIFEST_PARSED, () => {
-        console.log('Direct stream HLS manifest parsed, attempting playback');
-        // Manually start loading and playing
-        video.play().then(() => {
-          console.log('Direct stream play() called successfully');
-          setIsPlaying(true);
-          setIsLoading(false);
-          setIsBuffering(false);
-        }).catch(error => {
-          console.error('Direct stream play error:', error);
-          // Try again with muted autoplay as fallback
-          video.muted = true;
-          video.play().then(() => {
-            console.log('Direct stream playing muted');
-            setIsPlaying(true);
-            setIsLoading(false);
-            setIsBuffering(false);
-          }).catch(err => {
-            console.error('Direct stream muted play also failed:', err);
-            setIsLoading(false);
-            setIsBuffering(false);
-          });
-        });
+        console.log('Direct stream HLS manifest parsed');
+        // Don't start playback here - wait for FRAG_BUFFERED for faster startup
       });
 
+      // Play as soon as first fragment is buffered (faster than waiting for full manifest parse)
       hls.on(Hls.Events.FRAG_BUFFERED, () => {
-        console.log('First fragment buffered, starting playback');
-        if (!isPlaying) {
+        if (!playbackStarted) {
+          playbackStarted = true;
+          console.log('First fragment buffered, starting playback');
           video.play().then(() => {
             console.log('Direct stream started playing successfully');
             setIsPlaying(true);
@@ -1605,8 +1585,18 @@ export default function LiveTVPage() {
             setIsBuffering(false);
           }).catch(error => {
             console.error('Direct stream play error:', error);
-            setIsLoading(false);
-            setIsBuffering(false);
+            // Try again with muted autoplay as fallback
+            video.muted = true;
+            video.play().then(() => {
+              console.log('Direct stream playing muted');
+              setIsPlaying(true);
+              setIsLoading(false);
+              setIsBuffering(false);
+            }).catch(err => {
+              console.error('Direct stream muted play also failed:', err);
+              setIsLoading(false);
+              setIsBuffering(false);
+            });
           });
         }
       });
@@ -1813,34 +1803,31 @@ export default function LiveTVPage() {
         }
         
         if (Hls.isSupported()) {
-          // Use HLS.js for browsers that support it  
+          // Use HLS.js for browsers that support it
           const hls = new Hls({
             enableWorker: true,
-            lowLatencyMode: false, // Disabled - prioritize smooth playback
-            startPosition: -1, // Start at live edge for faster playback start
-            backBufferLength: 90,
-            liveSyncDurationCount: 4, // 4 segments (24s) for smooth playback
-            liveMaxLatencyDurationCount: 12, // Max 72 seconds behind live
-            maxBufferLength: 36, // 36 seconds forward buffer for stability
-            maxMaxBufferLength: 72,
-            maxBufferSize: 80 * 1000 * 1000, // 80MB
+            lowLatencyMode: true, // Aggressive startup for faster playback
+            startPosition: -1, // Start at live edge
+            liveSyncDuration: 3, // Stay 3 seconds behind live edge
+            liveMaxLatencyDuration: 10, // Max drift before seeking to live
+            backBufferLength: 30, // Reduced for faster startup
+            maxBufferLength: 30, // Reduced - start playing sooner
+            maxMaxBufferLength: 60, // Cap total buffer
+            maxBufferSize: 60 * 1000 * 1000, // 60MB
             maxBufferHole: 0.8, // Higher tolerance for buffer holes
             nudgeOffset: 0.2, // Better stall recovery
             nudgeMaxRetry: 5,
-            highBufferWatchdogPeriod: 3,
-            fragLoadingTimeOut: 20000,
+            highBufferWatchdogPeriod: 2, // Faster watchdog for low latency
+            fragLoadingTimeOut: 15000, // Reduced from 20s
             manifestLoadingTimeOut: 10000,
-            manifestLoadingMaxRetry: 4,
-            manifestLoadingRetryDelay: 1000,
+            manifestLoadingMaxRetry: 3,
+            manifestLoadingRetryDelay: 500,
             debug: false,
-            fragLoadingMaxRetry: 6,
-            fragLoadingRetryDelay: 1000,
+            fragLoadingMaxRetry: 4,
+            fragLoadingRetryDelay: 500,
             startFragPrefetch: true,
-            testBandwidth: false,
             progressive: true,
-            abrEwmaDefaultEstimate: 1000000,
-            abrBandWidthFactor: 0.95,
-            abrBandWidthUpFactor: 0.7,
+            liveDurationInfinity: true,
           });
           
           hlsRef.current = hls;
@@ -1848,39 +1835,47 @@ export default function LiveTVPage() {
           hls.on(Hls.Events.MEDIA_ATTACHED, () => {
             console.log('HLS media attached');
           });
-          
+
+          // Track if we've started playback to avoid duplicate play() calls
+          let playbackStarted = false;
+
           hls.on(Hls.Events.MANIFEST_PARSED, () => {
-            console.log('HLS manifest parsed, starting playback');
-            console.log('Video ready state:', video.readyState);
-            console.log('Video network state:', video.networkState);
-            console.log('Video can play type HLS:', video.canPlayType('application/vnd.apple.mpegurl'));
-            
-            setIsLoading(false);
-            
-            // Try to play the video with detailed error handling
-            const playPromise = video.play();
-            
-            if (playPromise !== undefined) {
-              playPromise.then(() => {
-                console.log('Video started playing successfully');
-                setIsPlaying(true);
-              }).catch(error => {
-                console.error('Video play promise rejected:', error);
-                console.error('Error name:', error.name);
-                console.error('Error message:', error.message);
-                
-                // Only release session for genuine fatal errors
-                // Don't release for AbortError or autoplay issues since video might still work
-                if (error.name === 'NotAllowedError') {
-                  console.log('Autoplay blocked - user interaction required');
-                } else if (error.name === 'AbortError') {
-                  console.log('Video play was aborted - this is usually not fatal, continuing...');
-                } else {
-                  console.log('Genuine play error - releasing session');
-                  releaseCurrentSession();
-                }
-                setIsLoading(false);
-              });
+            console.log('HLS manifest parsed');
+            // Don't start playback here - wait for FRAG_BUFFERED for faster startup
+          });
+
+          // Play as soon as first fragment is buffered (faster than waiting for full manifest parse)
+          hls.on(Hls.Events.FRAG_BUFFERED, () => {
+            if (!playbackStarted) {
+              playbackStarted = true;
+              console.log('First fragment buffered, starting playback');
+              setIsLoading(false);
+
+              // Try to play the video with detailed error handling
+              const playPromise = video.play();
+
+              if (playPromise !== undefined) {
+                playPromise.then(() => {
+                  console.log('Video started playing successfully');
+                  setIsPlaying(true);
+                }).catch(error => {
+                  console.error('Video play promise rejected:', error);
+                  console.error('Error name:', error.name);
+                  console.error('Error message:', error.message);
+
+                  // Only release session for genuine fatal errors
+                  // Don't release for AbortError or autoplay issues since video might still work
+                  if (error.name === 'NotAllowedError') {
+                    console.log('Autoplay blocked - user interaction required');
+                  } else if (error.name === 'AbortError') {
+                    console.log('Video play was aborted - this is usually not fatal, continuing...');
+                  } else {
+                    console.log('Genuine play error - releasing session');
+                    releaseCurrentSession();
+                  }
+                  setIsLoading(false);
+                });
+              }
             }
           });
           

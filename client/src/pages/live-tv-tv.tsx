@@ -1585,43 +1585,14 @@ export default function LiveTVTvPage() {
     try {
       let streamUrl = buildApiUrl(channel.URL);
 
-      // For IPTV channels, acquire stream session and token in parallel for faster startup
+      // For IPTV channels, acquire stream session and token for faster startup
       if (channel.source === 'iptv' && channel.iptvId) {
         const isNative = isNativePlatform();
 
-        // Start both requests in parallel
-        const acquirePromise = apiRequest('POST', '/api/iptv/stream/acquire', {
-          streamId: channel.iptvId
-        }).then(res => res.json()).catch(e => {
-          console.log('[TV] Could not acquire stream session:', e);
-          return null;
-        });
-
-        const tokenPromise = isNative
-          ? apiRequest('POST', '/api/iptv/generate-token', {
-              streamId: channel.iptvId
-            }).then(res => res.json()).catch(e => {
-              console.log('[TV] Could not generate token:', e);
-              return null;
-            })
-          : Promise.resolve(null);
-
-        console.log('[TV] Acquiring stream session' + (isNative ? ' and token' : '') + ' for:', channel.iptvId);
-
-        // Wait for both to complete
-        const [acquireData, tokenData] = await Promise.all([acquirePromise, tokenPromise]);
-
-        // Handle token response (native platforms)
-        if (tokenData?.token) {
-          streamUrl = `${streamUrl}?token=${tokenData.token}`;
-          console.log('[TV] Got token for native platform');
-        }
-
-        // Set up session tracking - prefer token's sessionToken on native
-        const finalSessionToken = tokenData?.sessionToken || acquireData?.sessionToken;
-        if (finalSessionToken) {
-          console.log('[TV] Stream session established:', finalSessionToken);
-          streamSessionToken.current = finalSessionToken;
+        // Helper to set up session tracking and heartbeat
+        const setupSessionTracking = (sessionToken: string) => {
+          console.log('[TV] Stream session established:', sessionToken);
+          streamSessionToken.current = sessionToken;
 
           // Clear any existing heartbeat interval before creating new one
           if (heartbeatIntervalRef.current) {
@@ -1640,7 +1611,45 @@ export default function LiveTVTvPage() {
               }
             }
           }, 30000);
+        };
+
+        // Fire acquire in background - don't wait for it (just for tracking/limits)
+        apiRequest('POST', '/api/iptv/stream/acquire', {
+          streamId: channel.iptvId
+        }).then(res => res.json()).then(data => {
+          // Only use acquire's sessionToken if we don't have one from generate-token
+          if (data?.sessionToken && !streamSessionToken.current) {
+            setupSessionTracking(data.sessionToken);
+          }
+        }).catch(e => {
+          console.log('[TV] Could not acquire stream session:', e);
+        });
+
+        // For native platforms, we need the token for the stream URL - must wait for this
+        if (isNative) {
+          console.log('[TV] Getting token for native platform:', channel.iptvId);
+          try {
+            const tokenResponse = await apiRequest('POST', '/api/iptv/generate-token', {
+              streamId: channel.iptvId
+            });
+            const tokenData = await tokenResponse.json();
+
+            if (tokenData?.token) {
+              streamUrl = `${streamUrl}?token=${tokenData.token}`;
+              console.log('[TV] Got token for native platform');
+            }
+
+            // Use sessionToken from generate-token (preferred for native)
+            if (tokenData?.sessionToken) {
+              setupSessionTracking(tokenData.sessionToken);
+            }
+          } catch (e) {
+            console.log('[TV] Could not generate token:', e);
+            // Continue anyway - might work without token
+          }
         }
+
+        console.log('[TV] Starting stream load for:', channel.iptvId);
       }
 
       // On iOS, use native HLS for AirPlay support (HLS.js doesn't support AirPlay video)
@@ -1807,25 +1816,35 @@ export default function LiveTVTvPage() {
       } else if (Hls.isSupported()) {
         console.log('[TV] Using HLS.js');
         const hls = new Hls({
-          lowLatencyMode: false,
-          startPosition: -1, // Start at live edge for faster playback start
+          lowLatencyMode: true, // Aggressive startup for faster playback
+          startPosition: -1, // Start at live edge
           liveSyncDuration: 3, // Stay 3 seconds behind live edge
-          backBufferLength: 90,
-          maxBufferLength: 60,
-          manifestLoadingTimeOut: 30000,
-          manifestLoadingMaxRetry: 4,
-          levelLoadingTimeOut: 30000,
-          fragLoadingTimeOut: 60000,
+          liveMaxLatencyDuration: 10, // Max drift before seeking to live
+          backBufferLength: 30, // Reduced from 90 for faster startup
+          maxBufferLength: 30, // Reduced from 60 - start playing sooner
+          maxMaxBufferLength: 60, // Cap total buffer
+          manifestLoadingTimeOut: 15000, // Reduced from 30s
+          manifestLoadingMaxRetry: 3,
+          levelLoadingTimeOut: 15000, // Reduced from 30s
+          fragLoadingTimeOut: 20000, // Reduced from 60s
           xhrSetup: (xhr) => { xhr.withCredentials = false; },
         });
 
         hlsRef.current = hls;
 
-        hls.on(Hls.Events.MANIFEST_PARSED, () => {
-          video.play().then(() => {
-            setIsPlaying(true);
-            setIsLoading(false);
-          }).catch(() => setIsLoading(false));
+        // Track if we've started playback to avoid duplicate play() calls
+        let playbackStarted = false;
+
+        // Play as soon as first fragment is buffered (faster than MANIFEST_PARSED)
+        hls.on(Hls.Events.FRAG_BUFFERED, () => {
+          if (!playbackStarted) {
+            playbackStarted = true;
+            console.log('[TV] First fragment buffered, starting playback');
+            video.play().then(() => {
+              setIsPlaying(true);
+              setIsLoading(false);
+            }).catch(() => setIsLoading(false));
+          }
         });
 
         hls.on(Hls.Events.ERROR, (_, data) => {
