@@ -1001,6 +1001,7 @@ export default function LiveTVTvPage() {
   // Stream tracking
   const streamSessionToken = useRef<string | null>(null);
   const heartbeatIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const playStreamRef = useRef<((channel: Channel, isRetry?: boolean) => Promise<void>) | null>(null);
 
   // Query client for mutations
   const queryClient = useQueryClient();
@@ -1287,17 +1288,19 @@ export default function LiveTVTvPage() {
         }
 
         // Restart stream with native HLS, then show picker
-        // playStream will now use native HLS because airPlayEnabled is true
+        // Use ref to avoid circular dependency (playStream defined after handleAirPlay)
         setTimeout(() => {
-          playStream(selectedChannel).then(() => {
-            // After stream restarts with native HLS, show the AirPlay picker
-            setTimeout(() => {
-              if (video.webkitShowPlaybackTargetPicker) {
-                console.log('📺 Showing AirPlay picker');
-                video.webkitShowPlaybackTargetPicker();
-              }
-            }, 500);
-          });
+          if (playStreamRef.current) {
+            playStreamRef.current(selectedChannel).then(() => {
+              // After stream restarts with native HLS, show the AirPlay picker
+              setTimeout(() => {
+                if (video.webkitShowPlaybackTargetPicker) {
+                  console.log('📺 Showing AirPlay picker');
+                  video.webkitShowPlaybackTargetPicker();
+                }
+              }, 500);
+            });
+          }
         }, 100);
       } else {
         // Already using native HLS, just show the picker
@@ -1309,7 +1312,7 @@ export default function LiveTVTvPage() {
         }
       }
     }
-  }, [airPlayEnabled, selectedChannel, playStream]);
+  }, [airPlayEnabled, selectedChannel]);
 
   // Handle Picture-in-Picture
   const handlePiP = useCallback(async () => {
@@ -1501,7 +1504,9 @@ export default function LiveTVTvPage() {
           // Restart stream with HLS.js (faster)
           setIsLoading(true);
           setTimeout(() => {
-            playStream(selectedChannel);
+            if (playStreamRef.current) {
+              playStreamRef.current(selectedChannel);
+            }
           }, 300);
         }
       }
@@ -1884,6 +1889,9 @@ export default function LiveTVTvPage() {
       handleStreamError('Failed to start stream');
     }
   }, [releaseCurrentStream]);
+
+  // Keep ref updated so handleAirPlay can access playStream (defined after it)
+  playStreamRef.current = playStream;
 
   // Retry stream with exponential backoff
   const retryStream = useCallback(() => {
