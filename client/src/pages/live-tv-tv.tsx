@@ -951,6 +951,7 @@ export default function LiveTVTvPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [isAirPlaying, setIsAirPlaying] = useState(false);
   const [airPlayEnabled, setAirPlayEnabled] = useState(false); // Only enable AirPlay when user requests it
+  const airPlayEnabledRef = useRef(false); // Ref to track airPlayEnabled for use in closures
 
   // Guide navigation
   const [focusedChannelIndex, setFocusedChannelIndex] = useState(0);
@@ -1276,10 +1277,11 @@ export default function LiveTVTvPage() {
       const video = videoRef.current as any;
 
       // If not already using native HLS (airPlayEnabled = false), we need to restart the stream
-      if (!airPlayEnabled) {
+      if (!airPlayEnabledRef.current) {
         console.log('[AirPlay] Switching to native HLS for AirPlay support');
         video.setAttribute('x-webkit-airplay', 'allow');
         setAirPlayEnabled(true);
+        airPlayEnabledRef.current = true; // Update ref immediately for playStream to see
 
         // Destroy HLS.js if active
         if (hlsRef.current) {
@@ -1500,6 +1502,7 @@ export default function LiveTVTvPage() {
         // Just disconnected from AirPlay - switch back to HLS.js for faster playback
         console.log('[AirPlay] Disconnected - switching back to HLS.js');
         setAirPlayEnabled(false); // Reset so next playStream uses HLS.js
+        airPlayEnabledRef.current = false; // Update ref immediately
         if (selectedChannel) {
           // Restart stream with HLS.js (faster)
           setIsLoading(true);
@@ -1662,8 +1665,9 @@ export default function LiveTVTvPage() {
 
       // Use HLS.js by default for faster startup (lowLatencyMode, FRAG_BUFFERED optimizations)
       // Use native HLS when AirPlay is enabled/active (required for AirPlay video output)
+      // Use ref for airPlayEnabled to get latest value (state may not be updated yet in closures)
       const canPlayNativeHLS = video.canPlayType('application/vnd.apple.mpegurl');
-      const useNativeHLS = isNativePlatform() && canPlayNativeHLS && (isAirPlaying || airPlayEnabled);
+      const useNativeHLS = isNativePlatform() && canPlayNativeHLS && (isAirPlaying || airPlayEnabledRef.current);
 
       console.log('[TV] Playback decision:', {
         isNative: isNativePlatform(),
