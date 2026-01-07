@@ -1269,29 +1269,47 @@ export default function LiveTVTvPage() {
     }
   }, [favorites, addFavoriteMutation, removeFavoriteMutation]);
 
-  // Handle AirPlay - enable AirPlay on the video element first, then show picker
+  // Handle AirPlay - switch to native HLS (required for AirPlay), then show picker
   const handleAirPlay = useCallback(() => {
-    if (videoRef.current) {
+    if (videoRef.current && selectedChannel) {
       const video = videoRef.current as any;
 
-      // Enable AirPlay on the video element if not already enabled
+      // If not already using native HLS (airPlayEnabled = false), we need to restart the stream
       if (!airPlayEnabled) {
-        console.log('[AirPlay] Enabling AirPlay on video element');
+        console.log('[AirPlay] Switching to native HLS for AirPlay support');
         video.setAttribute('x-webkit-airplay', 'allow');
         setAirPlayEnabled(true);
-      }
 
-      // Small delay to let the attribute take effect, then show picker
-      setTimeout(() => {
+        // Destroy HLS.js if active
+        if (hlsRef.current) {
+          hlsRef.current.destroy();
+          hlsRef.current = null;
+        }
+
+        // Restart stream with native HLS, then show picker
+        // playStream will now use native HLS because airPlayEnabled is true
+        setTimeout(() => {
+          playStream(selectedChannel).then(() => {
+            // After stream restarts with native HLS, show the AirPlay picker
+            setTimeout(() => {
+              if (video.webkitShowPlaybackTargetPicker) {
+                console.log('📺 Showing AirPlay picker');
+                video.webkitShowPlaybackTargetPicker();
+              }
+            }, 500);
+          });
+        }, 100);
+      } else {
+        // Already using native HLS, just show the picker
         if (video.webkitShowPlaybackTargetPicker) {
           console.log('📺 Showing AirPlay picker');
           video.webkitShowPlaybackTargetPicker();
         } else {
           console.log('AirPlay picker not available');
         }
-      }, 100);
+      }
     }
-  }, [airPlayEnabled]);
+  }, [airPlayEnabled, selectedChannel, playStream]);
 
   // Handle Picture-in-Picture
   const handlePiP = useCallback(async () => {
@@ -1476,30 +1494,15 @@ export default function LiveTVTvPage() {
           console.error('[AirPlay] Play failed after connect:', e);
         }
       } else if (!isWireless && wasAirPlaying) {
-        // Just disconnected from AirPlay - reload the stream
-        console.log('[AirPlay] Disconnected - reloading stream');
+        // Just disconnected from AirPlay - switch back to HLS.js for faster playback
+        console.log('[AirPlay] Disconnected - switching back to HLS.js');
+        setAirPlayEnabled(false); // Reset so next playStream uses HLS.js
         if (selectedChannel) {
-          // Show loading spinner
+          // Restart stream with HLS.js (faster)
           setIsLoading(true);
-          // Small delay to let the video element settle
           setTimeout(() => {
-            if (videoRef.current && selectedChannel) {
-              console.log('[AirPlay] Restarting local playback');
-              // Reload the current source
-              const currentSrc = videoRef.current.src;
-              if (currentSrc) {
-                videoRef.current.load();
-                videoRef.current.play().catch(e => {
-                  console.error('[AirPlay] Failed to restart playback:', e);
-                  setIsLoading(false);
-                });
-              } else {
-                setIsLoading(false);
-              }
-            } else {
-              setIsLoading(false);
-            }
-          }, 500);
+            playStream(selectedChannel);
+          }, 300);
         }
       }
 
@@ -1653,9 +1656,9 @@ export default function LiveTVTvPage() {
       }
 
       // Use HLS.js by default for faster startup (lowLatencyMode, FRAG_BUFFERED optimizations)
-      // Only use native HLS when actively AirPlaying (required for AirPlay video output)
+      // Use native HLS when AirPlay is enabled/active (required for AirPlay video output)
       const canPlayNativeHLS = video.canPlayType('application/vnd.apple.mpegurl');
-      const useNativeHLS = isNativePlatform() && canPlayNativeHLS && isAirPlaying;
+      const useNativeHLS = isNativePlatform() && canPlayNativeHLS && (isAirPlaying || airPlayEnabled);
 
       console.log('[TV] Playback decision:', {
         isNative: isNativePlatform(),
