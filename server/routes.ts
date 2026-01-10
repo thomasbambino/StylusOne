@@ -2699,9 +2699,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
         existingStream.baseSegmentUrl = freshBaseSegmentUrl;
 
         // Rewrite fresh manifest segments
+        // Strip leading slashes from segment paths to avoid double-slashes in URL
         const freshBaseManifest = freshManifestText.replace(
           /^([^#\n].+\.ts)$/gm,
-          (match) => `/api/iptv/segment/${streamId}/${match.trim()}`
+          (match) => `/api/iptv/segment/${streamId}/${match.trim().replace(/^\/+/, '')}`
         );
 
         // Update cache with fresh manifest
@@ -2791,9 +2792,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // Rewrite segment URLs to go through our proxy
       // Always cache manifest WITHOUT tokens for security and sharing
+      // Strip leading slashes from segment paths to avoid double-slashes in URL
       const baseManifest = manifestText.replace(
         /^([^#\n].+\.ts)$/gm,
-        (match) => `/api/iptv/segment/${streamId}/${match.trim()}`
+        (match) => `/api/iptv/segment/${streamId}/${match.trim().replace(/^\/+/, '')}`
       );
 
       // Cache this stream for sharing (WITHOUT tokens)
@@ -2962,14 +2964,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       // The fullPath is the segment filename/path (e.g., "2025/11/02/05/24/25-06006.ts")
-      const segmentPath = fullPath;
+      // Strip leading slashes to ensure clean URL construction
+      const segmentPath = fullPath.replace(/^\/+/, '');
       console.log(`Fetching segment for stream ${streamId}: ${segmentPath}`);
 
       // Build the full segment URL by combining base URL with relative segment path
-      const segmentUrl = `${baseUrl}${segmentPath}`;
+      // Ensure baseUrl ends with / and segmentPath doesn't start with /
+      const normalizedBaseUrl = baseUrl.endsWith('/') ? baseUrl : baseUrl + '/';
+      const segmentUrl = `${normalizedBaseUrl}${segmentPath}`;
 
       console.log(`Fetching segment: ${segmentPath}`);
-      console.log(`Base URL: ${baseUrl}`);
+      console.log(`Base URL: ${normalizedBaseUrl}`);
       console.log(`Full segment URL: ${segmentUrl}`);
 
       // Set response headers immediately
@@ -2989,13 +2994,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       let response;
       let retries = 0;
+      let currentSegmentUrl = segmentUrl;
 
       while (retries <= maxRetries) {
         try {
           const controller = new AbortController();
           const timeoutId = setTimeout(() => controller.abort(), timeout);
 
-          response = await fetch(segmentUrl, {
+          response = await fetch(currentSegmentUrl, {
             signal: controller.signal,
             headers: {
               'Connection': 'keep-alive'
@@ -3008,6 +3014,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
           }
 
           console.error(`Segment fetch attempt ${retries + 1} failed: ${response.status}`);
+
+          // On 509 (bandwidth limit) or 5xx errors, refresh the base URL from cache
+          // The manifest may have been refreshed and redirected to a different server
+          if (response.status === 509 || response.status >= 500) {
+            const freshBaseUrl = iptvSegmentBaseUrls.get(streamId) ||
+                                 iptvSegmentBaseUrls.get(parseInt(streamId)) ||
+                                 iptvSegmentBaseUrls.get(streamId.toString());
+            if (freshBaseUrl && freshBaseUrl !== baseUrl) {
+              const normalizedFreshUrl = freshBaseUrl.endsWith('/') ? freshBaseUrl : freshBaseUrl + '/';
+              console.log(`🔄 Base URL changed from ${normalizedBaseUrl.substring(0, 50)}... to ${normalizedFreshUrl.substring(0, 50)}...`);
+              currentSegmentUrl = `${normalizedFreshUrl}${segmentPath}`;
+            }
+          }
+
           retries++;
 
           if (retries <= maxRetries) {
