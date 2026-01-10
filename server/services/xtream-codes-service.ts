@@ -665,8 +665,8 @@ export class XtreamCodesManager implements IService {
       const creds = providerCredentials.get(channel.providerId);
       if (!creds) continue; // Skip if no credentials available
 
-      // Build stream URL using provider credentials
-      const streamUrl = `${creds.serverUrl}/live/${creds.username}/${creds.password}/${channel.streamId}.ts`;
+      // Build proxy stream URL (same format as legacy channels)
+      const streamUrl = `/api/iptv/stream/${channel.streamId}.m3u8`;
 
       // Use channel name for deduplication (same channel in multiple packages)
       const key = channel.name.toLowerCase().trim();
