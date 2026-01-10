@@ -3085,36 +3085,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       const userId = req.user!.id;
-      const { userSubscriptions, planIptvCredentials, iptvCredentials } = await import('@shared/schema');
+      const { xtreamCodesService } = await import('./services/xtream-codes-service');
 
-      // Get user's active subscription
-      const [subscription] = await db.select()
-        .from(userSubscriptions)
-        .where(and(
-          eq(userSubscriptions.user_id, userId),
-          eq(userSubscriptions.status, 'active')
-        ));
+      // Use the service to select a credential (supports both packages and legacy)
+      const credentialId = await xtreamCodesService.selectCredentialForStream(userId, streamId);
 
-      if (!subscription) {
-        return res.status(403).json({ error: "No active subscription" });
+      if (!credentialId) {
+        console.log(`[Stream Acquire] No credential found for user ${userId}, stream ${streamId}`);
+        return res.status(403).json({ error: "No IPTV access for this channel" });
       }
 
-      // Get credential assigned to this plan via junction table
-      const [planCredential] = await db.select()
-        .from(planIptvCredentials)
-        .innerJoin(iptvCredentials, eq(planIptvCredentials.credentialId, iptvCredentials.id))
-        .where(and(
-          eq(planIptvCredentials.planId, subscription.plan_id),
-          eq(iptvCredentials.isActive, true)
-        ))
-        .orderBy(planIptvCredentials.priority)
-        .limit(1);
-
-      if (!planCredential) {
-        return res.status(403).json({ error: "No IPTV access on plan" });
+      // Handle env client fallback (credentialId = -1)
+      if (credentialId === -1) {
+        console.log(`[Stream Acquire] Using ENV client for user ${userId}, stream ${streamId}`);
+        // For env client, we don't track streams - just return a dummy token
+        res.json({ sessionToken: `env-${userId}-${streamId}-${Date.now()}` });
+        return;
       }
 
-      const credentialId = planCredential.iptv_credentials.id;
       const { streamTrackerService } = await import('./services/stream-tracker-service');
       const ipAddress = req.ip || req.socket.remoteAddress;
       const sessionToken = await streamTrackerService.acquireStream(
