@@ -859,11 +859,16 @@ export class XtreamCodesManager implements IService {
    * Supports both package-based and direct credential channels
    */
   async selectCredentialForStream(userId: number, streamId: string): Promise<number | null> {
+    console.log(`[IPTV] selectCredentialForStream called for user ${userId}, stream ${streamId}`);
+
     // First, check if this is a package-based channel
     const packageChannelCredential = await this.selectPackageChannelCredential(userId, streamId);
     if (packageChannelCredential !== null) {
+      console.log(`[IPTV] Found package credential ${packageChannelCredential} for stream ${streamId}`);
       return packageChannelCredential;
     }
+
+    console.log(`[IPTV] No package credential found, falling back to legacy for stream ${streamId}`);
 
     // Fall back to legacy credential-based selection
     const clients = await this.getClientsForUser(userId);
@@ -906,6 +911,8 @@ export class XtreamCodesManager implements IService {
    * Returns credential ID if found and has capacity, null otherwise
    */
   private async selectPackageChannelCredential(userId: number, streamId: string): Promise<number | null> {
+    console.log(`[IPTV-PKG] Checking package credential for user ${userId}, stream ${streamId}`);
+
     // Get user's active subscriptions
     const subscriptions = await db.select()
       .from(userSubscriptions)
@@ -916,10 +923,12 @@ export class XtreamCodesManager implements IService {
       ));
 
     if (subscriptions.length === 0) {
+      console.log(`[IPTV-PKG] User ${userId} has no active subscriptions`);
       return null;
     }
 
     const planIds = subscriptions.map(s => s.userSubscriptions.plan_id);
+    console.log(`[IPTV-PKG] User ${userId} has plans: ${planIds.join(', ')}`);
 
     // Get packages assigned to those plans
     const assignedPackages = await db.select()
@@ -931,10 +940,12 @@ export class XtreamCodesManager implements IService {
       ));
 
     if (assignedPackages.length === 0) {
+      console.log(`[IPTV-PKG] No packages assigned to user ${userId}'s plans`);
       return null;
     }
 
     const packageIds = Array.from(new Set(assignedPackages.map(p => p.channel_packages.id)));
+    console.log(`[IPTV-PKG] User ${userId} has packages: ${packageIds.join(', ')}`);
 
     // Check if streamId exists in user's packages
     const [channelInPackage] = await db.select({
@@ -950,8 +961,12 @@ export class XtreamCodesManager implements IService {
       .limit(1);
 
     if (!channelInPackage) {
+      console.log(`[IPTV-PKG] Channel ${streamId} not found in user ${userId}'s packages (or not enabled)`);
       return null; // Channel not found in user's packages
     }
+
+    console.log(`[IPTV-PKG] Found channel ${streamId} in package, provider: ${channelInPackage.channel.providerId}`);
+
 
     const providerId = channelInPackage.channel.providerId;
 
