@@ -2963,18 +2963,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).send('Stream not found or expired. Please reload the channel.');
       }
 
-      // The fullPath is the segment filename/path (e.g., "2025/11/02/05/24/25-06006.ts")
-      // Strip leading slashes to ensure clean URL construction
+      // The fullPath is the segment filename/path
+      // Check if the original path was absolute (started with /) or relative
+      const wasAbsolutePath = fullPath.startsWith('/') || fullPath.startsWith('hls/');
       const segmentPath = fullPath.replace(/^\/+/, '');
-      console.log(`Fetching segment for stream ${streamId}: ${segmentPath}`);
+      console.log(`Fetching segment for stream ${streamId}: ${segmentPath} (absolute: ${wasAbsolutePath})`);
 
-      // Build the full segment URL by combining base URL with relative segment path
-      // Ensure baseUrl ends with / and segmentPath doesn't start with /
-      const normalizedBaseUrl = baseUrl.endsWith('/') ? baseUrl : baseUrl + '/';
-      const segmentUrl = `${normalizedBaseUrl}${segmentPath}`;
+      // Build the full segment URL
+      let segmentUrl: string;
+      if (wasAbsolutePath) {
+        // For absolute paths like /hls/xxx/file.ts, use origin + absolute path
+        const baseUrlObj = new URL(baseUrl);
+        segmentUrl = `${baseUrlObj.origin}/${segmentPath}`;
+        console.log(`Using absolute path from origin: ${segmentUrl}`);
+      } else {
+        // For relative paths, append to base URL directory
+        const normalizedBaseUrl = baseUrl.endsWith('/') ? baseUrl : baseUrl + '/';
+        segmentUrl = `${normalizedBaseUrl}${segmentPath}`;
+      }
 
       console.log(`Fetching segment: ${segmentPath}`);
-      console.log(`Base URL: ${normalizedBaseUrl}`);
       console.log(`Full segment URL: ${segmentUrl}`);
 
       // Set response headers immediately
@@ -3022,9 +3030,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
                                  iptvSegmentBaseUrls.get(parseInt(streamId)) ||
                                  iptvSegmentBaseUrls.get(streamId.toString());
             if (freshBaseUrl && freshBaseUrl !== baseUrl) {
-              const normalizedFreshUrl = freshBaseUrl.endsWith('/') ? freshBaseUrl : freshBaseUrl + '/';
-              console.log(`🔄 Base URL changed from ${normalizedBaseUrl.substring(0, 50)}... to ${normalizedFreshUrl.substring(0, 50)}...`);
-              currentSegmentUrl = `${normalizedFreshUrl}${segmentPath}`;
+              console.log(`🔄 Base URL changed, rebuilding segment URL`);
+              if (wasAbsolutePath) {
+                const freshUrlObj = new URL(freshBaseUrl);
+                currentSegmentUrl = `${freshUrlObj.origin}/${segmentPath}`;
+              } else {
+                const normalizedFreshUrl = freshBaseUrl.endsWith('/') ? freshBaseUrl : freshBaseUrl + '/';
+                currentSegmentUrl = `${normalizedFreshUrl}${segmentPath}`;
+              }
             }
           }
 
