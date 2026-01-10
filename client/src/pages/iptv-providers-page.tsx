@@ -1,0 +1,664 @@
+import { useState } from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Switch } from '@/components/ui/switch';
+import { Textarea } from '@/components/ui/textarea';
+import { useToast } from '@/hooks/use-toast';
+import { Plus, Edit2, Trash2, Server, Users, RefreshCw, Loader2, MoreVertical, CheckCircle2, XCircle, Tv, Download, Key } from 'lucide-react';
+import { Badge } from '@/components/ui/badge';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator } from '@/components/ui/dropdown-menu';
+import { format } from 'date-fns';
+import { buildApiUrl } from '@/lib/capacitor';
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
+import { ChevronDown, ChevronRight } from 'lucide-react';
+
+interface IptvProvider {
+  id: number;
+  name: string;
+  serverUrl: string;
+  isActive: boolean;
+  notes: string | null;
+  lastChannelSync: string | null;
+  credentialCount: number;
+  channelCount: number;
+  enabledChannelCount: number;
+  totalMaxConnections: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+interface IptvCredential {
+  id: number;
+  providerId: number;
+  name: string;
+  username: string;
+  maxConnections: number;
+  isActive: boolean;
+  notes: string | null;
+  healthStatus: 'healthy' | 'unhealthy' | 'unknown';
+  lastHealthCheck: string | null;
+  activeStreams: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+interface ProviderFormData {
+  name: string;
+  serverUrl: string;
+  notes: string;
+  isActive: boolean;
+}
+
+interface CredentialFormData {
+  name: string;
+  username: string;
+  password: string;
+  maxConnections: string;
+  notes: string;
+  isActive: boolean;
+}
+
+const defaultProviderForm: ProviderFormData = {
+  name: '',
+  serverUrl: '',
+  notes: '',
+  isActive: true,
+};
+
+const defaultCredentialForm: CredentialFormData = {
+  name: '',
+  username: '',
+  password: '',
+  maxConnections: '1',
+  notes: '',
+  isActive: true,
+};
+
+export default function IptvProvidersPage() {
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
+  const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
+  const [isCredentialDialogOpen, setIsCredentialDialogOpen] = useState(false);
+  const [selectedProvider, setSelectedProvider] = useState<IptvProvider | null>(null);
+  const [providerForm, setProviderForm] = useState<ProviderFormData>(defaultProviderForm);
+  const [credentialForm, setCredentialForm] = useState<CredentialFormData>(defaultCredentialForm);
+  const [expandedProviders, setExpandedProviders] = useState<Set<number>>(new Set());
+  const [syncingProviderId, setSyncingProviderId] = useState<number | null>(null);
+
+  // Fetch providers
+  const { data: providers = [], isLoading } = useQuery<IptvProvider[]>({
+    queryKey: ['/api/admin/iptv-providers'],
+    queryFn: async () => {
+      const res = await fetch(buildApiUrl('/api/admin/iptv-providers'), {
+        credentials: 'include',
+      });
+      if (!res.ok) throw new Error('Failed to fetch providers');
+      return res.json();
+    },
+  });
+
+  // Create provider
+  const createProviderMutation = useMutation({
+    mutationFn: async (data: ProviderFormData) => {
+      const res = await fetch(buildApiUrl('/api/admin/iptv-providers'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          name: data.name,
+          serverUrl: data.serverUrl,
+          notes: data.notes || undefined,
+          isActive: data.isActive,
+        }),
+      });
+      if (!res.ok) {
+        const error = await res.json();
+        throw new Error(error.error || 'Failed to create provider');
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/admin/iptv-providers'] });
+      setIsCreateDialogOpen(false);
+      setProviderForm(defaultProviderForm);
+      toast({ title: 'Success', description: 'Provider created successfully' });
+    },
+    onError: (error: Error) => {
+      toast({ title: 'Error', description: error.message, variant: 'destructive' });
+    },
+  });
+
+  // Update provider
+  const updateProviderMutation = useMutation({
+    mutationFn: async ({ id, data }: { id: number; data: ProviderFormData }) => {
+      const res = await fetch(buildApiUrl(`/api/admin/iptv-providers/${id}`), {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          name: data.name,
+          serverUrl: data.serverUrl,
+          notes: data.notes || null,
+          isActive: data.isActive,
+        }),
+      });
+      if (!res.ok) {
+        const error = await res.json();
+        throw new Error(error.error || 'Failed to update provider');
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/admin/iptv-providers'] });
+      setIsEditDialogOpen(false);
+      setSelectedProvider(null);
+      setProviderForm(defaultProviderForm);
+      toast({ title: 'Success', description: 'Provider updated successfully' });
+    },
+    onError: (error: Error) => {
+      toast({ title: 'Error', description: error.message, variant: 'destructive' });
+    },
+  });
+
+  // Delete provider
+  const deleteProviderMutation = useMutation({
+    mutationFn: async (id: number) => {
+      const res = await fetch(buildApiUrl(`/api/admin/iptv-providers/${id}`), {
+        method: 'DELETE',
+        credentials: 'include',
+      });
+      if (!res.ok) {
+        const error = await res.json();
+        throw new Error(error.error || 'Failed to delete provider');
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/admin/iptv-providers'] });
+      toast({ title: 'Success', description: 'Provider deleted successfully' });
+    },
+    onError: (error: Error) => {
+      toast({ title: 'Error', description: error.message, variant: 'destructive' });
+    },
+  });
+
+  // Sync channels
+  const syncChannelsMutation = useMutation({
+    mutationFn: async (providerId: number) => {
+      setSyncingProviderId(providerId);
+      const res = await fetch(buildApiUrl(`/api/admin/iptv-providers/${providerId}/sync`), {
+        method: 'POST',
+        credentials: 'include',
+      });
+      if (!res.ok) {
+        const error = await res.json();
+        throw new Error(error.error || 'Failed to sync channels');
+      }
+      return res.json();
+    },
+    onSuccess: (data) => {
+      setSyncingProviderId(null);
+      queryClient.invalidateQueries({ queryKey: ['/api/admin/iptv-providers'] });
+      toast({
+        title: 'Channels Synced',
+        description: `Total: ${data.totalChannels}, New: ${data.newChannels}, Updated: ${data.updatedChannels}`,
+      });
+    },
+    onError: (error: Error) => {
+      setSyncingProviderId(null);
+      toast({ title: 'Error', description: error.message, variant: 'destructive' });
+    },
+  });
+
+  // Add credential
+  const addCredentialMutation = useMutation({
+    mutationFn: async ({ providerId, data }: { providerId: number; data: CredentialFormData }) => {
+      const res = await fetch(buildApiUrl(`/api/admin/iptv-providers/${providerId}/credentials`), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          name: data.name,
+          username: data.username,
+          password: data.password,
+          maxConnections: parseInt(data.maxConnections),
+          notes: data.notes || undefined,
+          isActive: data.isActive,
+        }),
+      });
+      if (!res.ok) {
+        const error = await res.json();
+        throw new Error(error.error || 'Failed to add credential');
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/admin/iptv-providers'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/admin/iptv-providers', selectedProvider?.id, 'credentials'] });
+      setIsCredentialDialogOpen(false);
+      setCredentialForm(defaultCredentialForm);
+      toast({ title: 'Success', description: 'Credential added successfully' });
+    },
+    onError: (error: Error) => {
+      toast({ title: 'Error', description: error.message, variant: 'destructive' });
+    },
+  });
+
+  const handleEditProvider = async (provider: IptvProvider) => {
+    // Fetch full details with decrypted serverUrl
+    const res = await fetch(buildApiUrl(`/api/admin/iptv-providers/${provider.id}`), {
+      credentials: 'include',
+    });
+    if (res.ok) {
+      const fullProvider = await res.json();
+      setSelectedProvider(provider);
+      setProviderForm({
+        name: fullProvider.name,
+        serverUrl: fullProvider.serverUrl,
+        notes: fullProvider.notes || '',
+        isActive: fullProvider.isActive,
+      });
+      setIsEditDialogOpen(true);
+    }
+  };
+
+  const toggleExpanded = (providerId: number) => {
+    setExpandedProviders(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(providerId)) {
+        newSet.delete(providerId);
+      } else {
+        newSet.add(providerId);
+      }
+      return newSet;
+    });
+  };
+
+  return (
+    <div className="container mx-auto py-6 space-y-6">
+      <div className="flex justify-between items-center">
+        <div>
+          <h1 className="text-3xl font-bold">IPTV Providers</h1>
+          <p className="text-muted-foreground">Manage IPTV providers and their credentials</p>
+        </div>
+        <Button onClick={() => setIsCreateDialogOpen(true)}>
+          <Plus className="h-4 w-4 mr-2" />
+          Add Provider
+        </Button>
+      </div>
+
+      {isLoading ? (
+        <div className="flex justify-center py-8">
+          <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+        </div>
+      ) : providers.length === 0 ? (
+        <Card>
+          <CardContent className="py-8 text-center text-muted-foreground">
+            <Server className="h-12 w-12 mx-auto mb-4 opacity-50" />
+            <p>No IPTV providers configured</p>
+            <p className="text-sm">Add a provider to get started</p>
+          </CardContent>
+        </Card>
+      ) : (
+        <div className="space-y-4">
+          {providers.map((provider) => (
+            <ProviderCard
+              key={provider.id}
+              provider={provider}
+              isExpanded={expandedProviders.has(provider.id)}
+              onToggleExpand={() => toggleExpanded(provider.id)}
+              onEdit={() => handleEditProvider(provider)}
+              onDelete={() => {
+                if (confirm(`Delete provider "${provider.name}"? This will also delete all credentials and channels.`)) {
+                  deleteProviderMutation.mutate(provider.id);
+                }
+              }}
+              onSync={() => syncChannelsMutation.mutate(provider.id)}
+              onAddCredential={() => {
+                setSelectedProvider(provider);
+                setCredentialForm(defaultCredentialForm);
+                setIsCredentialDialogOpen(true);
+              }}
+              isSyncing={syncingProviderId === provider.id}
+            />
+          ))}
+        </div>
+      )}
+
+      {/* Create Provider Dialog */}
+      <Dialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Add IPTV Provider</DialogTitle>
+            <DialogDescription>Add a new IPTV provider (Xtream Codes compatible)</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <Label htmlFor="name">Provider Name</Label>
+              <Input
+                id="name"
+                value={providerForm.name}
+                onChange={(e) => setProviderForm({ ...providerForm, name: e.target.value })}
+                placeholder="My IPTV Provider"
+              />
+            </div>
+            <div>
+              <Label htmlFor="serverUrl">Server URL</Label>
+              <Input
+                id="serverUrl"
+                value={providerForm.serverUrl}
+                onChange={(e) => setProviderForm({ ...providerForm, serverUrl: e.target.value })}
+                placeholder="http://example.com:8080"
+              />
+            </div>
+            <div>
+              <Label htmlFor="notes">Notes (optional)</Label>
+              <Textarea
+                id="notes"
+                value={providerForm.notes}
+                onChange={(e) => setProviderForm({ ...providerForm, notes: e.target.value })}
+                placeholder="Optional notes..."
+              />
+            </div>
+            <div className="flex items-center gap-2">
+              <Switch
+                checked={providerForm.isActive}
+                onCheckedChange={(checked) => setProviderForm({ ...providerForm, isActive: checked })}
+              />
+              <Label>Active</Label>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsCreateDialogOpen(false)}>Cancel</Button>
+            <Button onClick={() => createProviderMutation.mutate(providerForm)} disabled={createProviderMutation.isPending}>
+              {createProviderMutation.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+              Create
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit Provider Dialog */}
+      <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Edit Provider</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <Label htmlFor="edit-name">Provider Name</Label>
+              <Input
+                id="edit-name"
+                value={providerForm.name}
+                onChange={(e) => setProviderForm({ ...providerForm, name: e.target.value })}
+              />
+            </div>
+            <div>
+              <Label htmlFor="edit-serverUrl">Server URL</Label>
+              <Input
+                id="edit-serverUrl"
+                value={providerForm.serverUrl}
+                onChange={(e) => setProviderForm({ ...providerForm, serverUrl: e.target.value })}
+              />
+            </div>
+            <div>
+              <Label htmlFor="edit-notes">Notes</Label>
+              <Textarea
+                id="edit-notes"
+                value={providerForm.notes}
+                onChange={(e) => setProviderForm({ ...providerForm, notes: e.target.value })}
+              />
+            </div>
+            <div className="flex items-center gap-2">
+              <Switch
+                checked={providerForm.isActive}
+                onCheckedChange={(checked) => setProviderForm({ ...providerForm, isActive: checked })}
+              />
+              <Label>Active</Label>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsEditDialogOpen(false)}>Cancel</Button>
+            <Button
+              onClick={() => selectedProvider && updateProviderMutation.mutate({ id: selectedProvider.id, data: providerForm })}
+              disabled={updateProviderMutation.isPending}
+            >
+              {updateProviderMutation.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+              Save
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Add Credential Dialog */}
+      <Dialog open={isCredentialDialogOpen} onOpenChange={setIsCredentialDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Add Credential</DialogTitle>
+            <DialogDescription>Add a new login credential to {selectedProvider?.name}</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <Label htmlFor="cred-name">Name</Label>
+              <Input
+                id="cred-name"
+                value={credentialForm.name}
+                onChange={(e) => setCredentialForm({ ...credentialForm, name: e.target.value })}
+                placeholder="Login 1"
+              />
+            </div>
+            <div>
+              <Label htmlFor="cred-username">Username</Label>
+              <Input
+                id="cred-username"
+                value={credentialForm.username}
+                onChange={(e) => setCredentialForm({ ...credentialForm, username: e.target.value })}
+              />
+            </div>
+            <div>
+              <Label htmlFor="cred-password">Password</Label>
+              <Input
+                id="cred-password"
+                type="password"
+                value={credentialForm.password}
+                onChange={(e) => setCredentialForm({ ...credentialForm, password: e.target.value })}
+              />
+            </div>
+            <div>
+              <Label htmlFor="cred-maxConnections">Max Connections</Label>
+              <Input
+                id="cred-maxConnections"
+                type="number"
+                min="1"
+                max="100"
+                value={credentialForm.maxConnections}
+                onChange={(e) => setCredentialForm({ ...credentialForm, maxConnections: e.target.value })}
+              />
+            </div>
+            <div>
+              <Label htmlFor="cred-notes">Notes</Label>
+              <Textarea
+                id="cred-notes"
+                value={credentialForm.notes}
+                onChange={(e) => setCredentialForm({ ...credentialForm, notes: e.target.value })}
+              />
+            </div>
+            <div className="flex items-center gap-2">
+              <Switch
+                checked={credentialForm.isActive}
+                onCheckedChange={(checked) => setCredentialForm({ ...credentialForm, isActive: checked })}
+              />
+              <Label>Active</Label>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsCredentialDialogOpen(false)}>Cancel</Button>
+            <Button
+              onClick={() => selectedProvider && addCredentialMutation.mutate({ providerId: selectedProvider.id, data: credentialForm })}
+              disabled={addCredentialMutation.isPending}
+            >
+              {addCredentialMutation.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+              Add
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
+
+interface ProviderCardProps {
+  provider: IptvProvider;
+  isExpanded: boolean;
+  onToggleExpand: () => void;
+  onEdit: () => void;
+  onDelete: () => void;
+  onSync: () => void;
+  onAddCredential: () => void;
+  isSyncing: boolean;
+}
+
+function ProviderCard({ provider, isExpanded, onToggleExpand, onEdit, onDelete, onSync, onAddCredential, isSyncing }: ProviderCardProps) {
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+
+  // Fetch credentials when expanded
+  const { data: credentials = [], isLoading: credentialsLoading } = useQuery<IptvCredential[]>({
+    queryKey: ['/api/admin/iptv-providers', provider.id, 'credentials'],
+    queryFn: async () => {
+      const res = await fetch(buildApiUrl(`/api/admin/iptv-providers/${provider.id}/credentials`), {
+        credentials: 'include',
+      });
+      if (!res.ok) throw new Error('Failed to fetch credentials');
+      return res.json();
+    },
+    enabled: isExpanded,
+  });
+
+  return (
+    <Card>
+      <CardHeader className="pb-3">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <Button variant="ghost" size="sm" onClick={onToggleExpand}>
+              {isExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+            </Button>
+            <div>
+              <CardTitle className="flex items-center gap-2">
+                {provider.name}
+                {provider.isActive ? (
+                  <Badge variant="default" className="bg-green-500">Active</Badge>
+                ) : (
+                  <Badge variant="secondary">Inactive</Badge>
+                )}
+              </CardTitle>
+              <CardDescription className="text-xs">{provider.serverUrl}</CardDescription>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <div className="flex items-center gap-4 text-sm text-muted-foreground mr-4">
+              <div className="flex items-center gap-1">
+                <Key className="h-4 w-4" />
+                <span>{provider.credentialCount} creds</span>
+              </div>
+              <div className="flex items-center gap-1">
+                <Tv className="h-4 w-4" />
+                <span>{provider.enabledChannelCount}/{provider.channelCount} channels</span>
+              </div>
+              <div className="flex items-center gap-1">
+                <Users className="h-4 w-4" />
+                <span>{provider.totalMaxConnections} streams</span>
+              </div>
+            </div>
+            <Button variant="outline" size="sm" onClick={onSync} disabled={isSyncing}>
+              {isSyncing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+              <span className="ml-1">Sync</span>
+            </Button>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="ghost" size="icon">
+                  <MoreVertical className="h-4 w-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onClick={onEdit}>
+                  <Edit2 className="h-4 w-4 mr-2" />
+                  Edit
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={onAddCredential}>
+                  <Plus className="h-4 w-4 mr-2" />
+                  Add Credential
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={onDelete} className="text-destructive">
+                  <Trash2 className="h-4 w-4 mr-2" />
+                  Delete
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
+        </div>
+      </CardHeader>
+      {isExpanded && (
+        <CardContent>
+          <div className="border rounded-lg">
+            <div className="p-3 border-b bg-muted/50 flex justify-between items-center">
+              <h4 className="font-medium text-sm">Credentials</h4>
+              <Button variant="outline" size="sm" onClick={onAddCredential}>
+                <Plus className="h-3 w-3 mr-1" />
+                Add
+              </Button>
+            </div>
+            {credentialsLoading ? (
+              <div className="p-4 text-center">
+                <Loader2 className="h-4 w-4 animate-spin mx-auto" />
+              </div>
+            ) : credentials.length === 0 ? (
+              <div className="p-4 text-center text-muted-foreground text-sm">
+                No credentials added yet
+              </div>
+            ) : (
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Name</TableHead>
+                    <TableHead>Username</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead>Streams</TableHead>
+                    <TableHead className="text-right">Max</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {credentials.map((cred) => (
+                    <TableRow key={cred.id}>
+                      <TableCell className="font-medium">{cred.name}</TableCell>
+                      <TableCell className="text-muted-foreground">{cred.username}</TableCell>
+                      <TableCell>
+                        {cred.healthStatus === 'healthy' && <Badge className="bg-green-500">Healthy</Badge>}
+                        {cred.healthStatus === 'unhealthy' && <Badge variant="destructive">Unhealthy</Badge>}
+                        {cred.healthStatus === 'unknown' && <Badge variant="secondary">Unknown</Badge>}
+                      </TableCell>
+                      <TableCell>{cred.activeStreams}</TableCell>
+                      <TableCell className="text-right">{cred.maxConnections}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            )}
+          </div>
+          {provider.lastChannelSync && (
+            <p className="text-xs text-muted-foreground mt-3">
+              Last sync: {format(new Date(provider.lastChannelSync), 'MMM d, yyyy h:mm a')}
+            </p>
+          )}
+        </CardContent>
+      )}
+    </Card>
+  );
+}

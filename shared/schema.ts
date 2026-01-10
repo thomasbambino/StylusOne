@@ -287,14 +287,27 @@ export const tvCodes = pgTable("tvCodes", {
   used: boolean("used").notNull().default(false),
 });
 
-// IPTV Credentials - Store multiple IPTV provider credentials (encrypted at rest)
+// IPTV Providers - Top-level provider definitions
+export const iptvProviders = pgTable("iptv_providers", {
+  id: serial("id").primaryKey(),
+  name: text("name").notNull(), // Display name (e.g., "Provider X")
+  serverUrl: text("server_url").notNull(), // Encrypted - Base URL for the provider
+  isActive: boolean("is_active").notNull().default(true),
+  notes: text("notes"), // Admin notes
+  lastChannelSync: timestamp("last_channel_sync"), // When channels were last synced
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+// IPTV Credentials - Multiple logins per provider (encrypted at rest)
 export const iptvCredentials = pgTable("iptv_credentials", {
   id: serial("id").primaryKey(),
-  name: text("name").notNull(), // Display name (e.g., "Provider A")
-  serverUrl: text("server_url").notNull(), // Encrypted
+  providerId: integer("provider_id").references(() => iptvProviders.id, { onDelete: 'cascade' }), // Link to provider (nullable for migration)
+  name: text("name").notNull(), // Display name (e.g., "Login 1", "Login 2")
+  serverUrl: text("server_url"), // Encrypted - DEPRECATED, use provider.serverUrl (nullable for migration)
   username: text("username").notNull(), // Encrypted
   password: text("password").notNull(), // Encrypted
-  maxConnections: integer("max_connections").notNull().default(1), // Max concurrent streams
+  maxConnections: integer("max_connections").notNull().default(1), // Max concurrent streams for this credential
   isActive: boolean("is_active").notNull().default(true),
   notes: text("notes"), // Admin notes
   healthStatus: text("health_status", { enum: ['healthy', 'unhealthy', 'unknown'] }).notNull().default('unknown'),
@@ -303,7 +316,51 @@ export const iptvCredentials = pgTable("iptv_credentials", {
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
 
-// Plan-Credential Junction - Many-to-many relationship between plans and IPTV credentials
+// IPTV Channels - All channels from a provider (synced from provider)
+export const iptvChannels = pgTable("iptv_channels", {
+  id: serial("id").primaryKey(),
+  providerId: integer("provider_id").notNull().references(() => iptvProviders.id, { onDelete: 'cascade' }),
+  streamId: text("stream_id").notNull(), // Provider's channel/stream ID
+  name: text("name").notNull(),
+  logo: text("logo"), // Channel logo URL
+  categoryId: text("category_id"), // Provider's category ID
+  categoryName: text("category_name"), // Category display name
+  isEnabled: boolean("is_enabled").notNull().default(false), // Admin enables channels for use
+  quality: text("quality", { enum: ['4k', 'hd', 'sd', 'unknown'] }).default('unknown'), // Stream quality
+  hasEPG: boolean("has_epg").notNull().default(false), // Whether channel has EPG data
+  lastSeen: timestamp("last_seen"), // Last time channel was seen in provider sync
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+// Channel Packages - Groups of channels (tied to a provider)
+export const channelPackages = pgTable("channel_packages", {
+  id: serial("id").primaryKey(),
+  providerId: integer("provider_id").notNull().references(() => iptvProviders.id, { onDelete: 'cascade' }),
+  name: text("name").notNull(), // Package name (e.g., "US Sports", "International")
+  description: text("description"),
+  isActive: boolean("is_active").notNull().default(true),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+// Package Channels - Channels assigned to packages (many-to-many)
+export const packageChannels = pgTable("package_channels", {
+  id: serial("id").primaryKey(),
+  packageId: integer("package_id").notNull().references(() => channelPackages.id, { onDelete: 'cascade' }),
+  channelId: integer("channel_id").notNull().references(() => iptvChannels.id, { onDelete: 'cascade' }),
+  sortOrder: integer("sort_order").notNull().default(0), // Order within package
+});
+
+// Plan Packages - Packages assigned to subscription plans (many-to-many)
+export const planPackages = pgTable("plan_packages", {
+  id: serial("id").primaryKey(),
+  planId: integer("plan_id").notNull().references(() => subscriptionPlans.id, { onDelete: 'cascade' }),
+  packageId: integer("package_id").notNull().references(() => channelPackages.id, { onDelete: 'cascade' }),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+// Plan-Credential Junction - DEPRECATED: Use planPackages instead
+// Kept for backwards compatibility during migration
 export const planIptvCredentials = pgTable("plan_iptv_credentials", {
   id: serial("id").primaryKey(),
   planId: integer("plan_id").notNull().references(() => subscriptionPlans.id, { onDelete: 'cascade' }),
@@ -343,7 +400,12 @@ export const insertReferralCodeSchema = createInsertSchema(referralCodes);
 export const insertReferralSchema = createInsertSchema(referrals);
 export const insertReferralCreditSchema = createInsertSchema(referralCredits);
 export const insertTvCodeSchema = createInsertSchema(tvCodes);
+export const insertIptvProviderSchema = createInsertSchema(iptvProviders);
 export const insertIptvCredentialSchema = createInsertSchema(iptvCredentials);
+export const insertIptvChannelSchema = createInsertSchema(iptvChannels);
+export const insertChannelPackageSchema = createInsertSchema(channelPackages);
+export const insertPackageChannelSchema = createInsertSchema(packageChannels);
+export const insertPlanPackageSchema = createInsertSchema(planPackages);
 export const insertPlanIptvCredentialSchema = createInsertSchema(planIptvCredentials);
 export const insertActiveIptvStreamSchema = createInsertSchema(activeIptvStreams);
 

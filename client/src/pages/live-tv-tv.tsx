@@ -951,7 +951,6 @@ export default function LiveTVTvPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [isAirPlaying, setIsAirPlaying] = useState(false);
   const [airPlayEnabled, setAirPlayEnabled] = useState(false); // Only enable AirPlay when user requests it
-  const airPlayEnabledRef = useRef(false); // Ref to track airPlayEnabled for use in closures
 
   // Guide navigation
   const [focusedChannelIndex, setFocusedChannelIndex] = useState(0);
@@ -1002,7 +1001,6 @@ export default function LiveTVTvPage() {
   // Stream tracking
   const streamSessionToken = useRef<string | null>(null);
   const heartbeatIntervalRef = useRef<NodeJS.Timeout | null>(null);
-  const playStreamRef = useRef<((channel: Channel, isRetry?: boolean) => Promise<void>) | null>(null);
 
   // Query client for mutations
   const queryClient = useQueryClient();
@@ -1271,50 +1269,29 @@ export default function LiveTVTvPage() {
     }
   }, [favorites, addFavoriteMutation, removeFavoriteMutation]);
 
-  // Handle AirPlay - switch to native HLS (required for AirPlay), then show picker
+  // Handle AirPlay - enable AirPlay on the video element first, then show picker
   const handleAirPlay = useCallback(() => {
-    if (videoRef.current && selectedChannel) {
+    if (videoRef.current) {
       const video = videoRef.current as any;
 
-      // If not already using native HLS (airPlayEnabled = false), we need to restart the stream
-      if (!airPlayEnabledRef.current) {
-        console.log('[AirPlay] Switching to native HLS for AirPlay support');
+      // Enable AirPlay on the video element if not already enabled
+      if (!airPlayEnabled) {
+        console.log('[AirPlay] Enabling AirPlay on video element');
         video.setAttribute('x-webkit-airplay', 'allow');
         setAirPlayEnabled(true);
-        airPlayEnabledRef.current = true; // Update ref immediately for playStream to see
+      }
 
-        // Destroy HLS.js if active
-        if (hlsRef.current) {
-          hlsRef.current.destroy();
-          hlsRef.current = null;
-        }
-
-        // Restart stream with native HLS, then show picker
-        // Use ref to avoid circular dependency (playStream defined after handleAirPlay)
-        setTimeout(() => {
-          if (playStreamRef.current) {
-            playStreamRef.current(selectedChannel).then(() => {
-              // After stream restarts with native HLS, show the AirPlay picker
-              setTimeout(() => {
-                if (video.webkitShowPlaybackTargetPicker) {
-                  console.log('📺 Showing AirPlay picker');
-                  video.webkitShowPlaybackTargetPicker();
-                }
-              }, 500);
-            });
-          }
-        }, 100);
-      } else {
-        // Already using native HLS, just show the picker
+      // Small delay to let the attribute take effect, then show picker
+      setTimeout(() => {
         if (video.webkitShowPlaybackTargetPicker) {
           console.log('📺 Showing AirPlay picker');
           video.webkitShowPlaybackTargetPicker();
         } else {
           console.log('AirPlay picker not available');
         }
-      }
+      }, 100);
     }
-  }, [airPlayEnabled, selectedChannel]);
+  }, [airPlayEnabled]);
 
   // Handle Picture-in-Picture
   const handlePiP = useCallback(async () => {
@@ -1499,18 +1476,30 @@ export default function LiveTVTvPage() {
           console.error('[AirPlay] Play failed after connect:', e);
         }
       } else if (!isWireless && wasAirPlaying) {
-        // Just disconnected from AirPlay - switch back to HLS.js for faster playback
-        console.log('[AirPlay] Disconnected - switching back to HLS.js');
-        setAirPlayEnabled(false); // Reset so next playStream uses HLS.js
-        airPlayEnabledRef.current = false; // Update ref immediately
+        // Just disconnected from AirPlay - reload the stream
+        console.log('[AirPlay] Disconnected - reloading stream');
         if (selectedChannel) {
-          // Restart stream with HLS.js (faster)
+          // Show loading spinner
           setIsLoading(true);
+          // Small delay to let the video element settle
           setTimeout(() => {
-            if (playStreamRef.current) {
-              playStreamRef.current(selectedChannel);
+            if (videoRef.current && selectedChannel) {
+              console.log('[AirPlay] Restarting local playback');
+              // Reload the current source
+              const currentSrc = videoRef.current.src;
+              if (currentSrc) {
+                videoRef.current.load();
+                videoRef.current.play().catch(e => {
+                  console.error('[AirPlay] Failed to restart playback:', e);
+                  setIsLoading(false);
+                });
+              } else {
+                setIsLoading(false);
+              }
+            } else {
+              setIsLoading(false);
             }
-          }, 300);
+          }, 500);
         }
       }
 
@@ -1596,14 +1585,43 @@ export default function LiveTVTvPage() {
     try {
       let streamUrl = buildApiUrl(channel.URL);
 
-      // For IPTV channels, acquire stream session and token for faster startup
+      // For IPTV channels, acquire stream session and token in parallel for faster startup
       if (channel.source === 'iptv' && channel.iptvId) {
         const isNative = isNativePlatform();
 
-        // Helper to set up session tracking and heartbeat
-        const setupSessionTracking = (sessionToken: string) => {
-          console.log('[TV] Stream session established:', sessionToken);
-          streamSessionToken.current = sessionToken;
+        // Start both requests in parallel
+        const acquirePromise = apiRequest('POST', '/api/iptv/stream/acquire', {
+          streamId: channel.iptvId
+        }).then(res => res.json()).catch(e => {
+          console.log('[TV] Could not acquire stream session:', e);
+          return null;
+        });
+
+        const tokenPromise = isNative
+          ? apiRequest('POST', '/api/iptv/generate-token', {
+              streamId: channel.iptvId
+            }).then(res => res.json()).catch(e => {
+              console.log('[TV] Could not generate token:', e);
+              return null;
+            })
+          : Promise.resolve(null);
+
+        console.log('[TV] Acquiring stream session' + (isNative ? ' and token' : '') + ' for:', channel.iptvId);
+
+        // Wait for both to complete
+        const [acquireData, tokenData] = await Promise.all([acquirePromise, tokenPromise]);
+
+        // Handle token response (native platforms)
+        if (tokenData?.token) {
+          streamUrl = `${streamUrl}?token=${tokenData.token}`;
+          console.log('[TV] Got token for native platform');
+        }
+
+        // Set up session tracking - prefer token's sessionToken on native
+        const finalSessionToken = tokenData?.sessionToken || acquireData?.sessionToken;
+        if (finalSessionToken) {
+          console.log('[TV] Stream session established:', finalSessionToken);
+          streamSessionToken.current = finalSessionToken;
 
           // Clear any existing heartbeat interval before creating new one
           if (heartbeatIntervalRef.current) {
@@ -1622,52 +1640,12 @@ export default function LiveTVTvPage() {
               }
             }
           }, 30000);
-        };
-
-        // Fire acquire in background - don't wait for it (just for tracking/limits)
-        apiRequest('POST', '/api/iptv/stream/acquire', {
-          streamId: channel.iptvId
-        }).then(res => res.json()).then(data => {
-          // Only use acquire's sessionToken if we don't have one from generate-token
-          if (data?.sessionToken && !streamSessionToken.current) {
-            setupSessionTracking(data.sessionToken);
-          }
-        }).catch(e => {
-          console.log('[TV] Could not acquire stream session:', e);
-        });
-
-        // For native platforms, we need the token for the stream URL - must wait for this
-        if (isNative) {
-          console.log('[TV] Getting token for native platform:', channel.iptvId);
-          try {
-            const tokenResponse = await apiRequest('POST', '/api/iptv/generate-token', {
-              streamId: channel.iptvId
-            });
-            const tokenData = await tokenResponse.json();
-
-            if (tokenData?.token) {
-              streamUrl = `${streamUrl}?token=${tokenData.token}`;
-              console.log('[TV] Got token for native platform');
-            }
-
-            // Use sessionToken from generate-token (preferred for native)
-            if (tokenData?.sessionToken) {
-              setupSessionTracking(tokenData.sessionToken);
-            }
-          } catch (e) {
-            console.log('[TV] Could not generate token:', e);
-            // Continue anyway - might work without token
-          }
         }
-
-        console.log('[TV] Starting stream load for:', channel.iptvId);
       }
 
-      // Use HLS.js by default for faster startup (lowLatencyMode, FRAG_BUFFERED optimizations)
-      // Use native HLS when AirPlay is enabled/active (required for AirPlay video output)
-      // Use ref for airPlayEnabled to get latest value (state may not be updated yet in closures)
+      // On iOS, use native HLS for AirPlay support (HLS.js doesn't support AirPlay video)
       const canPlayNativeHLS = video.canPlayType('application/vnd.apple.mpegurl');
-      const useNativeHLS = isNativePlatform() && canPlayNativeHLS && (isAirPlaying || airPlayEnabledRef.current);
+      const useNativeHLS = isNativePlatform() && canPlayNativeHLS;
 
       console.log('[TV] Playback decision:', {
         isNative: isNativePlatform(),
@@ -1813,12 +1791,8 @@ export default function LiveTVTvPage() {
         video.addEventListener('stalled', handleStalled);
         video.addEventListener('timeupdate', handleTimeUpdate);
 
-        // Optimize for faster native HLS startup
-        video.preload = 'auto';
-        video.playsInline = true;
         video.src = streamUrl;
-        // Don't call load() - just set src and play immediately
-        // load() can cause Safari to restart buffering
+        video.load(); // Explicitly load
 
         video.play().then(() => {
           console.log('[TV] Native HLS: play() succeeded');
@@ -1833,35 +1807,25 @@ export default function LiveTVTvPage() {
       } else if (Hls.isSupported()) {
         console.log('[TV] Using HLS.js');
         const hls = new Hls({
-          lowLatencyMode: true, // Aggressive startup for faster playback
-          startPosition: -1, // Start at live edge
+          lowLatencyMode: false,
+          startPosition: -1, // Start at live edge for faster playback start
           liveSyncDuration: 3, // Stay 3 seconds behind live edge
-          liveMaxLatencyDuration: 10, // Max drift before seeking to live
-          backBufferLength: 30, // Reduced from 90 for faster startup
-          maxBufferLength: 30, // Reduced from 60 - start playing sooner
-          maxMaxBufferLength: 60, // Cap total buffer
-          manifestLoadingTimeOut: 15000, // Reduced from 30s
-          manifestLoadingMaxRetry: 3,
-          levelLoadingTimeOut: 15000, // Reduced from 30s
-          fragLoadingTimeOut: 20000, // Reduced from 60s
+          backBufferLength: 90,
+          maxBufferLength: 60,
+          manifestLoadingTimeOut: 30000,
+          manifestLoadingMaxRetry: 4,
+          levelLoadingTimeOut: 30000,
+          fragLoadingTimeOut: 60000,
           xhrSetup: (xhr) => { xhr.withCredentials = false; },
         });
 
         hlsRef.current = hls;
 
-        // Track if we've started playback to avoid duplicate play() calls
-        let playbackStarted = false;
-
-        // Play as soon as first fragment is buffered (faster than MANIFEST_PARSED)
-        hls.on(Hls.Events.FRAG_BUFFERED, () => {
-          if (!playbackStarted) {
-            playbackStarted = true;
-            console.log('[TV] First fragment buffered, starting playback');
-            video.play().then(() => {
-              setIsPlaying(true);
-              setIsLoading(false);
-            }).catch(() => setIsLoading(false));
-          }
+        hls.on(Hls.Events.MANIFEST_PARSED, () => {
+          video.play().then(() => {
+            setIsPlaying(true);
+            setIsLoading(false);
+          }).catch(() => setIsLoading(false));
         });
 
         hls.on(Hls.Events.ERROR, (_, data) => {
@@ -1893,9 +1857,6 @@ export default function LiveTVTvPage() {
       handleStreamError('Failed to start stream');
     }
   }, [releaseCurrentStream]);
-
-  // Keep ref updated so handleAirPlay can access playStream (defined after it)
-  playStreamRef.current = playStream;
 
   // Retry stream with exponential backoff
   const retryStream = useCallback(() => {

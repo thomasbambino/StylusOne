@@ -68,6 +68,26 @@ interface PlanIptvCredential {
   healthStatus: string;
 }
 
+interface ChannelPackage {
+  id: number;
+  providerId: number;
+  name: string;
+  description: string | null;
+  isActive: boolean;
+  channelCount: number;
+  providerName: string;
+}
+
+interface PlanPackage {
+  id: number;
+  packageId: number;
+  packageName: string;
+  providerId: number;
+  isActive: boolean;
+  channelCount: number;
+  createdAt: string;
+}
+
 export default function SubscriptionPlansPage() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -86,6 +106,7 @@ export default function SubscriptionPlansPage() {
     planName: '',
   });
   const [selectedCredentialToAdd, setSelectedCredentialToAdd] = useState<string>('');
+  const [selectedPackageToAdd, setSelectedPackageToAdd] = useState<string>('');
 
   const { data: plans = [], isLoading: plansLoading } = useQuery<SubscriptionPlan[]>({
     queryKey: ['/api/admin/subscription-plans'],
@@ -145,6 +166,32 @@ export default function SubscriptionPlansPage() {
         credentials: 'include',
       });
       if (!res.ok) throw new Error('Failed to fetch plan IPTV credentials');
+      return res.json();
+    },
+    enabled: iptvDialog.open && iptvDialog.planId > 0,
+  });
+
+  // Fetch all available channel packages
+  const { data: allChannelPackages = [] } = useQuery<ChannelPackage[]>({
+    queryKey: ['/api/admin/channel-packages'],
+    queryFn: async () => {
+      const res = await fetch(buildApiUrl('/api/admin/channel-packages'), {
+        credentials: 'include',
+      });
+      if (!res.ok) throw new Error('Failed to fetch channel packages');
+      return res.json();
+    },
+    enabled: iptvDialog.open,
+  });
+
+  // Fetch packages assigned to the selected plan
+  const { data: planPackages = [], isLoading: planPackagesLoading } = useQuery<PlanPackage[]>({
+    queryKey: ['/api/admin/subscription-plans', iptvDialog.planId, 'packages'],
+    queryFn: async () => {
+      const res = await fetch(buildApiUrl(`/api/admin/subscription-plans/${iptvDialog.planId}/packages`), {
+        credentials: 'include',
+      });
+      if (!res.ok) throw new Error('Failed to fetch plan packages');
       return res.json();
     },
     enabled: iptvDialog.open && iptvDialog.planId > 0,
@@ -337,6 +384,65 @@ export default function SubscriptionPlansPage() {
       toast({
         title: 'Success',
         description: 'IPTV credential removed from plan',
+      });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: 'Error',
+        description: error.message,
+        variant: 'destructive',
+      });
+    },
+  });
+
+  const addPackageMutation = useMutation({
+    mutationFn: async ({ planId, packageId }: { planId: number; packageId: number }) => {
+      const res = await fetch(buildApiUrl(`/api/admin/subscription-plans/${planId}/packages`), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ packageId }),
+      });
+      if (!res.ok) {
+        const error = await res.json();
+        throw new Error(error.error || 'Failed to add package');
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/admin/subscription-plans', iptvDialog.planId, 'packages'] });
+      setSelectedPackageToAdd('');
+      toast({
+        title: 'Success',
+        description: 'Channel package added to plan',
+      });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: 'Error',
+        description: error.message,
+        variant: 'destructive',
+      });
+    },
+  });
+
+  const removePackageMutation = useMutation({
+    mutationFn: async ({ planId, packageId }: { planId: number; packageId: number }) => {
+      const res = await fetch(buildApiUrl(`/api/admin/subscription-plans/${planId}/packages/${packageId}`), {
+        method: 'DELETE',
+        credentials: 'include',
+      });
+      if (!res.ok) {
+        const error = await res.json();
+        throw new Error(error.error || 'Failed to remove package');
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/admin/subscription-plans', iptvDialog.planId, 'packages'] });
+      toast({
+        title: 'Success',
+        description: 'Channel package removed from plan',
       });
     },
     onError: (error: Error) => {
@@ -1055,32 +1161,162 @@ export default function SubscriptionPlansPage() {
       {/* Manage IPTV Sources Dialog */}
       <Dialog open={iptvDialog.open} onOpenChange={(open) => {
         setIptvDialog({ ...iptvDialog, open });
-        if (!open) setSelectedCredentialToAdd('');
+        if (!open) {
+          setSelectedCredentialToAdd('');
+          setSelectedPackageToAdd('');
+        }
       }}>
         <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>IPTV Sources for {iptvDialog.planName}</DialogTitle>
             <DialogDescription>
-              Assign IPTV credentials to this subscription plan. Users on this plan will get access to streams from these sources.
+              Assign channel packages to this plan. Users will get access to all channels in assigned packages.
             </DialogDescription>
           </DialogHeader>
 
-          {planIptvLoading ? (
+          {(planIptvLoading || planPackagesLoading) ? (
             <div className="text-center py-12">
               <Loader2 className="h-8 w-8 animate-spin mx-auto text-muted-foreground" />
             </div>
           ) : (
             <div className="space-y-6">
-              {/* Add New Credential */}
-              <div className="space-y-2">
-                <Label>Add IPTV Source</Label>
+              {/* Channel Packages Section */}
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <Label className="text-base font-semibold flex items-center gap-2">
+                    <Package className="h-4 w-4" />
+                    Channel Packages
+                  </Label>
+                  <Badge variant="secondary">{planPackages.length} assigned</Badge>
+                </div>
+
+                {/* Add Package */}
+                <div className="flex gap-2">
+                  <Select
+                    value={selectedPackageToAdd}
+                    onValueChange={setSelectedPackageToAdd}
+                  >
+                    <SelectTrigger className="flex-1">
+                      <SelectValue placeholder="Add a channel package..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {allChannelPackages
+                        .filter(pkg => pkg.isActive && !planPackages.some(pp => pp.packageId === pkg.id))
+                        .map(pkg => (
+                          <SelectItem key={pkg.id} value={pkg.id.toString()}>
+                            <div className="flex items-center gap-2">
+                              <span>{pkg.name}</span>
+                              <Badge variant="outline" className="text-xs">
+                                {pkg.channelCount} ch
+                              </Badge>
+                              <span className="text-xs text-muted-foreground">({pkg.providerName})</span>
+                            </div>
+                          </SelectItem>
+                        ))}
+                    </SelectContent>
+                  </Select>
+                  <Button
+                    onClick={() => {
+                      if (selectedPackageToAdd) {
+                        addPackageMutation.mutate({
+                          planId: iptvDialog.planId,
+                          packageId: parseInt(selectedPackageToAdd),
+                        });
+                      }
+                    }}
+                    disabled={!selectedPackageToAdd || addPackageMutation.isPending}
+                  >
+                    {addPackageMutation.isPending ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <Plus className="h-4 w-4" />
+                    )}
+                  </Button>
+                </div>
+
+                {/* Assigned Packages */}
+                {planPackages.length === 0 ? (
+                  <div className="text-center py-6 text-muted-foreground border rounded-lg border-dashed">
+                    <Package className="h-8 w-8 mx-auto mb-2 opacity-50" />
+                    <p>No channel packages assigned</p>
+                    <p className="text-sm">Add packages to give subscribers access to channels</p>
+                  </div>
+                ) : (
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Package</TableHead>
+                        <TableHead className="text-center">Channels</TableHead>
+                        <TableHead>Status</TableHead>
+                        <TableHead className="text-right">Actions</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {planPackages.map((pkg) => (
+                        <TableRow key={pkg.id}>
+                          <TableCell className="font-medium">{pkg.packageName}</TableCell>
+                          <TableCell className="text-center">{pkg.channelCount}</TableCell>
+                          <TableCell>
+                            {pkg.isActive ? (
+                              <Badge variant="outline" className="bg-green-500/10 text-green-500 border-green-500/20">
+                                Active
+                              </Badge>
+                            ) : (
+                              <Badge variant="outline" className="bg-gray-500/10 text-gray-500 border-gray-500/20">
+                                Inactive
+                              </Badge>
+                            )}
+                          </TableCell>
+                          <TableCell className="text-right">
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => removePackageMutation.mutate({
+                                planId: iptvDialog.planId,
+                                packageId: pkg.packageId,
+                              })}
+                              disabled={removePackageMutation.isPending}
+                              className="text-destructive hover:text-destructive"
+                            >
+                              <Unlink className="h-4 w-4" />
+                            </Button>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                )}
+                {allChannelPackages.filter(pkg => pkg.isActive && !planPackages.some(pp => pp.packageId === pkg.id)).length === 0 && allChannelPackages.length > 0 && (
+                  <p className="text-xs text-muted-foreground">
+                    All available packages are assigned. Create more in Channel Packages.
+                  </p>
+                )}
+              </div>
+
+              <Separator />
+
+              {/* Legacy IPTV Credentials Section */}
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <Label className="text-base font-semibold flex items-center gap-2">
+                    <Server className="h-4 w-4" />
+                    Direct IPTV Credentials
+                    <Badge variant="outline" className="text-xs">Legacy</Badge>
+                  </Label>
+                  <Badge variant="secondary">{planIptvCredentials.length} assigned</Badge>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Direct credential assignment is deprecated. Use channel packages above for new plans.
+                </p>
+
+                {/* Add Credential */}
                 <div className="flex gap-2">
                   <Select
                     value={selectedCredentialToAdd}
                     onValueChange={setSelectedCredentialToAdd}
                   >
                     <SelectTrigger className="flex-1">
-                      <SelectValue placeholder="Select an IPTV source..." />
+                      <SelectValue placeholder="Add direct IPTV credential..." />
                     </SelectTrigger>
                     <SelectContent>
                       {allIptvCredentials
@@ -1101,6 +1337,7 @@ export default function SubscriptionPlansPage() {
                     </SelectContent>
                   </Select>
                   <Button
+                    variant="outline"
                     onClick={() => {
                       if (selectedCredentialToAdd) {
                         addIptvCredentialMutation.mutate({
@@ -1118,32 +1355,15 @@ export default function SubscriptionPlansPage() {
                     )}
                   </Button>
                 </div>
-                {allIptvCredentials.filter(cred => cred.isActive && !planIptvCredentials.some(pc => pc.credentialId === cred.id)).length === 0 && (
-                  <p className="text-sm text-muted-foreground">
-                    No available IPTV sources. Create new credentials in the IPTV Sources page.
-                  </p>
-                )}
-              </div>
 
-              <Separator />
-
-              {/* Assigned Credentials */}
-              <div className="space-y-2">
-                <Label>Assigned IPTV Sources ({planIptvCredentials.length})</Label>
-                {planIptvCredentials.length === 0 ? (
-                  <div className="text-center py-8 text-muted-foreground border rounded-lg border-dashed">
-                    <Server className="h-8 w-8 mx-auto mb-2 opacity-50" />
-                    <p>No IPTV sources assigned to this plan</p>
-                    <p className="text-sm">Add sources above to enable Live TV for subscribers</p>
-                  </div>
-                ) : (
+                {/* Assigned Credentials */}
+                {planIptvCredentials.length > 0 && (
                   <Table>
                     <TableHeader>
                       <TableRow>
                         <TableHead>Name</TableHead>
-                        <TableHead className="text-center">Max Connections</TableHead>
+                        <TableHead className="text-center">Connections</TableHead>
                         <TableHead>Health</TableHead>
-                        <TableHead>Status</TableHead>
                         <TableHead className="text-right">Actions</TableHead>
                       </TableRow>
                     </TableHeader>
@@ -1167,17 +1387,6 @@ export default function SubscriptionPlansPage() {
                               >
                                 {cred.healthStatus}
                               </Badge>
-                            </TableCell>
-                            <TableCell>
-                              {cred.isActive ? (
-                                <Badge variant="outline" className="bg-green-500/10 text-green-500 border-green-500/20">
-                                  Active
-                                </Badge>
-                              ) : (
-                                <Badge variant="outline" className="bg-gray-500/10 text-gray-500 border-gray-500/20">
-                                  Inactive
-                                </Badge>
-                              )}
                             </TableCell>
                             <TableCell className="text-right">
                               <Button

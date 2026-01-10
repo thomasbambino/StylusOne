@@ -1,8 +1,18 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import { db } from '../db';
-import { iptvCredentials, planIptvCredentials, activeIptvStreams, subscriptionPlans } from '@shared/schema';
-import { eq, desc, and, sql } from 'drizzle-orm';
+import {
+  iptvProviders,
+  iptvCredentials,
+  iptvChannels,
+  channelPackages,
+  packageChannels,
+  planPackages,
+  planIptvCredentials,
+  activeIptvStreams,
+  subscriptionPlans
+} from '@shared/schema';
+import { eq, desc, and, sql, inArray, isNull } from 'drizzle-orm';
 import { encrypt, decrypt, maskCredential } from '../utils/encryption';
 import { xtreamCodesManager, XtreamCodesClient } from '../services/xtream-codes-service';
 import { streamTrackerService } from '../services/stream-tracker-service';
@@ -35,6 +45,56 @@ const assignCredentialSchema = z.object({
   priority: z.number().int().min(0).default(0),
 });
 
+// Provider validation schemas
+const createProviderSchema = z.object({
+  name: z.string().min(1, 'Name is required'),
+  serverUrl: z.string().url('Invalid server URL'),
+  notes: z.string().optional(),
+  isActive: z.boolean().default(true),
+});
+
+const updateProviderSchema = z.object({
+  name: z.string().min(1, 'Name is required').optional(),
+  serverUrl: z.string().url('Invalid server URL').optional(),
+  notes: z.string().optional().nullable(),
+  isActive: z.boolean().optional(),
+});
+
+// Provider credential schema (for adding credentials to a provider)
+const createProviderCredentialSchema = z.object({
+  name: z.string().min(1, 'Name is required'),
+  username: z.string().min(1, 'Username is required'),
+  password: z.string().min(1, 'Password is required'),
+  maxConnections: z.number().int().min(1).max(100).default(1),
+  notes: z.string().optional(),
+  isActive: z.boolean().default(true),
+});
+
+// Channel package validation schemas
+const createPackageSchema = z.object({
+  providerId: z.number().int().positive(),
+  name: z.string().min(1, 'Name is required'),
+  description: z.string().optional(),
+  isActive: z.boolean().default(true),
+});
+
+const updatePackageSchema = z.object({
+  name: z.string().min(1, 'Name is required').optional(),
+  description: z.string().optional().nullable(),
+  isActive: z.boolean().optional(),
+});
+
+// Channel update schema
+const updateChannelSchema = z.object({
+  isEnabled: z.boolean().optional(),
+  quality: z.enum(['4k', 'hd', 'sd', 'unknown']).optional(),
+});
+
+const bulkUpdateChannelsSchema = z.object({
+  channelIds: z.array(z.number().int().positive()),
+  isEnabled: z.boolean(),
+});
+
 /**
  * Middleware to check if user is super admin
  */
@@ -44,6 +104,1132 @@ function requireSuperAdmin(req: any, res: any, next: any) {
   }
   next();
 }
+
+// ============================================
+// Provider Management Endpoints
+// ============================================
+
+/**
+ * GET /api/admin/iptv-providers
+ * List all IPTV providers with stats
+ */
+router.get('/iptv-providers', requireSuperAdmin, async (req, res) => {
+  try {
+    const providers = await db
+      .select()
+      .from(iptvProviders)
+      .orderBy(desc(iptvProviders.createdAt));
+
+    // Get stats for each provider
+    const providersWithStats = await Promise.all(
+      providers.map(async (provider) => {
+        // Count credentials for this provider
+        const [credentialCount] = await db
+          .select({ count: sql<number>`count(*)::int` })
+          .from(iptvCredentials)
+          .where(eq(iptvCredentials.providerId, provider.id));
+
+        // Count channels for this provider
+        const [channelCount] = await db
+          .select({ count: sql<number>`count(*)::int` })
+          .from(iptvChannels)
+          .where(eq(iptvChannels.providerId, provider.id));
+
+        // Count enabled channels
+        const [enabledCount] = await db
+          .select({ count: sql<number>`count(*)::int` })
+          .from(iptvChannels)
+          .where(and(
+            eq(iptvChannels.providerId, provider.id),
+            eq(iptvChannels.isEnabled, true)
+          ));
+
+        // Calculate total max connections from all credentials
+        const [totalConnections] = await db
+          .select({ sum: sql<number>`COALESCE(SUM(max_connections), 0)::int` })
+          .from(iptvCredentials)
+          .where(and(
+            eq(iptvCredentials.providerId, provider.id),
+            eq(iptvCredentials.isActive, true)
+          ));
+
+        return {
+          id: provider.id,
+          name: provider.name,
+          serverUrl: maskCredential(decrypt(provider.serverUrl)),
+          isActive: provider.isActive,
+          notes: provider.notes,
+          lastChannelSync: provider.lastChannelSync,
+          credentialCount: Number(credentialCount?.count) || 0,
+          channelCount: Number(channelCount?.count) || 0,
+          enabledChannelCount: Number(enabledCount?.count) || 0,
+          totalMaxConnections: Number(totalConnections?.sum) || 0,
+          createdAt: provider.createdAt,
+          updatedAt: provider.updatedAt,
+        };
+      })
+    );
+
+    res.json(providersWithStats);
+  } catch (error) {
+    console.error('Error fetching IPTV providers:', error);
+    res.status(500).json({ error: 'Failed to fetch IPTV providers' });
+  }
+});
+
+/**
+ * GET /api/admin/iptv-providers/:id
+ * Get a single provider with full details
+ */
+router.get('/iptv-providers/:id', requireSuperAdmin, async (req, res) => {
+  try {
+    const providerId = parseInt(req.params.id);
+    if (isNaN(providerId)) {
+      return res.status(400).json({ error: 'Invalid provider ID' });
+    }
+
+    const [provider] = await db
+      .select()
+      .from(iptvProviders)
+      .where(eq(iptvProviders.id, providerId));
+
+    if (!provider) {
+      return res.status(404).json({ error: 'Provider not found' });
+    }
+
+    // Return with decrypted server URL (for edit form)
+    res.json({
+      id: provider.id,
+      name: provider.name,
+      serverUrl: decrypt(provider.serverUrl),
+      isActive: provider.isActive,
+      notes: provider.notes,
+      lastChannelSync: provider.lastChannelSync,
+      createdAt: provider.createdAt,
+      updatedAt: provider.updatedAt,
+    });
+  } catch (error) {
+    console.error('Error fetching IPTV provider:', error);
+    res.status(500).json({ error: 'Failed to fetch IPTV provider' });
+  }
+});
+
+/**
+ * POST /api/admin/iptv-providers
+ * Create a new IPTV provider
+ */
+router.post('/iptv-providers', requireSuperAdmin, async (req, res) => {
+  try {
+    const validatedData = createProviderSchema.parse(req.body);
+
+    const [newProvider] = await db
+      .insert(iptvProviders)
+      .values({
+        name: validatedData.name,
+        serverUrl: encrypt(validatedData.serverUrl),
+        notes: validatedData.notes || null,
+        isActive: validatedData.isActive,
+      })
+      .returning();
+
+    res.status(201).json({
+      id: newProvider.id,
+      name: newProvider.name,
+      isActive: newProvider.isActive,
+      notes: newProvider.notes,
+      createdAt: newProvider.createdAt,
+    });
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      return res.status(400).json({ error: error.errors });
+    }
+    console.error('Error creating IPTV provider:', error);
+    res.status(500).json({ error: 'Failed to create IPTV provider' });
+  }
+});
+
+/**
+ * PUT /api/admin/iptv-providers/:id
+ * Update an IPTV provider
+ */
+router.put('/iptv-providers/:id', requireSuperAdmin, async (req, res) => {
+  try {
+    const providerId = parseInt(req.params.id);
+    if (isNaN(providerId)) {
+      return res.status(400).json({ error: 'Invalid provider ID' });
+    }
+
+    const validatedData = updateProviderSchema.parse(req.body);
+
+    const updateData: any = { updatedAt: new Date() };
+
+    if (validatedData.name !== undefined) {
+      updateData.name = validatedData.name;
+    }
+    if (validatedData.serverUrl !== undefined) {
+      updateData.serverUrl = encrypt(validatedData.serverUrl);
+    }
+    if (validatedData.notes !== undefined) {
+      updateData.notes = validatedData.notes;
+    }
+    if (validatedData.isActive !== undefined) {
+      updateData.isActive = validatedData.isActive;
+    }
+
+    const [updatedProvider] = await db
+      .update(iptvProviders)
+      .set(updateData)
+      .where(eq(iptvProviders.id, providerId))
+      .returning();
+
+    if (!updatedProvider) {
+      return res.status(404).json({ error: 'Provider not found' });
+    }
+
+    res.json({
+      id: updatedProvider.id,
+      name: updatedProvider.name,
+      isActive: updatedProvider.isActive,
+      notes: updatedProvider.notes,
+      updatedAt: updatedProvider.updatedAt,
+    });
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      return res.status(400).json({ error: error.errors });
+    }
+    console.error('Error updating IPTV provider:', error);
+    res.status(500).json({ error: 'Failed to update IPTV provider' });
+  }
+});
+
+/**
+ * DELETE /api/admin/iptv-providers/:id
+ * Delete an IPTV provider (cascades to credentials, channels, packages)
+ */
+router.delete('/iptv-providers/:id', requireSuperAdmin, async (req, res) => {
+  try {
+    const providerId = parseInt(req.params.id);
+    if (isNaN(providerId)) {
+      return res.status(400).json({ error: 'Invalid provider ID' });
+    }
+
+    // Get all credentials for this provider to release streams
+    const credentials = await db
+      .select({ id: iptvCredentials.id })
+      .from(iptvCredentials)
+      .where(eq(iptvCredentials.providerId, providerId));
+
+    // Release streams for all credentials
+    for (const cred of credentials) {
+      await streamTrackerService.releaseAllCredentialStreams(cred.id);
+      xtreamCodesManager.removeCredential(cred.id);
+    }
+
+    // Delete provider (cascade will handle credentials, channels, packages)
+    const result = await db
+      .delete(iptvProviders)
+      .where(eq(iptvProviders.id, providerId))
+      .returning();
+
+    if (result.length === 0) {
+      return res.status(404).json({ error: 'Provider not found' });
+    }
+
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Error deleting IPTV provider:', error);
+    res.status(500).json({ error: 'Failed to delete IPTV provider' });
+  }
+});
+
+/**
+ * GET /api/admin/iptv-providers/:id/credentials
+ * Get all credentials for a provider
+ */
+router.get('/iptv-providers/:id/credentials', requireSuperAdmin, async (req, res) => {
+  try {
+    const providerId = parseInt(req.params.id);
+    if (isNaN(providerId)) {
+      return res.status(400).json({ error: 'Invalid provider ID' });
+    }
+
+    const credentials = await db
+      .select()
+      .from(iptvCredentials)
+      .where(eq(iptvCredentials.providerId, providerId))
+      .orderBy(desc(iptvCredentials.createdAt));
+
+    // Mask sensitive data and add active stream count
+    const credentialsWithStats = await Promise.all(
+      credentials.map(async (cred) => {
+        const activeStreams = await db
+          .select({ count: sql<number>`count(*)::int` })
+          .from(activeIptvStreams)
+          .where(eq(activeIptvStreams.credentialId, cred.id));
+
+        return {
+          id: cred.id,
+          providerId: cred.providerId,
+          name: cred.name,
+          username: maskCredential(decrypt(cred.username)),
+          maxConnections: cred.maxConnections,
+          isActive: cred.isActive,
+          notes: cred.notes,
+          healthStatus: cred.healthStatus,
+          lastHealthCheck: cred.lastHealthCheck,
+          activeStreams: Number(activeStreams[0]?.count) || 0,
+          createdAt: cred.createdAt,
+          updatedAt: cred.updatedAt,
+        };
+      })
+    );
+
+    res.json(credentialsWithStats);
+  } catch (error) {
+    console.error('Error fetching provider credentials:', error);
+    res.status(500).json({ error: 'Failed to fetch provider credentials' });
+  }
+});
+
+/**
+ * POST /api/admin/iptv-providers/:id/credentials
+ * Add a credential to a provider
+ */
+router.post('/iptv-providers/:id/credentials', requireSuperAdmin, async (req, res) => {
+  try {
+    const providerId = parseInt(req.params.id);
+    if (isNaN(providerId)) {
+      return res.status(400).json({ error: 'Invalid provider ID' });
+    }
+
+    // Check if provider exists
+    const [provider] = await db
+      .select()
+      .from(iptvProviders)
+      .where(eq(iptvProviders.id, providerId));
+
+    if (!provider) {
+      return res.status(404).json({ error: 'Provider not found' });
+    }
+
+    const validatedData = createProviderCredentialSchema.parse(req.body);
+
+    // Create credential with providerId
+    const [newCredential] = await db
+      .insert(iptvCredentials)
+      .values({
+        providerId,
+        name: validatedData.name,
+        serverUrl: null, // Deprecated - server URL is now on provider
+        username: encrypt(validatedData.username),
+        password: encrypt(validatedData.password),
+        maxConnections: validatedData.maxConnections,
+        notes: validatedData.notes || null,
+        isActive: validatedData.isActive,
+        healthStatus: 'unknown',
+      })
+      .returning();
+
+    // Reload credential in manager
+    await xtreamCodesManager.reloadCredential(newCredential.id);
+
+    res.status(201).json({
+      id: newCredential.id,
+      providerId: newCredential.providerId,
+      name: newCredential.name,
+      maxConnections: newCredential.maxConnections,
+      isActive: newCredential.isActive,
+      notes: newCredential.notes,
+      healthStatus: newCredential.healthStatus,
+      createdAt: newCredential.createdAt,
+    });
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      return res.status(400).json({ error: error.errors });
+    }
+    console.error('Error adding credential to provider:', error);
+    res.status(500).json({ error: 'Failed to add credential to provider' });
+  }
+});
+
+/**
+ * POST /api/admin/iptv-providers/:id/sync
+ * Sync channels from provider's Xtream Codes API
+ */
+router.post('/iptv-providers/:id/sync', requireSuperAdmin, async (req, res) => {
+  try {
+    const providerId = parseInt(req.params.id);
+    if (isNaN(providerId)) {
+      return res.status(400).json({ error: 'Invalid provider ID' });
+    }
+
+    // Get provider
+    const [provider] = await db
+      .select()
+      .from(iptvProviders)
+      .where(eq(iptvProviders.id, providerId));
+
+    if (!provider) {
+      return res.status(404).json({ error: 'Provider not found' });
+    }
+
+    // Get first active credential for this provider (to fetch channel list)
+    const [credential] = await db
+      .select()
+      .from(iptvCredentials)
+      .where(and(
+        eq(iptvCredentials.providerId, providerId),
+        eq(iptvCredentials.isActive, true)
+      ))
+      .limit(1);
+
+    if (!credential) {
+      return res.status(400).json({ error: 'No active credentials found for this provider' });
+    }
+
+    // Create client to fetch channels
+    const client = new XtreamCodesClient({
+      serverUrl: decrypt(provider.serverUrl),
+      username: decrypt(credential.username),
+      password: decrypt(credential.password),
+      credentialId: credential.id,
+    });
+
+    // Fetch live streams (channels)
+    const liveStreams = await client.getRawLiveStreams();
+
+    if (!Array.isArray(liveStreams)) {
+      return res.status(400).json({ error: 'Failed to fetch channels from provider' });
+    }
+
+    // Upsert channels
+    let insertCount = 0;
+    let updateCount = 0;
+
+    for (const stream of liveStreams) {
+      const streamId = String(stream.stream_id);
+
+      // Check if channel exists
+      const [existing] = await db
+        .select({ id: iptvChannels.id })
+        .from(iptvChannels)
+        .where(and(
+          eq(iptvChannels.providerId, providerId),
+          eq(iptvChannels.streamId, streamId)
+        ));
+
+      if (existing) {
+        // Update existing channel (don't change isEnabled)
+        await db
+          .update(iptvChannels)
+          .set({
+            name: stream.name || `Channel ${streamId}`,
+            logo: stream.stream_icon || null,
+            categoryId: stream.category_id ? String(stream.category_id) : null,
+            categoryName: stream.category_name || null,
+            hasEPG: stream.epg_channel_id ? true : false,
+            lastSeen: new Date(),
+          })
+          .where(eq(iptvChannels.id, existing.id));
+        updateCount++;
+      } else {
+        // Insert new channel (disabled by default)
+        await db
+          .insert(iptvChannels)
+          .values({
+            providerId,
+            streamId,
+            name: stream.name || `Channel ${streamId}`,
+            logo: stream.stream_icon || null,
+            categoryId: stream.category_id ? String(stream.category_id) : null,
+            categoryName: stream.category_name || null,
+            isEnabled: false, // Disabled by default
+            quality: 'unknown',
+            hasEPG: stream.epg_channel_id ? true : false,
+            lastSeen: new Date(),
+          });
+        insertCount++;
+      }
+    }
+
+    // Update provider's last sync time
+    await db
+      .update(iptvProviders)
+      .set({ lastChannelSync: new Date(), updatedAt: new Date() })
+      .where(eq(iptvProviders.id, providerId));
+
+    res.json({
+      success: true,
+      totalChannels: liveStreams.length,
+      newChannels: insertCount,
+      updatedChannels: updateCount,
+    });
+  } catch (error) {
+    console.error('Error syncing channels from provider:', error);
+    res.status(500).json({ error: 'Failed to sync channels from provider' });
+  }
+});
+
+// ============================================
+// Channel Management Endpoints
+// ============================================
+
+/**
+ * GET /api/admin/iptv-channels
+ * Get channels for a provider with filtering
+ */
+router.get('/iptv-channels', requireSuperAdmin, async (req, res) => {
+  try {
+    const providerId = parseInt(req.query.providerId as string);
+    if (isNaN(providerId)) {
+      return res.status(400).json({ error: 'Provider ID is required' });
+    }
+
+    const page = parseInt(req.query.page as string) || 1;
+    const limit = Math.min(parseInt(req.query.limit as string) || 50, 200);
+    const offset = (page - 1) * limit;
+    const search = (req.query.search as string) || '';
+    const category = (req.query.category as string) || '';
+    const enabled = req.query.enabled as string;
+
+    // Build where conditions
+    const conditions = [eq(iptvChannels.providerId, providerId)];
+
+    if (search) {
+      conditions.push(sql`LOWER(${iptvChannels.name}) LIKE ${`%${search.toLowerCase()}%`}`);
+    }
+
+    if (category) {
+      conditions.push(eq(iptvChannels.categoryName, category));
+    }
+
+    if (enabled === 'true') {
+      conditions.push(eq(iptvChannels.isEnabled, true));
+    } else if (enabled === 'false') {
+      conditions.push(eq(iptvChannels.isEnabled, false));
+    }
+
+    // Get total count
+    const [totalResult] = await db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(iptvChannels)
+      .where(and(...conditions));
+
+    // Get channels
+    const channels = await db
+      .select()
+      .from(iptvChannels)
+      .where(and(...conditions))
+      .orderBy(iptvChannels.name)
+      .limit(limit)
+      .offset(offset);
+
+    res.json({
+      channels,
+      pagination: {
+        page,
+        limit,
+        total: Number(totalResult?.count) || 0,
+        totalPages: Math.ceil((Number(totalResult?.count) || 0) / limit),
+      },
+    });
+  } catch (error) {
+    console.error('Error fetching channels:', error);
+    res.status(500).json({ error: 'Failed to fetch channels' });
+  }
+});
+
+/**
+ * GET /api/admin/iptv-channels/categories
+ * Get categories with counts for a provider
+ */
+router.get('/iptv-channels/categories', requireSuperAdmin, async (req, res) => {
+  try {
+    const providerId = parseInt(req.query.providerId as string);
+    if (isNaN(providerId)) {
+      return res.status(400).json({ error: 'Provider ID is required' });
+    }
+
+    const categories = await db
+      .select({
+        categoryName: iptvChannels.categoryName,
+        count: sql<number>`count(*)::int`,
+        enabledCount: sql<number>`SUM(CASE WHEN ${iptvChannels.isEnabled} THEN 1 ELSE 0 END)::int`,
+      })
+      .from(iptvChannels)
+      .where(eq(iptvChannels.providerId, providerId))
+      .groupBy(iptvChannels.categoryName)
+      .orderBy(iptvChannels.categoryName);
+
+    res.json(categories);
+  } catch (error) {
+    console.error('Error fetching categories:', error);
+    res.status(500).json({ error: 'Failed to fetch categories' });
+  }
+});
+
+/**
+ * PUT /api/admin/iptv-channels/:id
+ * Update a single channel
+ */
+router.put('/iptv-channels/:id', requireSuperAdmin, async (req, res) => {
+  try {
+    const channelId = parseInt(req.params.id);
+    if (isNaN(channelId)) {
+      return res.status(400).json({ error: 'Invalid channel ID' });
+    }
+
+    const validatedData = updateChannelSchema.parse(req.body);
+
+    const updateData: any = {};
+    if (validatedData.isEnabled !== undefined) {
+      updateData.isEnabled = validatedData.isEnabled;
+    }
+    if (validatedData.quality !== undefined) {
+      updateData.quality = validatedData.quality;
+    }
+
+    const [updated] = await db
+      .update(iptvChannels)
+      .set(updateData)
+      .where(eq(iptvChannels.id, channelId))
+      .returning();
+
+    if (!updated) {
+      return res.status(404).json({ error: 'Channel not found' });
+    }
+
+    res.json(updated);
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      return res.status(400).json({ error: error.errors });
+    }
+    console.error('Error updating channel:', error);
+    res.status(500).json({ error: 'Failed to update channel' });
+  }
+});
+
+/**
+ * PUT /api/admin/iptv-channels/bulk
+ * Bulk update channels (enable/disable)
+ */
+router.put('/iptv-channels/bulk', requireSuperAdmin, async (req, res) => {
+  try {
+    const validatedData = bulkUpdateChannelsSchema.parse(req.body);
+
+    const result = await db
+      .update(iptvChannels)
+      .set({ isEnabled: validatedData.isEnabled })
+      .where(inArray(iptvChannels.id, validatedData.channelIds))
+      .returning({ id: iptvChannels.id });
+
+    res.json({ success: true, updated: result.length });
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      return res.status(400).json({ error: error.errors });
+    }
+    console.error('Error bulk updating channels:', error);
+    res.status(500).json({ error: 'Failed to bulk update channels' });
+  }
+});
+
+/**
+ * PUT /api/admin/iptv-channels/bulk-category
+ * Bulk enable/disable all channels in a category
+ */
+router.put('/iptv-channels/bulk-category', requireSuperAdmin, async (req, res) => {
+  try {
+    const { providerId, categoryName, isEnabled } = z.object({
+      providerId: z.number().int().positive(),
+      categoryName: z.string(),
+      isEnabled: z.boolean(),
+    }).parse(req.body);
+
+    const result = await db
+      .update(iptvChannels)
+      .set({ isEnabled })
+      .where(and(
+        eq(iptvChannels.providerId, providerId),
+        eq(iptvChannels.categoryName, categoryName)
+      ))
+      .returning({ id: iptvChannels.id });
+
+    res.json({ success: true, updated: result.length });
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      return res.status(400).json({ error: error.errors });
+    }
+    console.error('Error bulk updating category:', error);
+    res.status(500).json({ error: 'Failed to bulk update category' });
+  }
+});
+
+// ============================================
+// Channel Package Management Endpoints
+// ============================================
+
+/**
+ * GET /api/admin/channel-packages
+ * List all channel packages
+ */
+router.get('/channel-packages', requireSuperAdmin, async (req, res) => {
+  try {
+    const packages = await db
+      .select()
+      .from(channelPackages)
+      .orderBy(desc(channelPackages.createdAt));
+
+    const packagesWithStats = await Promise.all(
+      packages.map(async (pkg) => {
+        // Count channels in package
+        const [channelCount] = await db
+          .select({ count: sql<number>`count(*)::int` })
+          .from(packageChannels)
+          .where(eq(packageChannels.packageId, pkg.id));
+
+        // Get provider name
+        const [provider] = await db
+          .select({ name: iptvProviders.name })
+          .from(iptvProviders)
+          .where(eq(iptvProviders.id, pkg.providerId));
+
+        return {
+          ...pkg,
+          channelCount: Number(channelCount?.count) || 0,
+          providerName: provider?.name || 'Unknown',
+        };
+      })
+    );
+
+    res.json(packagesWithStats);
+  } catch (error) {
+    console.error('Error fetching channel packages:', error);
+    res.status(500).json({ error: 'Failed to fetch channel packages' });
+  }
+});
+
+/**
+ * GET /api/admin/channel-packages/:id
+ * Get a single package with its channels
+ */
+router.get('/channel-packages/:id', requireSuperAdmin, async (req, res) => {
+  try {
+    const packageId = parseInt(req.params.id);
+    if (isNaN(packageId)) {
+      return res.status(400).json({ error: 'Invalid package ID' });
+    }
+
+    const [pkg] = await db
+      .select()
+      .from(channelPackages)
+      .where(eq(channelPackages.id, packageId));
+
+    if (!pkg) {
+      return res.status(404).json({ error: 'Package not found' });
+    }
+
+    // Get channels in this package
+    const channels = await db
+      .select({
+        id: iptvChannels.id,
+        streamId: iptvChannels.streamId,
+        name: iptvChannels.name,
+        logo: iptvChannels.logo,
+        categoryName: iptvChannels.categoryName,
+        quality: iptvChannels.quality,
+        sortOrder: packageChannels.sortOrder,
+      })
+      .from(packageChannels)
+      .innerJoin(iptvChannels, eq(packageChannels.channelId, iptvChannels.id))
+      .where(eq(packageChannels.packageId, packageId))
+      .orderBy(packageChannels.sortOrder, iptvChannels.name);
+
+    res.json({
+      ...pkg,
+      channels,
+    });
+  } catch (error) {
+    console.error('Error fetching channel package:', error);
+    res.status(500).json({ error: 'Failed to fetch channel package' });
+  }
+});
+
+/**
+ * POST /api/admin/channel-packages
+ * Create a new channel package
+ */
+router.post('/channel-packages', requireSuperAdmin, async (req, res) => {
+  try {
+    const validatedData = createPackageSchema.parse(req.body);
+
+    // Verify provider exists
+    const [provider] = await db
+      .select()
+      .from(iptvProviders)
+      .where(eq(iptvProviders.id, validatedData.providerId));
+
+    if (!provider) {
+      return res.status(404).json({ error: 'Provider not found' });
+    }
+
+    const [newPackage] = await db
+      .insert(channelPackages)
+      .values({
+        providerId: validatedData.providerId,
+        name: validatedData.name,
+        description: validatedData.description || null,
+        isActive: validatedData.isActive,
+      })
+      .returning();
+
+    res.status(201).json(newPackage);
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      return res.status(400).json({ error: error.errors });
+    }
+    console.error('Error creating channel package:', error);
+    res.status(500).json({ error: 'Failed to create channel package' });
+  }
+});
+
+/**
+ * PUT /api/admin/channel-packages/:id
+ * Update a channel package
+ */
+router.put('/channel-packages/:id', requireSuperAdmin, async (req, res) => {
+  try {
+    const packageId = parseInt(req.params.id);
+    if (isNaN(packageId)) {
+      return res.status(400).json({ error: 'Invalid package ID' });
+    }
+
+    const validatedData = updatePackageSchema.parse(req.body);
+
+    const updateData: any = { updatedAt: new Date() };
+    if (validatedData.name !== undefined) {
+      updateData.name = validatedData.name;
+    }
+    if (validatedData.description !== undefined) {
+      updateData.description = validatedData.description;
+    }
+    if (validatedData.isActive !== undefined) {
+      updateData.isActive = validatedData.isActive;
+    }
+
+    const [updated] = await db
+      .update(channelPackages)
+      .set(updateData)
+      .where(eq(channelPackages.id, packageId))
+      .returning();
+
+    if (!updated) {
+      return res.status(404).json({ error: 'Package not found' });
+    }
+
+    res.json(updated);
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      return res.status(400).json({ error: error.errors });
+    }
+    console.error('Error updating channel package:', error);
+    res.status(500).json({ error: 'Failed to update channel package' });
+  }
+});
+
+/**
+ * DELETE /api/admin/channel-packages/:id
+ * Delete a channel package
+ */
+router.delete('/channel-packages/:id', requireSuperAdmin, async (req, res) => {
+  try {
+    const packageId = parseInt(req.params.id);
+    if (isNaN(packageId)) {
+      return res.status(400).json({ error: 'Invalid package ID' });
+    }
+
+    const result = await db
+      .delete(channelPackages)
+      .where(eq(channelPackages.id, packageId))
+      .returning();
+
+    if (result.length === 0) {
+      return res.status(404).json({ error: 'Package not found' });
+    }
+
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Error deleting channel package:', error);
+    res.status(500).json({ error: 'Failed to delete channel package' });
+  }
+});
+
+/**
+ * POST /api/admin/channel-packages/:id/channels
+ * Add channels to a package
+ */
+router.post('/channel-packages/:id/channels', requireSuperAdmin, async (req, res) => {
+  try {
+    const packageId = parseInt(req.params.id);
+    if (isNaN(packageId)) {
+      return res.status(400).json({ error: 'Invalid package ID' });
+    }
+
+    const { channelIds } = z.object({
+      channelIds: z.array(z.number().int().positive()),
+    }).parse(req.body);
+
+    // Verify package exists
+    const [pkg] = await db
+      .select()
+      .from(channelPackages)
+      .where(eq(channelPackages.id, packageId));
+
+    if (!pkg) {
+      return res.status(404).json({ error: 'Package not found' });
+    }
+
+    // Get existing channel IDs in package
+    const existing = await db
+      .select({ channelId: packageChannels.channelId })
+      .from(packageChannels)
+      .where(eq(packageChannels.packageId, packageId));
+
+    const existingIds = new Set(existing.map(e => e.channelId));
+
+    // Filter out already added channels and verify they belong to same provider
+    const newChannelIds = channelIds.filter(id => !existingIds.has(id));
+
+    if (newChannelIds.length === 0) {
+      return res.json({ success: true, added: 0 });
+    }
+
+    // Verify channels belong to same provider as package
+    const validChannels = await db
+      .select({ id: iptvChannels.id })
+      .from(iptvChannels)
+      .where(and(
+        inArray(iptvChannels.id, newChannelIds),
+        eq(iptvChannels.providerId, pkg.providerId),
+        eq(iptvChannels.isEnabled, true)
+      ));
+
+    const validIds = validChannels.map(c => c.id);
+
+    if (validIds.length === 0) {
+      return res.status(400).json({ error: 'No valid enabled channels to add' });
+    }
+
+    // Get max sort order
+    const [maxSort] = await db
+      .select({ max: sql<number>`COALESCE(MAX(${packageChannels.sortOrder}), 0)::int` })
+      .from(packageChannels)
+      .where(eq(packageChannels.packageId, packageId));
+
+    let sortOrder = (maxSort?.max || 0) + 1;
+
+    // Insert new channels
+    await db.insert(packageChannels).values(
+      validIds.map(channelId => ({
+        packageId,
+        channelId,
+        sortOrder: sortOrder++,
+      }))
+    );
+
+    res.json({ success: true, added: validIds.length });
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      return res.status(400).json({ error: error.errors });
+    }
+    console.error('Error adding channels to package:', error);
+    res.status(500).json({ error: 'Failed to add channels to package' });
+  }
+});
+
+/**
+ * DELETE /api/admin/channel-packages/:packageId/channels/:channelId
+ * Remove a channel from a package
+ */
+router.delete('/channel-packages/:packageId/channels/:channelId', requireSuperAdmin, async (req, res) => {
+  try {
+    const packageId = parseInt(req.params.packageId);
+    const channelId = parseInt(req.params.channelId);
+
+    if (isNaN(packageId) || isNaN(channelId)) {
+      return res.status(400).json({ error: 'Invalid IDs' });
+    }
+
+    const result = await db
+      .delete(packageChannels)
+      .where(and(
+        eq(packageChannels.packageId, packageId),
+        eq(packageChannels.channelId, channelId)
+      ))
+      .returning();
+
+    if (result.length === 0) {
+      return res.status(404).json({ error: 'Channel not in package' });
+    }
+
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Error removing channel from package:', error);
+    res.status(500).json({ error: 'Failed to remove channel from package' });
+  }
+});
+
+// ============================================
+// Plan-Package Assignment Endpoints
+// ============================================
+
+/**
+ * GET /api/admin/subscription-plans/:id/packages
+ * Get packages assigned to a plan
+ */
+router.get('/subscription-plans/:id/packages', requireSuperAdmin, async (req, res) => {
+  try {
+    const planId = parseInt(req.params.id);
+    if (isNaN(planId)) {
+      return res.status(400).json({ error: 'Invalid plan ID' });
+    }
+
+    const packages = await db
+      .select({
+        id: planPackages.id,
+        packageId: planPackages.packageId,
+        packageName: channelPackages.name,
+        providerId: channelPackages.providerId,
+        isActive: channelPackages.isActive,
+        createdAt: planPackages.createdAt,
+      })
+      .from(planPackages)
+      .innerJoin(channelPackages, eq(planPackages.packageId, channelPackages.id))
+      .where(eq(planPackages.planId, planId));
+
+    // Add channel counts
+    const packagesWithCounts = await Promise.all(
+      packages.map(async (pkg) => {
+        const [count] = await db
+          .select({ count: sql<number>`count(*)::int` })
+          .from(packageChannels)
+          .where(eq(packageChannels.packageId, pkg.packageId));
+
+        return {
+          ...pkg,
+          channelCount: Number(count?.count) || 0,
+        };
+      })
+    );
+
+    res.json(packagesWithCounts);
+  } catch (error) {
+    console.error('Error fetching plan packages:', error);
+    res.status(500).json({ error: 'Failed to fetch plan packages' });
+  }
+});
+
+/**
+ * POST /api/admin/subscription-plans/:id/packages
+ * Assign a package to a plan
+ */
+router.post('/subscription-plans/:id/packages', requireSuperAdmin, async (req, res) => {
+  try {
+    const planId = parseInt(req.params.id);
+    if (isNaN(planId)) {
+      return res.status(400).json({ error: 'Invalid plan ID' });
+    }
+
+    const { packageId } = z.object({
+      packageId: z.number().int().positive(),
+    }).parse(req.body);
+
+    // Verify plan exists
+    const [plan] = await db
+      .select()
+      .from(subscriptionPlans)
+      .where(eq(subscriptionPlans.id, planId));
+
+    if (!plan) {
+      return res.status(404).json({ error: 'Plan not found' });
+    }
+
+    // Verify package exists
+    const [pkg] = await db
+      .select()
+      .from(channelPackages)
+      .where(eq(channelPackages.id, packageId));
+
+    if (!pkg) {
+      return res.status(404).json({ error: 'Package not found' });
+    }
+
+    // Check if already assigned
+    const [existing] = await db
+      .select()
+      .from(planPackages)
+      .where(and(
+        eq(planPackages.planId, planId),
+        eq(planPackages.packageId, packageId)
+      ));
+
+    if (existing) {
+      return res.status(400).json({ error: 'Package already assigned to this plan' });
+    }
+
+    // Create assignment
+    const [assignment] = await db
+      .insert(planPackages)
+      .values({ planId, packageId })
+      .returning();
+
+    res.status(201).json({
+      ...assignment,
+      packageName: pkg.name,
+    });
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      return res.status(400).json({ error: error.errors });
+    }
+    console.error('Error assigning package to plan:', error);
+    res.status(500).json({ error: 'Failed to assign package to plan' });
+  }
+});
+
+/**
+ * DELETE /api/admin/subscription-plans/:planId/packages/:packageId
+ * Remove a package from a plan
+ */
+router.delete('/subscription-plans/:planId/packages/:packageId', requireSuperAdmin, async (req, res) => {
+  try {
+    const planId = parseInt(req.params.planId);
+    const packageId = parseInt(req.params.packageId);
+
+    if (isNaN(planId) || isNaN(packageId)) {
+      return res.status(400).json({ error: 'Invalid IDs' });
+    }
+
+    const result = await db
+      .delete(planPackages)
+      .where(and(
+        eq(planPackages.planId, planId),
+        eq(planPackages.packageId, packageId)
+      ))
+      .returning();
+
+    if (result.length === 0) {
+      return res.status(404).json({ error: 'Assignment not found' });
+    }
+
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Error removing package from plan:', error);
+    res.status(500).json({ error: 'Failed to remove package from plan' });
+  }
+});
+
+// ============================================
+// Legacy Credential Endpoints (for backward compatibility)
+// ============================================
 
 /**
  * GET /api/admin/iptv-credentials
@@ -66,8 +1252,9 @@ router.get('/iptv-credentials', requireSuperAdmin, async (req, res) => {
 
         return {
           id: cred.id,
+          providerId: cred.providerId,
           name: cred.name,
-          serverUrl: maskCredential(decrypt(cred.serverUrl)),
+          serverUrl: cred.serverUrl ? maskCredential(decrypt(cred.serverUrl)) : null,
           username: maskCredential(decrypt(cred.username)),
           maxConnections: cred.maxConnections,
           isActive: cred.isActive,
@@ -112,8 +1299,9 @@ router.get('/iptv-credentials/:id', requireSuperAdmin, async (req, res) => {
     // Password is never returned
     res.json({
       id: credential.id,
+      providerId: credential.providerId,
       name: credential.name,
-      serverUrl: decrypt(credential.serverUrl),
+      serverUrl: credential.serverUrl ? decrypt(credential.serverUrl) : null,
       username: decrypt(credential.username),
       maxConnections: credential.maxConnections,
       isActive: credential.isActive,
@@ -297,9 +1485,26 @@ router.post('/iptv-credentials/:id/test', requireSuperAdmin, async (req, res) =>
       return res.status(404).json({ error: 'Credential not found' });
     }
 
+    // Get server URL from credential (legacy) or provider (new system)
+    let serverUrl: string;
+    if (credential.serverUrl) {
+      serverUrl = decrypt(credential.serverUrl);
+    } else if (credential.providerId) {
+      const [provider] = await db
+        .select()
+        .from(iptvProviders)
+        .where(eq(iptvProviders.id, credential.providerId));
+      if (!provider) {
+        return res.status(400).json({ error: 'Provider not found for credential' });
+      }
+      serverUrl = decrypt(provider.serverUrl);
+    } else {
+      return res.status(400).json({ error: 'No server URL available for credential' });
+    }
+
     // Create a temporary client to test
     const client = new XtreamCodesClient({
-      serverUrl: decrypt(credential.serverUrl),
+      serverUrl,
       username: decrypt(credential.username),
       password: decrypt(credential.password),
       credentialId: credential.id,

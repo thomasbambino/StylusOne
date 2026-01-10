@@ -1,4 +1,4 @@
-import { Users, Settings as SettingsIcon, LogOut, Menu, Search, CreditCard, Eye, Gift } from "lucide-react"
+import { Users, Settings as SettingsIcon, LogOut, Menu, Search, CreditCard, Eye, Gift, Server, Tv, Package } from "lucide-react"
 import { Link, useLocation } from "wouter"
 import { Settings } from "@shared/schema"
 import { motion } from "framer-motion"
@@ -150,6 +150,24 @@ export function NavigationBar({ settings, pageTitle }: NavigationBarProps) {
                           <DropdownMenuItem className="cursor-pointer">
                             <CreditCard className="h-4 w-4 mr-2" />
                             Subscription Plans
+                          </DropdownMenuItem>
+                        </Link>
+                        <Link href="/iptv-providers">
+                          <DropdownMenuItem className="cursor-pointer">
+                            <Server className="h-4 w-4 mr-2" />
+                            IPTV Providers
+                          </DropdownMenuItem>
+                        </Link>
+                        <Link href="/iptv-channels">
+                          <DropdownMenuItem className="cursor-pointer">
+                            <Tv className="h-4 w-4 mr-2" />
+                            IPTV Channels
+                          </DropdownMenuItem>
+                        </Link>
+                        <Link href="/iptv-packages">
+                          <DropdownMenuItem className="cursor-pointer">
+                            <Package className="h-4 w-4 mr-2" />
+                            Channel Packages
                           </DropdownMenuItem>
                         </Link>
                         <DropdownMenuItem

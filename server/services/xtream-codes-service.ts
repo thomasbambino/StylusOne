@@ -1,7 +1,7 @@
 import axios from 'axios';
 import { IService } from './interfaces';
 import { db } from '../db';
-import { iptvCredentials, planIptvCredentials, activeIptvStreams, userSubscriptions, subscriptionPlans } from '@shared/schema';
+import { iptvCredentials, planIptvCredentials, activeIptvStreams, userSubscriptions, subscriptionPlans, iptvChannels, planPackages, packageChannels, channelPackages, iptvProviders } from '@shared/schema';
 import { eq, and, inArray, desc } from 'drizzle-orm';
 import { decrypt, maskCredential } from '../utils/encryption';
 
@@ -235,6 +235,21 @@ export class XtreamCodesClient {
   }
 
   /**
+   * Get raw live streams from the Xtream API
+   * Used for syncing channel data to database
+   */
+  async getRawLiveStreams(): Promise<XtreamChannel[]> {
+    try {
+      const streamsUrl = `${this.serverUrl}/player_api.php?username=${this.username}&password=${this.password}&action=get_live_streams`;
+      const response = await axios.get(streamsUrl, { timeout: 30000 });
+      return response.data || [];
+    } catch (error) {
+      console.error('Error fetching raw live streams:', error);
+      throw new Error('Failed to fetch live streams from provider');
+    }
+  }
+
+  /**
    * Get stream URL for a specific channel
    */
   getStreamUrl(streamId: string, extension: string = 'ts'): string {
@@ -311,9 +326,11 @@ export class XtreamCodesClient {
 
       // Build category ID to name lookup map (convert to string to handle API returning numbers)
       const categoryNameMap = new Map<string, string>();
-      for (const cat of this.categoriesCache) {
-        if (cat.category_id && cat.category_name) {
-          categoryNameMap.set(String(cat.category_id), cat.category_name);
+      if (this.categoriesCache) {
+        for (const cat of this.categoriesCache) {
+          if (cat.category_id && cat.category_name) {
+            categoryNameMap.set(String(cat.category_id), cat.category_name);
+          }
         }
       }
 
@@ -399,11 +416,21 @@ export class XtreamCodesManager implements IService {
    */
   private async loadCredentialsFromDatabase(): Promise<void> {
     try {
+      // Import iptvProviders dynamically to avoid circular dependency
+      const { iptvProviders } = await import('@shared/schema');
+
       const credentials = await db.select().from(iptvCredentials).where(eq(iptvCredentials.isActive, true));
+
+      // Load all providers for efficiency
+      const providers = await db.select().from(iptvProviders);
+      const providerMap = new Map(providers.map(p => [p.id, decrypt(p.serverUrl)]));
 
       for (const cred of credentials) {
         try {
-          const decrypted = this.decryptCredential(cred);
+          // Get server URL from provider if available, otherwise from credential
+          const providerServerUrl = cred.providerId ? providerMap.get(cred.providerId) : undefined;
+          const decrypted = this.decryptCredential(cred, providerServerUrl);
+
           const client = new XtreamCodesClient({
             serverUrl: decrypted.serverUrl,
             username: decrypted.username,
@@ -424,12 +451,24 @@ export class XtreamCodesManager implements IService {
 
   /**
    * Decrypt a credential from the database
+   * For new provider-based credentials, serverUrl comes from provider
+   * For legacy credentials, serverUrl is stored directly on credential
    */
-  private decryptCredential(cred: typeof iptvCredentials.$inferSelect): DecryptedCredential {
+  private decryptCredential(cred: typeof iptvCredentials.$inferSelect, providerServerUrl?: string): DecryptedCredential {
+    // Use provider serverUrl if provided, otherwise fall back to credential's serverUrl
+    let serverUrl: string;
+    if (providerServerUrl) {
+      serverUrl = providerServerUrl;
+    } else if (cred.serverUrl) {
+      serverUrl = decrypt(cred.serverUrl);
+    } else {
+      throw new Error(`Credential ${cred.id} has no server URL`);
+    }
+
     return {
       id: cred.id,
       name: cred.name,
-      serverUrl: decrypt(cred.serverUrl),
+      serverUrl,
       username: decrypt(cred.username),
       password: decrypt(cred.password),
       maxConnections: cred.maxConnections,
@@ -452,7 +491,17 @@ export class XtreamCodesManager implements IService {
     }
 
     try {
-      const decrypted = this.decryptCredential(cred);
+      // Get provider's server URL if this credential is linked to a provider
+      let providerServerUrl: string | undefined;
+      if (cred.providerId) {
+        const { iptvProviders } = await import('@shared/schema');
+        const [provider] = await db.select().from(iptvProviders).where(eq(iptvProviders.id, cred.providerId));
+        if (provider) {
+          providerServerUrl = decrypt(provider.serverUrl);
+        }
+      }
+
+      const decrypted = this.decryptCredential(cred, providerServerUrl);
       const client = new XtreamCodesClient({
         serverUrl: decrypted.serverUrl,
         username: decrypted.username,
@@ -525,7 +574,135 @@ export class XtreamCodesManager implements IService {
   }
 
   /**
+   * Get channels from user's subscription packages (new package-based system)
+   * Returns channels from: user subscriptions → plans → packages → channels
+   */
+  async getChannelsFromPackages(userId: number): Promise<IPTVChannel[]> {
+    // Get user's active subscriptions
+    const subscriptions = await db.select()
+      .from(userSubscriptions)
+      .innerJoin(subscriptionPlans, eq(userSubscriptions.plan_id, subscriptionPlans.id))
+      .where(and(
+        eq(userSubscriptions.user_id, userId),
+        eq(userSubscriptions.status, 'active')
+      ));
+
+    if (subscriptions.length === 0) {
+      return [];
+    }
+
+    // Get plan IDs
+    const planIds = subscriptions.map(s => s.userSubscriptions.plan_id);
+
+    // Get packages assigned to those plans
+    const assignedPackages = await db.select()
+      .from(planPackages)
+      .innerJoin(channelPackages, eq(planPackages.packageId, channelPackages.id))
+      .where(and(
+        inArray(planPackages.planId, planIds),
+        eq(channelPackages.isActive, true)
+      ));
+
+    if (assignedPackages.length === 0) {
+      return [];
+    }
+
+    // Get unique package IDs
+    const packageIds = Array.from(new Set(assignedPackages.map(p => p.channel_packages.id)));
+
+    // Get all channels from those packages (only enabled channels)
+    const packChannels = await db.select({
+      channel: iptvChannels,
+      sortOrder: packageChannels.sortOrder,
+    })
+      .from(packageChannels)
+      .innerJoin(iptvChannels, eq(packageChannels.channelId, iptvChannels.id))
+      .where(and(
+        inArray(packageChannels.packageId, packageIds),
+        eq(iptvChannels.isEnabled, true)
+      ));
+
+    if (packChannels.length === 0) {
+      return [];
+    }
+
+    // Group channels by provider to batch credential lookups
+    const providerIds = Array.from(new Set(packChannels.map(pc => pc.channel.providerId)));
+
+    // Get one active credential per provider for building stream URLs
+    const providerCredentials = new Map<number, { serverUrl: string; username: string; password: string }>();
+
+    for (const providerId of providerIds) {
+      // Get provider with decrypted server URL
+      const [provider] = await db.select().from(iptvProviders).where(eq(iptvProviders.id, providerId));
+      if (!provider) continue;
+
+      // Get an active credential for this provider
+      const [credential] = await db.select()
+        .from(iptvCredentials)
+        .where(and(
+          eq(iptvCredentials.providerId, providerId),
+          eq(iptvCredentials.isActive, true)
+        ))
+        .limit(1);
+
+      if (credential) {
+        try {
+          const serverUrl = decrypt(provider.serverUrl);
+          const username = decrypt(credential.username);
+          const password = decrypt(credential.password);
+          providerCredentials.set(providerId, { serverUrl, username, password });
+        } catch (error) {
+          console.error(`[IPTV] Failed to decrypt credentials for provider ${providerId}:`, error);
+        }
+      }
+    }
+
+    // Convert database channels to IPTVChannel format
+    const channelMap = new Map<string, IPTVChannel>();
+
+    for (const { channel, sortOrder } of packChannels) {
+      const creds = providerCredentials.get(channel.providerId);
+      if (!creds) continue; // Skip if no credentials available
+
+      // Build stream URL using provider credentials
+      const streamUrl = `${creds.serverUrl}/live/${creds.username}/${creds.password}/${channel.streamId}.ts`;
+
+      // Use channel name for deduplication (same channel in multiple packages)
+      const key = channel.name.toLowerCase().trim();
+      if (!channelMap.has(key)) {
+        channelMap.set(key, {
+          id: channel.streamId,
+          number: String(sortOrder || channel.id),
+          name: channel.name,
+          streamUrl,
+          logo: channel.logo || '',
+          epgId: channel.streamId,
+          categoryName: channel.categoryName || 'Uncategorized',
+          categoryId: channel.categoryId || '',
+          hasArchive: false, // Package channels don't track archive status yet
+          archiveDays: 0,
+        });
+      }
+    }
+
+    const channels = Array.from(channelMap.values());
+
+    // Sort by number/name
+    channels.sort((a, b) => {
+      const numA = parseInt(a.number) || 0;
+      const numB = parseInt(b.number) || 0;
+      if (numA !== numB) return numA - numB;
+      return a.name.localeCompare(b.name);
+    });
+
+    console.log(`[IPTV] User ${userId} has ${channels.length} channels from packages`);
+    return channels;
+  }
+
+  /**
    * Get merged channels from all credentials a user has access to
+   * Prioritizes package-based channels, falls back to direct credential channels
    */
   async getMergedChannels(userId: number, categoryId?: string): Promise<IPTVChannel[]> {
     // Check cache first
@@ -536,6 +713,29 @@ export class XtreamCodesManager implements IService {
       }
       return cached.channels;
     }
+
+    // First, try to get channels from packages (new system)
+    const packageChannels = await this.getChannelsFromPackages(userId);
+
+    if (packageChannels.length > 0) {
+      // User has package-based channels, use those
+      console.log(`[IPTV] Using package-based channels for user ${userId}`);
+
+      // Cache the result
+      this.userChannelCache.set(userId, {
+        channels: packageChannels,
+        timestamp: Date.now()
+      });
+
+      if (categoryId) {
+        return packageChannels.filter(ch => ch.categoryId === categoryId);
+      }
+
+      return packageChannels;
+    }
+
+    // Fall back to legacy credential-based channels
+    console.log(`[IPTV] Falling back to legacy credentials for user ${userId}`);
 
     const clients = await this.getClientsForUser(userId);
     if (clients.length === 0) {
@@ -584,9 +784,49 @@ export class XtreamCodesManager implements IService {
   }
 
   /**
+   * Get categories from user's subscription packages
+   */
+  async getCategoriesFromPackages(userId: number): Promise<XtreamCategory[]> {
+    // Get channels from packages first
+    const channels = await this.getChannelsFromPackages(userId);
+
+    if (channels.length === 0) {
+      return [];
+    }
+
+    // Extract unique categories from channels
+    const categoryMap = new Map<string, XtreamCategory>();
+    for (const channel of channels) {
+      if (channel.categoryName && channel.categoryId) {
+        const key = channel.categoryName.toLowerCase().trim();
+        if (!categoryMap.has(key)) {
+          categoryMap.set(key, {
+            category_id: channel.categoryId,
+            category_name: channel.categoryName,
+            parent_id: 0
+          });
+        }
+      }
+    }
+
+    return Array.from(categoryMap.values()).sort((a, b) =>
+      a.category_name.localeCompare(b.category_name)
+    );
+  }
+
+  /**
    * Get merged categories from all credentials a user has access to
+   * Prioritizes package-based categories, falls back to direct credentials
    */
   async getMergedCategories(userId: number): Promise<XtreamCategory[]> {
+    // First, try to get categories from packages (new system)
+    const packageCategories = await this.getCategoriesFromPackages(userId);
+
+    if (packageCategories.length > 0) {
+      return packageCategories;
+    }
+
+    // Fall back to legacy credential-based categories
     const clients = await this.getClientsForUser(userId);
     if (clients.length === 0) {
       return [];
@@ -616,8 +856,16 @@ export class XtreamCodesManager implements IService {
   /**
    * Select a credential for streaming a channel (checks capacity)
    * Returns credential ID if available, null if no capacity
+   * Supports both package-based and direct credential channels
    */
   async selectCredentialForStream(userId: number, streamId: string): Promise<number | null> {
+    // First, check if this is a package-based channel
+    const packageChannelCredential = await this.selectPackageChannelCredential(userId, streamId);
+    if (packageChannelCredential !== null) {
+      return packageChannelCredential;
+    }
+
+    // Fall back to legacy credential-based selection
     const clients = await this.getClientsForUser(userId);
     if (clients.length === 0) {
       // Use env client fallback (no stream tracking)
@@ -651,6 +899,89 @@ export class XtreamCodesManager implements IService {
 
     console.log(`[IPTV] User ${userId} NO CAPACITY for stream ${streamId}`);
     return null; // No capacity available
+  }
+
+  /**
+   * Select a credential for a package-based channel
+   * Returns credential ID if found and has capacity, null otherwise
+   */
+  private async selectPackageChannelCredential(userId: number, streamId: string): Promise<number | null> {
+    // Get user's active subscriptions
+    const subscriptions = await db.select()
+      .from(userSubscriptions)
+      .innerJoin(subscriptionPlans, eq(userSubscriptions.plan_id, subscriptionPlans.id))
+      .where(and(
+        eq(userSubscriptions.user_id, userId),
+        eq(userSubscriptions.status, 'active')
+      ));
+
+    if (subscriptions.length === 0) {
+      return null;
+    }
+
+    const planIds = subscriptions.map(s => s.userSubscriptions.plan_id);
+
+    // Get packages assigned to those plans
+    const assignedPackages = await db.select()
+      .from(planPackages)
+      .innerJoin(channelPackages, eq(planPackages.packageId, channelPackages.id))
+      .where(and(
+        inArray(planPackages.planId, planIds),
+        eq(channelPackages.isActive, true)
+      ));
+
+    if (assignedPackages.length === 0) {
+      return null;
+    }
+
+    const packageIds = Array.from(new Set(assignedPackages.map(p => p.channel_packages.id)));
+
+    // Check if streamId exists in user's packages
+    const [channelInPackage] = await db.select({
+      channel: iptvChannels,
+    })
+      .from(packageChannels)
+      .innerJoin(iptvChannels, eq(packageChannels.channelId, iptvChannels.id))
+      .where(and(
+        inArray(packageChannels.packageId, packageIds),
+        eq(iptvChannels.streamId, streamId),
+        eq(iptvChannels.isEnabled, true)
+      ))
+      .limit(1);
+
+    if (!channelInPackage) {
+      return null; // Channel not found in user's packages
+    }
+
+    const providerId = channelInPackage.channel.providerId;
+
+    // Get all active credentials for this provider, ordered by priority
+    const providerCredentials = await db.select()
+      .from(iptvCredentials)
+      .where(and(
+        eq(iptvCredentials.providerId, providerId),
+        eq(iptvCredentials.isActive, true)
+      ));
+
+    if (providerCredentials.length === 0) {
+      console.log(`[IPTV] No active credentials for provider ${providerId}`);
+      return null;
+    }
+
+    // Find a credential with available capacity
+    for (const cred of providerCredentials) {
+      const activeStreams = await db.select()
+        .from(activeIptvStreams)
+        .where(eq(activeIptvStreams.credentialId, cred.id));
+
+      if (activeStreams.length < cred.maxConnections) {
+        console.log(`[IPTV] User ${userId} using PACKAGE CREDENTIAL ${cred.id} (${cred.name}) for stream ${streamId}`);
+        return cred.id;
+      }
+    }
+
+    console.log(`[IPTV] User ${userId} NO CAPACITY for package stream ${streamId} (provider ${providerId})`);
+    return null;
   }
 
   /**
