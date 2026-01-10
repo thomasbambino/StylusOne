@@ -3049,6 +3049,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       if (!response || !response.ok) {
         console.error(`Failed to fetch segment ${segmentPath} after ${maxRetries + 1} attempts: ${response?.status || 'no response'}`);
+
+        // If we got 509 (bandwidth limit), invalidate the cached stream so next request
+        // gets a fresh manifest that may redirect to a different server
+        if (response?.status === 509) {
+          console.log(`🔄 509 error - invalidating cached stream ${streamId} to force fresh manifest`);
+          sharedStreams.delete(streamId);
+          iptvSegmentBaseUrls.delete(streamId);
+          iptvSegmentBaseUrls.delete(parseInt(streamId));
+          iptvSegmentBaseUrls.delete(streamId.toString());
+        }
+
         return res.status(response?.status || 503).send('Segment not available');
       }
 
