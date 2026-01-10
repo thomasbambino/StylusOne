@@ -984,10 +984,20 @@ export class XtreamCodesManager implements IService {
     }
 
     // Find a credential with available capacity
+    const allStreamsInfo: { credId: number; name: string; streams: Array<{ userId: number; streamId: string; age: number }> }[] = [];
+
     for (const cred of providerCredentials) {
       const activeStreams = await db.select()
         .from(activeIptvStreams)
         .where(eq(activeIptvStreams.credentialId, cred.id));
+
+      // Track for debug output
+      const streamInfo = activeStreams.map(s => ({
+        userId: s.userId,
+        streamId: s.streamId,
+        age: Math.round((Date.now() - new Date(s.lastHeartbeat).getTime()) / 1000)
+      }));
+      allStreamsInfo.push({ credId: cred.id, name: cred.name, streams: streamInfo });
 
       console.log(`[IPTV-PKG] Credential ${cred.id} (${cred.name}): ${activeStreams.length}/${cred.maxConnections} streams active`);
 
@@ -997,7 +1007,15 @@ export class XtreamCodesManager implements IService {
       }
     }
 
-    console.log(`[IPTV] User ${userId} NO CAPACITY for package stream ${streamId} (provider ${providerId}) - all ${providerCredentials.length} credentials at max`);
+    // Log detailed info about what's blocking capacity
+    console.log(`[IPTV] User ${userId} NO CAPACITY for package stream ${streamId} (provider ${providerId})`);
+    console.log(`[IPTV] Active streams blocking capacity:`);
+    for (const info of allStreamsInfo) {
+      console.log(`  Credential ${info.credId} (${info.name}): ${info.streams.length} streams`);
+      for (const s of info.streams) {
+        console.log(`    - User ${s.userId}, stream ${s.streamId}, last heartbeat ${s.age}s ago`);
+      }
+    }
     return null;
   }
 

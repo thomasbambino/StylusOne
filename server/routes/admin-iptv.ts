@@ -1820,15 +1820,93 @@ router.delete('/subscription-plans/:planId/iptv-credentials/:credId', requireSup
 
 /**
  * GET /api/admin/iptv-streams
- * Get all active IPTV streams
+ * Get all active IPTV streams with detailed info
  */
 router.get('/iptv-streams', requireSuperAdmin, async (req, res) => {
   try {
     const streams = await streamTrackerService.getAllActiveStreams();
-    res.json(streams);
+
+    // Also get credential capacity info
+    const capacityInfo = [];
+    const credentialIds = [...new Set(streams.map(s => s.credentialId))];
+
+    for (const credId of credentialIds) {
+      const capacity = await streamTrackerService.getCredentialCapacity(credId);
+      if (capacity) {
+        capacityInfo.push({ credentialId: credId, ...capacity });
+      }
+    }
+
+    res.json({
+      streams,
+      capacityInfo,
+      totalActive: streams.length
+    });
   } catch (error) {
     console.error('Error fetching active streams:', error);
     res.status(500).json({ error: 'Failed to fetch active streams' });
+  }
+});
+
+/**
+ * DELETE /api/admin/iptv-streams
+ * Clear all active streams (emergency reset)
+ */
+router.delete('/iptv-streams', requireSuperAdmin, async (req, res) => {
+  try {
+    const result = await db.delete(activeIptvStreams).returning();
+    console.log(`[ADMIN] Cleared ${result.length} active IPTV streams`);
+    res.json({
+      success: true,
+      clearedCount: result.length
+    });
+  } catch (error) {
+    console.error('Error clearing active streams:', error);
+    res.status(500).json({ error: 'Failed to clear active streams' });
+  }
+});
+
+/**
+ * DELETE /api/admin/iptv-streams/:id
+ * Delete a specific active stream
+ */
+router.delete('/iptv-streams/:id', requireSuperAdmin, async (req, res) => {
+  try {
+    const streamId = parseInt(req.params.id);
+    if (isNaN(streamId)) {
+      return res.status(400).json({ error: 'Invalid stream ID' });
+    }
+
+    const result = await db.delete(activeIptvStreams)
+      .where(eq(activeIptvStreams.id, streamId))
+      .returning();
+
+    if (result.length === 0) {
+      return res.status(404).json({ error: 'Stream not found' });
+    }
+
+    console.log(`[ADMIN] Deleted stream ${streamId}`);
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Error deleting stream:', error);
+    res.status(500).json({ error: 'Failed to delete stream' });
+  }
+});
+
+/**
+ * POST /api/admin/iptv-streams/cleanup
+ * Force trigger stale stream cleanup
+ */
+router.post('/iptv-streams/cleanup', requireSuperAdmin, async (req, res) => {
+  try {
+    const cleanedCount = await streamTrackerService.cleanupStaleStreams();
+    res.json({
+      success: true,
+      cleanedCount
+    });
+  } catch (error) {
+    console.error('Error running stream cleanup:', error);
+    res.status(500).json({ error: 'Failed to run stream cleanup' });
   }
 });
 
