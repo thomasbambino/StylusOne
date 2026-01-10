@@ -989,13 +989,15 @@ export class XtreamCodesManager implements IService {
         .from(activeIptvStreams)
         .where(eq(activeIptvStreams.credentialId, cred.id));
 
+      console.log(`[IPTV-PKG] Credential ${cred.id} (${cred.name}): ${activeStreams.length}/${cred.maxConnections} streams active`);
+
       if (activeStreams.length < cred.maxConnections) {
         console.log(`[IPTV] User ${userId} using PACKAGE CREDENTIAL ${cred.id} (${cred.name}) for stream ${streamId}`);
         return cred.id;
       }
     }
 
-    console.log(`[IPTV] User ${userId} NO CAPACITY for package stream ${streamId} (provider ${providerId})`);
+    console.log(`[IPTV] User ${userId} NO CAPACITY for package stream ${streamId} (provider ${providerId}) - all ${providerCredentials.length} credentials at max`);
     return null;
   }
 
