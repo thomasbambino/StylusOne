@@ -135,13 +135,20 @@ export class EPGService implements IService {
           };
 
           // Parse episode numbers if available
-          const episodeNum = prog['episode-num']?.find(e => e.$.system === 'xmltv_ns');
+          const episodeNum = prog['episode-num']?.find((e: any) => e.$?.system === 'xmltv_ns');
           if (episodeNum) {
-            const match = episodeNum._.match(/(\d+)\.(\d+)/);
+            const epText = episodeNum._ || episodeNum;
+            const match = epText.match(/(\d+)\.(\d+)/);
             if (match) {
               program.season = parseInt(match[1]) + 1;
               program.episode = parseInt(match[2]) + 1;
             }
+          }
+
+          // Parse rating if available
+          const ratingEl = prog.rating?.[0];
+          if (ratingEl) {
+            program.rating = ratingEl.value?.[0] || ratingEl._ || ratingEl;
           }
 
           programs.push(program);
@@ -376,6 +383,23 @@ export class EPGService implements IService {
             isNew: hasSuperscriptNew,
             isLive: this.isCurrentTime(this.parseXMLTVDate(prog.$.start), this.parseXMLTVDate(prog.$.stop))
           };
+
+          // Parse episode numbers if available (xmltv_ns format: "season.episode.part")
+          const episodeNum = prog['episode-num']?.find((e: any) => e.$?.system === 'xmltv_ns');
+          if (episodeNum) {
+            const epText = episodeNum._ || episodeNum;
+            const match = epText.match(/(\d+)\.(\d+)/);
+            if (match) {
+              program.season = parseInt(match[1]) + 1; // xmltv_ns is 0-indexed
+              program.episode = parseInt(match[2]) + 1;
+            }
+          }
+
+          // Parse rating if available
+          const ratingEl = prog.rating?.[0];
+          if (ratingEl) {
+            program.rating = ratingEl.value?.[0] || ratingEl._ || ratingEl;
+          }
 
           programs.push(program);
         }

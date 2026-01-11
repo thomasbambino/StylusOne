@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Tv, Mail, Loader2, Smartphone } from 'lucide-react';
+import { Tv, Mail, Loader2, Smartphone, UserPlus } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 import { GoogleAuth } from '@codetrix-studio/capacitor-google-auth';
 import { CapacitorHttp } from '@capacitor/core';
@@ -12,11 +12,19 @@ import { Redirect } from 'wouter';
 import { Settings } from '@shared/schema';
 import { cn } from '@/lib/utils';
 
-type AuthView = 'menu' | 'code' | 'email' | 'pending';
+type AuthView = 'menu' | 'code' | 'email' | 'register' | 'pending';
 
 interface EmailFormData {
   email: string;
   password: string;
+}
+
+interface RegisterFormData {
+  username: string;
+  email: string;
+  password: string;
+  confirmPassword: string;
+  referralCode: string;
 }
 
 interface TvCodeResponse {
@@ -67,6 +75,9 @@ export default function AuthTvPage() {
   // Email form state
   const [emailForm, setEmailForm] = useState<EmailFormData>({ email: '', password: '' });
 
+  // Register form state
+  const [registerForm, setRegisterForm] = useState<RegisterFormData>({ username: '', email: '', password: '', confirmPassword: '', referralCode: '' });
+
   const { data: settings } = useQuery<Settings>({
     queryKey: ["/api/settings"],
   });
@@ -77,6 +88,7 @@ export default function AuthTvPage() {
       <img src="/google-g-logo.png" alt="Google" className="w-7 h-7" />
     ) },
     { id: 'email', label: 'Sign in with Email', description: 'Enter email and password', icon: Mail },
+    { id: 'register', label: 'Create Account', description: 'New user? Sign up here', icon: UserPlus },
   ];
 
   // Keyboard navigation for TV remote
@@ -102,7 +114,7 @@ export default function AuthTvPage() {
           e.preventDefault();
           cancelCodeLogin();
         }
-      } else if (view === 'email') {
+      } else if (view === 'email' || view === 'register') {
         if (e.key === 'Escape') {
           e.preventDefault();
           setView('menu');
@@ -307,6 +319,58 @@ export default function AuthTvPage() {
     }
   };
 
+  const handleRegister = async () => {
+    if (!registerForm.username || !registerForm.email || !registerForm.password) {
+      setError('Please fill in all fields');
+      return;
+    }
+
+    if (registerForm.password !== registerForm.confirmPassword) {
+      setError('Passwords do not match');
+      return;
+    }
+
+    if (registerForm.password.length < 6) {
+      setError('Password must be at least 6 characters');
+      return;
+    }
+
+    try {
+      setIsLoading(true);
+      setError(null);
+
+      const response = await CapacitorHttp.post({
+        url: buildApiUrl('/api/register'),
+        headers: { 'Content-Type': 'application/json' },
+        data: {
+          username: registerForm.username,
+          email: registerForm.email,
+          password: registerForm.password,
+          referralCode: registerForm.referralCode || undefined,
+        },
+      });
+
+      if (response.status !== 200 && response.status !== 201) {
+        throw new Error(response.data?.message || 'Registration failed');
+      }
+
+      // Check if account requires approval
+      if (response.data?.requiresApproval || response.data?.role === 'pending') {
+        setView('pending');
+        return;
+      }
+
+      // Auto-login successful
+      queryClient.setQueryData(["/api/user"], response.data);
+      window.location.href = '/';
+    } catch (err) {
+      console.error('Registration error:', err);
+      setError(err instanceof Error ? err.message : 'Registration failed');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   const handleButtonSelect = (id: string) => {
     switch (id) {
       case 'code':
@@ -319,6 +383,11 @@ export default function AuthTvPage() {
         setError(null);
         setEmailForm({ email: '', password: '' });
         setView('email');
+        break;
+      case 'register':
+        setError(null);
+        setRegisterForm({ username: '', email: '', password: '', confirmPassword: '', referralCode: '' });
+        setView('register');
         break;
     }
   };
@@ -931,6 +1000,210 @@ export default function AuthTvPage() {
               >
                 {settings?.site_title || 'Stylus One'}
               </motion.h1>
+            </motion.div>
+          </>
+        )}
+
+        {/* Register View - Responsive Layout */}
+        {view === 'register' && (
+          <>
+            {/* Register Form - Below branding on mobile, left side on desktop */}
+            <motion.div
+              key="register-left"
+              initial={{ opacity: 0, y: 30 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: 30 }}
+              transition={{ duration: 0.4 }}
+              className="w-full md:w-1/2 flex flex-col justify-center px-6 md:pl-16 md:pr-12 z-10 order-2 md:order-1"
+            >
+              <motion.h2
+                initial={{ opacity: 0, y: -20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.1 }}
+                className="text-2xl md:text-3xl font-bold text-white mb-6"
+              >
+                Create Account
+              </motion.h2>
+
+              {error && (
+                <motion.div
+                  initial={{ opacity: 0, scale: 0.95 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  className="bg-red-500/20 border border-red-500/40 rounded-xl px-5 py-3 text-red-400 text-center mb-6 backdrop-blur-sm"
+                >
+                  {error}
+                </motion.div>
+              )}
+
+              <div className="flex flex-col gap-4 max-w-sm">
+                <motion.div
+                  initial={{ opacity: 0, x: -20 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  transition={{ delay: 0.2 }}
+                >
+                  <label className="block text-white/60 text-sm mb-2">Username</label>
+                  <input
+                    type="text"
+                    value={registerForm.username}
+                    onChange={(e) => setRegisterForm(prev => ({ ...prev, username: e.target.value }))}
+                    onKeyDown={(e) => { if (e.key === 'Enter') handleRegister(); }}
+                    placeholder="Choose a username"
+                    className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-lg text-white placeholder:text-white/40 focus:outline-none focus:ring-2 focus:ring-white/30"
+                    autoComplete="username"
+                    autoFocus
+                  />
+                </motion.div>
+
+                <motion.div
+                  initial={{ opacity: 0, x: -20 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  transition={{ delay: 0.25 }}
+                >
+                  <label className="block text-white/60 text-sm mb-2">Email</label>
+                  <input
+                    type="email"
+                    value={registerForm.email}
+                    onChange={(e) => setRegisterForm(prev => ({ ...prev, email: e.target.value }))}
+                    onKeyDown={(e) => { if (e.key === 'Enter') handleRegister(); }}
+                    placeholder="Enter your email"
+                    className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-lg text-white placeholder:text-white/40 focus:outline-none focus:ring-2 focus:ring-white/30"
+                    autoComplete="email"
+                  />
+                </motion.div>
+
+                <motion.div
+                  initial={{ opacity: 0, x: -20 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  transition={{ delay: 0.3 }}
+                >
+                  <label className="block text-white/60 text-sm mb-2">Password</label>
+                  <input
+                    type="password"
+                    value={registerForm.password}
+                    onChange={(e) => setRegisterForm(prev => ({ ...prev, password: e.target.value }))}
+                    onKeyDown={(e) => { if (e.key === 'Enter') handleRegister(); }}
+                    placeholder="Create a password"
+                    className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-lg text-white placeholder:text-white/40 focus:outline-none focus:ring-2 focus:ring-white/30"
+                    autoComplete="new-password"
+                  />
+                </motion.div>
+
+                <motion.div
+                  initial={{ opacity: 0, x: -20 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  transition={{ delay: 0.35 }}
+                >
+                  <label className="block text-white/60 text-sm mb-2">Confirm Password</label>
+                  <input
+                    type="password"
+                    value={registerForm.confirmPassword}
+                    onChange={(e) => setRegisterForm(prev => ({ ...prev, confirmPassword: e.target.value }))}
+                    onKeyDown={(e) => { if (e.key === 'Enter') handleRegister(); }}
+                    placeholder="Confirm your password"
+                    className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-lg text-white placeholder:text-white/40 focus:outline-none focus:ring-2 focus:ring-white/30"
+                    autoComplete="new-password"
+                  />
+                </motion.div>
+
+                <motion.div
+                  initial={{ opacity: 0, x: -20 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  transition={{ delay: 0.4 }}
+                >
+                  <label className="block text-white/60 text-sm mb-2">Referral Code <span className="text-white/40">(optional)</span></label>
+                  <input
+                    type="text"
+                    value={registerForm.referralCode}
+                    onChange={(e) => setRegisterForm(prev => ({ ...prev, referralCode: e.target.value.toUpperCase() }))}
+                    onKeyDown={(e) => { if (e.key === 'Enter') handleRegister(); }}
+                    placeholder="Enter Referral Code"
+                    className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-lg text-white placeholder:text-white/40 focus:outline-none focus:ring-2 focus:ring-white/30 uppercase"
+                    autoComplete="off"
+                  />
+                </motion.div>
+
+                <motion.button
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: 0.45 }}
+                  className="mt-2 px-6 py-3 bg-white text-gray-900 rounded-lg font-semibold transition-all duration-300 hover:bg-white/90 active:scale-95 disabled:opacity-50 flex items-center justify-center gap-2"
+                  onClick={handleRegister}
+                  disabled={isLoading}
+                >
+                  {isLoading ? (
+                    <>
+                      <Loader2 className="w-5 h-5 animate-spin" />
+                      Creating account...
+                    </>
+                  ) : (
+                    'Create Account'
+                  )}
+                </motion.button>
+
+                <motion.button
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  transition={{ delay: 0.55 }}
+                  className="px-5 py-2 bg-white/10 hover:bg-white/20 rounded-lg text-white text-sm font-medium transition-all duration-300 border border-white/10"
+                  onClick={() => setView('menu')}
+                  disabled={isLoading}
+                >
+                  Back
+                </motion.button>
+              </div>
+            </motion.div>
+
+            {/* Branding - Above form on mobile, right side on desktop */}
+            <motion.div
+              key="register-right"
+              initial={{ opacity: 0, y: -30 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -30 }}
+              transition={{ duration: 0.4, delay: 0.1 }}
+              className="w-full md:w-1/2 flex flex-col items-center justify-center pt-8 pb-4 md:py-0 md:pr-16 z-10 md:border-l border-white/5 order-1 md:order-2"
+            >
+              <div className="absolute w-64 h-64 bg-green-600/10 rounded-full blur-3xl" />
+
+              <div className="relative">
+                {settings?.logo_url_large ? (
+                  <motion.img
+                    src={settings.logo_url_large}
+                    alt="Logo"
+                    className="h-16 w-16 md:h-20 md:w-20 mb-3 object-contain drop-shadow-2xl"
+                    initial={{ scale: 0.8, opacity: 0 }}
+                    animate={{ scale: 1, opacity: 1 }}
+                    transition={{ duration: 0.5, delay: 0.2 }}
+                  />
+                ) : (
+                  <motion.div
+                    initial={{ scale: 0.8, opacity: 0 }}
+                    animate={{ scale: 1, opacity: 1 }}
+                    transition={{ duration: 0.5, delay: 0.2 }}
+                    className="relative mb-3"
+                  >
+                    <UserPlus className="h-16 w-16 md:h-20 md:w-20 text-green-500 drop-shadow-2xl" />
+                    <div className="absolute inset-0 bg-green-500/30 blur-2xl rounded-full" />
+                  </motion.div>
+                )}
+              </div>
+
+              <motion.h1
+                className="text-xl md:text-2xl font-bold text-white tracking-tight text-center"
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.3 }}
+              >
+                {settings?.site_title || 'Stylus One'}
+              </motion.h1>
+
+              <motion.p
+                className="hidden md:block text-sm text-white/40 mt-2 text-center"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                transition={{ delay: 0.4 }}
+              >
+                Join us today
+              </motion.p>
             </motion.div>
           </>
         )}

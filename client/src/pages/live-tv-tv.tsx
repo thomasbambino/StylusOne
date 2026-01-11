@@ -2089,7 +2089,9 @@ export default function LiveTVTvPage() {
     const TAP_THRESHOLD = 10;
     const isTap = Math.abs(deltaY) < TAP_THRESHOLD && deltaX < TAP_THRESHOLD;
 
-    if (isTap && viewMode === 'player') {
+    // In landscape mode with video playing, or in portrait player mode, tap toggles overlay
+    const shouldToggleOverlay = isTap && (viewMode === 'player' || (!isPortrait && selectedChannel));
+    if (shouldToggleOverlay) {
       // Tap to toggle overlay visibility
       if (showOverlay) {
         setShowOverlay(false);
@@ -2225,16 +2227,27 @@ export default function LiveTVTvPage() {
       return;
     }
 
+    // Don't show tab bar during rotation to prevent white flash
+    if (isRotating) {
+      hideNativeTabBar();
+      setUseNativeTabBar(false);
+      return;
+    }
+
     // Show native tab bar in portrait mode (including AirPlay mode)
     if (isPortrait) {
-      showNativeTabBar().then((shown) => {
-        setUseNativeTabBar(shown);
-      });
+      // Small delay to ensure UI is ready before showing tab bar
+      const timer = setTimeout(() => {
+        showNativeTabBar().then((shown) => {
+          setUseNativeTabBar(shown);
+        });
+      }, 50);
+      return () => clearTimeout(timer);
     } else {
       hideNativeTabBar();
       setUseNativeTabBar(false);
     }
-  }, [isPortrait]);
+  }, [isPortrait, isRotating]);
 
   // Listen for native tab bar selections
   useEffect(() => {
@@ -3305,9 +3318,9 @@ export default function LiveTVTvPage() {
         </div>
       )}
 
-      {/* Player Overlay - Only in landscape player mode */}
+      {/* Player Overlay - In landscape mode with video playing, or landscape player mode */}
       <AnimatePresence>
-        {viewMode === 'player' && showOverlay && !(isPortrait && isNativePlatform()) && (
+        {showOverlay && !isPortrait && selectedChannel && (
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
@@ -3706,24 +3719,105 @@ export default function LiveTVTvPage() {
 
             {/* Subscription Info */}
             <div className="bg-white/5 rounded-xl p-4 mb-4">
-              <h3 className="text-white/50 text-xs font-medium uppercase tracking-wider mb-3">Subscription</h3>
+              <div className="flex items-center gap-2 mb-3">
+                <CreditCard className="w-4 h-4 text-white/50" />
+                <h3 className="text-white/50 text-xs font-medium uppercase tracking-wider">Subscription</h3>
+              </div>
               {subscriptionLoading ? (
-                <div className="animate-pulse">
-                  <div className="h-5 w-32 bg-white/10 rounded mb-2" />
-                  <div className="h-4 w-48 bg-white/10 rounded" />
+                <div className="animate-pulse space-y-3">
+                  <div className="flex justify-between">
+                    <div className="h-5 w-24 bg-white/10 rounded" />
+                    <div className="h-5 w-16 bg-white/10 rounded-full" />
+                  </div>
+                  <div className="h-10 w-full bg-white/10 rounded" />
+                  <div className="grid grid-cols-2 gap-2">
+                    <div className="h-8 bg-white/10 rounded" />
+                    <div className="h-8 bg-white/10 rounded" />
+                  </div>
                 </div>
               ) : subscriptionData ? (
-                <>
-                  <p className="text-white font-medium">{subscriptionData.plan_name}</p>
-                  <p className="text-white/50 text-sm mt-1">
-                    {subscriptionData.billing_period === 'annual' ? 'Annual' : 'Monthly'} • {subscriptionData.status}
-                  </p>
-                  <p className="text-white/40 text-xs mt-2">
-                    Renews {new Date(subscriptionData.current_period_end).toLocaleDateString()}
-                  </p>
-                </>
+                <div className="space-y-3">
+                  {/* Plan Name & Status */}
+                  <div className="flex justify-between items-center">
+                    <div>
+                      <h4 className="text-base font-semibold text-white">{subscriptionData.plan_name}</h4>
+                      <p className="text-white/60 text-xs capitalize">{subscriptionData.billing_period} billing</p>
+                    </div>
+                    <span className={cn(
+                      "px-2.5 py-1 rounded-full text-xs font-medium",
+                      subscriptionData.status === 'active' ? "bg-green-500/20 text-green-400" :
+                      subscriptionData.status === 'canceled' ? "bg-red-500/20 text-red-400" :
+                      "bg-yellow-500/20 text-yellow-400"
+                    )}>
+                      {subscriptionData.status === 'active' ? 'Active' :
+                       subscriptionData.status === 'canceled' ? 'Canceled' : subscriptionData.status}
+                    </span>
+                  </div>
+
+                  {/* Price */}
+                  <div className="bg-white/5 rounded-lg p-3">
+                    <div className="text-xl font-bold text-white">
+                      ${((subscriptionData.billing_period === 'monthly'
+                        ? subscriptionData.price_monthly
+                        : subscriptionData.price_annual) / 100).toFixed(2)}
+                      <span className="text-sm font-normal text-white/60">
+                        /{subscriptionData.billing_period === 'monthly' ? 'mo' : 'yr'}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Dates */}
+                  <div className="grid grid-cols-2 gap-2 text-sm">
+                    <div className="flex items-center gap-2 text-white/80">
+                      <Calendar className="w-3.5 h-3.5 text-white/50 shrink-0" />
+                      <div>
+                        <p className="text-xs text-white/50">Started</p>
+                        <p className="text-xs">{new Date(subscriptionData.current_period_start).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2 text-white/80">
+                      <Calendar className="w-3.5 h-3.5 text-white/50 shrink-0" />
+                      <div>
+                        <p className="text-xs text-white/50">
+                          {subscriptionData.cancel_at_period_end ? 'Expires' : 'Renews'}
+                        </p>
+                        <p className="text-xs">{new Date(subscriptionData.current_period_end).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {subscriptionData.cancel_at_period_end && (
+                    <div className="bg-yellow-500/10 border border-yellow-500/20 rounded-lg p-2.5">
+                      <p className="text-yellow-400 text-xs">
+                        Your subscription will end on {new Date(subscriptionData.current_period_end).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}.
+                      </p>
+                    </div>
+                  )}
+
+                  {/* Manage Link */}
+                  <button
+                    onClick={() => window.open('https://stylus.services/my-subscription', '_blank')}
+                    onTouchEnd={(e) => { e.preventDefault(); e.stopPropagation(); window.open('https://stylus.services/my-subscription', '_blank'); }}
+                    className="w-full py-2.5 bg-white/10 active:bg-white/20 rounded-lg text-white text-sm flex items-center justify-center gap-2"
+                  >
+                    <ExternalLink className="w-4 h-4" />
+                    Manage on Website
+                  </button>
+                </div>
               ) : (
-                <p className="text-white/50">No active subscription</p>
+                <div className="text-center py-4">
+                  <CreditCard className="w-10 h-10 text-white/30 mx-auto mb-3" />
+                  <p className="text-white font-medium mb-1">No Active Subscription</p>
+                  <p className="text-white/50 text-xs mb-3">Subscribe to access premium features</p>
+                  <button
+                    onClick={() => window.open('https://stylus.services/my-subscription', '_blank')}
+                    onTouchEnd={(e) => { e.preventDefault(); window.open('https://stylus.services/my-subscription', '_blank'); }}
+                    className="px-4 py-2 bg-red-600 active:bg-red-700 rounded-lg text-white text-sm flex items-center justify-center gap-2 mx-auto"
+                  >
+                    <ExternalLink className="w-4 h-4" />
+                    Subscribe Now
+                  </button>
+                </div>
               )}
             </div>
 
@@ -3776,7 +3870,9 @@ export default function LiveTVTvPage() {
                                 {channel.logo ? (
                                   <img src={channel.logo} alt="" className="w-5 h-5 rounded object-contain bg-white/10" />
                                 ) : (
-                                  <div className="w-5 h-5 rounded bg-white/10" />
+                                  <div className="w-5 h-5 rounded bg-zinc-800 flex items-center justify-center">
+                                    <Tv className="w-3 h-3 text-zinc-500" />
+                                  </div>
                                 )}
                                 <span className="text-white/70 text-xs truncate">{channel.name}</span>
                               </div>
