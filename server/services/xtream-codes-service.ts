@@ -688,13 +688,8 @@ export class XtreamCodesManager implements IService {
 
     const channels = Array.from(channelMap.values());
 
-    // Sort by number/name
-    channels.sort((a, b) => {
-      const numA = parseInt(a.number) || 0;
-      const numB = parseInt(b.number) || 0;
-      if (numA !== numB) return numA - numB;
-      return a.name.localeCompare(b.name);
-    });
+    // Sort alphabetically by name
+    channels.sort((a, b) => a.name.localeCompare(b.name));
 
     console.log(`[IPTV] User ${userId} has ${channels.length} channels from packages`);
     return channels;
@@ -762,13 +757,8 @@ export class XtreamCodesManager implements IService {
 
     const mergedChannels = Array.from(channelMap.values());
 
-    // Sort by channel number/name
-    mergedChannels.sort((a, b) => {
-      const numA = parseInt(a.number) || 0;
-      const numB = parseInt(b.number) || 0;
-      if (numA !== numB) return numA - numB;
-      return a.name.localeCompare(b.name);
-    });
+    // Sort alphabetically by name
+    mergedChannels.sort((a, b) => a.name.localeCompare(b.name));
 
     // Cache the result
     this.userChannelCache.set(userId, {
