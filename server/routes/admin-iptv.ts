@@ -1083,11 +1083,48 @@ router.post('/channel-packages/:id/channels', requireSuperAdmin, async (req, res
 });
 
 /**
+ * POST /api/admin/channel-packages/:id/remove-channels
+ * Bulk remove channels from a package
+ */
+router.post('/channel-packages/:id/remove-channels', requireSuperAdmin, async (req, res) => {
+  try {
+    const packageId = parseInt(req.params.id);
+    if (isNaN(packageId)) {
+      return res.status(400).json({ error: 'Invalid package ID' });
+    }
+
+    const { channelIds } = z.object({
+      channelIds: z.array(z.number().int().positive()),
+    }).parse(req.body);
+
+    if (channelIds.length === 0) {
+      return res.json({ success: true, removed: 0 });
+    }
+
+    const result = await db
+      .delete(packageChannels)
+      .where(and(
+        eq(packageChannels.packageId, packageId),
+        inArray(packageChannels.channelId, channelIds)
+      ))
+      .returning();
+
+    console.log(`[CHANNEL-PKG] Bulk removed ${result.length} channels from package ${packageId}`);
+    res.json({ success: true, removed: result.length });
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      return res.status(400).json({ error: error.errors });
+    }
+    console.error('Error bulk removing channels:', error);
+    res.status(500).json({ error: 'Failed to remove channels' });
+  }
+});
+
+/**
  * DELETE /api/admin/channel-packages/:packageId/channels/:channelId
  * Remove a channel from a package
  */
 router.delete('/channel-packages/:packageId/channels/:channelId', requireSuperAdmin, async (req, res) => {
-  console.log('[CHANNEL-PKG] DELETE /channel-packages/:packageId/channels/:channelId called, packageId:', req.params.packageId, 'channelId:', req.params.channelId);
   try {
     const packageId = parseInt(req.params.packageId);
     const channelId = parseInt(req.params.channelId);

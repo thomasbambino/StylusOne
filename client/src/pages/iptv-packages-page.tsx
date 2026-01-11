@@ -92,6 +92,9 @@ export default function IptvPackagesPage() {
   const [channelPage, setChannelPage] = useState(1);
   const [selectedChannelsToAdd, setSelectedChannelsToAdd] = useState<Set<number>>(new Set());
 
+  // For selecting channels to remove
+  const [selectedChannelsToRemove, setSelectedChannelsToRemove] = useState<Set<number>>(new Set());
+
   // Fetch providers
   const { data: providers = [] } = useQuery<IptvProvider[]>({
     queryKey: ['/api/admin/iptv-providers'],
@@ -325,6 +328,79 @@ export default function IptvPackagesPage() {
     },
   });
 
+  // Bulk remove channels - for deleting many channels at once efficiently
+  const bulkRemoveChannelsMutation = useMutation({
+    mutationFn: async ({ packageId, channelIds }: { packageId: number; channelIds: number[] }) => {
+      const res = await fetch(buildApiUrl(`/api/admin/channel-packages/${packageId}/remove-channels`), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ channelIds }),
+      });
+      if (!res.ok) {
+        const contentType = res.headers.get('content-type');
+        if (contentType && contentType.includes('application/json')) {
+          const error = await res.json();
+          throw new Error(error.error || 'Failed to remove channels');
+        } else {
+          throw new Error(`Server error: ${res.status} ${res.statusText}`);
+        }
+      }
+      return res.json();
+    },
+    // Optimistic update - immediately remove all selected channels from UI
+    onMutate: async ({ packageId, channelIds }) => {
+      await queryClient.cancelQueries({ queryKey: ['/api/admin/channel-packages', packageId] });
+      const previousData = queryClient.getQueryData(['/api/admin/channel-packages', packageId]);
+      const channelIdSet = new Set(channelIds);
+      queryClient.setQueryData(['/api/admin/channel-packages', packageId], (old: any) => {
+        if (!old) return old;
+        return {
+          ...old,
+          channels: old.channels?.filter((c: any) => !channelIdSet.has(c.id)) || [],
+        };
+      });
+      return { previousData, packageId };
+    },
+    onSuccess: (data) => {
+      setSelectedChannelsToRemove(new Set());
+      toast({ title: 'Success', description: `Removed ${data.removed} channels from package` });
+    },
+    onError: (error: Error, _variables, context) => {
+      if (context?.previousData) {
+        queryClient.setQueryData(['/api/admin/channel-packages', context.packageId], context.previousData);
+      }
+      toast({ title: 'Error', description: error.message, variant: 'destructive' });
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/admin/channel-packages'] });
+    },
+  });
+
+  // Toggle channel selection for bulk remove
+  const handleToggleRemoveSelection = (channelId: number) => {
+    setSelectedChannelsToRemove(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(channelId)) {
+        newSet.delete(channelId);
+      } else {
+        newSet.add(channelId);
+      }
+      return newSet;
+    });
+  };
+
+  // Select all channels for bulk remove
+  const handleSelectAllForRemove = () => {
+    const allChannelIds = packageDetails?.channels?.map(c => c.id) || [];
+    setSelectedChannelsToRemove(new Set(allChannelIds));
+  };
+
+  // Clear selection
+  const handleClearRemoveSelection = () => {
+    setSelectedChannelsToRemove(new Set());
+  };
+
   const handleEdit = (pkg: ChannelPackage) => {
     setSelectedPackage(pkg);
     setFormData({
@@ -333,6 +409,7 @@ export default function IptvPackagesPage() {
       description: pkg.description || '',
       isActive: pkg.isActive,
     });
+    setSelectedChannelsToRemove(new Set()); // Clear selection when opening
     setIsEditDialogOpen(true);
   };
 
@@ -546,11 +623,46 @@ export default function IptvPackagesPage() {
 
             <div>
               <div className="flex justify-between items-center mb-2">
-                <Label>Channels ({packageDetails?.channels?.length || 0})</Label>
-                <Button variant="outline" size="sm" onClick={() => selectedPackage && handleAddChannels(selectedPackage)}>
-                  <Plus className="h-3 w-3 mr-1" />
-                  Add Channels
-                </Button>
+                <div className="flex items-center gap-2">
+                  <Label>Channels ({packageDetails?.channels?.length || 0})</Label>
+                  {selectedChannelsToRemove.size > 0 && (
+                    <Badge variant="secondary">{selectedChannelsToRemove.size} selected</Badge>
+                  )}
+                </div>
+                <div className="flex items-center gap-2">
+                  {selectedChannelsToRemove.size > 0 ? (
+                    <>
+                      <Button variant="ghost" size="sm" onClick={handleClearRemoveSelection}>
+                        Clear
+                      </Button>
+                      <Button
+                        variant="destructive"
+                        size="sm"
+                        onClick={() => selectedPackage && bulkRemoveChannelsMutation.mutate({
+                          packageId: selectedPackage.id,
+                          channelIds: Array.from(selectedChannelsToRemove)
+                        })}
+                        disabled={bulkRemoveChannelsMutation.isPending}
+                      >
+                        {bulkRemoveChannelsMutation.isPending && <Loader2 className="h-3 w-3 mr-1 animate-spin" />}
+                        <Trash2 className="h-3 w-3 mr-1" />
+                        Delete {selectedChannelsToRemove.size}
+                      </Button>
+                    </>
+                  ) : (
+                    <>
+                      {(packageDetails?.channels?.length || 0) > 0 && (
+                        <Button variant="ghost" size="sm" onClick={handleSelectAllForRemove}>
+                          Select All
+                        </Button>
+                      )}
+                      <Button variant="outline" size="sm" onClick={() => selectedPackage && handleAddChannels(selectedPackage)}>
+                        <Plus className="h-3 w-3 mr-1" />
+                        Add Channels
+                      </Button>
+                    </>
+                  )}
+                </div>
               </div>
               <ScrollArea className="h-[250px] border rounded-md">
                 {packageDetails?.channels?.length === 0 ? (
@@ -561,7 +673,16 @@ export default function IptvPackagesPage() {
                   <Table>
                     <TableBody>
                       {packageDetails?.channels?.map((channel) => (
-                        <TableRow key={channel.id}>
+                        <TableRow
+                          key={channel.id}
+                          className={selectedChannelsToRemove.has(channel.id) ? 'bg-destructive/10' : ''}
+                        >
+                          <TableCell className="w-[40px]">
+                            <Checkbox
+                              checked={selectedChannelsToRemove.has(channel.id)}
+                              onCheckedChange={() => handleToggleRemoveSelection(channel.id)}
+                            />
+                          </TableCell>
                           <TableCell className="w-[50px]">
                             {channel.logo ? (
                               <img src={channel.logo} alt="" className="h-6 w-6 object-contain rounded" />
