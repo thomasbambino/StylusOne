@@ -11,6 +11,11 @@ class PiPBridgeViewController: CAPBridgeViewController {
         // Set black background to prevent white flash
         view.backgroundColor = .black
 
+        // Set webView background to black (prevents white flash before content loads)
+        webView?.isOpaque = false
+        webView?.backgroundColor = .black
+        webView?.scrollView.backgroundColor = .black
+
         // Configure audio session for background playback and PiP
         do {
             try AVAudioSession.sharedInstance().setCategory(.playback, mode: .moviePlayback)

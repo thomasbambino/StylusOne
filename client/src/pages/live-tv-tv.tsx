@@ -1207,31 +1207,17 @@ export default function LiveTVTvPage() {
 
   const { data: userPackages = [], isLoading: packagesLoading } = useQuery<ChannelPackage[]>({
     queryKey: ['/api/subscriptions/packages'],
-    queryFn: async () => {
-      const res = await fetch(buildApiUrl('/api/subscriptions/packages'), {
-        credentials: 'include',
-      });
-      if (!res.ok) {
-        console.warn('[Profile] Failed to fetch packages:', res.status);
-        return [];
-      }
-      return res.json();
-    },
+    queryFn: getQueryFn({ on401: "returnNull" }),
     enabled: viewMode === 'profile',
+    select: (data) => data || [],
   });
 
   // Fetch channels for expanded package
   const { data: packageChannels = [], isLoading: packageChannelsLoading } = useQuery<PackageChannel[]>({
-    queryKey: ['/api/subscriptions/packages', expandedPackageId, 'channels'],
-    queryFn: async () => {
-      if (!expandedPackageId) return [];
-      const res = await fetch(buildApiUrl(`/api/subscriptions/packages/${expandedPackageId}/channels`), {
-        credentials: 'include',
-      });
-      if (!res.ok) return [];
-      return res.json();
-    },
+    queryKey: [`/api/subscriptions/packages/${expandedPackageId}/channels`],
+    queryFn: getQueryFn({ on401: "returnNull" }),
     enabled: !!expandedPackageId,
+    select: (data) => data || [],
   });
 
   // Cache favorites to localStorage for offline/faster startup
