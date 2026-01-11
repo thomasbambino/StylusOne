@@ -669,6 +669,71 @@ router.get('/iptv-channels/categories', requireSuperAdmin, async (req, res) => {
 });
 
 /**
+ * PUT /api/admin/iptv-channels/bulk
+ * Bulk update channels (enable/disable)
+ * NOTE: This route MUST be defined BEFORE /iptv-channels/:id to avoid "bulk" being matched as an ID
+ */
+router.put('/iptv-channels/bulk', requireSuperAdmin, async (req, res) => {
+  try {
+    console.log('[IPTV-BULK] Request body:', JSON.stringify(req.body));
+    const validatedData = bulkUpdateChannelsSchema.parse(req.body);
+    console.log('[IPTV-BULK] Validated:', validatedData.channelIds.length, 'channels, isEnabled:', validatedData.isEnabled);
+
+    if (validatedData.channelIds.length === 0) {
+      return res.status(400).json({ error: 'No channels selected' });
+    }
+
+    const result = await db
+      .update(iptvChannels)
+      .set({ isEnabled: validatedData.isEnabled })
+      .where(inArray(iptvChannels.id, validatedData.channelIds))
+      .returning({ id: iptvChannels.id });
+
+    console.log('[IPTV-BULK] Updated', result.length, 'channels');
+    res.json({ success: true, updated: result.length });
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      console.error('[IPTV-BULK] Zod validation error:', error.errors);
+      return res.status(400).json({ error: error.errors });
+    }
+    console.error('[IPTV-BULK] Error bulk updating channels:', error);
+    res.status(500).json({ error: 'Failed to bulk update channels' });
+  }
+});
+
+/**
+ * PUT /api/admin/iptv-channels/bulk-category
+ * Bulk enable/disable all channels in a category
+ * NOTE: This route MUST be defined BEFORE /iptv-channels/:id to avoid "bulk-category" being matched as an ID
+ */
+router.put('/iptv-channels/bulk-category', requireSuperAdmin, async (req, res) => {
+  try {
+    const { providerId, categoryName, isEnabled } = z.object({
+      providerId: z.number().int().positive(),
+      categoryName: z.string(),
+      isEnabled: z.boolean(),
+    }).parse(req.body);
+
+    const result = await db
+      .update(iptvChannels)
+      .set({ isEnabled })
+      .where(and(
+        eq(iptvChannels.providerId, providerId),
+        eq(iptvChannels.categoryName, categoryName)
+      ))
+      .returning({ id: iptvChannels.id });
+
+    res.json({ success: true, updated: result.length });
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      return res.status(400).json({ error: error.errors });
+    }
+    console.error('Error bulk updating category:', error);
+    res.status(500).json({ error: 'Failed to bulk update category' });
+  }
+});
+
+/**
  * PUT /api/admin/iptv-channels/:id
  * Update a single channel
  */
@@ -706,61 +771,6 @@ router.put('/iptv-channels/:id', requireSuperAdmin, async (req, res) => {
     }
     console.error('Error updating channel:', error);
     res.status(500).json({ error: 'Failed to update channel' });
-  }
-});
-
-/**
- * PUT /api/admin/iptv-channels/bulk
- * Bulk update channels (enable/disable)
- */
-router.put('/iptv-channels/bulk', requireSuperAdmin, async (req, res) => {
-  try {
-    const validatedData = bulkUpdateChannelsSchema.parse(req.body);
-
-    const result = await db
-      .update(iptvChannels)
-      .set({ isEnabled: validatedData.isEnabled })
-      .where(inArray(iptvChannels.id, validatedData.channelIds))
-      .returning({ id: iptvChannels.id });
-
-    res.json({ success: true, updated: result.length });
-  } catch (error) {
-    if (error instanceof z.ZodError) {
-      return res.status(400).json({ error: error.errors });
-    }
-    console.error('Error bulk updating channels:', error);
-    res.status(500).json({ error: 'Failed to bulk update channels' });
-  }
-});
-
-/**
- * PUT /api/admin/iptv-channels/bulk-category
- * Bulk enable/disable all channels in a category
- */
-router.put('/iptv-channels/bulk-category', requireSuperAdmin, async (req, res) => {
-  try {
-    const { providerId, categoryName, isEnabled } = z.object({
-      providerId: z.number().int().positive(),
-      categoryName: z.string(),
-      isEnabled: z.boolean(),
-    }).parse(req.body);
-
-    const result = await db
-      .update(iptvChannels)
-      .set({ isEnabled })
-      .where(and(
-        eq(iptvChannels.providerId, providerId),
-        eq(iptvChannels.categoryName, categoryName)
-      ))
-      .returning({ id: iptvChannels.id });
-
-    res.json({ success: true, updated: result.length });
-  } catch (error) {
-    if (error instanceof z.ZodError) {
-      return res.status(400).json({ error: error.errors });
-    }
-    console.error('Error bulk updating category:', error);
-    res.status(500).json({ error: 'Failed to bulk update category' });
   }
 });
 
