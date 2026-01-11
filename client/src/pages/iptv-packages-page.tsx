@@ -275,39 +275,53 @@ export default function IptvPackagesPage() {
     },
   });
 
-  // Remove channel from package
+  // Remove channel from package - uses optimistic updates for instant UI feedback
   const removeChannelMutation = useMutation({
     mutationFn: async ({ packageId, channelId }: { packageId: number; channelId: number }) => {
-      const url = buildApiUrl(`/api/admin/channel-packages/${packageId}/channels/${channelId}`);
-      console.log('[REMOVE-CHANNEL] Calling DELETE', url);
-      const res = await fetch(url, {
+      const res = await fetch(buildApiUrl(`/api/admin/channel-packages/${packageId}/channels/${channelId}`), {
         method: 'DELETE',
         credentials: 'include',
       });
-      console.log('[REMOVE-CHANNEL] Response:', res.status, res.statusText);
       if (!res.ok) {
         const contentType = res.headers.get('content-type');
-        console.log('[REMOVE-CHANNEL] Error content-type:', contentType);
         if (contentType && contentType.includes('application/json')) {
           const error = await res.json();
           throw new Error(error.error || 'Failed to remove channel');
         } else {
-          const text = await res.text();
-          console.log('[REMOVE-CHANNEL] Non-JSON response:', text.substring(0, 200));
           throw new Error(`Server error: ${res.status} ${res.statusText}`);
         }
       }
       return res.json();
     },
-    onSuccess: (_data, variables) => {
-      // Refresh both the packages list and the current package details
-      queryClient.invalidateQueries({ queryKey: ['/api/admin/channel-packages'] });
-      // Also explicitly refetch the specific package details
-      queryClient.refetchQueries({ queryKey: ['/api/admin/channel-packages', variables.packageId] });
-      toast({ title: 'Success', description: 'Channel removed from package' });
+    // Optimistic update - immediately remove from UI
+    onMutate: async ({ packageId, channelId }) => {
+      // Cancel any outgoing refetches
+      await queryClient.cancelQueries({ queryKey: ['/api/admin/channel-packages', packageId] });
+
+      // Snapshot the previous value
+      const previousData = queryClient.getQueryData(['/api/admin/channel-packages', packageId]);
+
+      // Optimistically update the cache
+      queryClient.setQueryData(['/api/admin/channel-packages', packageId], (old: any) => {
+        if (!old) return old;
+        return {
+          ...old,
+          channels: old.channels?.filter((c: any) => c.id !== channelId) || [],
+        };
+      });
+
+      return { previousData, packageId };
     },
-    onError: (error: Error) => {
+    onError: (error: Error, _variables, context) => {
+      // Rollback on error
+      if (context?.previousData) {
+        queryClient.setQueryData(['/api/admin/channel-packages', context.packageId], context.previousData);
+      }
       toast({ title: 'Error', description: error.message, variant: 'destructive' });
+    },
+    onSettled: (_data, _error, variables) => {
+      // Refetch to ensure consistency (but UI already updated)
+      queryClient.invalidateQueries({ queryKey: ['/api/admin/channel-packages'] });
     },
   });
 
@@ -561,15 +575,10 @@ export default function IptvPackagesPage() {
                             <Button
                               variant="ghost"
                               size="icon"
-                              className="h-6 w-6"
-                              disabled={removeChannelMutation.isPending}
+                              className="h-6 w-6 hover:bg-destructive/10 hover:text-destructive"
                               onClick={() => selectedPackage && removeChannelMutation.mutate({ packageId: selectedPackage.id, channelId: channel.id })}
                             >
-                              {removeChannelMutation.isPending ? (
-                                <Loader2 className="h-3 w-3 animate-spin" />
-                              ) : (
-                                <X className="h-3 w-3" />
-                              )}
+                              <X className="h-3 w-3" />
                             </Button>
                           </TableCell>
                         </TableRow>
