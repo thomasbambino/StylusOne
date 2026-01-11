@@ -4,6 +4,7 @@ import * as xml2js from 'xml2js';
 import * as fs from 'fs';
 import * as path from 'path';
 import fetch from 'node-fetch';
+import { tmdbService } from './tmdb-service';
 
 /**
  * Interface for TV program/episode information
@@ -232,8 +233,9 @@ export class EPGService implements IService {
 
   /**
    * Get upcoming programs for a channel (includes currently playing program)
+   * Enriches programs with TMDB thumbnails if not already present
    */
-  getUpcomingPrograms(channelId: string, hours: number = 3): EPGProgram[] {
+  async getUpcomingPrograms(channelId: string, hours: number = 3): Promise<EPGProgram[]> {
     const now = new Date();
     const endTime = new Date(now.getTime() + hours * 60 * 60 * 1000);
 
@@ -249,9 +251,31 @@ export class EPGService implements IService {
     }
 
     // Include currently playing program (endTime > now) plus upcoming programs (startTime < endTime)
-    return programs.filter(p =>
+    const upcomingPrograms = programs.filter(p =>
       p.endTime > now && p.startTime < endTime
     ).sort((a, b) => a.startTime.getTime() - b.startTime.getTime());
+
+    // Enrich programs without thumbnails using TMDB (in parallel, limited to first 5)
+    if (tmdbService.isConfigured()) {
+      const programsNeedingThumbnails = upcomingPrograms
+        .filter(p => !p.thumbnail)
+        .slice(0, 5); // Limit to avoid too many API calls
+
+      await Promise.all(
+        programsNeedingThumbnails.map(async (program) => {
+          try {
+            const thumbnail = await tmdbService.getShowImage(program.title);
+            if (thumbnail) {
+              program.thumbnail = thumbnail;
+            }
+          } catch (e) {
+            // Ignore errors - thumbnail is optional
+          }
+        })
+      );
+    }
+
+    return upcomingPrograms;
   }
 
   /**

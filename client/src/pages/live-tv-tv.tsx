@@ -37,6 +37,7 @@ interface EPGProgram {
   season?: number;
   episode?: number;
   rating?: string;
+  thumbnail?: string;
 }
 
 interface ChannelEPG {
@@ -3693,11 +3694,14 @@ export default function LiveTVTvPage() {
                 <p className="text-white/30 text-sm mt-2">Add channels to favorites from the Guide or Player</p>
               </div>
             ) : (
-              <div className="grid grid-cols-1 gap-3">
+              <div className="grid grid-cols-1 gap-4">
                 {favorites.map((fav) => {
                   const channel = channels.find(c => c.iptvId === fav.channelId);
                   if (!channel) return null;
                   const channelEpg = epgDataMap.get(channel.iptvId || '');
+                  const currentProgram = channelEpg?.currentProgram;
+                  const hasThumbnail = !!currentProgram?.thumbnail;
+
                   return (
                     <button
                       key={fav.channelId}
@@ -3712,33 +3716,78 @@ export default function LiveTVTvPage() {
                         playStream(channel);
                         setViewMode('player');
                       }}
-                      className="bg-white/5 rounded-xl p-4 flex items-start gap-4 active:bg-white/10 text-left"
+                      className="bg-white/5 rounded-xl overflow-hidden active:bg-white/10 text-left"
                     >
-                      {/* Channel Logo */}
-                      <div className="w-16 h-12 shrink-0 flex items-center justify-center bg-black/30 rounded-lg overflow-hidden">
-                        {fav.channelLogo ? (
-                          <img src={fav.channelLogo} alt="" className="max-w-full max-h-full object-contain" />
+                      {/* Thumbnail or Channel Logo Area */}
+                      <div className="relative w-full aspect-video bg-black/50">
+                        {hasThumbnail ? (
+                          <img
+                            src={currentProgram.thumbnail}
+                            alt={currentProgram.title}
+                            className="w-full h-full object-cover"
+                            onError={(e) => {
+                              // Hide image on error, will show fallback
+                              (e.target as HTMLImageElement).style.display = 'none';
+                            }}
+                          />
                         ) : (
-                          <span className="text-white/30 text-xs">{fav.channelId}</span>
+                          <div className="w-full h-full flex items-center justify-center">
+                            {fav.channelLogo ? (
+                              <img
+                                src={fav.channelLogo}
+                                alt=""
+                                className="max-w-[40%] max-h-[60%] object-contain opacity-50"
+                              />
+                            ) : (
+                              <span className="text-white/20 text-2xl font-bold">
+                                {(fav.channelName || channel.GuideName).charAt(0)}
+                              </span>
+                            )}
+                          </div>
+                        )}
+
+                        {/* Channel logo overlay (top-left) */}
+                        {hasThumbnail && fav.channelLogo && (
+                          <div className="absolute top-2 left-2 w-10 h-8 bg-black/60 rounded-md flex items-center justify-center p-1">
+                            <img
+                              src={fav.channelLogo}
+                              alt=""
+                              className="max-w-full max-h-full object-contain"
+                            />
+                          </div>
+                        )}
+
+                        {/* Play button overlay (center) */}
+                        <div className="absolute inset-0 flex items-center justify-center">
+                          <div className="w-14 h-14 rounded-full bg-black/50 backdrop-blur-sm flex items-center justify-center border border-white/20">
+                            <Play className="w-7 h-7 text-white ml-1" fill="white" />
+                          </div>
+                        </div>
+
+                        {/* Progress bar (bottom) */}
+                        {currentProgram && (
+                          <div className="absolute bottom-0 left-0 right-0 h-1 bg-white/20">
+                            <div
+                              className="h-full bg-red-500"
+                              style={{ width: `${getProgramProgress(currentProgram)}%` }}
+                            />
+                          </div>
                         )}
                       </div>
+
                       {/* Channel Info */}
-                      <div className="flex-1 min-w-0">
+                      <div className="p-3">
                         <p className="text-white font-medium truncate">{fav.channelName || channel.GuideName}</p>
-                        {channelEpg?.currentProgram ? (
+                        {currentProgram ? (
                           <>
-                            <p className="text-white/70 text-sm truncate mt-0.5">{channelEpg.currentProgram.title}</p>
+                            <p className="text-white/70 text-sm truncate mt-0.5">{currentProgram.title}</p>
                             <p className="text-white/40 text-xs mt-1">
-                              {formatTimeRange(channelEpg.currentProgram.startTime, channelEpg.currentProgram.endTime)}
+                              {formatTimeRange(currentProgram.startTime, currentProgram.endTime)} • {getTimeRemaining(currentProgram.endTime)} left
                             </p>
                           </>
                         ) : (
                           <p className="text-white/40 text-sm mt-0.5">No program info</p>
                         )}
-                      </div>
-                      {/* Play indicator */}
-                      <div className="shrink-0 w-10 h-10 rounded-full bg-white/10 flex items-center justify-center">
-                        <Play className="w-5 h-5 text-white ml-0.5" />
                       </div>
                     </button>
                   );

@@ -63,6 +63,7 @@ npm run build
 - AMP_API_URL (optional)
 - AMP_API_USERNAME (optional)
 - AMP_API_PASSWORD (optional)
+- TMDB_API_KEY (optional - for TV show thumbnails on home page)
 
 ## Port Configuration
 - Development: http://localhost:5000 (npm run dev)

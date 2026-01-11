@@ -3545,7 +3545,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Refresh EPG data if stale (older than 6 hours)
       await epgService.refreshIfNeeded();
 
-      const upcomingPrograms = epgService.getUpcomingPrograms(channelId, hours);
+      const upcomingPrograms = await epgService.getUpcomingPrograms(channelId, hours);
       res.json({ programs: upcomingPrograms });
     } catch (error) {
       console.error('Error fetching upcoming programs:', error);
@@ -3671,7 +3671,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const epgService = await getEPGService();
 
       const hours = parseInt(req.query.hours as string) || 3;
-      const programs = epgService.getUpcomingPrograms(req.params.channelId, hours);
+      const programs = await epgService.getUpcomingPrograms(req.params.channelId, hours);
       res.json({ programs });
     } catch (error) {
       console.error('Error fetching upcoming programs:', error);
