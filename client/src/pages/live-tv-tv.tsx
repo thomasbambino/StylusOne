@@ -4,7 +4,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Play, Pause, Volume2, VolumeX, Info, Plus, MoreHorizontal, Star, X, Check, CreditCard, Calendar, ExternalLink, LogOut, LayoutGrid, Airplay, Search, Volume1, Minus, Settings, PictureInPicture2, Filter, Package } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { getQueryFn, apiRequest, queryClient } from '@/lib/queryClient';
-import { buildApiUrl, isNativePlatform } from '@/lib/capacitor';
+import { buildApiUrl, isNativePlatform, getDeviceTypeSync } from '@/lib/capacitor';
 import { haptics } from '@/lib/haptics';
 import { useAuth } from '@/hooks/use-auth';
 import Hls from 'hls.js';
@@ -2309,6 +2309,34 @@ export default function LiveTVTvPage() {
     };
   }, [handleAirPlay]);
 
+  // Lock orientation to portrait for home/profile pages on phones (not tablets)
+  useEffect(() => {
+    if (!isNativePlatform()) return;
+
+    const deviceType = getDeviceTypeSync();
+    const isTablet = deviceType === 'tablet';
+
+    // On tablets, allow all orientations for all views
+    // On phones, lock to portrait for home and profile pages
+    const lockToPortrait = async () => {
+      if (!isTablet && (viewMode === 'home' || viewMode === 'profile')) {
+        try {
+          await ScreenOrientation.lock({ orientation: 'portrait' });
+        } catch (e) {
+          console.log('[Orientation] Failed to lock:', e);
+        }
+      } else {
+        try {
+          await ScreenOrientation.unlock();
+        } catch (e) {
+          console.log('[Orientation] Failed to unlock:', e);
+        }
+      }
+    };
+
+    lockToPortrait();
+  }, [viewMode]);
+
   // Auto-scroll guide to keep focused channel visible
   useEffect(() => {
     if (viewMode === 'guide' && guideScrollRef.current) {
@@ -2913,13 +2941,13 @@ export default function LiveTVTvPage() {
         </div>
       )}
 
-      {/* Blur overlay during rotation - smooth transition between guides */}
+      {/* Black overlay during rotation - prevents flash between views */}
       <div
         className={cn(
-          "absolute inset-0 bg-black/80 backdrop-blur-md transition-opacity duration-150 pointer-events-none",
-          isRotating && viewMode === 'guide' && isNativePlatform() ? "opacity-100" : "opacity-0"
+          "absolute inset-0 bg-black pointer-events-none",
+          isRotating && isNativePlatform() ? "opacity-100" : "opacity-0"
         )}
-        style={{ zIndex: 50 }}
+        style={{ zIndex: 100, transition: 'opacity 50ms ease-out' }}
       />
 
       {/* Portrait Guide View - Plex-style with large video at top */}
