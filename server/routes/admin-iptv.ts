@@ -14,7 +14,7 @@ import {
 } from '@shared/schema';
 import { eq, desc, and, sql, inArray, isNull } from 'drizzle-orm';
 import { encrypt, decrypt, maskCredential } from '../utils/encryption';
-import { xtreamCodesManager, XtreamCodesClient } from '../services/xtream-codes-service';
+import { xtreamCodesManager, xtreamCodesService, XtreamCodesClient } from '../services/xtream-codes-service';
 import { streamTrackerService } from '../services/stream-tracker-service';
 
 const router = Router();
@@ -1072,6 +1072,10 @@ router.post('/channel-packages/:id/channels', requireSuperAdmin, async (req, res
       }))
     );
 
+    // Clear user channel cache so changes appear immediately
+    await xtreamCodesService.forceRefreshCache();
+    console.log(`[CHANNEL-PKG] Added ${validIds.length} channels to package ${packageId}, cleared cache`);
+
     res.json({ success: true, added: validIds.length });
   } catch (error) {
     if (error instanceof z.ZodError) {
@@ -1109,7 +1113,9 @@ router.post('/channel-packages/:id/remove-channels', requireSuperAdmin, async (r
       ))
       .returning();
 
-    console.log(`[CHANNEL-PKG] Bulk removed ${result.length} channels from package ${packageId}`);
+    // Clear user channel cache so changes appear immediately
+    await xtreamCodesService.forceRefreshCache();
+    console.log(`[CHANNEL-PKG] Bulk removed ${result.length} channels from package ${packageId}, cleared cache`);
     res.json({ success: true, removed: result.length });
   } catch (error) {
     if (error instanceof z.ZodError) {
@@ -1144,6 +1150,9 @@ router.delete('/channel-packages/:packageId/channels/:channelId', requireSuperAd
     if (result.length === 0) {
       return res.status(404).json({ error: 'Channel not in package' });
     }
+
+    // Clear user channel cache so changes appear immediately
+    await xtreamCodesService.forceRefreshCache();
 
     res.json({ success: true });
   } catch (error) {
