@@ -2868,8 +2868,8 @@ export default function LiveTVTvPage() {
             </div>
           </div>
 
-          {/* Bottom Action Bar - Hidden when using native iOS tab bar */}
-          {!useNativeTabBar && (
+          {/* Bottom Action Bar - Hidden on iOS native (uses native tab bar instead) */}
+          {!isIOSNative() && (
             <div className="shrink-0 px-4 pb-8">
               <div
                 className="relative overflow-hidden rounded-[28px] flex items-center justify-around py-2.5"
@@ -3248,8 +3248,8 @@ export default function LiveTVTvPage() {
             )}
           </div>
 
-          {/* Bottom Tab Bar - Hidden when using native iOS tab bar */}
-          {!useNativeTabBar && (
+          {/* Bottom Tab Bar - Hidden on iOS native (uses native tab bar instead) */}
+          {!isIOSNative() && (
             <div className="shrink-0 px-4 pb-8 pt-3 flex items-center justify-around border-t border-white/10 bg-black">
               <button onTouchEnd={(e) => { e.preventDefault(); setViewMode('player'); setGuideSearchQuery(''); setSelectedCategory(null); }} onClick={() => { setViewMode('player'); setGuideSearchQuery(''); setSelectedCategory(null); }} className="flex flex-col items-center gap-1 py-2 px-4 active:opacity-70">
                 <LayoutGrid className="w-6 h-6 text-white" />
