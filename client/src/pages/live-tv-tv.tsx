@@ -3705,11 +3705,27 @@ export default function LiveTVTvPage() {
                   return (
                     <button
                       key={fav.channelId}
+                      onTouchStart={(e) => {
+                        // Store touch start position for scroll detection
+                        const touch = e.touches[0];
+                        (e.currentTarget as any)._touchStart = { x: touch.clientX, y: touch.clientY };
+                      }}
                       onTouchEnd={(e) => {
-                        e.preventDefault();
-                        haptics.light();
-                        playStream(channel);
-                        setViewMode('player');
+                        // Check if this was a tap (not a scroll)
+                        const touchStart = (e.currentTarget as any)._touchStart;
+                        if (!touchStart) return;
+
+                        const touch = e.changedTouches[0];
+                        const deltaX = Math.abs(touch.clientX - touchStart.x);
+                        const deltaY = Math.abs(touch.clientY - touchStart.y);
+
+                        // Only trigger if movement was less than 10px (tap, not scroll)
+                        if (deltaX < 10 && deltaY < 10) {
+                          e.preventDefault();
+                          haptics.light();
+                          playStream(channel);
+                          setViewMode('player');
+                        }
                       }}
                       onClick={() => {
                         haptics.light();

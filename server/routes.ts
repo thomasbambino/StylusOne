@@ -3699,6 +3699,44 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Debug endpoint to test TMDB integration
+  app.get("/api/debug/tmdb", async (req, res) => {
+    if (!req.isAuthenticated()) return res.sendStatus(401);
+
+    try {
+      const { tmdbService } = await import('./services/tmdb-service');
+      const testTitle = (req.query.title as string) || "Storage Wars";
+
+      const isConfigured = tmdbService.isConfigured();
+      const cacheStats = tmdbService.getCacheStats();
+
+      let thumbnail = null;
+      let error = null;
+
+      if (isConfigured) {
+        try {
+          thumbnail = await tmdbService.getShowImage(testTitle);
+        } catch (e) {
+          error = e instanceof Error ? e.message : "Unknown error";
+        }
+      }
+
+      res.json({
+        configured: isConfigured,
+        apiKeySet: !!process.env.TMDB_API_KEY,
+        apiKeyLength: process.env.TMDB_API_KEY?.length || 0,
+        testTitle,
+        thumbnail,
+        error,
+        cacheStats
+      });
+    } catch (error) {
+      res.status(500).json({
+        error: error instanceof Error ? error.message : "Unknown error"
+      });
+    }
+  });
+
   // ============================================================================
   // TV CODE LOGIN API - Netflix/Hulu style code authentication for TV devices
   // ============================================================================
