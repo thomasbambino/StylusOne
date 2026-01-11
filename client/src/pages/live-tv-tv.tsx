@@ -3645,9 +3645,10 @@ export default function LiveTVTvPage() {
       )}
 
       {/* Portrait Home View - Favorite channels with current programs */}
+      {/* No landscape:opacity-0 - this page is locked to portrait on phones */}
       {!isRotating && isPortrait && isNativePlatform() && viewMode === 'home' && (
         <div
-          className="absolute inset-0 bg-black flex flex-col landscape:opacity-0 landscape:pointer-events-none animate-in fade-in duration-150"
+          className="absolute inset-0 bg-black flex flex-col animate-in fade-in duration-150"
           style={{ zIndex: 30 }}
         >
           {/* Header */}
@@ -3725,9 +3726,10 @@ export default function LiveTVTvPage() {
       )}
 
       {/* Portrait Profile View - User info, subscription, packages, logout */}
+      {/* No landscape:opacity-0 - this page is locked to portrait on phones */}
       {!isRotating && isPortrait && isNativePlatform() && viewMode === 'profile' && (
         <div
-          className="absolute inset-0 bg-black flex flex-col landscape:opacity-0 landscape:pointer-events-none animate-in fade-in duration-150"
+          className="absolute inset-0 bg-black flex flex-col animate-in fade-in duration-150"
           style={{ zIndex: 30 }}
         >
           {/* Header */}
