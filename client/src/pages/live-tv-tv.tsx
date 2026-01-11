@@ -2130,10 +2130,10 @@ export default function LiveTVTvPage() {
         lastOrientation = portrait;
         setIsPortrait(portrait);
       }
-      // Clear rotating state after a short delay to allow React to render new guide
+      // Clear rotating state after a longer delay to allow React to render new guide
       if (fromRotation) {
         if (rotationTimeout) clearTimeout(rotationTimeout);
-        rotationTimeout = setTimeout(() => setIsRotating(false), 150);
+        rotationTimeout = setTimeout(() => setIsRotating(false), 350);
       }
     };
 
@@ -2152,9 +2152,9 @@ export default function LiveTVTvPage() {
             lastOrientation = portrait;
             setIsPortrait(portrait);
           }
-          // Clear rotating after React renders
+          // Clear rotating after React renders - use longer delay for smoother transition
           if (rotationTimeout) clearTimeout(rotationTimeout);
-          rotationTimeout = setTimeout(() => setIsRotating(false), 150);
+          rotationTimeout = setTimeout(() => setIsRotating(false), 350);
         });
       } catch (e) {
         // Fallback to window events if Capacitor API fails
@@ -2942,13 +2942,12 @@ export default function LiveTVTvPage() {
       )}
 
       {/* Black overlay during rotation - prevents flash between views */}
-      <div
-        className={cn(
-          "absolute inset-0 bg-black pointer-events-none",
-          isRotating && isNativePlatform() ? "opacity-100" : "opacity-0"
-        )}
-        style={{ zIndex: 100, transition: 'opacity 50ms ease-out' }}
-      />
+      {isRotating && isNativePlatform() && (
+        <div
+          className="fixed inset-0 bg-black pointer-events-none"
+          style={{ zIndex: 9999 }}
+        />
+      )}
 
       {/* Portrait Guide View - Plex-style with large video at top */}
       {/* CSS landscape:opacity-0 instantly hides when screen rotates, before React state updates */}
