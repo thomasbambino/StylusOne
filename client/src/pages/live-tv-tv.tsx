@@ -947,6 +947,9 @@ export default function LiveTVTvPage() {
 
   // View state: 'player' (fullscreen), 'guide' (with PiP), 'home' (favorites), 'profile' (user profile)
   const [viewMode, setViewMode] = useState<'player' | 'guide' | 'home' | 'profile'>('player');
+  // Ref to track viewMode for orientation listener (which can't access state directly)
+  const viewModeRef = useRef(viewMode);
+  viewModeRef.current = viewMode;
   const [showOverlay, setShowOverlay] = useState(true);
   const [guideSearchQuery, setGuideSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
@@ -2148,10 +2151,20 @@ export default function LiveTVTvPage() {
     lastOrientation = window.innerWidth < window.innerHeight;
     setIsPortrait(lastOrientation);
 
+    // Check if we should ignore orientation changes (home/profile on phone)
+    const shouldIgnoreOrientationChange = () => {
+      const currentViewMode = viewModeRef.current;
+      return isPhoneDevice && (currentViewMode === 'home' || currentViewMode === 'profile');
+    };
+
     // Use Capacitor ScreenOrientation API for reliable detection
     const setupOrientationListener = async () => {
       try {
         await ScreenOrientation.addListener('screenOrientationChange', (info) => {
+          // On home/profile on phones, ignore orientation changes (locked to portrait)
+          if (shouldIgnoreOrientationChange()) {
+            return;
+          }
           setIsRotating(true); // Show black screen immediately
           // Update state based on new orientation
           const portrait = info.type.includes('portrait');
@@ -2171,11 +2184,19 @@ export default function LiveTVTvPage() {
     setupOrientationListener();
 
     // Fallback: Listen for resize as backup
-    const handleResize = () => checkOrientation(false);
+    const handleResize = () => {
+      if (!shouldIgnoreOrientationChange()) {
+        checkOrientation(false);
+      }
+    };
     window.addEventListener('resize', handleResize);
 
     // Fallback: window orientationchange event
     const handleOrientationChange = () => {
+      // On home/profile on phones, ignore orientation changes (locked to portrait)
+      if (shouldIgnoreOrientationChange()) {
+        return;
+      }
       setIsRotating(true); // Show black screen immediately
       setTimeout(() => checkOrientation(true), 50);
     };
