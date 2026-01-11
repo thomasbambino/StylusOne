@@ -2969,8 +2969,8 @@ export default function LiveTVTvPage() {
         </div>
       )}
 
-      {/* Black overlay during rotation - prevents flash between views */}
-      {isRotating && isNativePlatform() && (
+      {/* Black overlay during rotation - only for guide view to prevent flash */}
+      {isRotating && isNativePlatform() && viewMode === 'guide' && (
         <div
           className="fixed inset-0 bg-black pointer-events-none"
           style={{ zIndex: 9999 }}
