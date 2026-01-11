@@ -2221,8 +2221,9 @@ export default function LiveTVTvPage() {
   }, [selectedChannel]);
 
   // Native Tab Bar for iOS - show in portrait mode (player or guide)
-  // Use ref to track last action to prevent rapid fire calls
-  const lastTabBarAction = useRef<'show' | 'hide' | null>(null);
+  // Use ref to track target state and debounce timer
+  const tabBarTargetVisible = useRef<boolean>(false);
+  const tabBarDebounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     if (!isIOSNative()) {
@@ -2232,27 +2233,37 @@ export default function LiveTVTvPage() {
 
     // Determine target state: show in portrait when not rotating
     const shouldShow = isPortrait && !isRotating;
-    const action = shouldShow ? 'show' : 'hide';
 
-    // Skip if same action was just requested
-    if (lastTabBarAction.current === action) {
-      return;
+    // Update target state
+    tabBarTargetVisible.current = shouldShow;
+
+    // Clear any pending timer
+    if (tabBarDebounceTimer.current) {
+      clearTimeout(tabBarDebounceTimer.current);
+      tabBarDebounceTimer.current = null;
     }
 
     if (shouldShow) {
-      // Small delay to ensure UI is ready before showing tab bar
-      const timer = setTimeout(() => {
-        lastTabBarAction.current = 'show';
-        showNativeTabBar().then((shown) => {
-          setUseNativeTabBar(shown);
-        });
-      }, 100);
-      return () => clearTimeout(timer);
+      // Delay show to ensure stability after rotation
+      tabBarDebounceTimer.current = setTimeout(() => {
+        // Only show if we still want it visible
+        if (tabBarTargetVisible.current) {
+          showNativeTabBar().then((shown) => {
+            setUseNativeTabBar(shown);
+          });
+        }
+      }, 150);
     } else {
-      lastTabBarAction.current = 'hide';
+      // Hide immediately
       hideNativeTabBar();
       setUseNativeTabBar(false);
     }
+
+    return () => {
+      if (tabBarDebounceTimer.current) {
+        clearTimeout(tabBarDebounceTimer.current);
+      }
+    };
   }, [isPortrait, isRotating]);
 
   // Listen for native tab bar selections
