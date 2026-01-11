@@ -939,6 +939,12 @@ export default function LiveTVTvPage() {
   // Track rotation to show black screen during transition
   const [isRotating, setIsRotating] = useState(false);
 
+  // Device type - phones have orientation locked on home/profile
+  const isPhoneDevice = useMemo(() => {
+    if (!isNativePlatform()) return false;
+    return getDeviceTypeSync() !== 'tablet';
+  }, []);
+
   // View state: 'player' (fullscreen), 'guide' (with PiP), 'home' (favorites), 'profile' (user profile)
   const [viewMode, setViewMode] = useState<'player' | 'guide' | 'home' | 'profile'>('player');
   const [showOverlay, setShowOverlay] = useState(true);
@@ -3645,8 +3651,8 @@ export default function LiveTVTvPage() {
       )}
 
       {/* Portrait Home View - Favorite channels with current programs */}
-      {/* No landscape:opacity-0 - this page is locked to portrait on phones */}
-      {!isRotating && isPortrait && isNativePlatform() && viewMode === 'home' && (
+      {/* On phones: always render (orientation locked). On tablets: only in portrait */}
+      {!isRotating && isNativePlatform() && viewMode === 'home' && (isPhoneDevice || isPortrait) && (
         <div
           className="absolute inset-0 bg-black flex flex-col animate-in fade-in duration-150"
           style={{ zIndex: 30 }}
@@ -3726,8 +3732,8 @@ export default function LiveTVTvPage() {
       )}
 
       {/* Portrait Profile View - User info, subscription, packages, logout */}
-      {/* No landscape:opacity-0 - this page is locked to portrait on phones */}
-      {!isRotating && isPortrait && isNativePlatform() && viewMode === 'profile' && (
+      {/* On phones: always render (orientation locked). On tablets: only in portrait */}
+      {!isRotating && isNativePlatform() && viewMode === 'profile' && (isPhoneDevice || isPortrait) && (
         <div
           className="absolute inset-0 bg-black flex flex-col animate-in fade-in duration-150"
           style={{ zIndex: 30 }}
