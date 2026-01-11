@@ -2,6 +2,7 @@ import { QueryClient, QueryFunction } from "@tanstack/react-query";
 import { buildApiUrl, isNativePlatform } from "./capacitor";
 import { CapacitorHttp, HttpResponse } from '@capacitor/core';
 import { nativeStorage } from "./nativeStorage";
+import { preloadImages } from "./imageCache";
 
 // Endpoints that should be cached for offline/startup performance
 const CACHEABLE_ENDPOINTS: Record<string, string> = {
@@ -10,6 +11,39 @@ const CACHEABLE_ENDPOINTS: Record<string, string> = {
   '/api/iptv/channels': 'channels',
   '/api/favorite-channels': 'favorites',
 };
+
+// Preload channel logos when channels are fetched
+function preloadChannelLogos(data: any) {
+  if (!isNativePlatform()) return;
+
+  try {
+    // Handle IPTV channels response
+    if (data?.channels && Array.isArray(data.channels)) {
+      const logos = data.channels
+        .map((ch: any) => ch.logo || ch.channelLogo)
+        .filter((logo: string) => logo && logo.startsWith('http'));
+
+      if (logos.length > 0) {
+        console.log(`[QueryClient] Preloading ${logos.length} channel logos`);
+        preloadImages(logos);
+      }
+    }
+
+    // Handle favorites response
+    if (Array.isArray(data)) {
+      const logos = data
+        .map((item: any) => item.channelLogo || item.logo)
+        .filter((logo: string) => logo && logo.startsWith('http'));
+
+      if (logos.length > 0) {
+        console.log(`[QueryClient] Preloading ${logos.length} favorite logos`);
+        preloadImages(logos);
+      }
+    }
+  } catch (e) {
+    console.warn('[QueryClient] Error preloading logos:', e);
+  }
+}
 
 async function throwIfResNotOk(res: Response) {
   if (!res.ok) {
@@ -123,6 +157,11 @@ export const getQueryFn: <T>(options: {
         if (cacheKey && response.data) {
           const duration = nativeStorage.getCacheDuration(cacheKey);
           nativeStorage.set(cacheKey, response.data, duration);
+
+          // Preload logos for channel-related endpoints
+          if (cacheKey === 'channels' || cacheKey === 'favorites') {
+            preloadChannelLogos(response.data);
+          }
         }
 
         return response.data;
@@ -146,6 +185,11 @@ export const getQueryFn: <T>(options: {
       if (cacheKey && data) {
         const duration = nativeStorage.getCacheDuration(cacheKey);
         nativeStorage.set(cacheKey, data, duration);
+
+        // Preload logos for channel-related endpoints
+        if (cacheKey === 'channels' || cacheKey === 'favorites') {
+          preloadChannelLogos(data);
+        }
       }
 
       return data;

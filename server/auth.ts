@@ -155,7 +155,7 @@ export function setupAuth(app: Express) {
     cookie: {
       httpOnly: true,
       secure: 'auto', // Auto-detect based on connection (works with Cloudflare proxy)
-      maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days for better mobile app experience
+      maxAge: 365 * 24 * 60 * 60 * 1000, // 1 year - effectively permanent until logout
       sameSite: 'lax', // Use 'lax' for better compatibility with Cloudflare proxy
     },
     name: 'sessionId',
