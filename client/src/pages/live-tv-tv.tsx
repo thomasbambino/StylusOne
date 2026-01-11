@@ -2220,10 +2220,15 @@ export default function LiveTVTvPage() {
     }
   }, [selectedChannel]);
 
-  // Native Tab Bar for iOS - show in portrait mode (player or guide)
-  // Use ref to track target state and debounce timer
-  const tabBarTargetVisible = useRef<boolean>(false);
-  const tabBarDebounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Native Tab Bar for iOS - show in portrait mode only
+  // Track latest state in refs to avoid stale closures
+  const isPortraitRef = useRef(isPortrait);
+  const isRotatingRef = useRef(isRotating);
+  isPortraitRef.current = isPortrait;
+  isRotatingRef.current = isRotating;
+
+  const tabBarTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const tabBarCurrentState = useRef<boolean | null>(null); // null = unknown, true = shown, false = hidden
 
   useEffect(() => {
     if (!isIOSNative()) {
@@ -2231,37 +2236,40 @@ export default function LiveTVTvPage() {
       return;
     }
 
-    // Determine target state: show in portrait when not rotating
+    // Clear any pending action
+    if (tabBarTimer.current) {
+      clearTimeout(tabBarTimer.current);
+      tabBarTimer.current = null;
+    }
+
+    // Determine if we should show: portrait AND not rotating
     const shouldShow = isPortrait && !isRotating;
 
-    // Update target state
-    tabBarTargetVisible.current = shouldShow;
-
-    // Clear any pending timer
-    if (tabBarDebounceTimer.current) {
-      clearTimeout(tabBarDebounceTimer.current);
-      tabBarDebounceTimer.current = null;
+    // Skip if already in desired state
+    if (tabBarCurrentState.current === shouldShow) {
+      return;
     }
 
-    if (shouldShow) {
-      // Delay show to ensure stability after rotation
-      tabBarDebounceTimer.current = setTimeout(() => {
-        // Only show if we still want it visible
-        if (tabBarTargetVisible.current) {
-          showNativeTabBar().then((shown) => {
-            setUseNativeTabBar(shown);
-          });
-        }
-      }, 150);
-    } else {
-      // Hide immediately
-      hideNativeTabBar();
-      setUseNativeTabBar(false);
-    }
+    // Debounce all state changes to prevent rapid switching
+    tabBarTimer.current = setTimeout(() => {
+      // Re-check current conditions using refs (they reflect latest values)
+      const stillShouldShow = isPortraitRef.current && !isRotatingRef.current;
+
+      if (stillShouldShow && tabBarCurrentState.current !== true) {
+        tabBarCurrentState.current = true;
+        showNativeTabBar().then((shown) => {
+          setUseNativeTabBar(shown);
+        });
+      } else if (!stillShouldShow && tabBarCurrentState.current !== false) {
+        tabBarCurrentState.current = false;
+        hideNativeTabBar();
+        setUseNativeTabBar(false);
+      }
+    }, shouldShow ? 200 : 50); // Longer debounce for show, shorter for hide
 
     return () => {
-      if (tabBarDebounceTimer.current) {
-        clearTimeout(tabBarDebounceTimer.current);
+      if (tabBarTimer.current) {
+        clearTimeout(tabBarTimer.current);
       }
     };
   }, [isPortrait, isRotating]);
