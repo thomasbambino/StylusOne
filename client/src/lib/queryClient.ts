@@ -1,6 +1,15 @@
 import { QueryClient, QueryFunction } from "@tanstack/react-query";
 import { buildApiUrl, isNativePlatform } from "./capacitor";
 import { CapacitorHttp, HttpResponse } from '@capacitor/core';
+import { nativeStorage } from "./nativeStorage";
+
+// Endpoints that should be cached for offline/startup performance
+const CACHEABLE_ENDPOINTS: Record<string, string> = {
+  '/api/settings': 'settings',
+  '/api/user': 'user',
+  '/api/iptv/channels': 'channels',
+  '/api/favorite-channels': 'favorites',
+};
 
 async function throwIfResNotOk(res: Response) {
   if (!res.ok) {
@@ -68,15 +77,28 @@ export async function apiRequest(
 }
 
 type UnauthorizedBehavior = "returnNull" | "throw";
+
+// Helper to get cache key for an endpoint
+function getCacheKey(url: string): string | null {
+  for (const [endpoint, cacheKey] of Object.entries(CACHEABLE_ENDPOINTS)) {
+    if (url === endpoint || url.startsWith(endpoint + '?')) {
+      return cacheKey;
+    }
+  }
+  return null;
+}
+
 export const getQueryFn: <T>(options: {
   on401: UnauthorizedBehavior;
 }) => QueryFunction<T> =
   ({ on401: unauthorizedBehavior }) =>
   async ({ queryKey }) => {
+    const endpoint = queryKey[0] as string;
     // Convert relative URLs to absolute URLs when running in native app
-    const fullUrl = buildApiUrl(queryKey[0] as string);
+    const fullUrl = buildApiUrl(endpoint);
+    const cacheKey = getCacheKey(endpoint);
 
-    console.log('[Query Request]', fullUrl);
+    console.log('[Query Request]', fullUrl, cacheKey ? `(cacheable: ${cacheKey})` : '');
 
     try {
       // Use Capacitor HTTP for native apps to bypass CORS
@@ -97,6 +119,12 @@ export const getQueryFn: <T>(options: {
           throw new Error(`${response.status}: ${response.data}`);
         }
 
+        // Cache successful responses for cacheable endpoints
+        if (cacheKey && response.data) {
+          const duration = nativeStorage.getCacheDuration(cacheKey);
+          nativeStorage.set(cacheKey, response.data, duration);
+        }
+
         return response.data;
       }
 
@@ -112,9 +140,27 @@ export const getQueryFn: <T>(options: {
       }
 
       await throwIfResNotOk(res);
-      return await res.json();
+      const data = await res.json();
+
+      // Cache successful responses for cacheable endpoints
+      if (cacheKey && data) {
+        const duration = nativeStorage.getCacheDuration(cacheKey);
+        nativeStorage.set(cacheKey, data, duration);
+      }
+
+      return data;
     } catch (error) {
       console.error('[Query Error]', fullUrl, error);
+
+      // Try to return cached data on error for cacheable endpoints
+      if (cacheKey) {
+        const cached = await nativeStorage.get(cacheKey);
+        if (cached) {
+          console.log('[Query] Returning cached data due to error:', cacheKey);
+          return cached;
+        }
+      }
+
       throw error;
     }
   };
