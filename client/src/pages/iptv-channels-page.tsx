@@ -62,7 +62,7 @@ export default function IptvChannelsPage() {
   const [selectedCategory, setSelectedCategory] = useState<string>('');
   const [enabledFilter, setEnabledFilter] = useState<string>('all');
   const [page, setPage] = useState(1);
-  const limit = 50;
+  const [limit, setLimit] = useState(50);
 
   // Selection state
   const [selectedChannels, setSelectedChannels] = useState<Set<number>>(new Set());
@@ -185,9 +185,10 @@ export default function IptvChannelsPage() {
     },
   });
 
-  const handleSelectAll = useCallback((checked: boolean) => {
-    setSelectAll(checked);
-    if (checked && channelsData?.channels) {
+  const handleSelectAll = useCallback((checked: boolean | 'indeterminate') => {
+    const isChecked = checked === true;
+    setSelectAll(isChecked);
+    if (isChecked && channelsData?.channels) {
       setSelectedChannels(new Set(channelsData.channels.map(c => c.id)));
     } else {
       setSelectedChannels(new Set());
@@ -455,32 +456,80 @@ export default function IptvChannelsPage() {
               </Card>
 
               {/* Pagination */}
-              {pagination && pagination.totalPages > 1 && (
+              {pagination && (
                 <div className="flex items-center justify-between">
-                  <p className="text-sm text-muted-foreground">
-                    Showing {((pagination.page - 1) * pagination.limit) + 1} to {Math.min(pagination.page * pagination.limit, pagination.total)} of {pagination.total} channels
-                  </p>
-                  <div className="flex items-center gap-2">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => setPage(p => Math.max(1, p - 1))}
-                      disabled={page === 1}
-                    >
-                      <ChevronLeft className="h-4 w-4" />
-                    </Button>
-                    <span className="text-sm">
-                      Page {pagination.page} of {pagination.totalPages}
-                    </span>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => setPage(p => Math.min(pagination.totalPages, p + 1))}
-                      disabled={page === pagination.totalPages}
-                    >
-                      <ChevronRight className="h-4 w-4" />
-                    </Button>
+                  <div className="flex items-center gap-4">
+                    <p className="text-sm text-muted-foreground">
+                      Showing {((pagination.page - 1) * pagination.limit) + 1} to {Math.min(pagination.page * pagination.limit, pagination.total)} of {pagination.total} channels
+                    </p>
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm text-muted-foreground">Per page:</span>
+                      <Select value={limit.toString()} onValueChange={(v) => { setLimit(parseInt(v)); setPage(1); }}>
+                        <SelectTrigger className="w-[80px] h-8">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="25">25</SelectItem>
+                          <SelectItem value="50">50</SelectItem>
+                          <SelectItem value="100">100</SelectItem>
+                          <SelectItem value="200">200</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
                   </div>
+                  {pagination.totalPages > 1 && (
+                    <div className="flex items-center gap-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setPage(1)}
+                        disabled={page === 1}
+                      >
+                        First
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setPage(p => Math.max(1, p - 1))}
+                        disabled={page === 1}
+                      >
+                        <ChevronLeft className="h-4 w-4" />
+                      </Button>
+                      <div className="flex items-center gap-1">
+                        <span className="text-sm">Page</span>
+                        <Input
+                          type="number"
+                          min={1}
+                          max={pagination.totalPages}
+                          value={page}
+                          onChange={(e) => {
+                            const val = parseInt(e.target.value);
+                            if (val >= 1 && val <= pagination.totalPages) {
+                              setPage(val);
+                            }
+                          }}
+                          className="w-16 h-8 text-center"
+                        />
+                        <span className="text-sm">of {pagination.totalPages}</span>
+                      </div>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setPage(p => Math.min(pagination.totalPages, p + 1))}
+                        disabled={page === pagination.totalPages}
+                      >
+                        <ChevronRight className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setPage(pagination.totalPages)}
+                        disabled={page === pagination.totalPages}
+                      >
+                        Last
+                      </Button>
+                    </div>
+                  )}
                 </div>
               )}
             </>

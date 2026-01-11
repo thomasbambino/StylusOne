@@ -559,13 +559,13 @@ export default function IptvPackagesPage() {
 
       {/* Add Channels Dialog */}
       <Dialog open={isAddChannelsDialogOpen} onOpenChange={setIsAddChannelsDialogOpen}>
-        <DialogContent className="max-w-2xl max-h-[80vh] overflow-hidden flex flex-col">
-          <DialogHeader>
+        <DialogContent className="max-w-2xl h-[80vh] flex flex-col">
+          <DialogHeader className="flex-shrink-0">
             <DialogTitle>Add Channels to {selectedPackage?.name}</DialogTitle>
             <DialogDescription>Select enabled channels from the provider to add to this package</DialogDescription>
           </DialogHeader>
-          <div className="flex-1 overflow-hidden flex flex-col">
-            <div className="flex items-center gap-2 mb-4">
+          <div className="flex-1 min-h-0 flex flex-col">
+            <div className="flex items-center gap-2 mb-4 flex-shrink-0">
               <div className="relative flex-1">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                 <Input
@@ -582,7 +582,8 @@ export default function IptvPackagesPage() {
                 <Badge variant="secondary">{selectedChannelsToAdd.size} selected</Badge>
               )}
             </div>
-            <ScrollArea className="flex-1 border rounded-md">
+            <div className="flex-1 min-h-0 border rounded-md overflow-hidden">
+              <ScrollArea className="h-full">
               {channelsLoading ? (
                 <div className="p-8 text-center">
                   <Loader2 className="h-6 w-6 animate-spin mx-auto text-muted-foreground" />
@@ -620,9 +621,10 @@ export default function IptvPackagesPage() {
                   </TableBody>
                 </Table>
               )}
-            </ScrollArea>
+              </ScrollArea>
+            </div>
             {availableChannelsData?.pagination && availableChannelsData.pagination.totalPages > 1 && (
-              <div className="flex items-center justify-between mt-2 pt-2 border-t">
+              <div className="flex items-center justify-between mt-2 pt-2 border-t flex-shrink-0">
                 <p className="text-xs text-muted-foreground">
                   Page {availableChannelsData.pagination.page} of {availableChannelsData.pagination.totalPages}
                 </p>
@@ -649,7 +651,7 @@ export default function IptvPackagesPage() {
               </div>
             )}
           </div>
-          <DialogFooter>
+          <DialogFooter className="flex-shrink-0">
             <Button variant="outline" onClick={() => setIsAddChannelsDialogOpen(false)}>Cancel</Button>
             <Button
               onClick={() => selectedPackage && addChannelsMutation.mutate({ packageId: selectedPackage.id, channelIds: Array.from(selectedChannelsToAdd) })}
