@@ -19,6 +19,18 @@ import { streamTrackerService } from '../services/stream-tracker-service';
 
 const router = Router();
 
+// Debug logging for all requests to this router
+router.use((req, res, next) => {
+  console.log(`[ADMIN-IPTV] ${req.method} ${req.path} (full: ${req.originalUrl})`);
+  next();
+});
+
+// Debug test endpoint - no auth required
+router.get('/debug-test', (req, res) => {
+  console.log('[ADMIN-IPTV] Debug test endpoint hit!');
+  res.json({ success: true, message: 'Admin IPTV router is working', timestamp: new Date().toISOString() });
+});
+
 // Validation schemas
 const createCredentialSchema = z.object({
   name: z.string().min(1, 'Name is required'),
@@ -99,9 +111,12 @@ const bulkUpdateChannelsSchema = z.object({
  * Middleware to check if user is super admin
  */
 function requireSuperAdmin(req: any, res: any, next: any) {
+  console.log(`[REQUIRE-SUPERADMIN] Checking user:`, req.user?.username, req.user?.role);
   if (!req.user || req.user.role !== 'superadmin') {
+    console.log(`[REQUIRE-SUPERADMIN] Access denied - user: ${req.user?.username}, role: ${req.user?.role}`);
     return res.status(403).json({ error: 'Super admin access required' });
   }
+  console.log(`[REQUIRE-SUPERADMIN] Access granted for ${req.user.username}`);
   next();
 }
 
@@ -907,6 +922,7 @@ router.post('/channel-packages', requireSuperAdmin, async (req, res) => {
  * Update a channel package
  */
 router.put('/channel-packages/:id', requireSuperAdmin, async (req, res) => {
+  console.log('[CHANNEL-PKG] PUT /channel-packages/:id called, id:', req.params.id, 'body:', JSON.stringify(req.body));
   try {
     const packageId = parseInt(req.params.id);
     if (isNaN(packageId)) {
@@ -1061,6 +1077,7 @@ router.post('/channel-packages/:id/channels', requireSuperAdmin, async (req, res
  * Remove a channel from a package
  */
 router.delete('/channel-packages/:packageId/channels/:channelId', requireSuperAdmin, async (req, res) => {
+  console.log('[CHANNEL-PKG] DELETE /channel-packages/:packageId/channels/:channelId called, packageId:', req.params.packageId, 'channelId:', req.params.channelId);
   try {
     const packageId = parseInt(req.params.packageId);
     const channelId = parseInt(req.params.channelId);

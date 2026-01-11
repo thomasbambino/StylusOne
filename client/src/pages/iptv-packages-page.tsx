@@ -187,7 +187,9 @@ export default function IptvPackagesPage() {
   // Update package
   const updateMutation = useMutation({
     mutationFn: async ({ id, data }: { id: number; data: PackageFormData }) => {
-      const res = await fetch(buildApiUrl(`/api/admin/channel-packages/${id}`), {
+      const url = buildApiUrl(`/api/admin/channel-packages/${id}`);
+      console.log('[UPDATE-PACKAGE] Calling PUT', url, data);
+      const res = await fetch(url, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
@@ -197,9 +199,18 @@ export default function IptvPackagesPage() {
           isActive: data.isActive,
         }),
       });
+      console.log('[UPDATE-PACKAGE] Response:', res.status, res.statusText);
       if (!res.ok) {
-        const error = await res.json();
-        throw new Error(error.error || 'Failed to update package');
+        const contentType = res.headers.get('content-type');
+        console.log('[UPDATE-PACKAGE] Error content-type:', contentType);
+        if (contentType && contentType.includes('application/json')) {
+          const error = await res.json();
+          throw new Error(error.error || 'Failed to update package');
+        } else {
+          const text = await res.text();
+          console.log('[UPDATE-PACKAGE] Non-JSON response:', text.substring(0, 200));
+          throw new Error(`Server error: ${res.status} ${res.statusText}`);
+        }
       }
       return res.json();
     },
@@ -265,18 +276,36 @@ export default function IptvPackagesPage() {
   // Remove channel from package
   const removeChannelMutation = useMutation({
     mutationFn: async ({ packageId, channelId }: { packageId: number; channelId: number }) => {
-      const res = await fetch(buildApiUrl(`/api/admin/channel-packages/${packageId}/channels/${channelId}`), {
+      const url = buildApiUrl(`/api/admin/channel-packages/${packageId}/channels/${channelId}`);
+      console.log('[REMOVE-CHANNEL] Calling DELETE', url);
+      const res = await fetch(url, {
         method: 'DELETE',
         credentials: 'include',
       });
+      console.log('[REMOVE-CHANNEL] Response:', res.status, res.statusText);
       if (!res.ok) {
-        const error = await res.json();
-        throw new Error(error.error || 'Failed to remove channel');
+        const contentType = res.headers.get('content-type');
+        console.log('[REMOVE-CHANNEL] Error content-type:', contentType);
+        if (contentType && contentType.includes('application/json')) {
+          const error = await res.json();
+          throw new Error(error.error || 'Failed to remove channel');
+        } else {
+          const text = await res.text();
+          console.log('[REMOVE-CHANNEL] Non-JSON response:', text.substring(0, 200));
+          throw new Error(`Server error: ${res.status} ${res.statusText}`);
+        }
       }
       return res.json();
     },
-    onSuccess: () => {
+    onSuccess: (_data, variables) => {
+      // Refresh both the packages list and the current package details
       queryClient.invalidateQueries({ queryKey: ['/api/admin/channel-packages'] });
+      // Also explicitly refetch the specific package details
+      queryClient.refetchQueries({ queryKey: ['/api/admin/channel-packages', variables.packageId] });
+      toast({ title: 'Success', description: 'Channel removed from package' });
+    },
+    onError: (error: Error) => {
+      toast({ title: 'Error', description: error.message, variant: 'destructive' });
     },
   });
 

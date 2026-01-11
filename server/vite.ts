@@ -47,6 +47,12 @@ export async function setupVite(app: Express, server: Server) {
   app.use("*", async (req, res, next) => {
     const url = req.originalUrl;
 
+    // Don't serve HTML for API routes - they should return 404 JSON
+    if (url.startsWith('/api/') || url.startsWith('/streams/')) {
+      console.log(`[VITE-CATCH-ALL] API request fell through: ${req.method} ${url}`);
+      return res.status(404).json({ error: 'Endpoint not found', path: url, method: req.method });
+    }
+
     try {
       const clientTemplate = path.resolve(
         __dirname,
@@ -82,7 +88,12 @@ export function serveStatic(app: Express) {
   app.use(express.static(distPath));
 
   // fall through to index.html if the file doesn't exist
-  app.use("*", (_req, res) => {
+  app.use("*", (req, res) => {
+    // Don't serve HTML for API routes - they should return 404 JSON
+    if (req.originalUrl.startsWith('/api/') || req.originalUrl.startsWith('/streams/')) {
+      console.log(`[STATIC-CATCH-ALL] API request fell through: ${req.method} ${req.originalUrl}`);
+      return res.status(404).json({ error: 'Endpoint not found', path: req.originalUrl, method: req.method });
+    }
     res.sendFile(path.resolve(distPath, "index.html"));
   });
 }

@@ -479,10 +479,16 @@ const isAdmin = (req: express.Request, res: express.Response, next: express.Next
 };
 
 export async function registerRoutes(app: Express): Promise<Server> {
+  // Debug middleware to trace API requests
+  app.use('/api', (req, res, next) => {
+    console.log(`[API-DEBUG] ${req.method} ${req.originalUrl}`);
+    next();
+  });
+
   // Temporarily disable all security middleware for development testing
   // Basic CORS only
   app.use(cors({ origin: true, credentials: true }));
-  
+
   // Add cookie parser middleware before session setup
   app.use(cookieParser());
 
@@ -3919,6 +3925,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
         error: error instanceof Error ? error.message : "Unknown error"
       });
     }
+  });
+
+  // Catch-all for unmatched API routes - MUST be last
+  app.all('/api/*', (req, res) => {
+    console.log(`[API-UNMATCHED] ${req.method} ${req.originalUrl} - No route matched!`);
+    res.status(404).json({
+      error: 'API endpoint not found',
+      method: req.method,
+      path: req.originalUrl
+    });
   });
 
   const httpServer = createServer(app);
