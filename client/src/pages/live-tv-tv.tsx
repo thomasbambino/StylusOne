@@ -2870,42 +2870,23 @@ export default function LiveTVTvPage() {
 
           {/* Bottom Action Bar - Hidden on iOS native (uses native tab bar instead) */}
           {!isIOSNative() && (
-            <div className="shrink-0 px-4 pb-8">
-              <div
-                className="relative overflow-hidden rounded-[28px] flex items-center justify-around py-2.5"
-                style={{
-                  background: 'linear-gradient(135deg, rgba(255,255,255,0.18) 0%, rgba(255,255,255,0.08) 50%, rgba(255,255,255,0.12) 100%)',
-                  backdropFilter: 'blur(40px) saturate(180%)',
-                  WebkitBackdropFilter: 'blur(40px) saturate(180%)',
-                  border: '0.5px solid rgba(255,255,255,0.35)',
-                  boxShadow: '0 8px 32px rgba(0,0,0,0.25), inset 0 1px 0 rgba(255,255,255,0.4), inset 0 -1px 0 rgba(255,255,255,0.1)',
-                }}
-              >
-                {/* Liquid shine highlight */}
-                <div
-                  className="absolute inset-0 pointer-events-none"
-                  style={{
-                    background: 'linear-gradient(180deg, rgba(255,255,255,0.25) 0%, transparent 40%, transparent 60%, rgba(255,255,255,0.05) 100%)',
-                    borderRadius: '28px',
-                  }}
-                />
-                <button onTouchEnd={(e) => { e.preventDefault(); haptics.light(); setViewMode('guide'); }} onClick={() => { haptics.light(); setViewMode('guide'); }} className="relative z-10 flex flex-col items-center gap-0.5 py-1.5 px-5 active:opacity-60 active:scale-95 transition-all duration-150">
-                  <LayoutGrid className="w-6 h-6 text-white" style={{ filter: 'drop-shadow(0 1px 2px rgba(0,0,0,0.3))' }} />
-                  <span className="text-white/80 text-[10px] font-medium" style={{ textShadow: '0 1px 2px rgba(0,0,0,0.3)' }}>Guide</span>
-                </button>
-                <button onTouchEnd={(e) => { e.preventDefault(); haptics.light(); setShowFavoritesPopup(true); }} onClick={() => { haptics.light(); setShowFavoritesPopup(true); }} className="relative z-10 flex flex-col items-center gap-0.5 py-1.5 px-5 active:opacity-60 active:scale-95 transition-all duration-150">
-                  <Star className="w-6 h-6 text-white fill-white" style={{ filter: 'drop-shadow(0 1px 2px rgba(0,0,0,0.3))' }} />
-                  <span className="text-white/80 text-[10px] font-medium" style={{ textShadow: '0 1px 2px rgba(0,0,0,0.3)' }}>Favorites</span>
-                </button>
-                <button onTouchEnd={(e) => { e.preventDefault(); handleAirPlay(); }} onClick={handleAirPlay} className="relative z-10 flex flex-col items-center gap-0.5 py-1.5 px-5 active:opacity-60 active:scale-95 transition-all duration-150">
-                  <Airplay className="w-6 h-6 text-white" style={{ filter: 'drop-shadow(0 1px 2px rgba(0,0,0,0.3))' }} />
-                  <span className="text-white/80 text-[10px] font-medium" style={{ textShadow: '0 1px 2px rgba(0,0,0,0.3)' }}>AirPlay</span>
-                </button>
-                <button onTouchEnd={(e) => { e.preventDefault(); setShowMenuPopup(true); }} onClick={() => setShowMenuPopup(true)} className="relative z-10 flex flex-col items-center gap-0.5 py-1.5 px-5 active:opacity-60 active:scale-95 transition-all duration-150">
-                  <Settings className="w-6 h-6 text-white" style={{ filter: 'drop-shadow(0 1px 2px rgba(0,0,0,0.3))' }} />
-                  <span className="text-white/80 text-[10px] font-medium" style={{ textShadow: '0 1px 2px rgba(0,0,0,0.3)' }}>Settings</span>
-                </button>
-              </div>
+            <div className="shrink-0 px-4 pb-8 pt-3 flex items-center justify-around border-t border-white/10 bg-black">
+              <button onTouchEnd={(e) => { e.preventDefault(); haptics.light(); setViewMode('guide'); }} onClick={() => { haptics.light(); setViewMode('guide'); }} className="flex flex-col items-center gap-1 py-2 px-4 active:opacity-70">
+                <LayoutGrid className="w-6 h-6 text-white" />
+                <span className="text-white text-xs font-medium">Guide</span>
+              </button>
+              <button onTouchEnd={(e) => { e.preventDefault(); haptics.light(); setShowFavoritesPopup(true); }} onClick={() => { haptics.light(); setShowFavoritesPopup(true); }} className="flex flex-col items-center gap-1 py-2 px-4 active:opacity-70">
+                <Star className="w-6 h-6 text-white/50 fill-white/50" />
+                <span className="text-white/50 text-xs">Favorites</span>
+              </button>
+              <button onTouchEnd={(e) => { e.preventDefault(); handleAirPlay(); }} onClick={handleAirPlay} className="flex flex-col items-center gap-1 py-2 px-4 active:opacity-70">
+                <Airplay className="w-6 h-6 text-white/50" />
+                <span className="text-white/50 text-xs">AirPlay</span>
+              </button>
+              <button onTouchEnd={(e) => { e.preventDefault(); setShowMenuPopup(true); }} onClick={() => setShowMenuPopup(true)} className="flex flex-col items-center gap-1 py-2 px-4 active:opacity-70">
+                <Settings className="w-6 h-6 text-white/50" />
+                <span className="text-white/50 text-xs">Settings</span>
+              </button>
             </div>
           )}
           {/* Spacer when using native tab bar */}
