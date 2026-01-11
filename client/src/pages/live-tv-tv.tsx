@@ -2089,8 +2089,9 @@ export default function LiveTVTvPage() {
     const TAP_THRESHOLD = 10;
     const isTap = Math.abs(deltaY) < TAP_THRESHOLD && deltaX < TAP_THRESHOLD;
 
-    // In landscape mode with video playing, or in portrait player mode, tap toggles overlay
-    const shouldToggleOverlay = isTap && (viewMode === 'player' || (!isPortrait && selectedChannel));
+    // In landscape mode with video playing (player/guide only), or in portrait player mode, tap toggles overlay
+    // Don't toggle overlay on home/profile pages - those are locked to portrait on phones
+    const shouldToggleOverlay = isTap && (viewMode === 'player' || (!isPortrait && selectedChannel && (viewMode === 'player' || viewMode === 'guide')));
     if (shouldToggleOverlay) {
       // Tap to toggle overlay visibility
       if (showOverlay) {
@@ -3352,8 +3353,9 @@ export default function LiveTVTvPage() {
       )}
 
       {/* Player Overlay - In landscape mode with video playing, or landscape player mode */}
+      {/* Don't show landscape player on home/profile pages on phones - those are locked to portrait */}
       <AnimatePresence>
-        {showOverlay && !isPortrait && selectedChannel && (
+        {showOverlay && !isPortrait && selectedChannel && (viewMode === 'player' || viewMode === 'guide') && (
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
