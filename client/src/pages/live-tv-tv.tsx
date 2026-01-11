@@ -2221,29 +2221,35 @@ export default function LiveTVTvPage() {
   }, [selectedChannel]);
 
   // Native Tab Bar for iOS - show in portrait mode (player or guide)
+  // Use ref to track last action to prevent rapid fire calls
+  const lastTabBarAction = useRef<'show' | 'hide' | null>(null);
+
   useEffect(() => {
     if (!isIOSNative()) {
       setUseNativeTabBar(false);
       return;
     }
 
-    // Don't show tab bar during rotation to prevent white flash
-    if (isRotating) {
-      hideNativeTabBar();
-      setUseNativeTabBar(false);
+    // Determine target state: show in portrait when not rotating
+    const shouldShow = isPortrait && !isRotating;
+    const action = shouldShow ? 'show' : 'hide';
+
+    // Skip if same action was just requested
+    if (lastTabBarAction.current === action) {
       return;
     }
 
-    // Show native tab bar in portrait mode (including AirPlay mode)
-    if (isPortrait) {
+    if (shouldShow) {
       // Small delay to ensure UI is ready before showing tab bar
       const timer = setTimeout(() => {
+        lastTabBarAction.current = 'show';
         showNativeTabBar().then((shown) => {
           setUseNativeTabBar(shown);
         });
-      }, 50);
+      }, 100);
       return () => clearTimeout(timer);
     } else {
+      lastTabBarAction.current = 'hide';
       hideNativeTabBar();
       setUseNativeTabBar(false);
     }

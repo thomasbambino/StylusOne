@@ -15,6 +15,7 @@ public class NativeTabBarPlugin: CAPPlugin, CAPBridgedPlugin {
 
     private var tabBar: UITabBar?
     private var isVisible = false
+    private var targetVisible = false  // Track desired state to avoid race conditions
     private var bottomConstraint: NSLayoutConstraint?
 
     // Navigation tabs
@@ -29,6 +30,9 @@ public class NativeTabBarPlugin: CAPPlugin, CAPBridgedPlugin {
         DispatchQueue.main.async { [weak self] in
             guard let self = self else { return }
 
+            // Set target state immediately
+            self.targetVisible = true
+
             if self.tabBar == nil {
                 self.createTabBar()
             }
@@ -37,6 +41,9 @@ public class NativeTabBarPlugin: CAPPlugin, CAPBridgedPlugin {
                 call.reject("Failed to create tab bar")
                 return
             }
+
+            // Cancel any ongoing animations
+            tabBar.layer.removeAllAnimations()
 
             tabBar.isHidden = false
             self.isVisible = true
@@ -59,13 +66,23 @@ public class NativeTabBarPlugin: CAPPlugin, CAPBridgedPlugin {
                 return
             }
 
+            // Set target state immediately
+            self.targetVisible = false
+
+            // Cancel any ongoing animations
+            tabBar.layer.removeAllAnimations()
+
             UIView.animate(withDuration: 0.25, animations: {
                 self.bottomConstraint?.constant = 100
                 tabBar.superview?.layoutIfNeeded()
                 tabBar.alpha = 0
-            }) { _ in
-                tabBar.isHidden = true
-                self.isVisible = false
+            }) { [weak self] _ in
+                // Only hide if we still want it hidden (prevents race condition)
+                guard let self = self else { return }
+                if !self.targetVisible {
+                    tabBar.isHidden = true
+                    self.isVisible = false
+                }
             }
 
             call.resolve(["visible": false])
