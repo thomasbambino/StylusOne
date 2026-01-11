@@ -184,20 +184,22 @@ export default function IptvPackagesPage() {
     },
   });
 
-  // Update package
+  // Update package - uses POST endpoint for better Cloudflare compatibility
   const updateMutation = useMutation({
     mutationFn: async ({ id, data }: { id: number; data: PackageFormData }) => {
-      const url = buildApiUrl(`/api/admin/channel-packages/${id}`);
-      console.log('[UPDATE-PACKAGE] Calling PUT', url, data);
+      // Use POST endpoint which has better compatibility with Cloudflare/WAF
+      const url = buildApiUrl(`/api/admin/channel-packages/${id}/update`);
+      console.log('[UPDATE-PACKAGE] Calling POST', url, data);
+      const body = JSON.stringify({
+        name: data.name,
+        description: data.description || null,
+        isActive: data.isActive,
+      });
       const res = await fetch(url, {
-        method: 'PUT',
+        method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
-        body: JSON.stringify({
-          name: data.name,
-          description: data.description || null,
-          isActive: data.isActive,
-        }),
+        body,
       });
       console.log('[UPDATE-PACKAGE] Response:', res.status, res.statusText);
       if (!res.ok) {
@@ -560,9 +562,14 @@ export default function IptvPackagesPage() {
                               variant="ghost"
                               size="icon"
                               className="h-6 w-6"
+                              disabled={removeChannelMutation.isPending}
                               onClick={() => selectedPackage && removeChannelMutation.mutate({ packageId: selectedPackage.id, channelId: channel.id })}
                             >
-                              <X className="h-3 w-3" />
+                              {removeChannelMutation.isPending ? (
+                                <Loader2 className="h-3 w-3 animate-spin" />
+                              ) : (
+                                <X className="h-3 w-3" />
+                              )}
                             </Button>
                           </TableCell>
                         </TableRow>

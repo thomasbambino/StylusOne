@@ -23,6 +23,9 @@ class PiPBridgeViewController: CAPBridgeViewController {
         // Enable Picture-in-Picture
         config.allowsPictureInPictureMediaPlayback = true
 
+        // Enable AirPlay for video playback
+        config.allowsAirPlayForMediaPlayback = true
+
         // Allow inline media playback (required for PiP)
         config.allowsInlineMediaPlayback = true
 

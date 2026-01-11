@@ -920,9 +920,19 @@ router.post('/channel-packages', requireSuperAdmin, async (req, res) => {
 /**
  * PUT /api/admin/channel-packages/:id
  * Update a channel package
+ * Also supports POST for Cloudflare compatibility
  */
 router.put('/channel-packages/:id', requireSuperAdmin, async (req, res) => {
   console.log('[CHANNEL-PKG] PUT /channel-packages/:id called, id:', req.params.id, 'body:', JSON.stringify(req.body));
+  handleUpdatePackage(req, res);
+});
+
+router.post('/channel-packages/:id/update', requireSuperAdmin, async (req, res) => {
+  console.log('[CHANNEL-PKG] POST /channel-packages/:id/update called, id:', req.params.id, 'body:', JSON.stringify(req.body));
+  handleUpdatePackage(req, res);
+});
+
+async function handleUpdatePackage(req: any, res: any) {
   try {
     const packageId = parseInt(req.params.id);
     if (isNaN(packageId)) {
@@ -960,7 +970,7 @@ router.put('/channel-packages/:id', requireSuperAdmin, async (req, res) => {
     console.error('Error updating channel package:', error);
     res.status(500).json({ error: 'Failed to update channel package' });
   }
-});
+}
 
 /**
  * DELETE /api/admin/channel-packages/:id

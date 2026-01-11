@@ -1585,61 +1585,76 @@ export default function LiveTVTvPage() {
     try {
       let streamUrl = buildApiUrl(channel.URL);
 
-      // For IPTV channels, acquire stream session and token in parallel for faster startup
+      // For IPTV channels, get token (native) or acquire session (web)
+      // OPTIMIZED: Don't block streaming on acquire - it's just for tracking
       if (channel.source === 'iptv' && channel.iptvId) {
         const isNative = isNativePlatform();
 
-        // Start both requests in parallel
-        const acquirePromise = apiRequest('POST', '/api/iptv/stream/acquire', {
-          streamId: channel.iptvId
-        }).then(res => res.json()).catch(e => {
-          console.log('[TV] Could not acquire stream session:', e);
-          return null;
-        });
-
-        const tokenPromise = isNative
-          ? apiRequest('POST', '/api/iptv/generate-token', {
+        if (isNative) {
+          // Native platforms: need token for URL (generate-token also does acquire internally)
+          try {
+            console.log('[TV] Getting stream token for:', channel.iptvId);
+            const tokenResponse = await apiRequest('POST', '/api/iptv/generate-token', {
               streamId: channel.iptvId
-            }).then(res => res.json()).catch(e => {
-              console.log('[TV] Could not generate token:', e);
-              return null;
-            })
-          : Promise.resolve(null);
+            });
+            const tokenData = await tokenResponse.json();
 
-        console.log('[TV] Acquiring stream session' + (isNative ? ' and token' : '') + ' for:', channel.iptvId);
-
-        // Wait for both to complete
-        const [acquireData, tokenData] = await Promise.all([acquirePromise, tokenPromise]);
-
-        // Handle token response (native platforms)
-        if (tokenData?.token) {
-          streamUrl = `${streamUrl}?token=${tokenData.token}`;
-          console.log('[TV] Got token for native platform');
-        }
-
-        // Set up session tracking - prefer token's sessionToken on native
-        const finalSessionToken = tokenData?.sessionToken || acquireData?.sessionToken;
-        if (finalSessionToken) {
-          console.log('[TV] Stream session established:', finalSessionToken);
-          streamSessionToken.current = finalSessionToken;
-
-          // Clear any existing heartbeat interval before creating new one
-          if (heartbeatIntervalRef.current) {
-            clearInterval(heartbeatIntervalRef.current);
-          }
-
-          // Start heartbeat every 30 seconds
-          heartbeatIntervalRef.current = setInterval(async () => {
-            if (streamSessionToken.current) {
-              try {
-                await apiRequest('POST', '/api/iptv/stream/heartbeat', {
-                  sessionToken: streamSessionToken.current
-                });
-              } catch (e) {
-                console.log('[TV] Heartbeat error:', e);
-              }
+            if (tokenData?.token) {
+              streamUrl = `${streamUrl}?token=${tokenData.token}`;
             }
-          }, 30000);
+
+            // Set up session tracking from token response
+            if (tokenData?.sessionToken) {
+              streamSessionToken.current = tokenData.sessionToken;
+              // Clear any existing heartbeat
+              if (heartbeatIntervalRef.current) {
+                clearInterval(heartbeatIntervalRef.current);
+              }
+              // Start heartbeat every 30 seconds
+              heartbeatIntervalRef.current = setInterval(async () => {
+                if (streamSessionToken.current) {
+                  try {
+                    await apiRequest('POST', '/api/iptv/stream/heartbeat', {
+                      sessionToken: streamSessionToken.current
+                    });
+                  } catch (e) {
+                    console.log('[TV] Heartbeat error:', e);
+                  }
+                }
+              }, 30000);
+            }
+          } catch (e) {
+            console.log('[TV] Could not generate token:', e);
+            // Continue anyway - stream might work without token
+          }
+        } else {
+          // Web: acquire stream session for tracking
+          try {
+            console.log('[TV] Acquiring stream session for:', channel.iptvId);
+            const acquireResponse = await apiRequest('POST', '/api/iptv/stream/acquire', {
+              streamId: channel.iptvId
+            });
+            const data = await acquireResponse.json();
+            console.log('[TV] Stream acquire response:', data);
+            const { sessionToken } = data;
+            streamSessionToken.current = sessionToken;
+
+            // Start heartbeat every 30 seconds
+            heartbeatIntervalRef.current = setInterval(async () => {
+              if (streamSessionToken.current) {
+                try {
+                  await apiRequest('POST', '/api/iptv/stream/heartbeat', {
+                    sessionToken: streamSessionToken.current
+                  });
+                } catch (e) {
+                  console.log('[TV] Heartbeat error:', e);
+                }
+              }
+            }, 30000);
+          } catch (e) {
+            console.log('[TV] Could not acquire stream session:', e);
+            // Continue anyway - stream might still work
+          }
         }
       }
 
@@ -1808,8 +1823,6 @@ export default function LiveTVTvPage() {
         console.log('[TV] Using HLS.js');
         const hls = new Hls({
           lowLatencyMode: false,
-          startPosition: -1, // Start at live edge for faster playback start
-          liveSyncDuration: 3, // Stay 3 seconds behind live edge
           backBufferLength: 90,
           maxBufferLength: 60,
           manifestLoadingTimeOut: 30000,

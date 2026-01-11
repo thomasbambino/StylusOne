@@ -68,13 +68,25 @@ function getDeviceInfo(userAgent: string | null | undefined): { type: string; ic
 }
 
 export function LoginAttemptsDialog() {
-  const { data: loginAttempts = [] } = useQuery<LoginAttempt[]>({
+  const [isOpen, setIsOpen] = React.useState(false);
+
+  const { data: loginAttempts = [], refetch } = useQuery<LoginAttempt[]>({
     queryKey: ["/api/login-attempts"],
     refetchInterval: 30000, // Refresh every 30 seconds
+    refetchOnMount: 'always', // Always refetch when component mounts
+    refetchOnWindowFocus: true, // Refetch when window regains focus
+    staleTime: 0, // Consider data always stale
   });
 
+  // Refetch when dialog opens
+  React.useEffect(() => {
+    if (isOpen) {
+      refetch();
+    }
+  }, [isOpen, refetch]);
+
   return (
-    <Dialog>
+    <Dialog open={isOpen} onOpenChange={setIsOpen}>
       <DialogTrigger asChild>
         <Button variant="outline" size="sm" className="border-primary text-primary hover:bg-primary/10">
           <Shield className="h-4 w-4 mr-2" />
