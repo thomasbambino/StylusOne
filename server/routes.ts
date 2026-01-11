@@ -1169,37 +1169,31 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Update the AMP test endpoint
-  app.get("/api/amp-test", async (req, res) => {
-    if (!req.isAuthenticated()) return res.sendStatus(401);
-    try {
-      console.log('Testing AMP connection...');
-      console.log('AMP URL:', process.env.AMP_API_URL);
-      console.log('Username configured:', !!process.env.AMP_API_USERNAME);
-
-      // Try to get available API methods
-      const apiMethods = await ampService.getAvailableAPIMethods();
-      console.log('Available API methods:', apiMethods);
-
-      // Get instance information
-      const instances = await ampService.getInstances();
-
-      res.json({
-        success: true,
-        message: "AMP connection test completed",
-        instanceCount: instances.length,
-        instances: instances,
-        availableAPIMethods: apiMethods
-      });
-    } catch (error) {
-      console.error('AMP test endpoint error:', error);
-      res.status(500).json({
-        success: false,
-        message: "Failed to connect to AMP",
-        error: error instanceof Error ? error.message : "Unknown error"
-      });
-    }
-  });
+  // AMP test endpoint - uncomment to enable for debugging
+  // app.get("/api/amp-test", async (req, res) => {
+  //   if (!req.isAuthenticated()) return res.sendStatus(401);
+  //   try {
+  //     console.log('Testing AMP connection...');
+  //     console.log('AMP URL:', process.env.AMP_API_URL);
+  //     console.log('Username configured:', !!process.env.AMP_API_USERNAME);
+  //     const apiMethods = await ampService.getAvailableAPIMethods();
+  //     const instances = await ampService.getInstances();
+  //     res.json({
+  //       success: true,
+  //       message: "AMP connection test completed",
+  //       instanceCount: instances.length,
+  //       instances: instances,
+  //       availableAPIMethods: apiMethods
+  //     });
+  //   } catch (error) {
+  //     console.error('AMP test endpoint error:', error);
+  //     res.status(500).json({
+  //       success: false,
+  //       message: "Failed to connect to AMP",
+  //       error: error instanceof Error ? error.message : "Unknown error"
+  //     });
+  //   }
+  // });
 
   app.post("/api/game-servers/request", requireFeature('game_servers_access'), async (req, res) => {
     if (!req.isAuthenticated()) return res.sendStatus(401);
@@ -1469,74 +1463,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Add new debug endpoint for game server player count
-  app.get("/api/game-servers/:instanceId/debug", requireFeature('game_servers_access'), async (req, res) => {
-    if (!req.isAuthenticated()) return res.sendStatus(401);
-    try {
-      const { instanceId } = req.params;
-      console.log(`Debug request received for instance ${instanceId}`);
-
-      // Get all instance information first
-      const instances = await ampService.getInstances();
-      const instance = instances.find(i => i.InstanceID === instanceId);
-
-      if (!instance) {
-        console.log(`Instance ${instanceId} not found`);
-        return res.status(404).json({ message: "Instance not found" });
-      }
-
-      console.log('Found instance:', instance);
-
-      // Get data from all possible sources
-      console.log('Fetching metrics...');
-      const metrics = await ampService.getMetrics(instanceId);
-      console.log('Raw metrics:', metrics);
-
-      console.log('Fetching user list...');
-      const userList = await ampService.getUserList(instanceId);
-      console.log('Raw user list:', userList);
-
-      console.log('Fetching instance status...');
-      const status = await ampService.getInstanceStatus(instanceId);
-      console.log('Raw instance status:', status);
-
-      const activeUsers = status?.Metrics?.['Active Users']?.RawValue || 0;
-      console.log('Extracted active users:', activeUsers);
-
-      // Return all debug information
-      const response = {
-        instanceInfo: {
-          ...instance,
-          FriendlyName: instance.FriendlyName,
-          Running: instance.Running,
-          ActiveUsers: instance.ActiveUsers,
-          MaxUsers: instance.MaxUsers
-        },
-        metrics: {
-          raw: metrics,
-          playerCount: parseInt(metrics.Users[0]) || 0,
-          maxPlayers: parseInt(metrics.Users[1]) || 0
-        },
-        userList: {
-          raw: userList,
-          count: userList.length
-        },
-        status: status,
-        activeUsers: activeUsers,
-        state: status?.State
-      };
-
-      console.log('Sending debug response:', response);
-      res.json(response);
-
-    } catch (error) {
-      console.error('Debug endpoint error:', error);
-      res.status(500).json({
-        message: "Debug operation failed",
-        error: error instanceof Error ? error.message : "Unknown error"
-      });
-    }
-  });
 
   // Add these routes within the registerRoutes function, with the other admin routes
   app.get("/api/email-templates", isAdmin, async (req, res) => {
@@ -3694,44 +3620,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
       console.error('Error fetching EPG channels:', error);
       res.status(500).json({
         message: "Failed to fetch EPG channels",
-        error: error instanceof Error ? error.message : "Unknown error"
-      });
-    }
-  });
-
-  // Debug endpoint to test TMDB integration
-  app.get("/api/debug/tmdb", async (req, res) => {
-    if (!req.isAuthenticated()) return res.sendStatus(401);
-
-    try {
-      const { tmdbService } = await import('./services/tmdb-service');
-      const testTitle = (req.query.title as string) || "Storage Wars";
-
-      const isConfigured = tmdbService.isConfigured();
-      const cacheStats = tmdbService.getCacheStats();
-
-      let thumbnail = null;
-      let error = null;
-
-      if (isConfigured) {
-        try {
-          thumbnail = await tmdbService.getShowImage(testTitle);
-        } catch (e) {
-          error = e instanceof Error ? e.message : "Unknown error";
-        }
-      }
-
-      res.json({
-        configured: isConfigured,
-        apiKeySet: !!process.env.TMDB_API_KEY,
-        apiKeyLength: process.env.TMDB_API_KEY?.length || 0,
-        testTitle,
-        thumbnail,
-        error,
-        cacheStats
-      });
-    } catch (error) {
-      res.status(500).json({
         error: error instanceof Error ? error.message : "Unknown error"
       });
     }

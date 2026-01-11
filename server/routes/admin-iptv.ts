@@ -25,12 +25,6 @@ router.use((req, res, next) => {
   next();
 });
 
-// Debug test endpoint - no auth required
-router.get('/debug-test', (req, res) => {
-  console.log('[ADMIN-IPTV] Debug test endpoint hit!');
-  res.json({ success: true, message: 'Admin IPTV router is working', timestamp: new Date().toISOString() });
-});
-
 // Validation schemas
 const createCredentialSchema = z.object({
   name: z.string().min(1, 'Name is required'),

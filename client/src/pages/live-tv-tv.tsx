@@ -3702,6 +3702,9 @@ export default function LiveTVTvPage() {
                   const currentProgram = channelEpg?.currentProgram;
                   const hasThumbnail = !!currentProgram?.thumbnail;
 
+                  // Debug: Log thumbnail info
+                  console.log(`[Home] ${fav.channelName}: thumbnail=${currentProgram?.thumbnail || 'none'}, title=${currentProgram?.title || 'no program'}`);
+
                   return (
                     <button
                       key={fav.channelId}
