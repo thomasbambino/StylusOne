@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef, useMemo, memo } from 'react';
 import { useQuery, useQueries, useMutation, useQueryClient } from '@tanstack/react-query';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Play, Pause, Volume2, VolumeX, Info, Plus, MoreHorizontal, Star, X, Check, CreditCard, Calendar, ExternalLink, LogOut, LayoutGrid, Airplay, Search, Volume1, Minus, Settings, PictureInPicture2, Filter } from 'lucide-react';
+import { ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Play, Pause, Volume2, VolumeX, Info, Plus, MoreHorizontal, Star, X, Check, CreditCard, Calendar, ExternalLink, LogOut, LayoutGrid, Airplay, Search, Volume1, Minus, Settings, PictureInPicture2, Filter, Package } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { getQueryFn, apiRequest, queryClient } from '@/lib/queryClient';
 import { buildApiUrl, isNativePlatform } from '@/lib/capacitor';
@@ -10,6 +10,7 @@ import { useAuth } from '@/hooks/use-auth';
 import Hls from 'hls.js';
 import { ScreenOrientation } from '@capacitor/screen-orientation';
 import { KeepAwake } from '@capacitor-community/keep-awake';
+import { isIOSNative, showNativeTabBar, hideNativeTabBar, addNativeTabBarListener } from '@/lib/nativeTabBar';
 
 // ============================================================================
 // TYPES & INTERFACES
@@ -925,7 +926,7 @@ FocusedProgramPanel.displayName = 'FocusedProgramPanel';
 
 export default function LiveTVTvPage() {
   // Auth
-  const { logoutMutation } = useAuth();
+  const { user, logoutMutation } = useAuth();
 
   // Portrait mode detection - check immediately on init
   const [isPortrait, setIsPortrait] = useState(() => {
@@ -938,8 +939,8 @@ export default function LiveTVTvPage() {
   // Track rotation to show black screen during transition
   const [isRotating, setIsRotating] = useState(false);
 
-  // View state: 'player' (fullscreen) or 'guide' (with PiP)
-  const [viewMode, setViewMode] = useState<'player' | 'guide'>('player');
+  // View state: 'player' (fullscreen), 'guide' (with PiP), 'home' (favorites), 'profile' (user profile)
+  const [viewMode, setViewMode] = useState<'player' | 'guide' | 'home' | 'profile'>('player');
   const [showOverlay, setShowOverlay] = useState(true);
   const [guideSearchQuery, setGuideSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
@@ -948,6 +949,7 @@ export default function LiveTVTvPage() {
   const [selectedChannel, setSelectedChannel] = useState<Channel | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
+  const [volume, setVolume] = useState(0.75); // 0-1 scale
   const [isLoading, setIsLoading] = useState(false);
   const [isAirPlaying, setIsAirPlaying] = useState(false);
   const [airPlayEnabled, setAirPlayEnabled] = useState(false); // Only enable AirPlay when user requests it
@@ -967,6 +969,7 @@ export default function LiveTVTvPage() {
   const [showInfoModal, setShowInfoModal] = useState(false);
   const [showMenuPopup, setShowMenuPopup] = useState(false);
   const [showFavoritesPopup, setShowFavoritesPopup] = useState(false);
+  const [useNativeTabBar, setUseNativeTabBar] = useState(false);
   const [favoriteOrderVersion, setFavoriteOrderVersion] = useState(0); // Trigger re-render on reorder
   const [showSubscriptionPopup, setShowSubscriptionPopup] = useState(false);
 
@@ -1180,7 +1183,55 @@ export default function LiveTVTvPage() {
   const { data: subscriptionData, isLoading: subscriptionLoading } = useQuery<CurrentSubscription | null>({
     queryKey: ['/api/subscriptions/current'],
     queryFn: getQueryFn({ on401: "returnNull" }),
-    enabled: showSubscriptionPopup, // Only fetch when popup is opened
+    enabled: showSubscriptionPopup || viewMode === 'profile', // Fetch when popup or profile view is opened
+  });
+
+  // Channel packages query for user's plan
+  interface ChannelPackage {
+    id: number;
+    packageId: number;
+    packageName: string;
+    providerId: number;
+    isActive: boolean;
+    channelCount: number;
+  }
+
+  interface PackageChannel {
+    id: number;
+    name: string;
+    logo: string | null;
+    categoryName: string | null;
+  }
+
+  const [expandedPackageId, setExpandedPackageId] = useState<number | null>(null);
+
+  const { data: userPackages = [], isLoading: packagesLoading } = useQuery<ChannelPackage[]>({
+    queryKey: ['/api/subscriptions/packages'],
+    queryFn: async () => {
+      const res = await fetch(buildApiUrl('/api/subscriptions/packages'), {
+        credentials: 'include',
+      });
+      if (!res.ok) {
+        console.warn('[Profile] Failed to fetch packages:', res.status);
+        return [];
+      }
+      return res.json();
+    },
+    enabled: viewMode === 'profile',
+  });
+
+  // Fetch channels for expanded package
+  const { data: packageChannels = [], isLoading: packageChannelsLoading } = useQuery<PackageChannel[]>({
+    queryKey: ['/api/subscriptions/packages', expandedPackageId, 'channels'],
+    queryFn: async () => {
+      if (!expandedPackageId) return [];
+      const res = await fetch(buildApiUrl(`/api/subscriptions/packages/${expandedPackageId}/channels`), {
+        credentials: 'include',
+      });
+      if (!res.ok) return [];
+      return res.json();
+    },
+    enabled: !!expandedPackageId,
   });
 
   // Cache favorites to localStorage for offline/faster startup
@@ -2181,6 +2232,59 @@ export default function LiveTVTvPage() {
     }
   }, [selectedChannel]);
 
+  // Native Tab Bar for iOS - show in portrait mode (player or guide)
+  useEffect(() => {
+    if (!isIOSNative()) {
+      setUseNativeTabBar(false);
+      return;
+    }
+
+    // Show native tab bar in portrait mode (including AirPlay mode)
+    if (isPortrait) {
+      showNativeTabBar().then((shown) => {
+        setUseNativeTabBar(shown);
+      });
+    } else {
+      hideNativeTabBar();
+      setUseNativeTabBar(false);
+    }
+  }, [isPortrait]);
+
+  // Listen for native tab bar selections
+  useEffect(() => {
+    if (!isIOSNative()) return;
+
+    let listener: any = null;
+
+    const setupListener = async () => {
+      listener = await addNativeTabBarListener((tabId) => {
+        haptics.light();
+        switch (tabId) {
+          case 'home':
+            setViewMode('home');
+            break;
+          case 'nowplaying':
+            setViewMode('player');
+            break;
+          case 'guide':
+            setViewMode('guide');
+            break;
+          case 'profile':
+            setViewMode('profile');
+            break;
+        }
+      });
+    };
+
+    setupListener();
+
+    return () => {
+      if (listener) {
+        listener.remove();
+      }
+    };
+  }, [handleAirPlay]);
+
   // Auto-scroll guide to keep focused channel visible
   useEffect(() => {
     if (viewMode === 'guide' && guideScrollRef.current) {
@@ -2394,6 +2498,7 @@ export default function LiveTVTvPage() {
             <div className="flex items-center justify-center gap-3 mb-4">
               {currentChannel?.logo && (
                 <img
+                  key={`airplay-logo-${currentChannel.iptvId || currentChannel.GuideNumber}`}
                   src={currentChannel.logo}
                   alt=""
                   className="h-10 max-w-24 object-contain"
@@ -2427,7 +2532,7 @@ export default function LiveTVTvPage() {
           </div>
 
           {/* Controls - Play/Pause centered, Up/Down on sides */}
-          <div className="px-8 pb-6">
+          <div className="px-8 pb-4">
             <div className="flex items-center justify-center gap-10">
               <button
                 onTouchEnd={(e) => { e.preventDefault(); changeChannel('up'); }}
@@ -2478,44 +2583,57 @@ export default function LiveTVTvPage() {
             </div>
           </div>
 
-          {/* Volume Controls */}
-          <div className="px-8 pb-6">
-            <div className="flex items-center justify-center gap-4 max-w-xs mx-auto">
-              <button
-                onTouchEnd={() => { setIsMuted(!isMuted); if (videoRef.current) videoRef.current.muted = !isMuted; }}
-                onClick={() => { setIsMuted(!isMuted); if (videoRef.current) videoRef.current.muted = !isMuted; }}
-                className="w-11 h-11 bg-white/10 rounded-full flex items-center justify-center active:bg-white/20 shrink-0"
-              >
-                {isMuted ? <VolumeX className="w-5 h-5 text-white/60" /> : <Volume2 className="w-5 h-5 text-white" />}
-              </button>
-              <div className="flex-1 h-1.5 bg-white/20 rounded-full">
-                <div className={cn("h-full bg-white/60 rounded-full transition-all", isMuted ? "w-0" : "w-3/4")} />
-              </div>
-            </div>
+          {/* Action Buttons - Favorites & AirPlay */}
+          <div className="flex items-center justify-center gap-4 pb-4">
+            <button
+              onTouchEnd={(e) => { e.preventDefault(); e.stopPropagation(); haptics.light(); toggleFavorite(selectedChannel!); }}
+              onClick={(e) => { e.preventDefault(); e.stopPropagation(); haptics.light(); toggleFavorite(selectedChannel!); }}
+              disabled={!selectedChannel}
+              className="flex items-center gap-2 px-4 py-2 bg-white/10 rounded-full active:scale-95 active:bg-white/20 disabled:opacity-50"
+            >
+              <Star className={cn("w-5 h-5", selectedChannel && favorites.some(f => f.channelId === selectedChannel.iptvId) ? "text-yellow-400 fill-yellow-400" : "text-white")} />
+              <span className="text-white text-sm font-medium">Favorite</span>
+            </button>
+            <button
+              onTouchEnd={(e) => { e.preventDefault(); e.stopPropagation(); handleAirPlay(); }}
+              onClick={(e) => { e.preventDefault(); e.stopPropagation(); handleAirPlay(); }}
+              className="flex items-center gap-2 px-4 py-2 bg-blue-500 rounded-full active:scale-95"
+            >
+              <Airplay className="w-5 h-5 text-white" />
+              <span className="text-white text-sm font-medium">AirPlay</span>
+            </button>
+          </div>
+
+          {/* Mute Button */}
+          <div className="flex justify-center pb-6">
+            <button
+              onTouchEnd={(e) => {
+                e.preventDefault();
+                haptics.light();
+                const newMuted = !isMuted;
+                setIsMuted(newMuted);
+                if (videoRef.current) videoRef.current.muted = newMuted;
+              }}
+              onClick={() => {
+                haptics.light();
+                const newMuted = !isMuted;
+                setIsMuted(newMuted);
+                if (videoRef.current) videoRef.current.muted = newMuted;
+              }}
+              className={cn(
+                "w-14 h-14 rounded-full flex items-center justify-center active:scale-95",
+                isMuted ? "bg-red-500/20" : "bg-white/10 active:bg-white/20"
+              )}
+            >
+              {isMuted ? <VolumeX className="w-6 h-6 text-red-400" /> : <Volume2 className="w-6 h-6 text-white" />}
+            </button>
           </div>
 
           {/* Spacer */}
           <div className="flex-1" />
 
-          {/* Bottom Action Bar - Guide, Favorites, AirPlay, Settings */}
-          <div className="px-4 pb-8 flex items-center justify-around border-t border-white/10 pt-4">
-            <button onTouchEnd={(e) => { e.preventDefault(); haptics.light(); setViewMode('guide'); }} onClick={() => { haptics.light(); setViewMode('guide'); }} className="flex flex-col items-center gap-1.5 py-2 px-4 active:opacity-70">
-              <LayoutGrid className="w-6 h-6 text-white/70" />
-              <span className="text-white/50 text-xs">Guide</span>
-            </button>
-            <button onTouchEnd={(e) => { e.preventDefault(); haptics.light(); setShowFavoritesPopup(true); }} onClick={() => { haptics.light(); setShowFavoritesPopup(true); }} className="flex flex-col items-center gap-1.5 py-2 px-4 active:opacity-70">
-              <Star className="w-6 h-6 text-white/70 fill-white/70" />
-              <span className="text-white/50 text-xs">Favorites</span>
-            </button>
-            <button onTouchEnd={(e) => { e.preventDefault(); handleAirPlay(); }} onClick={handleAirPlay} className="flex flex-col items-center gap-1.5 py-2 px-4 active:opacity-70">
-              <Airplay className="w-6 h-6 text-blue-400" />
-              <span className="text-blue-400 text-xs">AirPlay</span>
-            </button>
-            <button onTouchEnd={(e) => { e.preventDefault(); setShowMenuPopup(true); }} onClick={() => setShowMenuPopup(true)} className="flex flex-col items-center gap-1.5 py-2 px-4 active:opacity-70">
-              <Settings className="w-6 h-6 text-white/70" />
-              <span className="text-white/50 text-xs">Settings</span>
-            </button>
-          </div>
+          {/* Spacer for native tab bar */}
+          {useNativeTabBar && <div className="shrink-0 h-20" />}
         </div>
       )}
 
@@ -2525,12 +2643,12 @@ export default function LiveTVTvPage() {
           className="absolute left-0 right-0 bottom-0 bg-black flex flex-col"
           style={{ top: 'calc(50px + 56.25vw)', zIndex: 15 }}
         >
-          {/* Channel Bar */}
-          <div className="px-4 py-3 flex items-center gap-3 border-b border-white/10">
+          {/* Channel Bar - Fixed height */}
+          <div className="px-4 py-3 flex items-center gap-3 border-b border-white/10 h-[72px] shrink-0">
             {channelsLoading || !currentChannel ? (
               <>
                 {/* Skeleton loader */}
-                <div className="h-12 w-16 bg-white/10 rounded animate-pulse" />
+                <div className="w-16 h-12 bg-white/10 rounded animate-pulse shrink-0" />
                 <div className="flex-1 min-w-0">
                   <div className="h-5 w-32 bg-white/10 rounded animate-pulse mb-2" />
                   <div className="h-4 w-48 bg-white/10 rounded animate-pulse" />
@@ -2538,18 +2656,22 @@ export default function LiveTVTvPage() {
               </>
             ) : (
               <>
-                {currentChannel.logo && (
-                  <img
-                    src={currentChannel.logo}
-                    alt=""
-                    className="h-12 max-w-24 object-contain"
-                    onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
-                  />
-                )}
+                {/* Fixed-width logo container for consistent layout */}
+                <div className="w-16 h-12 shrink-0 flex items-center justify-center">
+                  {currentChannel.logo && (
+                    <img
+                      key={currentChannel.iptvId || currentChannel.GuideNumber}
+                      src={currentChannel.logo}
+                      alt=""
+                      className="max-h-12 max-w-16 object-contain"
+                      onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                    />
+                  )}
+                </div>
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2">
                     <h2 className="text-white text-lg font-semibold truncate">{currentChannel.GuideName}</h2>
-                    <span className="text-red-500 text-xs font-bold px-1.5 py-0.5 bg-red-500/20 rounded">LIVE</span>
+                    <span className="text-red-500 text-xs font-bold px-1.5 py-0.5 bg-red-500/20 rounded shrink-0">LIVE</span>
                   </div>
                   {currentEPG?.currentProgram && (
                     <p className="text-white/60 text-sm truncate mt-0.5">{currentEPG.currentProgram.title}</p>
@@ -2559,38 +2681,111 @@ export default function LiveTVTvPage() {
             )}
           </div>
 
-          {/* Program Info & Progress */}
-          {channelsLoading || !currentChannel ? (
-            <div className="px-4 py-3 border-b border-white/10">
-              <div className="flex justify-between items-center mb-2">
-                <div className="h-4 w-24 bg-white/10 rounded animate-pulse" />
-                <div className="h-4 w-16 bg-white/10 rounded animate-pulse" />
+          {/* Program Info & Progress - Fixed height with scrollable content */}
+          <div className="h-[140px] shrink-0 border-b border-white/10">
+            {channelsLoading || !currentChannel ? (
+              <div className="px-4 py-3 h-full">
+                <div className="flex justify-between items-center mb-2">
+                  <div className="h-4 w-24 bg-white/10 rounded animate-pulse" />
+                  <div className="h-4 w-16 bg-white/10 rounded animate-pulse" />
+                </div>
+                <div className="h-1.5 bg-white/10 rounded-full animate-pulse" />
+                <div className="h-4 w-full bg-white/10 rounded animate-pulse mt-2" />
               </div>
-              <div className="h-1.5 bg-white/10 rounded-full animate-pulse" />
-              <div className="h-4 w-full bg-white/10 rounded animate-pulse mt-2" />
-            </div>
-          ) : currentEPG?.currentProgram ? (
-            <div className="px-4 py-3 border-b border-white/10">
-              <div className="flex justify-between items-center mb-2">
-                <span className="text-white/50 text-sm">
-                  {new Date(currentEPG.currentProgram.startTime).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })} - {new Date(currentEPG.currentProgram.endTime).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}
-                </span>
-                <span className="text-white/50 text-sm">{getTimeRemaining(currentEPG.currentProgram.endTime)} left</span>
-              </div>
-              <div className="h-1.5 bg-white/20 rounded-full overflow-hidden">
-                <div
-                  className="h-full bg-red-500 rounded-full"
-                  style={{ width: `${getProgramProgress(currentEPG.currentProgram)}%` }}
-                />
-              </div>
-              {currentEPG.currentProgram.description && (
-                <p className="text-white/40 text-sm mt-2 line-clamp-2">{currentEPG.currentProgram.description}</p>
-              )}
-            </div>
-          ) : null}
+            ) : currentEPG?.currentProgram ? (
+              (() => {
+                // Extract season/episode from description if not in dedicated fields
+                let season = currentEPG.currentProgram.season;
+                let episode = currentEPG.currentProgram.episode;
+                const desc = currentEPG.currentProgram.description || '';
 
-          {/* Playback Controls */}
-          <div className="flex-1 flex flex-col justify-center py-4">
+                if (!season || !episode) {
+                  // Try patterns like "S1 E5", "Season 1 Episode 5", "s01e05", "(S1, E5)"
+                  const seMatch = desc.match(/[Ss](\d+)\s*[Ee](\d+)/);
+                  const seasonEpMatch = desc.match(/[Ss]eason\s*(\d+).*?[Ee]pisode\s*(\d+)/i);
+                  if (seMatch) {
+                    season = parseInt(seMatch[1]);
+                    episode = parseInt(seMatch[2]);
+                  } else if (seasonEpMatch) {
+                    season = parseInt(seasonEpMatch[1]);
+                    episode = parseInt(seasonEpMatch[2]);
+                  }
+                }
+
+                // Try to extract rating from description if not in dedicated field
+                let rating = currentEPG.currentProgram.rating;
+                if (!rating) {
+                  const ratingMatch = desc.match(/\b(TV-Y7?|TV-G|TV-PG|TV-14|TV-MA|G|PG|PG-13|R|NC-17|NR)\b/i);
+                  if (ratingMatch) {
+                    rating = ratingMatch[1].toUpperCase();
+                  }
+                }
+
+                // Clean description - remove season/episode and rating info if we extracted them
+                let cleanDesc = desc;
+                if (season && episode) {
+                  cleanDesc = cleanDesc.replace(/[Ss]\d+\s*[Ee]\d+[:\s-]*/g, '').trim();
+                  cleanDesc = cleanDesc.replace(/[Ss]eason\s*\d+.*?[Ee]pisode\s*\d+[:\s-]*/gi, '').trim();
+                }
+
+                return (
+                  <div className="px-4 py-3 h-full flex flex-col overflow-hidden">
+                    {/* Time & Progress - Fixed */}
+                    <div className="flex justify-between items-center shrink-0">
+                      <span className="text-white/50 text-sm">
+                        {new Date(currentEPG.currentProgram.startTime).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })} - {new Date(currentEPG.currentProgram.endTime).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}
+                      </span>
+                      <span className="text-white/50 text-sm">{getTimeRemaining(currentEPG.currentProgram.endTime)} left</span>
+                    </div>
+                    <div className="h-1.5 bg-white/20 rounded-full overflow-hidden mt-2 shrink-0">
+                      <div
+                        className="h-full bg-red-500 rounded-full"
+                        style={{ width: `${getProgramProgress(currentEPG.currentProgram)}%` }}
+                      />
+                    </div>
+
+                    {/* Season/Episode & Rating - Fixed */}
+                    {(season || episode || rating) && (
+                      <div className="flex items-center gap-2 flex-wrap mt-2 shrink-0">
+                        {(season || episode) && (
+                          <span className="text-white/70 text-sm font-medium bg-white/10 px-2 py-0.5 rounded">
+                            {season && `S${season}`}
+                            {season && episode && ' '}
+                            {episode && `E${episode}`}
+                          </span>
+                        )}
+                        {rating && (
+                          <span className="text-white/60 text-xs font-medium bg-white/10 px-2 py-0.5 rounded border border-white/20">
+                            {rating}
+                          </span>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Episode Title (if different from main title) - Fixed */}
+                    {currentEPG.currentProgram.episodeTitle && currentEPG.currentProgram.episodeTitle !== currentEPG.currentProgram.title && (
+                      <p className="text-white/70 text-sm font-medium mt-2 shrink-0 truncate">"{currentEPG.currentProgram.episodeTitle}"</p>
+                    )}
+
+                    {/* Description - Scrollable in remaining space */}
+                    {cleanDesc && (
+                      <div className="flex-1 overflow-y-auto mt-2 min-h-0">
+                        <p className="text-white/50 text-sm leading-relaxed">{cleanDesc}</p>
+                      </div>
+                    )}
+                  </div>
+                );
+              })()
+            ) : (
+              <div className="px-4 py-3 h-full flex items-center justify-center">
+                <p className="text-white/30 text-sm">No program information available</p>
+              </div>
+            )}
+          </div>
+
+          {/* Playback Controls - Flexible height to fill space */}
+          <div className="flex-1 flex flex-col justify-center min-h-[100px] gap-4">
+            {/* Channel and Play/Pause Controls */}
             <div className="flex items-center justify-center gap-6">
               <button
                 onTouchEnd={(e) => { e.preventDefault(); e.stopPropagation(); changeChannel('up'); }}
@@ -2642,27 +2837,74 @@ export default function LiveTVTvPage() {
                 <ChevronDown className="w-7 h-7 text-white" />
               </button>
             </div>
+
+            {/* Action Buttons - Favorites & AirPlay */}
+            <div className="flex items-center justify-center gap-4">
+              <button
+                onTouchEnd={(e) => { e.preventDefault(); e.stopPropagation(); haptics.light(); toggleFavorite(selectedChannel!); }}
+                onClick={(e) => { e.preventDefault(); e.stopPropagation(); haptics.light(); toggleFavorite(selectedChannel!); }}
+                disabled={!selectedChannel}
+                className="flex items-center gap-2 px-4 py-2 bg-white/10 rounded-full active:scale-95 active:bg-white/20 disabled:opacity-50"
+              >
+                <Star className={cn("w-5 h-5", selectedChannel && favorites.some(f => f.channelId === selectedChannel.iptvId) ? "text-yellow-400 fill-yellow-400" : "text-white")} />
+                <span className="text-white text-sm font-medium">Favorite</span>
+              </button>
+              <button
+                onTouchEnd={(e) => { e.preventDefault(); e.stopPropagation(); handleAirPlay(); }}
+                onClick={(e) => { e.preventDefault(); e.stopPropagation(); handleAirPlay(); }}
+                className={cn(
+                  "flex items-center gap-2 px-4 py-2 rounded-full active:scale-95",
+                  isAirPlaying ? "bg-blue-500" : "bg-white/10 active:bg-white/20"
+                )}
+              >
+                <Airplay className="w-5 h-5 text-white" />
+                <span className="text-white text-sm font-medium">AirPlay</span>
+              </button>
+            </div>
           </div>
 
-          {/* Bottom Action Bar - Guide, Favorites, AirPlay, Settings */}
-          <div className="px-4 pb-8 flex items-center justify-around">
-            <button onTouchEnd={(e) => { e.preventDefault(); haptics.light(); setViewMode('guide'); }} onClick={() => { haptics.light(); setViewMode('guide'); }} className="flex flex-col items-center gap-1.5 py-2 px-4 active:opacity-70">
-              <LayoutGrid className="w-6 h-6 text-white/70" />
-              <span className="text-white/50 text-xs">Guide</span>
-            </button>
-            <button onTouchEnd={(e) => { e.preventDefault(); haptics.light(); setShowFavoritesPopup(true); }} onClick={() => { haptics.light(); setShowFavoritesPopup(true); }} className="flex flex-col items-center gap-1.5 py-2 px-4 active:opacity-70">
-              <Star className="w-6 h-6 text-white/70 fill-white/70" />
-              <span className="text-white/50 text-xs">Favorites</span>
-            </button>
-            <button onTouchEnd={(e) => { e.preventDefault(); handleAirPlay(); }} onClick={handleAirPlay} className="flex flex-col items-center gap-1.5 py-2 px-4 active:opacity-70">
-              <Airplay className="w-6 h-6 text-white/70" />
-              <span className="text-white/50 text-xs">AirPlay</span>
-            </button>
-            <button onTouchEnd={(e) => { e.preventDefault(); setShowMenuPopup(true); }} onClick={() => setShowMenuPopup(true)} className="flex flex-col items-center gap-1.5 py-2 px-4 active:opacity-70">
-              <Settings className="w-6 h-6 text-white/70" />
-              <span className="text-white/50 text-xs">Settings</span>
-            </button>
-          </div>
+          {/* Bottom Action Bar - Hidden when using native iOS tab bar */}
+          {!useNativeTabBar && (
+            <div className="shrink-0 px-4 pb-8">
+              <div
+                className="relative overflow-hidden rounded-[28px] flex items-center justify-around py-2.5"
+                style={{
+                  background: 'linear-gradient(135deg, rgba(255,255,255,0.18) 0%, rgba(255,255,255,0.08) 50%, rgba(255,255,255,0.12) 100%)',
+                  backdropFilter: 'blur(40px) saturate(180%)',
+                  WebkitBackdropFilter: 'blur(40px) saturate(180%)',
+                  border: '0.5px solid rgba(255,255,255,0.35)',
+                  boxShadow: '0 8px 32px rgba(0,0,0,0.25), inset 0 1px 0 rgba(255,255,255,0.4), inset 0 -1px 0 rgba(255,255,255,0.1)',
+                }}
+              >
+                {/* Liquid shine highlight */}
+                <div
+                  className="absolute inset-0 pointer-events-none"
+                  style={{
+                    background: 'linear-gradient(180deg, rgba(255,255,255,0.25) 0%, transparent 40%, transparent 60%, rgba(255,255,255,0.05) 100%)',
+                    borderRadius: '28px',
+                  }}
+                />
+                <button onTouchEnd={(e) => { e.preventDefault(); haptics.light(); setViewMode('guide'); }} onClick={() => { haptics.light(); setViewMode('guide'); }} className="relative z-10 flex flex-col items-center gap-0.5 py-1.5 px-5 active:opacity-60 active:scale-95 transition-all duration-150">
+                  <LayoutGrid className="w-6 h-6 text-white" style={{ filter: 'drop-shadow(0 1px 2px rgba(0,0,0,0.3))' }} />
+                  <span className="text-white/80 text-[10px] font-medium" style={{ textShadow: '0 1px 2px rgba(0,0,0,0.3)' }}>Guide</span>
+                </button>
+                <button onTouchEnd={(e) => { e.preventDefault(); haptics.light(); setShowFavoritesPopup(true); }} onClick={() => { haptics.light(); setShowFavoritesPopup(true); }} className="relative z-10 flex flex-col items-center gap-0.5 py-1.5 px-5 active:opacity-60 active:scale-95 transition-all duration-150">
+                  <Star className="w-6 h-6 text-white fill-white" style={{ filter: 'drop-shadow(0 1px 2px rgba(0,0,0,0.3))' }} />
+                  <span className="text-white/80 text-[10px] font-medium" style={{ textShadow: '0 1px 2px rgba(0,0,0,0.3)' }}>Favorites</span>
+                </button>
+                <button onTouchEnd={(e) => { e.preventDefault(); handleAirPlay(); }} onClick={handleAirPlay} className="relative z-10 flex flex-col items-center gap-0.5 py-1.5 px-5 active:opacity-60 active:scale-95 transition-all duration-150">
+                  <Airplay className="w-6 h-6 text-white" style={{ filter: 'drop-shadow(0 1px 2px rgba(0,0,0,0.3))' }} />
+                  <span className="text-white/80 text-[10px] font-medium" style={{ textShadow: '0 1px 2px rgba(0,0,0,0.3)' }}>AirPlay</span>
+                </button>
+                <button onTouchEnd={(e) => { e.preventDefault(); setShowMenuPopup(true); }} onClick={() => setShowMenuPopup(true)} className="relative z-10 flex flex-col items-center gap-0.5 py-1.5 px-5 active:opacity-60 active:scale-95 transition-all duration-150">
+                  <Settings className="w-6 h-6 text-white" style={{ filter: 'drop-shadow(0 1px 2px rgba(0,0,0,0.3))' }} />
+                  <span className="text-white/80 text-[10px] font-medium" style={{ textShadow: '0 1px 2px rgba(0,0,0,0.3)' }}>Settings</span>
+                </button>
+              </div>
+            </div>
+          )}
+          {/* Spacer when using native tab bar */}
+          {useNativeTabBar && <div className="shrink-0 h-20" />}
         </div>
       )}
 
@@ -2745,6 +2987,7 @@ export default function LiveTVTvPage() {
               <>
                 {currentChannel.logo && (
                   <img
+                    key={`guide-logo-${currentChannel.iptvId || currentChannel.GuideNumber}`}
                     src={currentChannel.logo}
                     alt=""
                     className="h-8 max-w-16 object-contain"
@@ -3000,25 +3243,29 @@ export default function LiveTVTvPage() {
             )}
           </div>
 
-          {/* Bottom Tab Bar */}
-          <div className="shrink-0 px-4 pb-8 pt-3 flex items-center justify-around border-t border-white/10 bg-black">
-            <button onTouchEnd={(e) => { e.preventDefault(); setViewMode('player'); setGuideSearchQuery(''); setSelectedCategory(null); }} onClick={() => { setViewMode('player'); setGuideSearchQuery(''); setSelectedCategory(null); }} className="flex flex-col items-center gap-1 py-2 px-4 active:opacity-70">
-              <LayoutGrid className="w-6 h-6 text-white" />
-              <span className="text-white text-xs font-medium">Guide</span>
-            </button>
-            <button onTouchEnd={(e) => { e.preventDefault(); setShowFavoritesPopup(!showFavoritesPopup); }} onClick={() => setShowFavoritesPopup(!showFavoritesPopup)} className="flex flex-col items-center gap-1 py-2 px-4 active:opacity-70">
-              <Star className="w-6 h-6 text-white/50 fill-white/50" />
-              <span className="text-white/50 text-xs">Favorites</span>
-            </button>
-            <button onTouchEnd={(e) => { e.preventDefault(); handleAirPlay(); }} onClick={handleAirPlay} className="flex flex-col items-center gap-1 py-2 px-4 active:opacity-70">
-              <Airplay className="w-6 h-6 text-white/50" />
-              <span className="text-white/50 text-xs">AirPlay</span>
-            </button>
-            <button onTouchEnd={(e) => { e.preventDefault(); setShowMenuPopup(true); }} onClick={() => setShowMenuPopup(true)} className="flex flex-col items-center gap-1 py-2 px-4 active:opacity-70">
-              <Settings className="w-6 h-6 text-white/50" />
-              <span className="text-white/50 text-xs">Settings</span>
-            </button>
-          </div>
+          {/* Bottom Tab Bar - Hidden when using native iOS tab bar */}
+          {!useNativeTabBar && (
+            <div className="shrink-0 px-4 pb-8 pt-3 flex items-center justify-around border-t border-white/10 bg-black">
+              <button onTouchEnd={(e) => { e.preventDefault(); setViewMode('player'); setGuideSearchQuery(''); setSelectedCategory(null); }} onClick={() => { setViewMode('player'); setGuideSearchQuery(''); setSelectedCategory(null); }} className="flex flex-col items-center gap-1 py-2 px-4 active:opacity-70">
+                <LayoutGrid className="w-6 h-6 text-white" />
+                <span className="text-white text-xs font-medium">Guide</span>
+              </button>
+              <button onTouchEnd={(e) => { e.preventDefault(); setShowFavoritesPopup(!showFavoritesPopup); }} onClick={() => setShowFavoritesPopup(!showFavoritesPopup)} className="flex flex-col items-center gap-1 py-2 px-4 active:opacity-70">
+                <Star className="w-6 h-6 text-white/50 fill-white/50" />
+                <span className="text-white/50 text-xs">Favorites</span>
+              </button>
+              <button onTouchEnd={(e) => { e.preventDefault(); handleAirPlay(); }} onClick={handleAirPlay} className="flex flex-col items-center gap-1 py-2 px-4 active:opacity-70">
+                <Airplay className="w-6 h-6 text-white/50" />
+                <span className="text-white/50 text-xs">AirPlay</span>
+              </button>
+              <button onTouchEnd={(e) => { e.preventDefault(); setShowMenuPopup(true); }} onClick={() => setShowMenuPopup(true)} className="flex flex-col items-center gap-1 py-2 px-4 active:opacity-70">
+                <Settings className="w-6 h-6 text-white/50" />
+                <span className="text-white/50 text-xs">Settings</span>
+              </button>
+            </div>
+          )}
+          {/* Spacer when using native tab bar */}
+          {useNativeTabBar && <div className="shrink-0 h-20" />}
         </div>
       )}
 
@@ -3198,6 +3445,7 @@ export default function LiveTVTvPage() {
                 <div className="flex items-center gap-2 py-1">
                   {currentChannel?.logo && (
                     <img
+                      key={`landscape-logo-${currentChannel.iptvId || currentChannel.GuideNumber}`}
                       src={currentChannel.logo}
                       alt=""
                       className="h-6 max-w-20 object-contain"
@@ -3360,6 +3608,227 @@ export default function LiveTVTvPage() {
             </div>
 
       </div>
+      )}
+
+      {/* Portrait Home View - Favorite channels with current programs */}
+      {!isRotating && isPortrait && isNativePlatform() && viewMode === 'home' && (
+        <div
+          className="absolute inset-0 bg-black flex flex-col landscape:opacity-0 landscape:pointer-events-none animate-in fade-in duration-150"
+          style={{ zIndex: 30 }}
+        >
+          {/* Header */}
+          <div className="shrink-0 pt-14 px-4 pb-4">
+            <h1 className="text-2xl font-bold text-white">Home</h1>
+            <p className="text-white/50 text-sm mt-1">Your favorite channels</p>
+          </div>
+
+          {/* Favorite Channels Grid */}
+          <div className="flex-1 overflow-y-auto px-4 pb-24">
+            {!favorites || favorites.length === 0 ? (
+              <div className="flex flex-col items-center justify-center h-64 text-center">
+                <Star className="w-12 h-12 text-white/20 mb-4" />
+                <p className="text-white/50 text-lg">No favorites yet</p>
+                <p className="text-white/30 text-sm mt-2">Add channels to favorites from the Guide or Player</p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 gap-3">
+                {favorites.map((fav) => {
+                  const channel = channels.find(c => c.iptvId === fav.channelId);
+                  if (!channel) return null;
+                  const channelEpg = epgDataMap.get(channel.iptvId || '');
+                  return (
+                    <button
+                      key={fav.channelId}
+                      onTouchEnd={(e) => {
+                        e.preventDefault();
+                        haptics.light();
+                        playStream(channel);
+                        setViewMode('player');
+                      }}
+                      onClick={() => {
+                        haptics.light();
+                        playStream(channel);
+                        setViewMode('player');
+                      }}
+                      className="bg-white/5 rounded-xl p-4 flex items-start gap-4 active:bg-white/10 text-left"
+                    >
+                      {/* Channel Logo */}
+                      <div className="w-16 h-12 shrink-0 flex items-center justify-center bg-black/30 rounded-lg overflow-hidden">
+                        {fav.channelLogo ? (
+                          <img src={fav.channelLogo} alt="" className="max-w-full max-h-full object-contain" />
+                        ) : (
+                          <span className="text-white/30 text-xs">{fav.channelId}</span>
+                        )}
+                      </div>
+                      {/* Channel Info */}
+                      <div className="flex-1 min-w-0">
+                        <p className="text-white font-medium truncate">{fav.channelName || channel.GuideName}</p>
+                        {channelEpg?.currentProgram ? (
+                          <>
+                            <p className="text-white/70 text-sm truncate mt-0.5">{channelEpg.currentProgram.title}</p>
+                            <p className="text-white/40 text-xs mt-1">
+                              {formatTimeRange(channelEpg.currentProgram.startTime, channelEpg.currentProgram.endTime)}
+                            </p>
+                          </>
+                        ) : (
+                          <p className="text-white/40 text-sm mt-0.5">No program info</p>
+                        )}
+                      </div>
+                      {/* Play indicator */}
+                      <div className="shrink-0 w-10 h-10 rounded-full bg-white/10 flex items-center justify-center">
+                        <Play className="w-5 h-5 text-white ml-0.5" />
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
+          {/* Spacer for native tab bar */}
+          {useNativeTabBar && <div className="shrink-0 h-20" />}
+        </div>
+      )}
+
+      {/* Portrait Profile View - User info, subscription, packages, logout */}
+      {!isRotating && isPortrait && isNativePlatform() && viewMode === 'profile' && (
+        <div
+          className="absolute inset-0 bg-black flex flex-col landscape:opacity-0 landscape:pointer-events-none animate-in fade-in duration-150"
+          style={{ zIndex: 30 }}
+        >
+          {/* Header */}
+          <div className="shrink-0 pt-14 px-4 pb-4">
+            <h1 className="text-2xl font-bold text-white">My Profile</h1>
+          </div>
+
+          {/* Profile Content */}
+          <div className="flex-1 overflow-y-auto px-4 pb-24">
+            {/* User Info Card */}
+            <div className="bg-white/5 rounded-xl p-4 mb-4">
+              <div className="flex items-center gap-4">
+                <div className="w-16 h-16 rounded-full bg-white/10 flex items-center justify-center">
+                  <span className="text-2xl text-white font-bold">
+                    {user?.username?.charAt(0).toUpperCase() || 'U'}
+                  </span>
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-white font-semibold text-lg">{user?.username || 'User'}</p>
+                  <p className="text-white/50 text-sm truncate">{user?.email || ''}</p>
+                </div>
+              </div>
+            </div>
+
+            {/* Subscription Info */}
+            <div className="bg-white/5 rounded-xl p-4 mb-4">
+              <h3 className="text-white/50 text-xs font-medium uppercase tracking-wider mb-3">Subscription</h3>
+              {subscriptionLoading ? (
+                <div className="animate-pulse">
+                  <div className="h-5 w-32 bg-white/10 rounded mb-2" />
+                  <div className="h-4 w-48 bg-white/10 rounded" />
+                </div>
+              ) : subscriptionData ? (
+                <>
+                  <p className="text-white font-medium">{subscriptionData.plan_name}</p>
+                  <p className="text-white/50 text-sm mt-1">
+                    {subscriptionData.billing_period === 'annual' ? 'Annual' : 'Monthly'} • {subscriptionData.status}
+                  </p>
+                  <p className="text-white/40 text-xs mt-2">
+                    Renews {new Date(subscriptionData.current_period_end).toLocaleDateString()}
+                  </p>
+                </>
+              ) : (
+                <p className="text-white/50">No active subscription</p>
+              )}
+            </div>
+
+            {/* Channel Packages */}
+            <div className="bg-white/5 rounded-xl p-4 mb-4">
+              <h3 className="text-white/50 text-xs font-medium uppercase tracking-wider mb-3">Channel Packages</h3>
+              <div className="space-y-2">
+                {packagesLoading ? (
+                  <div className="animate-pulse space-y-2">
+                    <div className="h-10 w-full bg-white/10 rounded" />
+                    <div className="h-10 w-full bg-white/10 rounded" />
+                  </div>
+                ) : userPackages.length > 0 ? (
+                  userPackages.map((pkg) => (
+                    <div key={pkg.packageId}>
+                      <button
+                        onTouchEnd={(e) => {
+                          e.preventDefault();
+                          haptics.light();
+                          setExpandedPackageId(expandedPackageId === pkg.packageId ? null : pkg.packageId);
+                        }}
+                        onClick={() => {
+                          haptics.light();
+                          setExpandedPackageId(expandedPackageId === pkg.packageId ? null : pkg.packageId);
+                        }}
+                        className="w-full flex items-center justify-between p-3 bg-white/5 rounded-lg active:bg-white/10"
+                      >
+                        <div className="flex items-center gap-3">
+                          <Package className="w-5 h-5 text-blue-400" />
+                          <div className="text-left">
+                            <p className="text-white text-sm font-medium">{pkg.packageName}</p>
+                            <p className="text-white/50 text-xs">{pkg.channelCount} channels</p>
+                          </div>
+                        </div>
+                        <ChevronDown className={`w-5 h-5 text-white/50 transition-transform ${expandedPackageId === pkg.packageId ? 'rotate-180' : ''}`} />
+                      </button>
+
+                      {/* Expanded channel list */}
+                      {expandedPackageId === pkg.packageId && (
+                        <div className="mt-2 ml-8 space-y-1 max-h-48 overflow-y-auto">
+                          {packageChannelsLoading ? (
+                            <div className="animate-pulse space-y-1">
+                              <div className="h-6 w-full bg-white/5 rounded" />
+                              <div className="h-6 w-full bg-white/5 rounded" />
+                              <div className="h-6 w-full bg-white/5 rounded" />
+                            </div>
+                          ) : packageChannels.length > 0 ? (
+                            packageChannels.map((channel) => (
+                              <div key={channel.id} className="flex items-center gap-2 py-1">
+                                {channel.logo ? (
+                                  <img src={channel.logo} alt="" className="w-5 h-5 rounded object-contain bg-white/10" />
+                                ) : (
+                                  <div className="w-5 h-5 rounded bg-white/10" />
+                                )}
+                                <span className="text-white/70 text-xs truncate">{channel.name}</span>
+                              </div>
+                            ))
+                          ) : (
+                            <p className="text-white/40 text-xs">No channels in package</p>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  ))
+                ) : (
+                  <p className="text-white/50 text-sm">No packages available</p>
+                )}
+              </div>
+            </div>
+
+            {/* Logout Button */}
+            <button
+              onTouchEnd={(e) => {
+                e.preventDefault();
+                haptics.warning();
+                logoutMutation.mutate();
+              }}
+              onClick={() => {
+                haptics.warning();
+                logoutMutation.mutate();
+              }}
+              className="w-full bg-red-500/20 text-red-400 rounded-xl p-4 flex items-center justify-center gap-2 active:bg-red-500/30"
+            >
+              <LogOut className="w-5 h-5" />
+              <span className="font-medium">Log Out</span>
+            </button>
+          </div>
+
+          {/* Spacer for native tab bar */}
+          {useNativeTabBar && <div className="shrink-0 h-20" />}
+        </div>
       )}
 
       {/* Info Modal */}

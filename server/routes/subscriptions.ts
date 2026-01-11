@@ -6,9 +6,13 @@ import {
   userSubscriptions,
   invoices,
   paymentMethods,
-  users
+  users,
+  channelPackages,
+  planPackages,
+  packageChannels,
+  iptvChannels
 } from '@shared/schema';
-import { eq, and, desc } from 'drizzle-orm';
+import { eq, and, desc, sql } from 'drizzle-orm';
 import { stripeService } from '../services/stripe-service';
 
 const router = Router();
@@ -148,6 +152,120 @@ router.get('/current', requireAuth, async (req, res) => {
   } catch (error) {
     console.error('Error fetching current subscription:', error);
     res.status(500).json({ error: 'Failed to fetch subscription' });
+  }
+});
+
+/**
+ * GET /api/subscriptions/packages
+ * Get channel packages available to the current user based on their subscription
+ */
+router.get('/packages', requireAuth, async (req, res) => {
+  try {
+    const userId = req.user.id;
+
+    // Get user's current subscription
+    const [subscription] = await db
+      .select({ plan_id: userSubscriptions.plan_id })
+      .from(userSubscriptions)
+      .where(eq(userSubscriptions.user_id, userId))
+      .orderBy(desc(userSubscriptions.created_at))
+      .limit(1);
+
+    if (!subscription) {
+      return res.json([]);
+    }
+
+    // Get packages assigned to this plan
+    const packages = await db
+      .select({
+        id: planPackages.id,
+        packageId: planPackages.packageId,
+        packageName: channelPackages.name,
+        packageDescription: channelPackages.description,
+        providerId: channelPackages.providerId,
+        isActive: channelPackages.isActive,
+      })
+      .from(planPackages)
+      .innerJoin(channelPackages, eq(planPackages.packageId, channelPackages.id))
+      .where(eq(planPackages.planId, subscription.plan_id));
+
+    // Add channel counts for each package
+    const packagesWithCounts = await Promise.all(
+      packages.map(async (pkg) => {
+        const [countResult] = await db
+          .select({ count: sql<number>`count(*)::int` })
+          .from(packageChannels)
+          .where(eq(packageChannels.packageId, pkg.packageId));
+
+        return {
+          ...pkg,
+          channelCount: Number(countResult?.count) || 0,
+        };
+      })
+    );
+
+    res.json(packagesWithCounts);
+  } catch (error) {
+    console.error('Error fetching user packages:', error);
+    res.status(500).json({ error: 'Failed to fetch packages' });
+  }
+});
+
+/**
+ * GET /api/subscriptions/packages/:packageId/channels
+ * Get channels in a specific package (for users with access to that package)
+ */
+router.get('/packages/:packageId/channels', requireAuth, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const packageId = parseInt(req.params.packageId);
+
+    if (isNaN(packageId)) {
+      return res.status(400).json({ error: 'Invalid package ID' });
+    }
+
+    // Verify user has access to this package through their subscription
+    const [subscription] = await db
+      .select({ plan_id: userSubscriptions.plan_id })
+      .from(userSubscriptions)
+      .where(eq(userSubscriptions.user_id, userId))
+      .orderBy(desc(userSubscriptions.created_at))
+      .limit(1);
+
+    if (!subscription) {
+      return res.status(403).json({ error: 'No active subscription' });
+    }
+
+    // Check if package is assigned to user's plan
+    const [planPackage] = await db
+      .select()
+      .from(planPackages)
+      .where(and(
+        eq(planPackages.planId, subscription.plan_id),
+        eq(planPackages.packageId, packageId)
+      ));
+
+    if (!planPackage) {
+      return res.status(403).json({ error: 'Package not available on your plan' });
+    }
+
+    // Get channels in the package
+    const channels = await db
+      .select({
+        id: iptvChannels.id,
+        name: iptvChannels.name,
+        logo: iptvChannels.logo,
+        categoryName: iptvChannels.categoryName,
+      })
+      .from(packageChannels)
+      .innerJoin(iptvChannels, eq(packageChannels.channelId, iptvChannels.id))
+      .where(eq(packageChannels.packageId, packageId))
+      .orderBy(packageChannels.sortOrder);
+
+    res.json(channels);
+  } catch (error) {
+    console.error('Error fetching package channels:', error);
+    res.status(500).json({ error: 'Failed to fetch channels' });
   }
 });
 

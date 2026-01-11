@@ -15,7 +15,9 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
     }
 
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
-        // Override point for customization after application launch.
+        // Set window background to black to prevent white flash
+        window?.backgroundColor = .black
+        window?.rootViewController?.view.backgroundColor = .black
         return true
     }
 

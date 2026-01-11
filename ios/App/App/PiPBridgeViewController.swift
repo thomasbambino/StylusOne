@@ -8,6 +8,9 @@ class PiPBridgeViewController: CAPBridgeViewController {
     override func viewDidLoad() {
         super.viewDidLoad()
 
+        // Set black background to prevent white flash
+        view.backgroundColor = .black
+
         // Configure audio session for background playback and PiP
         do {
             try AVAudioSession.sharedInstance().setCategory(.playback, mode: .moviePlayback)
@@ -15,6 +18,11 @@ class PiPBridgeViewController: CAPBridgeViewController {
         } catch {
             print("Failed to set audio session category: \(error)")
         }
+    }
+
+    // Register local plugins
+    override func capacitorDidLoad() {
+        bridge?.registerPluginInstance(NativeTabBarPlugin())
     }
 
     override func webViewConfiguration(for instanceConfiguration: InstanceConfiguration) -> WKWebViewConfiguration {
