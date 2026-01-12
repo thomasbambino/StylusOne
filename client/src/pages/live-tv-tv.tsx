@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef, useMemo, memo } from 'react';
 import { useQuery, useQueries, useMutation, useQueryClient } from '@tanstack/react-query';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Play, Pause, Volume2, VolumeX, Info, Plus, MoreHorizontal, Star, X, Check, CreditCard, Calendar, ExternalLink, LogOut, LayoutGrid, Airplay, Search, Volume1, Minus, Settings, PictureInPicture2, Filter, Package, Tv } from 'lucide-react';
+import { ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Play, Pause, Volume2, VolumeX, Info, Plus, MoreHorizontal, Star, X, Check, CreditCard, Calendar, ExternalLink, LogOut, LayoutGrid, Airplay, Search, Volume1, Minus, Settings, PictureInPicture2, Filter, Package, Tv, Clock, Zap, Radio } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { getQueryFn, apiRequest, queryClient } from '@/lib/queryClient';
 import { buildApiUrl, isNativePlatform, getDeviceTypeSync } from '@/lib/capacitor';
@@ -78,14 +78,17 @@ const formatTimeRange = (start: string, end: string): string => {
   return `${formatTime(startDate)} - ${formatTime(endDate)}`;
 };
 
-const getTimeRemaining = (endTime: string): string => {
-  const end = new Date(endTime).getTime();
-  const now = new Date().getTime();
+const getTimeRemaining = (endTime: string | Date | undefined): string | null => {
+  if (!endTime) return null;
+  const end = endTime instanceof Date ? endTime.getTime() : new Date(endTime).getTime();
+  if (isNaN(end)) return null;
+  const now = Date.now();
   const remaining = Math.floor((end - now) / 60000);
+  if (remaining <= 0) return null;
   if (remaining < 60) return `${remaining} min`;
   const hours = Math.floor(remaining / 60);
   const mins = remaining % 60;
-  return `${hours}h ${mins}m`;
+  return mins > 0 ? `${hours}h ${mins}m` : `${hours}h`;
 };
 
 const getProgramProgress = (program: EPGProgram): number => {
@@ -955,6 +958,53 @@ export default function LiveTVTvPage() {
   const [guideSearchQuery, setGuideSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
 
+  // Home page state
+  const [homeSearchQuery, setHomeSearchQuery] = useState('');
+  const [homeCategory, setHomeCategory] = useState<string | null>(null);
+
+  // Helper: Calculate program progress percentage
+  const getProgramProgress = useCallback((program: EPGProgram | null | undefined): number => {
+    if (!program) return 0;
+    const now = Date.now();
+    const start = new Date(program.startTime).getTime();
+    const end = new Date(program.endTime).getTime();
+    if (now < start) return 0;
+    if (now > end) return 100;
+    return Math.round(((now - start) / (end - start)) * 100);
+  }, []);
+
+  // Helper: Get time remaining in program (takes full program object)
+  const getProgramTimeRemaining = useCallback((program: EPGProgram | null | undefined): string => {
+    if (!program || !program.endTime) return '';
+    const now = Date.now();
+    const end = program.endTime instanceof Date ? program.endTime.getTime() : new Date(program.endTime).getTime();
+    if (isNaN(end)) return '';
+    const remaining = Math.max(0, end - now);
+    const minutes = Math.floor(remaining / 60000);
+    if (minutes <= 0) return '';
+    if (minutes < 60) return `${minutes}m left`;
+    const hours = Math.floor(minutes / 60);
+    const mins = minutes % 60;
+    return mins > 0 ? `${hours}h ${mins}m left` : `${hours}h left`;
+  }, []);
+
+  // Helper: Check if program is starting soon (within 15 minutes)
+  const isStartingSoon = useCallback((program: EPGProgram | null | undefined): boolean => {
+    if (!program) return false;
+    const now = Date.now();
+    const start = new Date(program.startTime).getTime();
+    const diff = start - now;
+    return diff > 0 && diff <= 15 * 60 * 1000; // Within 15 minutes
+  }, []);
+
+  // Helper: Get minutes until program starts
+  const getMinutesUntilStart = useCallback((program: EPGProgram | null | undefined): number => {
+    if (!program) return 0;
+    const now = Date.now();
+    const start = new Date(program.startTime).getTime();
+    return Math.max(0, Math.ceil((start - now) / 60000));
+  }, []);
+
   // Playback state
   const [selectedChannel, setSelectedChannel] = useState<Channel | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -1234,6 +1284,16 @@ export default function LiveTVTvPage() {
   const nflPackage = userPackages.find(p => p.packageName?.toLowerCase().includes('nfl'));
   const nbaPackage = userPackages.find(p => p.packageName?.toLowerCase().includes('nba'));
   const mlbPackage = userPackages.find(p => p.packageName?.toLowerCase().includes('mlb'));
+
+  // Debug logging for sports packages
+  useEffect(() => {
+    if (userPackages.length > 0 && viewMode === 'home') {
+      console.log('[Sports] User packages:', userPackages.map(p => p.packageName));
+      console.log('[Sports] NFL package:', nflPackage?.packageName || 'NOT FOUND');
+      console.log('[Sports] NBA package:', nbaPackage?.packageName || 'NOT FOUND');
+      console.log('[Sports] MLB package:', mlbPackage?.packageName || 'NOT FOUND');
+    }
+  }, [userPackages, nflPackage, nbaPackage, mlbPackage, viewMode]);
 
   // Fetch channels for sport packages on Home view
   const { data: nflChannels = [] } = useQuery<PackageChannel[]>({
@@ -2647,7 +2707,7 @@ export default function LiveTVTvPage() {
                 </div>
                 <div className="flex justify-between mt-1.5 text-xs text-white/40">
                   <span>{new Date(currentEPG.currentProgram.startTime).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}</span>
-                  <span>{getTimeRemaining(currentEPG.currentProgram.endTime)} left</span>
+                  <span>{getTimeRemaining(currentEPG.currentProgram.endTime) ? `${getTimeRemaining(currentEPG.currentProgram.endTime)} left` : ''}</span>
                   <span>{new Date(currentEPG.currentProgram.endTime).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}</span>
                 </div>
               </div>
@@ -2755,8 +2815,6 @@ export default function LiveTVTvPage() {
           {/* Spacer */}
           <div className="flex-1" />
 
-          {/* Spacer for native tab bar */}
-          {useNativeTabBar && <div className="shrink-0 h-20" />}
         </div>
       )}
 
@@ -2858,7 +2916,7 @@ export default function LiveTVTvPage() {
                       <span className="text-white/50 text-sm">
                         {new Date(currentEPG.currentProgram.startTime).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })} - {new Date(currentEPG.currentProgram.endTime).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}
                       </span>
-                      <span className="text-white/50 text-sm">{getTimeRemaining(currentEPG.currentProgram.endTime)} left</span>
+                      <span className="text-white/50 text-sm">{getTimeRemaining(currentEPG.currentProgram.endTime) ? `${getTimeRemaining(currentEPG.currentProgram.endTime)} left` : ''}</span>
                     </div>
                     <div className="h-1.5 bg-white/20 rounded-full overflow-hidden mt-2 shrink-0">
                       <div
@@ -3007,8 +3065,6 @@ export default function LiveTVTvPage() {
               </button>
             </div>
           )}
-          {/* Spacer when using native tab bar */}
-          {useNativeTabBar && <div className="shrink-0 h-20" />}
         </div>
       )}
 
@@ -3367,8 +3423,6 @@ export default function LiveTVTvPage() {
               </button>
             </div>
           )}
-          {/* Spacer when using native tab bar */}
-          {useNativeTabBar && <div className="shrink-0 h-20" />}
         </div>
       )}
 
@@ -3529,7 +3583,7 @@ export default function LiveTVTvPage() {
                 </div>
                 <div className="flex justify-between items-center mt-2">
                   <span className="text-red-500 text-sm font-bold tracking-wider">LIVE</span>
-                  <span className="text-white/70 text-sm">{getTimeRemaining(currentEPG.currentProgram.endTime)} left</span>
+                  <span className="text-white/70 text-sm">{getTimeRemaining(currentEPG.currentProgram.endTime) ? `${getTimeRemaining(currentEPG.currentProgram.endTime)} left` : ''}</span>
                 </div>
               </div>
             )}
@@ -3688,8 +3742,8 @@ export default function LiveTVTvPage() {
               />
             </div>
 
-            {/* Channel Grid - takes remaining space, supports horizontal scrolling */}
-            <div ref={guideScrollRef} className="flex-1 overflow-auto">
+            {/* Channel Grid - takes remaining space, supports horizontal scrolling, pb-24 for tab bar */}
+            <div ref={guideScrollRef} className="flex-1 overflow-auto pb-24">
               {filteredChannels.slice(0, renderLimit).map((channel: Channel, index: number) => (
                 <GuideChannelRow
                   key={channel.iptvId || channel.GuideNumber}
@@ -3714,249 +3768,269 @@ export default function LiveTVTvPage() {
       </div>
       )}
 
-      {/* Portrait Home View - Favorite channels with current programs */}
+      {/* Portrait Home View - Apple TV+ Style */}
       {/* On phones: always render (orientation locked). On tablets: only in portrait */}
       {!isRotating && isNativePlatform() && viewMode === 'home' && (isPhoneDevice || isPortrait) && (
         <div
           className="absolute inset-0 bg-black flex flex-col animate-in fade-in duration-150"
           style={{ zIndex: 30 }}
         >
-          {/* Header */}
-          <div className="shrink-0 pt-20 px-4 pb-2">
-            <h1 className="text-2xl font-bold text-white">Home</h1>
+          {/* Minimal Header */}
+          <div className="shrink-0 pt-16 px-5 pb-2">
+            <h1 className="text-3xl font-bold text-white tracking-tight">Watch Now</h1>
           </div>
 
-          {/* Scrollable Content */}
+          {/* Scrollable Content - pb-24 allows content to scroll under tab bar */}
           <div className="flex-1 overflow-y-auto pb-24">
-            {/* Favorites Section */}
-            <div className="mb-6">
-              <div className="px-4 mb-3 flex items-center justify-between">
-                <h2 className="text-lg font-semibold text-white">Favorites</h2>
-                {favorites && favorites.length > 0 && (
-                  <span className="text-white/40 text-sm">{favorites.length} channels</span>
-                )}
-              </div>
 
-              {!favorites || favorites.length === 0 ? (
-                <div className="px-4">
-                  <div className="flex flex-col items-center justify-center h-40 bg-white/5 rounded-xl text-center">
-                    <Star className="w-10 h-10 text-white/20 mb-3" />
-                    <p className="text-white/50">No favorites yet</p>
-                    <p className="text-white/30 text-sm mt-1">Add channels from the Guide</p>
+            {/* Featured - First Favorite (Large Card) */}
+            {favorites && favorites.length > 0 && (() => {
+              const fav = favorites[0];
+              const channel = channels.find(c => c.iptvId === fav.channelId);
+              if (!channel) return null;
+              const channelEpg = epgDataMap.get(channel.iptvId || '');
+              const thumbnail = channelEpg?.currentProgram?.thumbnail;
+              const channelLogo = fav.channelLogo || channel.logo;
+              const progress = getProgramProgress(channelEpg?.currentProgram);
+              const timeLeft = channelEpg?.currentProgram ? getTimeRemaining(channelEpg.currentProgram.endTime) : null;
+              const category = channel.categoryName;
+              const rating = channelEpg?.currentProgram?.rating;
+
+              return (
+                <div className="px-5 mb-10 mt-6">
+                  <div
+                    className="relative rounded-2xl overflow-hidden active:scale-[0.98] transition-transform duration-200"
+                    onClick={() => { haptics.medium(); playStream(channel); setViewMode('player'); }}
+                  >
+                    <div className="aspect-[16/9]">
+                      {thumbnail ? (
+                        <img src={thumbnail} alt="" className="w-full h-full object-cover" />
+                      ) : channelLogo ? (
+                        <div className="w-full h-full flex items-center justify-center bg-zinc-900 p-12">
+                          <img src={channelLogo} alt="" className="max-w-[60%] max-h-[60%] object-contain opacity-80" />
+                        </div>
+                      ) : (
+                        <div className="w-full h-full bg-zinc-900" />
+                      )}
+                    </div>
+                    {/* Top badges row */}
+                    <div className="absolute top-3 left-3 right-3 flex items-center gap-2">
+                      {/* Category tag */}
+                      {category && (
+                        <span className="px-2 py-1 bg-white/20 backdrop-blur-sm rounded text-white text-[10px] font-medium uppercase tracking-wide">
+                          {category}
+                        </span>
+                      )}
+                      {/* Rating badge */}
+                      {rating && (
+                        <span className="px-1.5 py-0.5 border border-white/40 rounded text-white/90 text-[10px] font-medium">
+                          {rating}
+                        </span>
+                      )}
+                    </div>
+                    {/* Play button */}
+                    <div className="absolute inset-0 flex items-center justify-center">
+                      <div className="w-16 h-16 rounded-full bg-black/40 backdrop-blur-sm flex items-center justify-center">
+                        <Play className="w-8 h-8 text-white ml-1" fill="white" />
+                      </div>
+                    </div>
+                    {/* Bottom info overlay */}
+                    <div className="absolute bottom-0 left-0 right-0 p-5 bg-gradient-to-t from-black/90 via-black/50 to-transparent">
+                      <div className="flex items-start gap-4">
+                        {/* Channel logo */}
+                        {channelLogo && (
+                          <div className="shrink-0 w-14 h-14 rounded-lg bg-white/10 p-2 flex items-center justify-center">
+                            <img src={channelLogo} alt="" className="max-w-full max-h-full object-contain" />
+                          </div>
+                        )}
+                        <div className="flex-1 min-w-0">
+                          <p className="text-white font-semibold text-xl">{fav.channelName || channel.GuideName}</p>
+                          {channelEpg?.currentProgram && (
+                            <div className="flex items-center gap-2 mt-1">
+                              <p className="text-white/60 text-sm truncate">{channelEpg.currentProgram.title}</p>
+                              {timeLeft && (
+                                <span className="text-white/40 text-xs shrink-0">• {timeLeft}</span>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                      {/* Progress bar */}
+                      {progress > 0 && (
+                        <div className="mt-3 h-1 bg-white/20 rounded-full overflow-hidden">
+                          <div className="h-full bg-white/80 rounded-full" style={{ width: `${progress}%` }} />
+                        </div>
+                      )}
+                    </div>
                   </div>
                 </div>
-              ) : (
-                <div
-                  className="flex gap-3 overflow-x-auto px-4 pb-2 scrollbar-hide"
-                  style={{ scrollSnapType: 'x mandatory' }}
-                >
-                  {favorites.map((fav) => {
+              );
+            })()}
+
+            {/* Favorites - Remaining Favorites */}
+            {favorites && favorites.length > 1 && (
+              <div className="mb-10">
+                <h2 className="px-5 text-xl font-semibold text-white/90 mb-4">Favorites</h2>
+                <div className="flex gap-4 overflow-x-auto px-5 scrollbar-hide">
+                  {favorites.slice(1).map((fav) => {
                     const channel = channels.find(c => c.iptvId === fav.channelId);
                     if (!channel) return null;
                     const channelEpg = epgDataMap.get(channel.iptvId || '');
                     const thumbnail = channelEpg?.currentProgram?.thumbnail;
                     const channelLogo = fav.channelLogo || channel.logo;
-
-                    // Track if user is scrolling to prevent tap on scroll end
-                    let touchStartX = 0;
-                    let touchStartY = 0;
-                    let isScrolling = false;
+                    const progress = getProgramProgress(channelEpg?.currentProgram);
+                    const timeLeft = channelEpg?.currentProgram ? getTimeRemaining(channelEpg.currentProgram.endTime) : null;
+                    const rating = channelEpg?.currentProgram?.rating;
 
                     return (
                       <div
                         key={fav.channelId}
-                        className="shrink-0 w-56 rounded-xl overflow-hidden bg-white/5 active:bg-white/10"
-                        style={{ scrollSnapAlign: 'start' }}
-                        onTouchStart={(e) => {
-                          touchStartX = e.touches[0].clientX;
-                          touchStartY = e.touches[0].clientY;
-                          isScrolling = false;
-                        }}
-                        onTouchMove={(e) => {
-                          const deltaX = Math.abs(e.touches[0].clientX - touchStartX);
-                          const deltaY = Math.abs(e.touches[0].clientY - touchStartY);
-                          if (deltaX > 10 || deltaY > 10) {
-                            isScrolling = true;
-                          }
-                        }}
-                        onTouchEnd={() => {
-                          if (!isScrolling) {
-                            haptics.light();
-                            playStream(channel);
-                            setViewMode('player');
-                          }
-                        }}
-                        onClick={() => {
-                          haptics.light();
-                          playStream(channel);
-                          setViewMode('player');
-                        }}
+                        className="shrink-0 w-72 active:scale-[0.97] transition-transform duration-200"
+                        onClick={() => { haptics.light(); playStream(channel); setViewMode('player'); }}
                       >
-                        {/* Thumbnail or Channel Logo */}
-                        <div className="w-full aspect-video bg-black/50 relative">
-                          {thumbnail ? (
-                            <img
-                              src={thumbnail}
-                              alt={channelEpg?.currentProgram?.title || ''}
-                              className="w-full h-full object-cover"
-                            />
-                          ) : channelLogo ? (
-                            <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-white/10 to-white/5 p-4">
-                              <img
-                                src={channelLogo}
-                                alt=""
-                                className="max-w-full max-h-full object-contain"
-                              />
-                            </div>
-                          ) : (
-                            <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-white/10 to-white/5">
-                              <span className="text-white/30 text-sm font-medium">{fav.channelName || channel.GuideName}</span>
+                        <div className="relative rounded-xl overflow-hidden mb-3">
+                          <div className="aspect-video">
+                            {thumbnail ? (
+                              <img src={thumbnail} alt="" className="w-full h-full object-cover" />
+                            ) : channelLogo ? (
+                              <div className="w-full h-full flex items-center justify-center bg-zinc-900 p-6">
+                                <img src={channelLogo} alt="" className="max-w-[50%] max-h-[50%] object-contain opacity-70" />
+                              </div>
+                            ) : (
+                              <div className="w-full h-full bg-zinc-900" />
+                            )}
+                          </div>
+                          {/* Rating badge top-right */}
+                          {rating && (
+                            <div className="absolute top-2 right-2">
+                              <span className="px-1.5 py-0.5 bg-black/60 backdrop-blur-sm border border-white/30 rounded text-white/90 text-[9px] font-medium">
+                                {rating}
+                              </span>
                             </div>
                           )}
-                          {/* Gradient overlay */}
-                          <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent" />
-                          {/* LIVE badge */}
-                          <div className="absolute top-2 left-2 px-1.5 py-0.5 bg-red-600 rounded text-white text-[10px] font-bold">
-                            LIVE
-                          </div>
                           {/* Play button */}
                           <div className="absolute inset-0 flex items-center justify-center">
-                            <div className="w-10 h-10 rounded-full bg-white/20 backdrop-blur-sm flex items-center justify-center">
-                              <Play className="w-5 h-5 text-white ml-0.5" />
+                            <div className="w-12 h-12 rounded-full bg-black/40 backdrop-blur-sm flex items-center justify-center">
+                              <Play className="w-6 h-6 text-white ml-0.5" fill="white" />
                             </div>
                           </div>
+                          {/* Progress bar at bottom */}
+                          {progress > 0 && (
+                            <div className="absolute bottom-0 left-0 right-0 h-1 bg-black/50">
+                              <div className="h-full bg-white/80" style={{ width: `${progress}%` }} />
+                            </div>
+                          )}
                         </div>
-                        {/* Channel Info */}
-                        <div className="p-2.5 flex items-center gap-2.5">
+                        {/* Channel info with logo on left */}
+                        <div className="flex items-start gap-3">
                           {channelLogo && (
-                            <img
-                              src={channelLogo}
-                              alt=""
-                              className="w-8 h-8 object-contain shrink-0"
-                            />
+                            <div className="shrink-0 w-10 h-10 rounded-lg bg-zinc-800 p-1.5 flex items-center justify-center">
+                              <img src={channelLogo} alt="" className="max-w-full max-h-full object-contain" />
+                            </div>
                           )}
                           <div className="flex-1 min-w-0">
                             <p className="text-white font-medium text-sm truncate">{fav.channelName || channel.GuideName}</p>
-                            {channelEpg?.currentProgram ? (
-                              <p className="text-white/50 text-xs truncate mt-0.5">{channelEpg.currentProgram.title}</p>
-                            ) : (
-                              <p className="text-white/30 text-xs mt-0.5">No program info</p>
-                            )}
+                            <div className="flex items-center gap-1.5 mt-0.5">
+                              <p className="text-white/40 text-xs truncate flex-1">
+                                {channelEpg?.currentProgram?.title || 'No program info'}
+                              </p>
+                              {timeLeft && (
+                                <span className="text-white/30 text-[10px] shrink-0">{timeLeft}</span>
+                              )}
+                            </div>
                           </div>
                         </div>
                       </div>
                     );
                   })}
                 </div>
-              )}
-            </div>
+              </div>
+            )}
 
-            {/* NFL Section */}
+            {/* Section Divider */}
+            {favorites && favorites.length > 0 && (nflPackage || nbaPackage || mlbPackage) && (
+              <div className="px-5 mb-8">
+                <div className="h-px bg-white/10" />
+              </div>
+            )}
+
+            {/* No Favorites - Clean empty state */}
+            {(!favorites || favorites.length === 0) && (
+              <div className="px-5 mb-8 mt-4">
+                <div className="rounded-2xl bg-zinc-900/50 p-8 text-center">
+                  <p className="text-white/60 text-lg font-medium">No favorites yet</p>
+                  <p className="text-white/30 text-sm mt-2">Add channels from the Guide tab</p>
+                </div>
+              </div>
+            )}
+
+            {/* NFL Section - Large Cards */}
             {nflPackage && nflChannels.length > 0 && (
-              <div className="mb-6">
-                <div className="px-4 mb-3 flex items-center justify-between">
-                  <h2 className="text-lg font-semibold text-white">🏈 NFL</h2>
-                  <span className="text-white/40 text-sm">{nflChannels.length} channels</span>
+              <div className="mb-10">
+                <div className="px-5 mb-4 flex items-center gap-3">
+                  <img src="https://a.espncdn.com/combiner/i?img=/i/teamlogos/leagues/500/nfl.png&w=100&h=100" alt="NFL" className="h-6 w-6 object-contain" />
+                  <h2 className="text-xl font-semibold text-white/90">NFL</h2>
                 </div>
-
-                <div
-                  className="flex gap-3 overflow-x-auto px-4 pb-2 scrollbar-hide"
-                  style={{ scrollSnapType: 'x mandatory' }}
-                >
+                <div className="flex gap-4 overflow-x-auto px-5 scrollbar-hide">
                   {nflChannels.map((pkgChannel) => {
-                    // Match package channel to full channel object
                     const channel = channels.find(c => c.GuideName === pkgChannel.name || c.name === pkgChannel.name);
                     if (!channel) return null;
                     const channelEpg = epgDataMap.get(channel.iptvId || '');
                     const thumbnail = channelEpg?.currentProgram?.thumbnail;
                     const channelLogo = pkgChannel.logo || channel.logo;
-
-                    // Track if user is scrolling to prevent tap on scroll end
-                    let touchStartX = 0;
-                    let touchStartY = 0;
-                    let isScrolling = false;
+                    const progress = getProgramProgress(channelEpg?.currentProgram);
+                    const timeLeft = channelEpg?.currentProgram ? getTimeRemaining(channelEpg.currentProgram.endTime) : null;
 
                     return (
                       <div
                         key={pkgChannel.id}
-                        className="shrink-0 w-56 rounded-xl overflow-hidden bg-white/5 active:bg-white/10"
-                        style={{ scrollSnapAlign: 'start' }}
-                        onTouchStart={(e) => {
-                          touchStartX = e.touches[0].clientX;
-                          touchStartY = e.touches[0].clientY;
-                          isScrolling = false;
-                        }}
-                        onTouchMove={(e) => {
-                          const deltaX = Math.abs(e.touches[0].clientX - touchStartX);
-                          const deltaY = Math.abs(e.touches[0].clientY - touchStartY);
-                          if (deltaX > 10 || deltaY > 10) {
-                            isScrolling = true;
-                          }
-                        }}
-                        onTouchEnd={() => {
-                          if (!isScrolling) {
-                            haptics.light();
-                            playStream(channel);
-                            setViewMode('player');
-                          }
-                        }}
-                        onClick={() => {
-                          haptics.light();
-                          playStream(channel);
-                          setViewMode('player');
-                        }}
+                        className="shrink-0 w-72 active:scale-[0.97] transition-transform duration-200"
+                        onClick={() => { haptics.light(); playStream(channel); setViewMode('player'); }}
                       >
-                        {/* Thumbnail or Channel Logo */}
-                        <div className="w-full aspect-video bg-black/50 relative">
-                          {thumbnail ? (
-                            <img
-                              src={thumbnail}
-                              alt={channelEpg?.currentProgram?.title || ''}
-                              className="w-full h-full object-cover"
-                            />
-                          ) : channelLogo ? (
-                            <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-white/10 to-white/5 p-4">
-                              <img
-                                src={channelLogo}
-                                alt=""
-                                className="max-w-full max-h-full object-contain"
-                              />
-                            </div>
-                          ) : (
-                            <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-white/10 to-white/5">
-                              <span className="text-white/30 text-sm font-medium">{pkgChannel.name}</span>
-                            </div>
-                          )}
-                          {/* Gradient overlay */}
-                          <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent" />
-                          {/* LIVE badge */}
-                          <div className="absolute top-2 left-2 px-1.5 py-0.5 bg-red-600 rounded text-white text-[10px] font-bold">
-                            LIVE
-                          </div>
-                          {/* Play button */}
-                          <div className="absolute inset-0 flex items-center justify-center">
-                            <div className="w-10 h-10 rounded-full bg-white/20 backdrop-blur-sm flex items-center justify-center">
-                              <Play className="w-5 h-5 text-white ml-0.5" />
-                            </div>
-                          </div>
-                        </div>
-                        {/* Channel Info */}
-                        <div className="p-2.5 flex items-center gap-2.5">
-                          {channelLogo && (
-                            <img
-                              src={channelLogo}
-                              alt=""
-                              className="w-8 h-8 object-contain shrink-0"
-                            />
-                          )}
-                          <div className="flex-1 min-w-0">
-                            <p className="text-white font-medium text-sm truncate">{pkgChannel.name}</p>
-                            {channelEpg?.currentProgram ? (
-                              <p className="text-white/50 text-xs truncate mt-0.5">{channelEpg.currentProgram.title}</p>
+                        <div className="relative rounded-xl overflow-hidden mb-3">
+                          <div className="aspect-video">
+                            {thumbnail ? (
+                              <img src={thumbnail} alt="" className="w-full h-full object-cover" />
+                            ) : channelLogo ? (
+                              <div className="w-full h-full flex items-center justify-center bg-zinc-900 p-6">
+                                <img src={channelLogo} alt="" className="max-w-[50%] max-h-[50%] object-contain opacity-70" />
+                              </div>
                             ) : (
-                              <p className="text-white/30 text-xs mt-0.5">No program info</p>
+                              <div className="w-full h-full bg-zinc-900" />
                             )}
                           </div>
+                          {/* Top row badges */}
+                          <div className="absolute top-2 left-2 right-2 flex items-center justify-between">
+                            {/* LIVE badge */}
+                            <div className="flex items-center gap-1 px-2 py-1 bg-red-600 rounded">
+                              <span className="relative flex h-1.5 w-1.5">
+                                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-white opacity-75"></span>
+                                <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-white"></span>
+                              </span>
+                              <span className="text-white text-[10px] font-bold">LIVE</span>
+                            </div>
+                            {/* Network logo */}
+                            {channelLogo && thumbnail && (
+                              <div className="w-8 h-8 rounded bg-black/40 backdrop-blur-sm p-1 flex items-center justify-center">
+                                <img src={channelLogo} alt="" className="max-w-full max-h-full object-contain" />
+                              </div>
+                            )}
+                          </div>
+                          {/* Progress bar at bottom */}
+                          {progress > 0 && (
+                            <div className="absolute bottom-0 left-0 right-0 h-1 bg-black/50">
+                              <div className="h-full bg-white/80" style={{ width: `${progress}%` }} />
+                            </div>
+                          )}
+                        </div>
+                        <p className="text-white font-medium text-sm">{pkgChannel.name}</p>
+                        <div className="flex items-center gap-1.5 mt-0.5">
+                          <p className="text-white/40 text-xs truncate flex-1">
+                            {channelEpg?.currentProgram?.title || 'Live'}
+                          </p>
+                          {timeLeft && progress > 0 && (
+                            <span className="text-white/30 text-[10px] shrink-0">{timeLeft}</span>
+                          )}
                         </div>
                       </div>
                     );
@@ -3965,113 +4039,55 @@ export default function LiveTVTvPage() {
               </div>
             )}
 
-            {/* NBA Section */}
+            {/* NBA Section - Compact Cards for variety */}
             {nbaPackage && nbaChannels.length > 0 && (
-              <div className="mb-6">
-                <div className="px-4 mb-3 flex items-center justify-between">
-                  <h2 className="text-lg font-semibold text-white">🏀 NBA</h2>
-                  <span className="text-white/40 text-sm">{nbaChannels.length} channels</span>
+              <div className="mb-10">
+                <div className="px-5 mb-4 flex items-center gap-3">
+                  <img src="https://a.espncdn.com/combiner/i?img=/i/teamlogos/leagues/500/nba.png&w=100&h=100" alt="NBA" className="h-6 w-6 object-contain" />
+                  <h2 className="text-xl font-semibold text-white/90">NBA</h2>
                 </div>
-
-                <div
-                  className="flex gap-3 overflow-x-auto px-4 pb-2 scrollbar-hide"
-                  style={{ scrollSnapType: 'x mandatory' }}
-                >
+                <div className="flex gap-3 overflow-x-auto px-5 scrollbar-hide">
                   {nbaChannels.map((pkgChannel) => {
-                    // Match package channel to full channel object
                     const channel = channels.find(c => c.GuideName === pkgChannel.name || c.name === pkgChannel.name);
                     if (!channel) return null;
                     const channelEpg = epgDataMap.get(channel.iptvId || '');
-                    const thumbnail = channelEpg?.currentProgram?.thumbnail;
                     const channelLogo = pkgChannel.logo || channel.logo;
-
-                    // Track if user is scrolling to prevent tap on scroll end
-                    let touchStartX = 0;
-                    let touchStartY = 0;
-                    let isScrolling = false;
+                    const progress = getProgramProgress(channelEpg?.currentProgram);
 
                     return (
                       <div
                         key={pkgChannel.id}
-                        className="shrink-0 w-56 rounded-xl overflow-hidden bg-white/5 active:bg-white/10"
-                        style={{ scrollSnapAlign: 'start' }}
-                        onTouchStart={(e) => {
-                          touchStartX = e.touches[0].clientX;
-                          touchStartY = e.touches[0].clientY;
-                          isScrolling = false;
-                        }}
-                        onTouchMove={(e) => {
-                          const deltaX = Math.abs(e.touches[0].clientX - touchStartX);
-                          const deltaY = Math.abs(e.touches[0].clientY - touchStartY);
-                          if (deltaX > 10 || deltaY > 10) {
-                            isScrolling = true;
-                          }
-                        }}
-                        onTouchEnd={() => {
-                          if (!isScrolling) {
-                            haptics.light();
-                            playStream(channel);
-                            setViewMode('player');
-                          }
-                        }}
-                        onClick={() => {
-                          haptics.light();
-                          playStream(channel);
-                          setViewMode('player');
-                        }}
+                        className="shrink-0 w-36 active:scale-[0.97] transition-transform duration-200"
+                        onClick={() => { haptics.light(); playStream(channel); setViewMode('player'); }}
                       >
-                        {/* Thumbnail or Channel Logo */}
-                        <div className="w-full aspect-video bg-black/50 relative">
-                          {thumbnail ? (
-                            <img
-                              src={thumbnail}
-                              alt={channelEpg?.currentProgram?.title || ''}
-                              className="w-full h-full object-cover"
-                            />
-                          ) : channelLogo ? (
-                            <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-white/10 to-white/5 p-4">
-                              <img
-                                src={channelLogo}
-                                alt=""
-                                className="max-w-full max-h-full object-contain"
-                              />
-                            </div>
-                          ) : (
-                            <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-white/10 to-white/5">
-                              <span className="text-white/30 text-sm font-medium">{pkgChannel.name}</span>
-                            </div>
-                          )}
-                          {/* Gradient overlay */}
-                          <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent" />
-                          {/* LIVE badge */}
-                          <div className="absolute top-2 left-2 px-1.5 py-0.5 bg-red-600 rounded text-white text-[10px] font-bold">
-                            LIVE
-                          </div>
-                          {/* Play button */}
-                          <div className="absolute inset-0 flex items-center justify-center">
-                            <div className="w-10 h-10 rounded-full bg-white/20 backdrop-blur-sm flex items-center justify-center">
-                              <Play className="w-5 h-5 text-white ml-0.5" />
-                            </div>
-                          </div>
-                        </div>
-                        {/* Channel Info */}
-                        <div className="p-2.5 flex items-center gap-2.5">
-                          {channelLogo && (
-                            <img
-                              src={channelLogo}
-                              alt=""
-                              className="w-8 h-8 object-contain shrink-0"
-                            />
-                          )}
-                          <div className="flex-1 min-w-0">
-                            <p className="text-white font-medium text-sm truncate">{pkgChannel.name}</p>
-                            {channelEpg?.currentProgram ? (
-                              <p className="text-white/50 text-xs truncate mt-0.5">{channelEpg.currentProgram.title}</p>
+                        <div className="relative rounded-xl overflow-hidden mb-2">
+                          <div className="aspect-square">
+                            {channelLogo ? (
+                              <div className="w-full h-full flex items-center justify-center bg-zinc-900 p-4">
+                                <img src={channelLogo} alt="" className="max-w-full max-h-full object-contain opacity-80" />
+                              </div>
                             ) : (
-                              <p className="text-white/30 text-xs mt-0.5">No program info</p>
+                              <div className="w-full h-full bg-zinc-900 flex items-center justify-center">
+                                <Tv className="w-8 h-8 text-zinc-700" />
+                              </div>
                             )}
                           </div>
+                          {/* LIVE badge - smaller */}
+                          <div className="absolute top-1.5 left-1.5 flex items-center gap-0.5 px-1.5 py-0.5 bg-red-600 rounded">
+                            <span className="relative flex h-1 w-1">
+                              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-white opacity-75"></span>
+                              <span className="relative inline-flex rounded-full h-1 w-1 bg-white"></span>
+                            </span>
+                            <span className="text-white text-[8px] font-bold">LIVE</span>
+                          </div>
+                          {/* Progress bar at bottom */}
+                          {progress > 0 && (
+                            <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-black/50">
+                              <div className="h-full bg-white/80" style={{ width: `${progress}%` }} />
+                            </div>
+                          )}
                         </div>
+                        <p className="text-white font-medium text-xs text-center truncate">{pkgChannel.name}</p>
                       </div>
                     );
                   })}
@@ -4079,112 +4095,80 @@ export default function LiveTVTvPage() {
               </div>
             )}
 
-            {/* MLB Section */}
-            {mlbPackage && mlbChannels.length > 0 && (
-              <div className="mb-6">
-                <div className="px-4 mb-3 flex items-center justify-between">
-                  <h2 className="text-lg font-semibold text-white">⚾ MLB</h2>
-                  <span className="text-white/40 text-sm">{mlbChannels.length} channels</span>
-                </div>
+            {/* Section Divider */}
+            {(nflPackage || nbaPackage) && mlbPackage && (
+              <div className="px-5 mb-8">
+                <div className="h-px bg-white/10" />
+              </div>
+            )}
 
-                <div
-                  className="flex gap-3 overflow-x-auto px-4 pb-2 scrollbar-hide"
-                  style={{ scrollSnapType: 'x mandatory' }}
-                >
+            {/* MLB Section - Large Cards */}
+            {mlbPackage && mlbChannels.length > 0 && (
+              <div className="mb-10">
+                <div className="px-5 mb-4 flex items-center gap-3">
+                  <img src="https://a.espncdn.com/combiner/i?img=/i/teamlogos/leagues/500/mlb.png&w=100&h=100" alt="MLB" className="h-6 w-6 object-contain" />
+                  <h2 className="text-xl font-semibold text-white/90">MLB</h2>
+                </div>
+                <div className="flex gap-4 overflow-x-auto px-5 scrollbar-hide">
                   {mlbChannels.map((pkgChannel) => {
-                    // Match package channel to full channel object
                     const channel = channels.find(c => c.GuideName === pkgChannel.name || c.name === pkgChannel.name);
                     if (!channel) return null;
                     const channelEpg = epgDataMap.get(channel.iptvId || '');
                     const thumbnail = channelEpg?.currentProgram?.thumbnail;
                     const channelLogo = pkgChannel.logo || channel.logo;
-
-                    // Track if user is scrolling to prevent tap on scroll end
-                    let touchStartX = 0;
-                    let touchStartY = 0;
-                    let isScrolling = false;
+                    const progress = getProgramProgress(channelEpg?.currentProgram);
+                    const timeLeft = channelEpg?.currentProgram ? getTimeRemaining(channelEpg.currentProgram.endTime) : null;
 
                     return (
                       <div
                         key={pkgChannel.id}
-                        className="shrink-0 w-56 rounded-xl overflow-hidden bg-white/5 active:bg-white/10"
-                        style={{ scrollSnapAlign: 'start' }}
-                        onTouchStart={(e) => {
-                          touchStartX = e.touches[0].clientX;
-                          touchStartY = e.touches[0].clientY;
-                          isScrolling = false;
-                        }}
-                        onTouchMove={(e) => {
-                          const deltaX = Math.abs(e.touches[0].clientX - touchStartX);
-                          const deltaY = Math.abs(e.touches[0].clientY - touchStartY);
-                          if (deltaX > 10 || deltaY > 10) {
-                            isScrolling = true;
-                          }
-                        }}
-                        onTouchEnd={() => {
-                          if (!isScrolling) {
-                            haptics.light();
-                            playStream(channel);
-                            setViewMode('player');
-                          }
-                        }}
-                        onClick={() => {
-                          haptics.light();
-                          playStream(channel);
-                          setViewMode('player');
-                        }}
+                        className="shrink-0 w-72 active:scale-[0.97] transition-transform duration-200"
+                        onClick={() => { haptics.light(); playStream(channel); setViewMode('player'); }}
                       >
-                        {/* Thumbnail or Channel Logo */}
-                        <div className="w-full aspect-video bg-black/50 relative">
-                          {thumbnail ? (
-                            <img
-                              src={thumbnail}
-                              alt={channelEpg?.currentProgram?.title || ''}
-                              className="w-full h-full object-cover"
-                            />
-                          ) : channelLogo ? (
-                            <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-white/10 to-white/5 p-4">
-                              <img
-                                src={channelLogo}
-                                alt=""
-                                className="max-w-full max-h-full object-contain"
-                              />
-                            </div>
-                          ) : (
-                            <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-white/10 to-white/5">
-                              <span className="text-white/30 text-sm font-medium">{pkgChannel.name}</span>
-                            </div>
-                          )}
-                          {/* Gradient overlay */}
-                          <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent" />
-                          {/* LIVE badge */}
-                          <div className="absolute top-2 left-2 px-1.5 py-0.5 bg-red-600 rounded text-white text-[10px] font-bold">
-                            LIVE
-                          </div>
-                          {/* Play button */}
-                          <div className="absolute inset-0 flex items-center justify-center">
-                            <div className="w-10 h-10 rounded-full bg-white/20 backdrop-blur-sm flex items-center justify-center">
-                              <Play className="w-5 h-5 text-white ml-0.5" />
-                            </div>
-                          </div>
-                        </div>
-                        {/* Channel Info */}
-                        <div className="p-2.5 flex items-center gap-2.5">
-                          {channelLogo && (
-                            <img
-                              src={channelLogo}
-                              alt=""
-                              className="w-8 h-8 object-contain shrink-0"
-                            />
-                          )}
-                          <div className="flex-1 min-w-0">
-                            <p className="text-white font-medium text-sm truncate">{pkgChannel.name}</p>
-                            {channelEpg?.currentProgram ? (
-                              <p className="text-white/50 text-xs truncate mt-0.5">{channelEpg.currentProgram.title}</p>
+                        <div className="relative rounded-xl overflow-hidden mb-3">
+                          <div className="aspect-video">
+                            {thumbnail ? (
+                              <img src={thumbnail} alt="" className="w-full h-full object-cover" />
+                            ) : channelLogo ? (
+                              <div className="w-full h-full flex items-center justify-center bg-zinc-900 p-6">
+                                <img src={channelLogo} alt="" className="max-w-[50%] max-h-[50%] object-contain opacity-70" />
+                              </div>
                             ) : (
-                              <p className="text-white/30 text-xs mt-0.5">No program info</p>
+                              <div className="w-full h-full bg-zinc-900" />
                             )}
                           </div>
+                          {/* Top row badges */}
+                          <div className="absolute top-2 left-2 right-2 flex items-center justify-between">
+                            {/* LIVE badge */}
+                            <div className="flex items-center gap-1 px-2 py-1 bg-red-600 rounded">
+                              <span className="relative flex h-1.5 w-1.5">
+                                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-white opacity-75"></span>
+                                <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-white"></span>
+                              </span>
+                              <span className="text-white text-[10px] font-bold">LIVE</span>
+                            </div>
+                            {/* Network logo */}
+                            {channelLogo && thumbnail && (
+                              <div className="w-8 h-8 rounded bg-black/40 backdrop-blur-sm p-1 flex items-center justify-center">
+                                <img src={channelLogo} alt="" className="max-w-full max-h-full object-contain" />
+                              </div>
+                            )}
+                          </div>
+                          {/* Progress bar at bottom */}
+                          {progress > 0 && (
+                            <div className="absolute bottom-0 left-0 right-0 h-1 bg-black/50">
+                              <div className="h-full bg-white/80" style={{ width: `${progress}%` }} />
+                            </div>
+                          )}
+                        </div>
+                        <p className="text-white font-medium text-sm">{pkgChannel.name}</p>
+                        <div className="flex items-center gap-1.5 mt-0.5">
+                          <p className="text-white/40 text-xs truncate flex-1">
+                            {channelEpg?.currentProgram?.title || 'Live'}
+                          </p>
+                          {timeLeft && progress > 0 && (
+                            <span className="text-white/30 text-[10px] shrink-0">{timeLeft}</span>
+                          )}
                         </div>
                       </div>
                     );
@@ -4195,8 +4179,6 @@ export default function LiveTVTvPage() {
 
           </div>
 
-          {/* Spacer for native tab bar */}
-          {useNativeTabBar && <div className="shrink-0 h-20" />}
         </div>
       )}
 
@@ -4415,8 +4397,6 @@ export default function LiveTVTvPage() {
             </button>
           </div>
 
-          {/* Spacer for native tab bar */}
-          {useNativeTabBar && <div className="shrink-0 h-20" />}
         </div>
       )}
 
