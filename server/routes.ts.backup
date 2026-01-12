@@ -1,6 +1,6 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
-import { setupAuth, hashPassword } from "./auth";
+import { setupAuth } from "./auth";
 import { storage } from "./storage";
 import { insertServiceSchema, insertGameServerSchema, updateServiceSchema, updateGameServerSchema, GameServer } from "@shared/schema";
 import { fromZodError } from "zod-validation-error";
@@ -19,25 +19,16 @@ import { sendEmail } from './email';
 import { ampService } from './services/amp-service';
 import { epubService } from './services/epub-service';
 import booksRouter from './routes/books';
-import subscriptionsRouter from './routes/subscriptions';
-import adminSubscriptionsRouter from './routes/admin-subscriptions';
-import adminIptvRouter from './routes/admin-iptv';
-import stripeWebhooksRouter from './routes/stripe-webhooks';
-import referralsRouter from './routes/referrals';
 import { z } from "zod";
 import { spawn } from 'child_process';
 import fetch from 'node-fetch';
 import { db, pool } from './db';
-import { eq, and, inArray } from 'drizzle-orm';
-import { EPGService } from './services/epg-service';
-import { randomBytes } from 'crypto';
-import {
-  apiRateLimiter,
-  authRateLimiter,
+import { 
+  apiRateLimiter, 
+  authRateLimiter, 
   gameServerRateLimiter,
-  adminRateLimiter
+  adminRateLimiter 
 } from './middleware/rateLimiter';
-import { requireFeature } from './middleware/feature-gate';
 import { 
   handleValidationErrors,
   validateInstanceId,
@@ -56,16 +47,6 @@ import {
 import cors from 'cors';
 import helmet from 'helmet';
 
-// Singleton EPG service instance to prevent re-initialization on every request
-let epgServiceInstance: EPGService | null = null;
-async function getEPGService(): Promise<EPGService> {
-  if (!epgServiceInstance) {
-    epgServiceInstance = new EPGService();
-    await epgServiceInstance.initialize();
-    console.log('EPG service singleton initialized');
-  }
-  return epgServiceInstance;
-}
 
 const plexInviteSchema = z.object({
   email: z.string().email("Invalid email address"),
@@ -479,45 +460,27 @@ const isAdmin = (req: express.Request, res: express.Response, next: express.Next
 };
 
 export async function registerRoutes(app: Express): Promise<Server> {
-  // Debug middleware to trace API requests
-  app.use('/api', (req, res, next) => {
-    console.log(`[API-DEBUG] ${req.method} ${req.originalUrl}`);
-    next();
-  });
-
   // Temporarily disable all security middleware for development testing
   // Basic CORS only
   app.use(cors({ origin: true, credentials: true }));
-
+  
   // Add cookie parser middleware before session setup
   app.use(cookieParser());
 
   setupAuth(app);
 
-  // Stripe webhooks - MUST be before JSON body parser
-  // Stripe requires raw body for signature verification
-  app.use('/api/webhooks', express.raw({ type: 'application/json' }), stripeWebhooksRouter);
-
   // Uploads are served in serve-static.ts for production
 
-  // Apply rate limiting to all API routes (disabled for development/testing)
-  // app.use('/api', apiRateLimiter);
+  // Apply rate limiting to all API routes
+  app.use('/api', apiRateLimiter);
 
   // Register type-specific upload endpoints
   app.post("/api/upload/site", upload.single('image'), (req, res) => handleUpload(req, res, 'site'));
   app.post("/api/upload/service", upload.single('image'), (req, res) => handleUpload(req, res, 'service'));
   app.post("/api/upload/game", upload.single('image'), (req, res) => handleUpload(req, res, 'game'));
 
-  // Books routes - require books_access feature
-  app.use("/api/books", requireFeature('books_access'), booksRouter);
-
-  // Subscription routes
-  app.use("/api/subscriptions", subscriptionsRouter);
-  app.use("/api/admin", adminSubscriptionsRouter);
-  app.use("/api/admin", adminIptvRouter);
-
-  // Referral routes
-  app.use("/api/referrals", referralsRouter);
+  // Books routes
+  app.use("/api/books", booksRouter);
 
   app.get("/api/services", async (req, res) => {
     if (!req.isAuthenticated()) return res.sendStatus(401);
@@ -630,7 +593,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get("/api/game-servers", requireFeature('game_servers_access'), async (req, res) => {
+  app.get("/api/game-servers", async (req, res) => {
     if (!req.isAuthenticated()) return res.sendStatus(401);
     try {
       // Get all AMP instances
@@ -759,7 +722,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/game-servers/:instanceId/hide", requireFeature('game_servers_access'), async (req, res) => {
+  app.post("/api/game-servers/:instanceId/hide", async (req, res) => {
     if (!req.isAuthenticated()) return res.sendStatus(401);
     try {
       const { instanceId } = req.params;
@@ -788,7 +751,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/game-servers/:instanceId/start", requireFeature('game_servers_access'), gameServerRateLimiter, validateInstanceId, handleValidationErrors, async (req, res) => {
+  app.post("/api/game-servers/:instanceId/start", gameServerRateLimiter, validateInstanceId, handleValidationErrors, async (req, res) => {
     console.log(`Start request received - Auth check: ${req.isAuthenticated()}, User: ${req.user?.email || 'none'}`);
     
     if (!req.isAuthenticated()) {
@@ -829,7 +792,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/game-servers/:instanceId/stop", requireFeature('game_servers_access'), gameServerRateLimiter, validateInstanceId, handleValidationErrors, async (req, res) => {
+  app.post("/api/game-servers/:instanceId/stop", gameServerRateLimiter, validateInstanceId, handleValidationErrors, async (req, res) => {
     console.log(`Stop request received - Auth check: ${req.isAuthenticated()}, User: ${req.user?.email || 'none'}`);
     
     if (!req.isAuthenticated()) {
@@ -869,7 +832,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/game-servers/:instanceId/restart", requireFeature('game_servers_access'), async (req, res) => {
+  app.post("/api/game-servers/:instanceId/restart", async (req, res) => {
     if (!req.isAuthenticated()) return res.sendStatus(401);
     try {
       const { instanceId } = req.params;
@@ -903,7 +866,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/game-servers/:instanceId/kill", requireFeature('game_servers_access'), async (req, res) => {
+  app.post("/api/game-servers/:instanceId/kill", async (req, res) => {
     if (!req.isAuthenticated()) return res.sendStatus(401);
     try {
       const { instanceId } = req.params;
@@ -938,7 +901,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/game-servers/:instanceId/console", requireFeature('game_servers_access'), gameServerRateLimiter, validateInstanceId, validateConsoleCommand, handleValidationErrors, async (req, res) => {
+  app.post("/api/game-servers/:instanceId/console", gameServerRateLimiter, validateInstanceId, validateConsoleCommand, handleValidationErrors, async (req, res) => {
     if (!req.isAuthenticated()) return res.sendStatus(401);
     try {
       const { instanceId } = req.params;
@@ -966,7 +929,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
   
-  app.post("/api/game-servers/:instanceId/update", requireFeature('game_servers_access'), async (req, res) => {
+  app.post("/api/game-servers/:instanceId/update", async (req, res) => {
     if (!req.isAuthenticated()) return res.sendStatus(401);
     try {
       const { instanceId } = req.params;
@@ -998,7 +961,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
   
-  app.post("/api/game-servers/:instanceId/backup", requireFeature('game_servers_access'), async (req, res) => {
+  app.post("/api/game-servers/:instanceId/backup", async (req, res) => {
     if (!req.isAuthenticated()) return res.sendStatus(401);
     try {
       const { instanceId } = req.params;
@@ -1038,7 +1001,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
   
-  app.get("/api/game-servers/:instanceId/backups", requireFeature('game_servers_access'), async (req, res) => {
+  app.get("/api/game-servers/:instanceId/backups", async (req, res) => {
     if (!req.isAuthenticated()) return res.sendStatus(401);
     try {
       const { instanceId } = req.params;
@@ -1055,7 +1018,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
   
-  app.post("/api/game-servers/:instanceId/restore", requireFeature('game_servers_access'), async (req, res) => {
+  app.post("/api/game-servers/:instanceId/restore", async (req, res) => {
     if (!req.isAuthenticated()) return res.sendStatus(401);
     try {
       const { instanceId } = req.params;
@@ -1082,7 +1045,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
   
-  app.get("/api/game-servers/:instanceId/console-output", requireFeature('game_servers_access'), async (req, res) => {
+  app.get("/api/game-servers/:instanceId/console-output", async (req, res) => {
     if (!req.isAuthenticated()) return res.sendStatus(401);
     try {
       const { instanceId } = req.params;
@@ -1099,7 +1062,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
   
-  app.get("/api/game-servers/:instanceId/scheduled-tasks", requireFeature('game_servers_access'), async (req, res) => {
+  app.get("/api/game-servers/:instanceId/scheduled-tasks", async (req, res) => {
     if (!req.isAuthenticated()) return res.sendStatus(401);
     try {
       const { instanceId } = req.params;
@@ -1115,7 +1078,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/game-servers", requireFeature('game_servers_access'), async (req, res) => {
+  app.post("/api/game-servers", async (req, res) => {
     if (!req.isAuthenticated()) return res.sendStatus(401);
     try {
       const data = insertGameServerSchema.parse(req.body);
@@ -1201,57 +1164,35 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/game-servers/request", requireFeature('game_servers_access'), async (req, res) => {
+  app.post("/api/game-servers/request", async (req, res) => {
     if (!req.isAuthenticated()) return res.sendStatus(401);
     try {
       const { game } = req.body;
       const user = req.user as User;
 
       // Get the Game Server Request email template
-      const template = await storage.getEmailTemplateByName("New Game Server Request");
+      const template = await storage.getEmailTemplateByName("Game Server Request");
 
-      // Get all admin and superadmin users
+      // Get all admin users
       const admins = await storage.getAllUsers();
       const adminEmails = admins
-        .filter(admin => (admin.role === 'admin' || admin.role === 'superadmin') && admin.email)
+        .filter(admin => admin.role === 'admin' && admin.email)
         .map(admin => admin.email);
 
       if (adminEmails.length > 0) {
-        // Send email to all admins using the template or fallback
+        // Send email to all admins using the template
         for (const adminEmail of adminEmails) {
           if (adminEmail) {
-            // If template exists, use it; otherwise use fallback content
-            if (template?.id) {
-              const baseUrl = process.env.APP_URL || process.env.BASE_URL || 'http://localhost:5000';
-              await sendEmail({
-                to: adminEmail,
-                templateId: template.id,
-                templateData: {
-                  game,
-                  username: user.username,
-                  requestDate: new Date().toLocaleString(),
-                  adminLink: `${baseUrl}/admin`
-                }
-              });
-            } else {
-              // Fallback email when template doesn't exist
-              await sendEmail({
-                to: adminEmail,
-                subject: `Game Server Request from ${user.username}`,
-                html: `
-                  <h2>Game Server Request</h2>
-                  <p>A user has requested a new game server:</p>
-                  <ul>
-                    <li><strong>Game:</strong> ${game}</li>
-                    <li><strong>User:</strong> ${user.username}</li>
-                    <li><strong>Email:</strong> ${user.email || 'No email provided'}</li>
-                    <li><strong>Time:</strong> ${new Date().toLocaleString()}</li>
-                  </ul>
-                  <p>Please review this request in the admin panel.</p>
-                `,
-                text: `Game Server Request\n\nGame: ${game}\nUser: ${user.username}\nEmail: ${user.email || 'No email provided'}\nTime: ${new Date().toLocaleString()}`
-              });
-            }
+            await sendEmail({
+              to: adminEmail,
+              templateId: template?.id,
+              templateData: {
+                game,
+                username: user.username,
+                userEmail: user.email || 'No email provided',
+                timestamp: new Date().toLocaleString()
+              }
+            });
           }
         }
       }
@@ -1288,68 +1229,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // No uptime logging endpoints - completely removed from the application
   // Inside /api/register route
-  app.post("/api/register", async (req, res, next) => {
+  app.post("/api/register", async (req, res) => {
     if (req.isAuthenticated()) {
       return res.status(400).json({ message: "Already logged in" });
     }
 
     try {
-      const { username, password, email, referral_code } = req.body;
-
-      if (!email) {
-        return res.status(400).json({ message: "Email is required" });
-      }
-
-      const existingUser = await storage.getUserByUsername(username);
+      const existingUser = await storage.getUserByUsername(req.body.username);
       if (existingUser) {
         return res.status(400).json({ message: "Username already exists" });
       }
 
-      const existingEmail = await storage.getUserByEmail(email);
-      if (existingEmail) {
-        return res.status(400).json({ message: "Email already exists" });
-      }
-
-      let isAutoApproved = false;
-      let referralCodeData = null;
-
-      // Validate referral code if provided
-      if (referral_code) {
-        referralCodeData = await storage.validateReferralCode(referral_code);
-        if (!referralCodeData) {
-          return res.status(400).json({ message: "Invalid or inactive referral code" });
-        }
-        isAutoApproved = true;
-      }
-
-      // Create user with appropriate settings based on referral code
       const user = await storage.createUser({
-        username,
-        email,
-        password: await hashPassword(password),
-        role: isAutoApproved ? 'user' : 'pending',
-        approved: isAutoApproved,
-        enabled: isAutoApproved,
+        ...req.body,
+        role: 'user',
+        approved: true,
       });
-
-      // If referral code was used, create referral record and credit rewards
-      if (referralCodeData && user.id) {
-        try {
-          const referral = await storage.createReferral(
-            referralCodeData.user_id,
-            user.id,
-            referralCodeData.id
-          );
-
-          // Credit rewards to the referrer
-          // TODO: Make commission amount configurable
-          const commissionAmount = 500; // $5.00 in cents
-          await storage.creditReferralRewards(referral.id, commissionAmount);
-        } catch (error) {
-          console.error("Error creating referral record:", error);
-          // Don't fail user creation if referral tracking fails
-        }
-      }
 
       req.login(user, (err) => {
         if (err) {
@@ -1409,7 +1304,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get("/api/game-servers/:instanceId/metrics", requireFeature('game_servers_access'), async (req, res) => {
+  app.get("/api/game-servers/:instanceId/metrics", async (req, res) => {
     if (!req.isAuthenticated()) return res.sendStatus(401);
     try {
       const { instanceId } = req.params;
@@ -1470,7 +1365,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Add new debug endpoint for game server player count
-  app.get("/api/game-servers/:instanceId/debug", requireFeature('game_servers_access'), async (req, res) => {
+  app.get("/api/game-servers/:instanceId/debug", async (req, res) => {
     if (!req.isAuthenticated()) return res.sendStatus(401);
     try {
       const { instanceId } = req.params;
@@ -1731,8 +1626,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Tautulli API routes - require plex_access feature
-  app.get("/api/tautulli/activity", requireFeature('plex_access'), async (req, res) => {
+  // Tautulli API routes
+  app.get("/api/tautulli/activity", async (req, res) => {
     if (!req.isAuthenticated()) return res.sendStatus(401);
     
     try {
@@ -1748,7 +1643,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get("/api/tautulli/users", requireFeature('plex_access'), async (req, res) => {
+  app.get("/api/tautulli/users", async (req, res) => {
     if (!req.isAuthenticated()) return res.sendStatus(401);
     
     try {
@@ -1808,7 +1703,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get("/api/tautulli/libraries", requireFeature('plex_access'), async (req, res) => {
+  app.get("/api/tautulli/libraries", async (req, res) => {
     if (!req.isAuthenticated()) return res.sendStatus(401);
     
     try {
@@ -1824,7 +1719,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get("/api/tautulli/history", requireFeature('plex_access'), async (req, res) => {
+  app.get("/api/tautulli/history", async (req, res) => {
     if (!req.isAuthenticated()) return res.sendStatus(401);
     
     try {
@@ -1840,10 +1735,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Note: No feature gate on this endpoint - used for promotional display on homepage
   app.get("/api/tautulli/recently-added", async (req, res) => {
     if (!req.isAuthenticated()) return res.sendStatus(401);
-
+    
     try {
       const { tautulliService } = await import('./services/tautulli-service');
       const count = req.query.count ? parseInt(req.query.count as string) : 10;
@@ -1858,7 +1752,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get("/api/tautulli/analytics/plays-by-date", requireFeature('plex_access'), async (req, res) => {
+  app.get("/api/tautulli/analytics/plays-by-date", async (req, res) => {
     if (!req.isAuthenticated()) return res.sendStatus(401);
     
     try {
@@ -1875,7 +1769,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get("/api/tautulli/server-info", requireFeature('plex_access'), async (req, res) => {
+  app.get("/api/tautulli/server-info", async (req, res) => {
     if (!req.isAuthenticated()) return res.sendStatus(401);
     
     try {
@@ -1891,7 +1785,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get("/api/tautulli/test", requireFeature('plex_access'), async (req, res) => {
+  app.get("/api/tautulli/test", async (req, res) => {
     if (!req.isAuthenticated()) return res.sendStatus(401);
     
     try {
@@ -1912,7 +1806,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Note: No feature gate on this endpoint - used for promotional image display on homepage
   app.get("/api/tautulli/proxy-image", async (req, res) => {
     if (!req.isAuthenticated()) return res.sendStatus(401);
     
@@ -1970,7 +1863,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // HD HomeRun API routes
-  app.get("/api/hdhomerun/devices", requireFeature('live_tv_access'), async (req, res) => {
+  app.get("/api/hdhomerun/devices", async (req, res) => {
     if (!req.isAuthenticated()) return res.sendStatus(401);
     
     try {
@@ -1997,7 +1890,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get("/api/hdhomerun/channels", requireFeature('live_tv_access'), async (req, res) => {
+  app.get("/api/hdhomerun/channels", async (req, res) => {
     if (!req.isAuthenticated()) return res.sendStatus(401);
     
     try {
@@ -2024,7 +1917,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get("/api/hdhomerun/tuners", requireFeature('live_tv_access'), async (req, res) => {
+  app.get("/api/hdhomerun/tuners", async (req, res) => {
     if (!req.isAuthenticated()) return res.sendStatus(401);
     
     try {
@@ -2051,7 +1944,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get("/api/hdhomerun/stream/:channel", requireFeature('live_tv_access'), async (req, res) => {
+  app.get("/api/hdhomerun/stream/:channel", async (req, res) => {
     if (!req.isAuthenticated()) return res.sendStatus(401);
     
     try {
@@ -2089,7 +1982,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get("/api/hdhomerun/test", requireFeature('live_tv_access'), async (req, res) => {
+  app.get("/api/hdhomerun/test", async (req, res) => {
     if (!req.isAuthenticated()) return res.sendStatus(401);
     
     try {
@@ -2165,19 +2058,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
     if (!req.isAuthenticated()) return res.sendStatus(401);
 
     try {
-      const { xtreamCodesService } = await import('./services/xtream-codes-service');
-      
+      const { XtreamCodesService } = await import('./services/xtream-codes-service');
+      const xtreamService = new XtreamCodesService();
 
-      if (!xtreamCodesService.isConfigured()) {
+      if (!xtreamService.isConfigured()) {
         return res.json({ configured: false, categories: [] });
       }
 
-      
-      if (!xtreamCodesService.isInitialized()) {
+      await xtreamService.initialize();
+      if (!xtreamService.isInitialized()) {
         return res.status(500).json({ message: "Failed to initialize IPTV service" });
       }
 
-      const categories = await xtreamCodesService.getCategories();
+      const categories = await xtreamService.getCategories();
       res.json({ configured: true, categories });
     } catch (error) {
       console.error('Error fetching IPTV categories:', error);
@@ -2188,28 +2081,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Note: No feature gate on this endpoint - used for promotional channel display on homepage
   app.get("/api/iptv/channels", async (req, res) => {
     if (!req.isAuthenticated()) return res.sendStatus(401);
 
     try {
       const categoryId = req.query.category as string | undefined;
-      const userId = (req.user as any).id;
 
-      const { xtreamCodesService } = await import('./services/xtream-codes-service');
+      const { XtreamCodesService } = await import('./services/xtream-codes-service');
+      const xtreamService = new XtreamCodesService();
 
-
-      if (!xtreamCodesService.isConfigured()) {
+      if (!xtreamService.isConfigured()) {
         return res.json({ configured: false, channels: [] });
       }
 
-
-      if (!xtreamCodesService.isInitialized()) {
+      await xtreamService.initialize();
+      if (!xtreamService.isInitialized()) {
         return res.status(500).json({ message: "Failed to initialize IPTV service" });
       }
 
-      // Get channels based on user's subscription plan IPTV credentials
-      const channels = await xtreamCodesService.getMergedChannels(userId, categoryId);
+      const channels = await xtreamService.getChannels(categoryId);
       res.json({ configured: true, channels });
     } catch (error) {
       console.error('Error fetching IPTV channels:', error);
@@ -2220,13 +2110,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get("/api/iptv/epg/:streamId", requireFeature('live_tv_access'), async (req, res) => {
+  app.get("/api/iptv/epg/:streamId", async (req, res) => {
     if (!req.isAuthenticated()) return res.sendStatus(401);
 
     try {
       const { streamId } = req.params;
       const limit = req.query.limit ? parseInt(req.query.limit as string) : undefined;
-      const userId = (req.user as any).id;
 
       const { xtreamCodesService } = await import('./services/xtream-codes-service');
 
@@ -2234,17 +2123,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.json({ configured: false, epg: [] });
       }
 
-      if (!xtreamCodesService.isInitialized()) {
+      await xtreamService.initialize();
+      if (!xtreamService.isInitialized()) {
         return res.status(500).json({ message: "Failed to initialize IPTV service" });
       }
 
-      // Get EPG from user's subscription credentials
-      const client = await xtreamCodesService.getClientForStream(userId, streamId);
-      if (!client) {
-        return res.json({ configured: true, epg: [] });
-      }
-
-      const epg = await client.getEPG(streamId, limit);
+      const epg = await xtreamService.getEPG(streamId, limit);
       res.json({ configured: true, epg });
     } catch (error) {
       console.error('Error fetching IPTV EPG:', error);
@@ -2255,30 +2139,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get("/api/iptv/epg/short/:streamId", requireFeature('live_tv_access'), async (req, res) => {
+  app.get("/api/iptv/epg/short/:streamId", async (req, res) => {
     if (!req.isAuthenticated()) return res.sendStatus(401);
 
     try {
       const { streamId } = req.params;
-      const userId = (req.user as any).id;
 
-      const { xtreamCodesService } = await import('./services/xtream-codes-service');
+      const { XtreamCodesService } = await import('./services/xtream-codes-service');
+      const xtreamService = new XtreamCodesService();
 
-      if (!xtreamCodesService.isConfigured()) {
+      if (!xtreamService.isConfigured()) {
         return res.json({ configured: false, now: null, next: null });
       }
 
-      if (!xtreamCodesService.isInitialized()) {
+      await xtreamService.initialize();
+      if (!xtreamService.isInitialized()) {
         return res.status(500).json({ message: "Failed to initialize IPTV service" });
       }
 
-      // Get short EPG from user's subscription credentials
-      const client = await xtreamCodesService.getClientForStream(userId, streamId);
-      if (!client) {
-        return res.json({ configured: true, now: null, next: null });
-      }
-
-      const { now, next } = await client.getShortEPG(streamId);
+      const { now, next } = await xtreamService.getShortEPG(streamId);
       res.json({ configured: true, now, next });
     } catch (error) {
       console.error('Error fetching short IPTV EPG:', error);
@@ -2293,10 +2172,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
     if (!req.isAuthenticated()) return res.sendStatus(401);
 
     try {
-      const { xtreamCodesService } = await import('./services/xtream-codes-service');
-      
+      const { XtreamCodesService } = await import('./services/xtream-codes-service');
+      const xtreamService = new XtreamCodesService();
 
-      if (!xtreamCodesService.isConfigured()) {
+      if (!xtreamService.isConfigured()) {
         return res.json({
           configured: false,
           m3uUrl: null,
@@ -2306,8 +2185,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       res.json({
         configured: true,
-        m3uUrl: xtreamCodesService.getM3UUrl(),
-        xmltvUrl: xtreamCodesService.getXMLTVUrl()
+        m3uUrl: xtreamService.getM3UUrl(),
+        xmltvUrl: xtreamService.getXMLTVUrl()
       });
     } catch (error) {
       console.error('Error fetching IPTV URLs:', error);
@@ -2315,917 +2194,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
         message: "Failed to fetch IPTV URLs",
         error: error instanceof Error ? error.message : "Unknown error"
       });
-    }
-  });
-
-  // Favorite Channels API
-  app.get("/api/favorite-channels", async (req, res) => {
-    if (!req.isAuthenticated()) return res.sendStatus(401);
-
-    try {
-      const { favoriteChannels, users } = await import('@shared/schema');
-      const { eq } = await import('drizzle-orm');
-
-      // First, try to get the user's own favorites
-      let favorites = await db.select().from(favoriteChannels).where(eq(favoriteChannels.userId, req.user!.id));
-
-      // If the user has no favorites, fall back to the superadmin's favorites
-      if (favorites.length === 0) {
-        const superadmin = await db.select().from(users).where(eq(users.role, 'superadmin')).limit(1);
-        if (superadmin.length > 0) {
-          favorites = await db.select().from(favoriteChannels).where(eq(favoriteChannels.userId, superadmin[0].id));
-        }
-      }
-
-      res.json(favorites);
-    } catch (error) {
-      console.error('Error fetching favorite channels:', error);
-      res.status(500).json({
-        message: "Failed to fetch favorite channels",
-        error: error instanceof Error ? error.message : "Unknown error"
-      });
-    }
-  });
-
-  app.post("/api/favorite-channels", async (req, res) => {
-    if (!req.isAuthenticated()) return res.sendStatus(401);
-
-    try {
-      const { favoriteChannels, insertFavoriteChannelSchema } = await import('@shared/schema');
-      const { channelId, channelName, channelLogo } = req.body;
-
-      const newFavorite = await db.insert(favoriteChannels).values({
-        userId: req.user!.id,
-        channelId,
-        channelName,
-        channelLogo,
-      }).returning();
-
-      res.json(newFavorite[0]);
-    } catch (error) {
-      console.error('Error adding favorite channel:', error);
-      res.status(500).json({
-        message: "Failed to add favorite channel",
-        error: error instanceof Error ? error.message : "Unknown error"
-      });
-    }
-  });
-
-  app.delete("/api/favorite-channels/:channelId", async (req, res) => {
-    if (!req.isAuthenticated()) return res.sendStatus(401);
-
-    try {
-      const { favoriteChannels } = await import('@shared/schema');
-      const { eq, and } = await import('drizzle-orm');
-      const { channelId } = req.params;
-
-      await db.delete(favoriteChannels).where(
-        and(
-          eq(favoriteChannels.userId, req.user!.id),
-          eq(favoriteChannels.channelId, channelId)
-        )
-      );
-
-      res.json({ success: true });
-    } catch (error) {
-      console.error('Error removing favorite channel:', error);
-      res.status(500).json({
-        message: "Failed to remove favorite channel",
-        error: error instanceof Error ? error.message : "Unknown error"
-      });
-    }
-  });
-
-  // IPTV Stream Sharing Manager
-  interface SharedStream {
-    streamId: string;
-    manifest: string;
-    baseSegmentUrl: string;
-    users: Set<string>; // Track user IDs watching this stream
-    lastAccessed: Date;
-    manifestUrl: string;
-    manifestFetchedAt: Date; // Track when manifest was last fetched
-  }
-
-  const sharedStreams = new Map<string, SharedStream>();
-
-  // Stream Token Manager - for Chromecast and other stateless devices
-  interface StreamToken {
-    token: string;
-    userId: number;
-    streamId: string;
-    expiresAt: Date;
-    createdAt: Date;
-  }
-
-  const streamTokens = new Map<string, StreamToken>();
-
-  // Generate a stream access token
-  function generateStreamToken(userId: number, streamId: string): string {
-    const token = randomBytes(32).toString('hex');
-    const expiresAt = new Date(Date.now() + 3600000); // 1 hour expiry
-
-    streamTokens.set(token, {
-      token,
-      userId,
-      streamId,
-      expiresAt,
-      createdAt: new Date()
-    });
-
-    console.log(`🔑 Generated stream token for user ${userId}, stream ${streamId}`);
-    return token;
-  }
-
-  // Validate a stream token
-  function validateStreamToken(token: string, streamId: string): number | null {
-    const tokenData = streamTokens.get(token);
-
-    if (!tokenData) {
-      console.log(`❌ Invalid token: ${token}`);
-      return null;
-    }
-
-    if (tokenData.expiresAt < new Date()) {
-      console.log(`⏰ Expired token: ${token}`);
-      streamTokens.delete(token);
-      return null;
-    }
-
-    if (tokenData.streamId !== streamId) {
-      console.log(`❌ Token stream mismatch: expected ${streamId}, got ${tokenData.streamId}`);
-      return null;
-    }
-
-    // Sliding expiration: extend token lifetime by 1 hour on each use
-    // This allows long-running streams (>1 hour) to continue playing
-    tokenData.expiresAt = new Date(Date.now() + 3600000);
-    console.log(`✅ Valid token for user ${tokenData.userId}, stream ${streamId} (expiry extended)`);
-
-    return tokenData.userId;
-  }
-
-  // Clean up expired tokens and inactive streams
-  setInterval(() => {
-    const now = new Date();
-
-    // Clean up expired tokens
-    for (const [token, tokenData] of streamTokens.entries()) {
-      if (tokenData.expiresAt < now) {
-        console.log(`🧹 Cleaning up expired token for stream ${tokenData.streamId}`);
-        streamTokens.delete(token);
-      }
-    }
-
-    // Clean up inactive streams
-    for (const [streamId, stream] of sharedStreams.entries()) {
-      const timeSinceAccess = now.getTime() - stream.lastAccessed.getTime();
-      if (timeSinceAccess > 30000) { // 30 seconds
-        console.log(`🧹 Cleaning up inactive stream ${streamId} (${stream.users.size} users)`);
-        sharedStreams.delete(streamId);
-        // Also clean up segment base URLs
-        if ((global as any).iptvSegmentBaseUrls) {
-          (global as any).iptvSegmentBaseUrls.delete(streamId);
-        }
-      }
-    }
-  }, 10000); // Check every 10 seconds
-
-  // Generate stream token for authenticated users (for Chromecast, etc.)
-  app.post("/api/iptv/generate-token", async (req, res) => {
-    if (!req.isAuthenticated()) return res.sendStatus(401);
-
-    try {
-      const { streamId } = req.body;
-
-      if (!streamId) {
-        return res.status(400).json({ message: "streamId is required" });
-      }
-
-      const userId = req.user!.id;
-      const token = generateStreamToken(userId, streamId);
-
-      // Also acquire stream session for tracking
-      let sessionToken: string | null = null;
-      try {
-        const { userSubscriptions, planIptvCredentials, iptvCredentials } = await import('@shared/schema');
-
-        // Get user's active subscription
-        const [subscription] = await db.select()
-          .from(userSubscriptions)
-          .where(and(
-            eq(userSubscriptions.user_id, userId),
-            eq(userSubscriptions.status, 'active')
-          ));
-
-        if (subscription) {
-          // Get credential assigned to this plan via junction table
-          const [planCredential] = await db.select()
-            .from(planIptvCredentials)
-            .innerJoin(iptvCredentials, eq(planIptvCredentials.credentialId, iptvCredentials.id))
-            .where(and(
-              eq(planIptvCredentials.planId, subscription.plan_id),
-              eq(iptvCredentials.isActive, true)
-            ))
-            .orderBy(planIptvCredentials.priority)
-            .limit(1);
-
-          if (planCredential) {
-            const credentialId = planCredential.iptv_credentials.id;
-            const { streamTrackerService } = await import('./services/stream-tracker-service');
-            const ipAddress = req.ip || req.socket.remoteAddress;
-            sessionToken = await streamTrackerService.acquireStream(
-              userId,
-              credentialId,
-              streamId,
-              ipAddress
-            );
-            if (sessionToken) {
-              console.log(`[Token+Track] User ${userId} acquired stream ${streamId} on credential ${credentialId}`);
-            } else {
-              console.log(`[Token+Track] User ${userId} could not acquire stream ${streamId} - no slots available`);
-            }
-          } else {
-            console.log(`[Token+Track] User ${userId} has no IPTV credential assigned to plan ${subscription.plan_id}`);
-          }
-        } else {
-          console.log(`[Token+Track] User ${userId} has no active subscription`);
-        }
-      } catch (trackError) {
-        console.error('Error tracking stream at token generation:', trackError);
-        // Don't fail the request - token still works
-      }
-
-      res.json({
-        token,
-        sessionToken, // Include for heartbeat if tracking succeeded
-        expiresIn: 3600 // seconds
-      });
-    } catch (error) {
-      console.error('Error generating stream token:', error);
-      res.status(500).json({ message: "Failed to generate stream token" });
-    }
-  });
-
-  // IPTV Stream Proxy - bypass CORS restrictions with stream sharing
-  app.get("/api/iptv/stream/:streamId.m3u8", async (req, res) => {
-    // Check for token-based authentication (for Chromecast) or session authentication
-    const { token } = req.query;
-    const { streamId } = req.params;
-
-    console.log(`📺 Stream request for ${streamId}, token: ${token ? 'present' : 'none'}, session: ${req.isAuthenticated() ? 'yes' : 'no'}, User-Agent: ${req.headers['user-agent']?.substring(0, 50)}`);
-
-    let userId: number | null = null;
-
-    if (token && typeof token === 'string') {
-      // Token-based authentication
-      console.log(`🔐 Attempting token authentication for stream ${streamId}`);
-      userId = validateStreamToken(token, streamId);
-      if (!userId) {
-        console.log(`❌ Invalid or expired token for stream ${streamId}`);
-        return res.sendStatus(401);
-      }
-      console.log(`✅ Token authentication successful for user ${userId}, stream ${streamId}`);
-    } else if (req.isAuthenticated()) {
-      // Session-based authentication
-      userId = req.user!.id;
-      console.log(`✅ Session authentication successful for user ${userId}, stream ${streamId}`);
-    } else {
-      // No valid authentication
-      console.log(`❌ No authentication provided for stream ${streamId}`);
-      return res.sendStatus(401);
-    }
-
-    try {
-      const userIdString = userId.toString();
-      const { xtreamCodesService } = await import('./services/xtream-codes-service');
-
-      if (!xtreamCodesService.isConfigured()) {
-        return res.status(404).send('IPTV not configured');
-      }
-
-      // Check if we have a shared stream for this channel
-      const existingStream = sharedStreams.get(streamId);
-
-      if (existingStream && !token) {
-        // Browser streaming: Check if manifest is still fresh for live streams
-        const manifestAge = Date.now() - existingStream.manifestFetchedAt.getTime();
-        const needsFreshManifest = manifestAge > 3000; // Browser: Refresh after 3 seconds (industry standard)
-
-        if (!needsFreshManifest) {
-          // Manifest is fresh enough, share it
-          existingStream.users.add(userIdString);
-          existingStream.lastAccessed = new Date();
-          console.log(`📺 Sharing cached stream (${Math.round(manifestAge / 1000)}s old) ${streamId} with user ${userIdString} (${existingStream.users.size} total users)`);
-
-          res.set({
-            'Content-Type': 'application/vnd.apple.mpegurl',
-            'Access-Control-Allow-Origin': '*',
-            'Cross-Origin-Resource-Policy': 'cross-origin',
-            'Cache-Control': 'no-cache, no-store, must-revalidate'
-          });
-
-          return res.send(existingStream.manifest);
-        }
-
-        // Manifest too old, fetch fresh one below
-        console.log(`🔄 Browser manifest too old (${Math.round(manifestAge / 1000)}s), fetching fresh for stream ${streamId}`);
-      } else if (existingStream && token) {
-        // For token-based auth (Chromecast), use moderate refresh
-        const manifestAge = Date.now() - existingStream.manifestFetchedAt.getTime();
-        const needsFreshManifest = manifestAge > 12000; // 12 seconds for casting devices (upstream is slow)
-
-        if (!needsFreshManifest) {
-          // Manifest is still fresh, use cached version with tokens
-          existingStream.users.add(userIdString);
-          existingStream.lastAccessed = new Date();
-          console.log(`📺 Using cached manifest (${Math.round(manifestAge / 1000)}s old) with token for stream ${streamId} (${existingStream.users.size} users)`);
-
-          const tokenParam = `?token=${token}`;
-          const tokenizedManifest = existingStream.manifest.replace(
-            /\/api\/iptv\/segment\/(\d+)\/([^\s\n]+)/g,
-            (match, sid, path) => `/api/iptv/segment/${sid}/${path}${tokenParam}`
-          );
-
-          res.set({
-            'Content-Type': 'application/vnd.apple.mpegurl',
-            'Access-Control-Allow-Origin': '*',
-            'Cross-Origin-Resource-Policy': 'cross-origin',
-            'Cache-Control': 'no-cache, no-store, must-revalidate'
-          });
-
-          return res.send(tokenizedManifest);
-        }
-
-        // Manifest is stale, fetch a fresh one
-        existingStream.users.add(userIdString);
-        existingStream.lastAccessed = new Date();
-        console.log(`🔄 Fetching fresh manifest (cached was ${Math.round(manifestAge / 1000)}s old) for stream ${streamId} (${existingStream.users.size} users)`);
-
-        // Fetch fresh manifest from source using user's credential
-        const refreshClient = await xtreamCodesService.getClientForStream(userId, streamId);
-        if (!refreshClient) {
-          console.error(`No IPTV credential available for user ${userId} stream ${streamId}`);
-          return res.status(403).send('No IPTV access for this channel');
-        }
-        let freshStreamUrl = refreshClient.getHLSStreamUrl(streamId);
-        console.log(`Fetching fresh HLS manifest from: ${freshStreamUrl}`);
-        let freshResponse = await fetch(freshStreamUrl);
-
-        if (!freshResponse.ok) {
-          console.error(`Failed to fetch fresh stream ${streamId}: ${freshResponse.status}`);
-          // Fallback to cached manifest with tokens
-          const tokenParam = `?token=${token}`;
-          const tokenizedManifest = existingStream.manifest.replace(
-            /\/api\/iptv\/segment\/(\d+)\/([^\s\n]+)/g,
-            (match, sid, path) => `/api/iptv/segment/${sid}/${path}${tokenParam}`
-          );
-          return res.send(tokenizedManifest);
-        }
-
-        let freshManifestText = await freshResponse.text();
-
-        // Handle HTML redirects
-        if (freshManifestText.trim().startsWith('<!DOCTYPE') || freshManifestText.trim().startsWith('<html')) {
-          const metaRefreshMatch = freshManifestText.match(/url='([^']+)'/);
-          const hrefMatch = freshManifestText.match(/href="([^"]+)"/);
-          const redirectUrl = metaRefreshMatch?.[1] || hrefMatch?.[1];
-
-          if (redirectUrl) {
-            freshResponse = await fetch(redirectUrl);
-            freshManifestText = await freshResponse.text();
-            freshStreamUrl = redirectUrl;
-          }
-        }
-
-        // Update cached base URL
-        const freshManifestUrl = new URL(freshResponse.url);
-        const freshBaseSegmentUrl = freshManifestUrl.origin + freshManifestUrl.pathname.substring(0, freshManifestUrl.pathname.lastIndexOf('/') + 1);
-        (global as any).iptvSegmentBaseUrls.set(streamId, freshBaseSegmentUrl);
-        existingStream.baseSegmentUrl = freshBaseSegmentUrl;
-
-        // Rewrite fresh manifest segments
-        // Strip leading slashes from segment paths to avoid double-slashes in URL
-        const freshBaseManifest = freshManifestText.replace(
-          /^([^#\n].+\.ts)$/gm,
-          (match) => `/api/iptv/segment/${streamId}/${match.trim().replace(/^\/+/, '')}`
-        );
-
-        // Update cache with fresh manifest
-        existingStream.manifest = freshBaseManifest;
-        existingStream.manifestFetchedAt = new Date();
-
-        // Add tokens to segment URLs
-        const tokenParam = `?token=${token}`;
-        const tokenizedManifest = freshBaseManifest.replace(
-          /\/api\/iptv\/segment\/(\d+)\/([^\s\n]+)/g,
-          (match, sid, path) => `/api/iptv/segment/${sid}/${path}${tokenParam}`
-        );
-
-        res.set({
-          'Content-Type': 'application/vnd.apple.mpegurl',
-          'Access-Control-Allow-Origin': '*',
-          'Cross-Origin-Resource-Policy': 'cross-origin',
-          'Cache-Control': 'no-cache, no-store, must-revalidate'
-        });
-
-        return res.send(tokenizedManifest);
-      }
-
-      // No existing stream, fetch from provider
-      console.log(`🆕 Creating new stream ${streamId} for user ${userIdString}`);
-
-      // Get the appropriate client based on user's subscription
-      const client = await xtreamCodesService.getClientForStream(userId, streamId);
-      if (!client) {
-        console.error(`No IPTV credential available for user ${userId} stream ${streamId}`);
-        return res.status(403).send('No IPTV access for this channel');
-      }
-
-      let streamUrl = client.getHLSStreamUrl(streamId);
-      console.log(`Fetching HLS manifest from: ${streamUrl}`);
-      let response = await fetch(streamUrl);
-
-      if (!response.ok) {
-        console.error(`Failed to fetch stream ${streamId}: ${response.status}`);
-        console.error(`Stream URL was: ${streamUrl}`);
-        return res.status(response.status).send('Stream not available');
-      }
-
-      // Get the manifest content
-      let manifestText = await response.text();
-
-      // Check if we got an HTML redirect instead of the manifest
-      if (manifestText.trim().startsWith('<!DOCTYPE') || manifestText.trim().startsWith('<html')) {
-        console.log('Received HTML redirect, extracting redirect URL');
-
-        // Extract the redirect URL from HTML meta refresh or href
-        const metaRefreshMatch = manifestText.match(/url='([^']+)'/);
-        const hrefMatch = manifestText.match(/href="([^"]+)"/);
-        const redirectUrl = metaRefreshMatch?.[1] || hrefMatch?.[1];
-
-        if (redirectUrl) {
-          console.log(`Following redirect to: ${redirectUrl}`);
-          response = await fetch(redirectUrl);
-
-          if (!response.ok) {
-            console.error(`Failed to fetch redirected stream: ${response.status}`);
-            return res.status(response.status).send('Stream not available after redirect');
-          }
-
-          manifestText = await response.text();
-          streamUrl = redirectUrl; // Update streamUrl for segment URL construction
-        } else {
-          console.error('Received HTML but could not extract redirect URL');
-          return res.status(500).send('Invalid stream response');
-        }
-      }
-
-      // Get the base URL for segments (directory of the manifest)
-      // Use response.url to get the final URL after all HTTP redirects (not just HTML redirects)
-      const finalManifestUrl = response.url;
-      const manifestUrl = new URL(finalManifestUrl);
-      const baseSegmentUrl = manifestUrl.origin + manifestUrl.pathname.substring(0, manifestUrl.pathname.lastIndexOf('/') + 1);
-
-      console.log(`Initial manifest URL: ${streamUrl}`);
-      console.log(`Final manifest URL (after redirects): ${finalManifestUrl}`);
-      console.log(`Base segment URL: ${baseSegmentUrl}`);
-
-      // Store the base URL in a map so the segment proxy can look it up
-      (global as any).iptvSegmentBaseUrls = (global as any).iptvSegmentBaseUrls || new Map();
-      (global as any).iptvSegmentBaseUrls.set(streamId, baseSegmentUrl);
-      console.log(`Stored base URL for stream ${streamId} (type: ${typeof streamId}) in cache`);
-
-      // Rewrite segment URLs to go through our proxy
-      // Always cache manifest WITHOUT tokens for security and sharing
-      // Strip leading slashes from segment paths to avoid double-slashes in URL
-      const baseManifest = manifestText.replace(
-        /^([^#\n].+\.ts)$/gm,
-        (match) => `/api/iptv/segment/${streamId}/${match.trim().replace(/^\/+/, '')}`
-      );
-
-      // Cache this stream for sharing (WITHOUT tokens)
-      sharedStreams.set(streamId, {
-        streamId,
-        manifest: baseManifest,  // Cached without tokens
-        baseSegmentUrl,
-        users: new Set([userIdString]),
-        lastAccessed: new Date(),
-        manifestUrl: finalManifestUrl,
-        manifestFetchedAt: new Date()
-      });
-
-      console.log(`💾 Cached stream ${streamId} for sharing (1 user)`);
-
-      // If token authentication, add token to segment URLs dynamically
-      let finalManifest = baseManifest;
-      if (token) {
-        console.log(`🔧 Adding token to manifest for Chromecast`);
-        const tokenParam = `?token=${token}`;
-        finalManifest = baseManifest.replace(
-          /\/api\/iptv\/segment\/(\d+)\/([^\s\n]+)/g,
-          (match, sid, path) => `/api/iptv/segment/${sid}/${path}${tokenParam}`
-        );
-
-        // Log a sample segment URL to verify token inclusion
-        const sampleSegment = finalManifest.match(/\/api\/iptv\/segment\/[^\s?]+\?token=/);
-        if (sampleSegment) {
-          console.log(`📝 Sample segment URL with token: ${sampleSegment[0].substring(0, 80)}...`);
-        }
-      }
-
-      res.set({
-        'Content-Type': 'application/vnd.apple.mpegurl',
-        'Access-Control-Allow-Origin': '*',
-        'Cross-Origin-Resource-Policy': 'cross-origin',
-        'Cache-Control': 'no-cache, no-store, must-revalidate'
-      });
-
-      res.send(finalManifest);
-    } catch (error) {
-      console.error('Error proxying IPTV manifest:', error);
-      res.status(500).send('Failed to proxy manifest');
-    }
-  });
-
-  // IPTV TS Stream Proxy - proxy direct MPEG-TS streams
-  app.get("/api/iptv/stream/:streamId.ts", async (req, res) => {
-    // Check for token-based authentication (for Chromecast) or session authentication
-    const { token } = req.query;
-    const { streamId } = req.params;
-
-    let userId: number | null = null;
-
-    if (token && typeof token === 'string') {
-      // Token-based authentication
-      userId = validateStreamToken(token, streamId);
-      if (!userId) {
-        console.log(`❌ Invalid or expired token for TS stream ${streamId}`);
-        return res.sendStatus(401);
-      }
-    } else if (req.isAuthenticated()) {
-      userId = req.user!.id;
-    } else {
-      // No valid authentication
-      console.log(`❌ No authentication provided for TS stream ${streamId}`);
-      return res.sendStatus(401);
-    }
-
-    try {
-      const { xtreamCodesService } = await import('./services/xtream-codes-service');
-
-      if (!xtreamCodesService.isConfigured()) {
-        return res.status(404).send('IPTV not configured');
-      }
-
-      // Get the appropriate client based on user's subscription
-      const client = await xtreamCodesService.getClientForStream(userId, streamId);
-      if (!client) {
-        console.error(`No IPTV credential available for user ${userId} stream ${streamId}`);
-        return res.status(403).send('No IPTV access for this channel');
-      }
-
-      // Get the direct TS stream URL from user's credential
-      const streamUrl = client.getStreamUrl(streamId, 'ts');
-
-      console.log(`Proxying TS stream ${streamId} from: ${streamUrl}`);
-
-      // Proxy the stream directly
-      const response = await fetch(streamUrl);
-
-      if (!response.ok) {
-        console.error(`Failed to fetch TS stream ${streamId}: ${response.status}`);
-        return res.status(response.status).send('Stream not available');
-      }
-
-      // Set appropriate headers for MPEG-TS stream
-      res.set({
-        'Content-Type': 'video/MP2T',
-        'Access-Control-Allow-Origin': '*',
-        'Cross-Origin-Resource-Policy': 'cross-origin',
-        'Cache-Control': 'no-cache, no-store, must-revalidate'
-      });
-
-      // Stream the response body
-      const buffer = await response.arrayBuffer();
-      res.send(Buffer.from(buffer));
-    } catch (error) {
-      console.error('Error proxying IPTV TS stream:', error);
-      if (!res.headersSent) {
-        res.status(500).send('Failed to proxy stream');
-      }
-    }
-  });
-
-  // IPTV Segment Proxy - proxy the actual video segments
-  app.get("/api/iptv/segment/:streamId/*", async (req, res) => {
-    // Check for token-based authentication (for Chromecast) or session authentication
-    const { token } = req.query;
-    const { streamId } = req.params;
-    const segmentPath = req.params[0];
-
-    console.log(`📦 Segment request for ${streamId}/${segmentPath?.substring(0, 30)}, token: ${token ? 'present' : 'none'}`);
-
-    if (token && typeof token === 'string') {
-      // Token-based authentication
-      const userId = validateStreamToken(token, streamId);
-      if (!userId) {
-        console.log(`❌ Invalid or expired token for segment ${streamId}`);
-        return res.sendStatus(401);
-      }
-      console.log(`✅ Token auth OK for segment`);
-    } else if (!req.isAuthenticated()) {
-      // No valid authentication
-      console.log(`❌ No authentication provided for segment ${streamId}`);
-      return res.sendStatus(401);
-    }
-
-    try {
-      const fullPath = req.params[0]; // Get the wildcard path
-      const { xtreamCodesService } = await import('./services/xtream-codes-service');
-
-      if (!xtreamCodesService.isConfigured()) {
-        return res.status(404).send('IPTV not configured');
-      }
-
-      // Update the shared stream's lastAccessed time to keep it alive
-      const sharedStream = sharedStreams.get(streamId);
-      if (sharedStream) {
-        sharedStream.lastAccessed = new Date();
-      }
-
-      // Get the base URL from the global cache
-      const iptvSegmentBaseUrls = (global as any).iptvSegmentBaseUrls || new Map();
-
-      // Try both string and number keys since JavaScript Map uses strict equality
-      let baseUrl = iptvSegmentBaseUrls.get(streamId) || iptvSegmentBaseUrls.get(parseInt(streamId)) || iptvSegmentBaseUrls.get(streamId.toString());
-
-      if (!baseUrl) {
-        console.error(`No base URL found for stream ${streamId} (type: ${typeof streamId})`);
-        console.error(`Cache contains ${iptvSegmentBaseUrls.size} entries:`);
-        for (const [key, value] of iptvSegmentBaseUrls.entries()) {
-          console.error(`  - Key: ${key} (type: ${typeof key}) => ${value.substring(0, 50)}...`);
-        }
-        return res.status(404).send('Stream not found or expired. Please reload the channel.');
-      }
-
-      // The fullPath is the segment filename/path
-      // Check if the original path was absolute (started with /) or relative
-      const wasAbsolutePath = fullPath.startsWith('/') || fullPath.startsWith('hls/');
-      const segmentPath = fullPath.replace(/^\/+/, '');
-      console.log(`Fetching segment for stream ${streamId}: ${segmentPath} (absolute: ${wasAbsolutePath})`);
-
-      // Build the full segment URL
-      let segmentUrl: string;
-      if (wasAbsolutePath) {
-        // For absolute paths like /hls/xxx/file.ts, use origin + absolute path
-        const baseUrlObj = new URL(baseUrl);
-        segmentUrl = `${baseUrlObj.origin}/${segmentPath}`;
-        console.log(`Using absolute path from origin: ${segmentUrl}`);
-      } else {
-        // For relative paths, append to base URL directory
-        const normalizedBaseUrl = baseUrl.endsWith('/') ? baseUrl : baseUrl + '/';
-        segmentUrl = `${normalizedBaseUrl}${segmentPath}`;
-      }
-
-      console.log(`Fetching segment: ${segmentPath}`);
-      console.log(`Full segment URL: ${segmentUrl}`);
-
-      // Set response headers immediately
-      res.set({
-        'Content-Type': 'video/MP2T',
-        'Access-Control-Allow-Origin': '*',
-        'Cross-Origin-Resource-Policy': 'cross-origin',
-        'Cache-Control': 'public, max-age=31536000' // Segments can be cached
-      });
-
-      // Stream the segment with retry logic and timeout
-      // Separate configs for browser (session) vs Chromecast (token)
-      const isChromecast = !!token;
-      const maxRetries = isChromecast ? 2 : 2; // Chromecast: 2 retries, Browser: 2 retries
-      const timeout = isChromecast ? 10000 : 10000; // Chromecast: 10s, Browser: 10s
-      const retryDelay = isChromecast ? 50 : 50; // Chromecast: 50ms, Browser: 50ms
-
-      let response;
-      let retries = 0;
-      let currentSegmentUrl = segmentUrl;
-
-      while (retries <= maxRetries) {
-        try {
-          const controller = new AbortController();
-          const timeoutId = setTimeout(() => controller.abort(), timeout);
-
-          response = await fetch(currentSegmentUrl, {
-            signal: controller.signal,
-            headers: {
-              'Connection': 'keep-alive'
-            }
-          });
-          clearTimeout(timeoutId);
-
-          if (response.ok) {
-            break; // Success!
-          }
-
-          console.error(`Segment fetch attempt ${retries + 1} failed: ${response.status}`);
-
-          // On 509 (bandwidth limit) or 5xx errors, refresh the base URL from cache
-          // The manifest may have been refreshed and redirected to a different server
-          if (response.status === 509 || response.status >= 500) {
-            const freshBaseUrl = iptvSegmentBaseUrls.get(streamId) ||
-                                 iptvSegmentBaseUrls.get(parseInt(streamId)) ||
-                                 iptvSegmentBaseUrls.get(streamId.toString());
-            if (freshBaseUrl && freshBaseUrl !== baseUrl) {
-              console.log(`🔄 Base URL changed, rebuilding segment URL`);
-              if (wasAbsolutePath) {
-                const freshUrlObj = new URL(freshBaseUrl);
-                currentSegmentUrl = `${freshUrlObj.origin}/${segmentPath}`;
-              } else {
-                const normalizedFreshUrl = freshBaseUrl.endsWith('/') ? freshBaseUrl : freshBaseUrl + '/';
-                currentSegmentUrl = `${normalizedFreshUrl}${segmentPath}`;
-              }
-            }
-          }
-
-          retries++;
-
-          if (retries <= maxRetries) {
-            await new Promise(resolve => setTimeout(resolve, retryDelay));
-          }
-        } catch (error: any) {
-          if (error.name === 'AbortError') {
-            console.error(`Segment fetch timeout on attempt ${retries + 1} (${isChromecast ? 'Chromecast' : 'Browser'})`);
-          } else {
-            console.error(`Segment fetch error on attempt ${retries + 1}:`, error.message);
-          }
-          retries++;
-
-          if (retries <= maxRetries) {
-            await new Promise(resolve => setTimeout(resolve, retryDelay));
-          }
-        }
-      }
-
-      if (!response || !response.ok) {
-        console.error(`Failed to fetch segment ${segmentPath} after ${maxRetries + 1} attempts: ${response?.status || 'no response'}`);
-
-        // If we got 509 (bandwidth limit), invalidate the cached stream so next request
-        // gets a fresh manifest that may redirect to a different server
-        if (response?.status === 509) {
-          console.log(`🔄 509 error - invalidating cached stream ${streamId} to force fresh manifest`);
-          sharedStreams.delete(streamId);
-          iptvSegmentBaseUrls.delete(streamId);
-          iptvSegmentBaseUrls.delete(parseInt(streamId));
-          iptvSegmentBaseUrls.delete(streamId.toString());
-        }
-
-        return res.status(response?.status || 503).send('Segment not available');
-      }
-
-      // Check content type - if HTML, we might need to follow a redirect
-      const contentType = response.headers.get('content-type') || '';
-      if (contentType.includes('text/html')) {
-        console.log('Segment returned HTML, checking for redirect');
-        const htmlText = await response.text();
-        const metaRefreshMatch = htmlText.match(/url='([^']+)'/);
-        const hrefMatch = htmlText.match(/href="([^"]+)"/);
-        const redirectUrl = metaRefreshMatch?.[1] || hrefMatch?.[1];
-
-        if (redirectUrl) {
-          console.log(`Following segment redirect to: ${redirectUrl}`);
-          const redirectResponse = await fetch(redirectUrl);
-
-          if (!redirectResponse.ok || !redirectResponse.body) {
-            console.error(`Failed to fetch redirected segment: ${redirectResponse.status}`);
-            return res.status(redirectResponse.status).send('Segment not available');
-          }
-
-          // Stream the redirected response using Node.js streams
-          redirectResponse.body.pipe(res);
-          return;
-        } else {
-          console.error('Received HTML but could not extract redirect URL');
-          return res.status(404).send('Segment not available');
-        }
-      }
-
-      // Stream the response body directly to the client using Node.js streams
-      if (!response.body) {
-        return res.status(500).send('No response body');
-      }
-
-      // Node.js fetch returns a Node.js ReadableStream, pipe it directly
-      response.body.pipe(res);
-    } catch (error) {
-      console.error('Error proxying IPTV segment:', error);
-      res.status(500).send('Failed to proxy segment');
-    }
-  });
-
-  // IPTV Stream Acquire - get a stream session token for tracking
-  app.post("/api/iptv/stream/acquire", async (req, res) => {
-    console.log(`[Stream Acquire] Auth: ${req.isAuthenticated()}, User: ${req.user?.email || 'none'}, Body:`, req.body);
-    if (!req.isAuthenticated()) return res.sendStatus(401);
-
-    try {
-      const { streamId } = req.body;
-
-      if (!streamId) {
-        return res.status(400).json({ error: "Stream ID required" });
-      }
-
-      const userId = req.user!.id;
-      const { xtreamCodesService } = await import('./services/xtream-codes-service');
-
-      // Use the service to select a credential (supports both packages and legacy)
-      const credentialId = await xtreamCodesService.selectCredentialForStream(userId, streamId);
-
-      if (!credentialId) {
-        console.log(`[Stream Acquire] No credential found for user ${userId}, stream ${streamId}`);
-        return res.status(403).json({ error: "No IPTV access for this channel" });
-      }
-
-      // Handle env client fallback (credentialId = -1)
-      if (credentialId === -1) {
-        console.log(`[Stream Acquire] Using ENV client for user ${userId}, stream ${streamId}`);
-        // For env client, we don't track streams - just return a dummy token
-        res.json({ sessionToken: `env-${userId}-${streamId}-${Date.now()}` });
-        return;
-      }
-
-      const { streamTrackerService } = await import('./services/stream-tracker-service');
-      const ipAddress = req.ip || req.socket.remoteAddress;
-      const sessionToken = await streamTrackerService.acquireStream(
-        userId,
-        credentialId,
-        streamId,
-        ipAddress
-      );
-
-      if (sessionToken) {
-        console.log(`[Stream Acquire] Success for user ${userId}, credential ${credentialId}, session: ${sessionToken}`);
-        res.json({ sessionToken });
-      } else {
-        console.log(`[Stream Acquire] Failed - no slots for user ${userId}, credential ${credentialId}`);
-        res.status(429).json({ error: "No available stream slots" });
-      }
-    } catch (error) {
-      console.error('Error acquiring stream:', error);
-      res.status(500).json({ error: "Failed to acquire stream" });
-    }
-  });
-
-  // IPTV Stream Heartbeat - keep stream session alive
-  // No session auth required - sessionToken itself is the authentication
-  app.post("/api/iptv/stream/heartbeat", async (req, res) => {
-    try {
-      const { sessionToken } = req.body;
-
-      if (!sessionToken) {
-        return res.status(400).json({ error: "Session token required" });
-      }
-
-      const { streamTrackerService } = await import('./services/stream-tracker-service');
-      const success = await streamTrackerService.heartbeat(sessionToken);
-
-      if (success) {
-        res.json({ success: true });
-      } else {
-        res.status(404).json({ error: "Session not found" });
-      }
-    } catch (error) {
-      console.error('Error processing stream heartbeat:', error);
-      res.status(500).json({ error: "Failed to process heartbeat" });
-    }
-  });
-
-  // IPTV Stream Release - release stream session
-  app.post("/api/iptv/stream/release", async (req, res) => {
-    // Allow both authenticated sessions and token-based release
-    // sendBeacon from mobile apps may include session cookie
-
-    try {
-      // Handle both JSON and sendBeacon (text/plain) requests
-      let sessionToken: string | undefined;
-      if (req.headers['content-type']?.includes('application/json')) {
-        sessionToken = req.body?.sessionToken;
-      } else {
-        // sendBeacon sends as text/plain, parse JSON manually
-        const bodyData = typeof req.body === 'string' ? JSON.parse(req.body) : req.body;
-        sessionToken = bodyData?.sessionToken;
-      }
-
-      if (!sessionToken) {
-        return res.status(400).json({ error: "Session token required" });
-      }
-
-      const { streamTrackerService } = await import('./services/stream-tracker-service');
-      const success = await streamTrackerService.releaseStream(sessionToken);
-
-      res.json({ success: success });
-    } catch (error) {
-      console.error('Error releasing stream:', error);
-      res.status(500).json({ error: "Failed to release stream" });
     }
   });
 
@@ -3467,16 +2435,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // EPG (Electronic Program Guide) API routes
-  app.get("/api/epg/channels", requireFeature('live_tv_access'), async (req, res) => {
+  app.get("/api/epg/channels", async (req, res) => {
     if (!req.isAuthenticated()) return res.sendStatus(401);
-
+    
     try {
-      const epgService = await getEPGService();
-
+      const { EPGService } = await import('./services/epg-service');
+      const epgService = new EPGService();
+      await epgService.initialize();
+      
       if (!epgService.isInitialized()) {
         return res.json({ channels: [] });
       }
-
+      
       const channels = epgService.getChannels();
       res.json({ channels });
     } catch (error) {
@@ -3489,7 +2459,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Manual EPG update endpoint
-  app.post("/api/epg/update", requireFeature('live_tv_access'), async (req, res) => {
+  app.post("/api/epg/update", async (req, res) => {
     if (!req.isAuthenticated()) return res.sendStatus(401);
     
     try {
@@ -3515,14 +2485,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get("/api/epg/current/:channelId", async (req, res) => {
     if (!req.isAuthenticated()) return res.sendStatus(401);
-
+    
     try {
       const { channelId } = req.params;
-      const epgService = await getEPGService();
-
-      // Refresh EPG data if stale (older than 6 hours)
-      await epgService.refreshIfNeeded();
-
+      const { EPGService } = await import('./services/epg-service');
+      const epgService = new EPGService();
+      await epgService.initialize();
+      
       const currentProgram = epgService.getCurrentProgram(channelId);
       res.json({ program: currentProgram });
     } catch (error) {
@@ -3536,16 +2505,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get("/api/epg/upcoming/:channelId", async (req, res) => {
     if (!req.isAuthenticated()) return res.sendStatus(401);
-
+    
     try {
       const { channelId } = req.params;
       const hours = parseInt(req.query.hours as string) || 3;
-      const epgService = await getEPGService();
-
-      // Refresh EPG data if stale (older than 6 hours)
-      await epgService.refreshIfNeeded();
-
-      const upcomingPrograms = await epgService.getUpcomingPrograms(channelId, hours);
+      const { EPGService } = await import('./services/epg-service');
+      const epgService = new EPGService();
+      await epgService.initialize();
+      
+      const upcomingPrograms = epgService.getUpcomingPrograms(channelId, hours);
       res.json({ programs: upcomingPrograms });
     } catch (error) {
       console.error('Error fetching upcoming programs:', error);
@@ -3649,10 +2617,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // EPG (Electronic Program Guide) endpoints
   app.get("/api/epg/current/:channelId", async (req, res) => {
     if (!req.isAuthenticated()) return res.sendStatus(401);
-
+    
     try {
-      const epgService = await getEPGService();
-
+      const { EPGService } = await import('./services/epg-service');
+      const epgService = new EPGService();
+      
+      await epgService.initialize();
+      
       const program = epgService.getCurrentProgram(req.params.channelId);
       res.json({ program });
     } catch (error) {
@@ -3666,12 +2637,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get("/api/epg/upcoming/:channelId", async (req, res) => {
     if (!req.isAuthenticated()) return res.sendStatus(401);
-
+    
     try {
-      const epgService = await getEPGService();
-
+      const { EPGService } = await import('./services/epg-service');
+      const epgService = new EPGService();
+      
+      await epgService.initialize();
+      
       const hours = parseInt(req.query.hours as string) || 3;
-      const programs = await epgService.getUpcomingPrograms(req.params.channelId, hours);
+      const programs = epgService.getUpcomingPrograms(req.params.channelId, hours);
       res.json({ programs });
     } catch (error) {
       console.error('Error fetching upcoming programs:', error);
@@ -3684,10 +2658,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get("/api/epg/channels", async (req, res) => {
     if (!req.isAuthenticated()) return res.sendStatus(401);
-
+    
     try {
-      const epgService = await getEPGService();
-
+      const { EPGService } = await import('./services/epg-service');
+      const epgService = new EPGService();
+      
+      await epgService.initialize();
+      
       const channels = epgService.getChannels();
       res.json({ channels });
     } catch (error) {
@@ -3697,244 +2674,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
         error: error instanceof Error ? error.message : "Unknown error"
       });
     }
-  });
-
-  // ============================================================================
-  // TV CODE LOGIN API - Netflix/Hulu style code authentication for TV devices
-  // ============================================================================
-
-  // Characters for code generation (no confusing chars like 0/O, 1/I/L)
-  const TV_CODE_CHARS = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
-  const TV_CODE_EXPIRY_MINUTES = 15;
-
-  function generateTvCode(): string {
-    return Array.from({ length: 5 }, () =>
-      TV_CODE_CHARS[Math.floor(Math.random() * TV_CODE_CHARS.length)]
-    ).join('');
-  }
-
-  // Generate a new TV code
-  app.post("/api/tv-codes/generate", async (req, res) => {
-    try {
-      const { tvCodes } = await import('@shared/schema');
-      const { lt } = await import('drizzle-orm');
-
-      // Clean up expired codes first
-      await db.delete(tvCodes).where(lt(tvCodes.expires_at, new Date()));
-
-      // Generate a unique code
-      let code: string;
-      let attempts = 0;
-      do {
-        code = generateTvCode();
-        attempts++;
-        if (attempts > 10) {
-          return res.status(500).json({ message: "Failed to generate unique code" });
-        }
-        // Check if code already exists
-        const existing = await db.select().from(tvCodes).where(
-          (await import('drizzle-orm')).eq(tvCodes.code, code)
-        ).limit(1);
-        if (existing.length === 0) break;
-      } while (true);
-
-      const expiresAt = new Date(Date.now() + TV_CODE_EXPIRY_MINUTES * 60 * 1000);
-
-      await db.insert(tvCodes).values({
-        code,
-        expires_at: expiresAt,
-      });
-
-      console.log(`📺 Generated TV code: ${code}`);
-
-      res.json({
-        code,
-        expiresAt: expiresAt.toISOString(),
-        expiresInSeconds: TV_CODE_EXPIRY_MINUTES * 60
-      });
-    } catch (error) {
-      console.error('Error generating TV code:', error);
-      res.status(500).json({
-        message: "Failed to generate TV code",
-        error: error instanceof Error ? error.message : "Unknown error"
-      });
-    }
-  });
-
-  // Check status of a TV code (for polling from TV)
-  app.get("/api/tv-codes/status/:code", async (req, res) => {
-    try {
-      const { tvCodes } = await import('@shared/schema');
-      const { eq } = await import('drizzle-orm');
-      const { code } = req.params;
-
-      const [tvCode] = await db.select().from(tvCodes).where(eq(tvCodes.code, code.toUpperCase())).limit(1);
-
-      if (!tvCode) {
-        return res.status(404).json({ message: "Code not found" });
-      }
-
-      if (tvCode.expires_at < new Date()) {
-        return res.status(410).json({ message: "Code expired" });
-      }
-
-      if (tvCode.used) {
-        return res.status(410).json({ message: "Code already used" });
-      }
-
-      if (tvCode.verified_at && tvCode.auth_token) {
-        // Code has been verified - return the auth token
-        res.json({
-          verified: true,
-          authToken: tvCode.auth_token
-        });
-      } else {
-        // Code is still pending
-        res.json({
-          verified: false,
-          expiresAt: tvCode.expires_at.toISOString()
-        });
-      }
-    } catch (error) {
-      console.error('Error checking TV code status:', error);
-      res.status(500).json({
-        message: "Failed to check TV code status",
-        error: error instanceof Error ? error.message : "Unknown error"
-      });
-    }
-  });
-
-  // Verify a TV code (from web, requires auth)
-  app.post("/api/tv-codes/verify", async (req, res) => {
-    if (!req.isAuthenticated()) return res.sendStatus(401);
-
-    try {
-      const { tvCodes } = await import('@shared/schema');
-      const { eq } = await import('drizzle-orm');
-      const { code } = req.body;
-
-      if (!code || typeof code !== 'string') {
-        return res.status(400).json({ message: "Code is required" });
-      }
-
-      const [tvCode] = await db.select().from(tvCodes).where(eq(tvCodes.code, code.toUpperCase())).limit(1);
-
-      if (!tvCode) {
-        return res.status(404).json({ message: "Invalid code" });
-      }
-
-      if (tvCode.expires_at < new Date()) {
-        return res.status(410).json({ message: "Code expired" });
-      }
-
-      if (tvCode.verified_at || tvCode.used) {
-        return res.status(409).json({ message: "Code already used" });
-      }
-
-      // Generate auth token using JWT
-      const jwt = await import('jsonwebtoken');
-      const authToken = jwt.default.sign(
-        { userId: req.user!.id, type: 'tv_code_auth' },
-        process.env.SESSION_SECRET || 'fallback-secret',
-        { expiresIn: '5m' }
-      );
-
-      // Mark code as verified
-      await db.update(tvCodes).set({
-        verified_at: new Date(),
-        verified_by_user_id: req.user!.id,
-        auth_token: authToken
-      }).where(eq(tvCodes.code, code.toUpperCase()));
-
-      console.log(`✅ TV code ${code} verified by user ${req.user!.id}`);
-
-      res.json({ success: true, message: "TV linked successfully" });
-    } catch (error) {
-      console.error('Error verifying TV code:', error);
-      res.status(500).json({
-        message: "Failed to verify TV code",
-        error: error instanceof Error ? error.message : "Unknown error"
-      });
-    }
-  });
-
-  // Login with TV code auth token
-  app.post("/api/tv-codes/login", async (req, res) => {
-    try {
-      const { tvCodes, users } = await import('@shared/schema');
-      const { eq } = await import('drizzle-orm');
-      const { authToken } = req.body;
-
-      if (!authToken) {
-        return res.status(400).json({ message: "Auth token is required" });
-      }
-
-      // Verify the auth token
-      const jwt = await import('jsonwebtoken');
-      let decoded: { userId: number; type: string };
-      try {
-        decoded = jwt.default.verify(
-          authToken,
-          process.env.SESSION_SECRET || 'fallback-secret'
-        ) as { userId: number; type: string };
-      } catch (jwtError) {
-        return res.status(401).json({ message: "Invalid or expired token" });
-      }
-
-      if (decoded.type !== 'tv_code_auth') {
-        return res.status(401).json({ message: "Invalid token type" });
-      }
-
-      // Mark the code as used (find by auth_token)
-      await db.update(tvCodes).set({ used: true }).where(eq(tvCodes.auth_token, authToken));
-
-      // Get the user
-      const [user] = await db.select().from(users).where(eq(users.id, decoded.userId)).limit(1);
-
-      if (!user) {
-        return res.status(404).json({ message: "User not found" });
-      }
-
-      if (!user.approved) {
-        return res.status(403).json({ message: "Account not approved", requiresApproval: true });
-      }
-
-      // Log the user in via Passport
-      req.login(user, (err) => {
-        if (err) {
-          console.error('Error logging in user via TV code:', err);
-          return res.status(500).json({ message: "Login failed" });
-        }
-
-        console.log(`📺 User ${user.id} (${user.username}) logged in via TV code`);
-
-        // Return user data similar to /api/login
-        res.json({
-          id: user.id,
-          username: user.username,
-          email: user.email,
-          role: user.role,
-          approved: user.approved,
-          enabled: user.enabled
-        });
-      });
-    } catch (error) {
-      console.error('Error logging in with TV code:', error);
-      res.status(500).json({
-        message: "Failed to login with TV code",
-        error: error instanceof Error ? error.message : "Unknown error"
-      });
-    }
-  });
-
-  // Catch-all for unmatched API routes - MUST be last
-  app.all('/api/*', (req, res) => {
-    console.log(`[API-UNMATCHED] ${req.method} ${req.originalUrl} - No route matched!`);
-    res.status(404).json({
-      error: 'API endpoint not found',
-      method: req.method,
-      path: req.originalUrl
-    });
   });
 
   const httpServer = createServer(app);
