@@ -37,6 +37,7 @@ interface EPGProgram {
   season?: number;
   episode?: number;
   rating?: string;
+  thumbnail?: string;
 }
 
 interface ChannelEPG {
@@ -1378,6 +1379,11 @@ export default function LiveTVTvPage() {
       idsSet.add(selectedChannel.epgId);
     }
 
+    // Always include favorite channels (for Home view thumbnails)
+    favoriteChannels.forEach((ch: Channel) => {
+      if (ch.epgId) idsSet.add(ch.epgId);
+    });
+
     // Pre-load first 20 channels' EPG data even before guide opens (for faster initial load)
     channels.slice(0, 20).forEach((ch: Channel) => {
       if (ch.epgId) idsSet.add(ch.epgId);
@@ -1399,7 +1405,7 @@ export default function LiveTVTvPage() {
     }
 
     return Array.from(idsSet);
-  }, [channels, focusedChannelIndex, viewMode, selectedChannel]);
+  }, [channels, favoriteChannels, focusedChannelIndex, viewMode, selectedChannel]);
 
   const epgQueries = useQueries({
     queries: visibleEpgIds.map(epgId => ({
@@ -1430,7 +1436,8 @@ export default function LiveTVTvPage() {
           episodeTitle: p.episodeTitle || '',
           season: p.season,
           episode: p.episode,
-          rating: p.rating
+          rating: p.rating,
+          thumbnail: p.thumbnail
         }));
 
         // Find current program (startTime <= now < endTime)
