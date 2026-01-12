@@ -3687,7 +3687,7 @@ export default function LiveTVTvPage() {
           style={{ zIndex: 30 }}
         >
           {/* Header */}
-          <div className="shrink-0 pt-14 px-4 pb-2">
+          <div className="shrink-0 pt-20 px-4 pb-2">
             <h1 className="text-2xl font-bold text-white">Home</h1>
           </div>
 
@@ -3696,10 +3696,7 @@ export default function LiveTVTvPage() {
             {/* Favorites Section */}
             <div className="mb-6">
               <div className="px-4 mb-3 flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <Star className="w-5 h-5 text-yellow-400 fill-yellow-400" />
-                  <h2 className="text-lg font-semibold text-white">Favorites</h2>
-                </div>
+                <h2 className="text-lg font-semibold text-white">Favorites</h2>
                 {favorites && favorites.length > 0 && (
                   <span className="text-white/40 text-sm">{favorites.length} channels</span>
                 )}
@@ -3733,7 +3730,7 @@ export default function LiveTVTvPage() {
                     return (
                       <div
                         key={fav.channelId}
-                        className="shrink-0 w-44 rounded-xl overflow-hidden bg-white/5 active:bg-white/10"
+                        className="shrink-0 w-56 rounded-xl overflow-hidden bg-white/5 active:bg-white/10"
                         style={{ scrollSnapAlign: 'start' }}
                         onTouchStart={(e) => {
                           touchStartX = e.touches[0].clientX;
@@ -3827,7 +3824,7 @@ export default function LiveTVTvPage() {
           style={{ zIndex: 30 }}
         >
           {/* Header */}
-          <div className="shrink-0 pt-14 px-4 pb-4">
+          <div className="shrink-0 pt-20 px-4 pb-4">
             <h1 className="text-2xl font-bold text-white">My Profile</h1>
           </div>
 
