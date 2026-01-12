@@ -49,9 +49,9 @@ export class TMDBService {
   }
 
   /**
-   * Rate-limited fetch
+   * Rate-limited fetch with timeout
    */
-  private async rateLimitedFetch(url: string): Promise<any> {
+  private async rateLimitedFetch(url: string, timeoutMs: number = 3000): Promise<any> {
     const now = Date.now();
     const timeSinceLastRequest = now - lastRequestTime;
 
@@ -61,11 +61,24 @@ export class TMDBService {
 
     lastRequestTime = Date.now();
 
-    const response = await fetch(url);
-    if (!response.ok) {
-      throw new Error(`TMDB API error: ${response.status}`);
+    // Create abort controller for timeout
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
+    try {
+      const response = await fetch(url, { signal: controller.signal });
+      clearTimeout(timeoutId);
+      if (!response.ok) {
+        throw new Error(`TMDB API error: ${response.status}`);
+      }
+      return response.json();
+    } catch (error: any) {
+      clearTimeout(timeoutId);
+      if (error.name === 'AbortError') {
+        throw new Error('TMDB API request timed out');
+      }
+      throw error;
     }
-    return response.json();
   }
 
   /**

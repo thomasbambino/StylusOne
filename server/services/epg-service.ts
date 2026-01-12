@@ -233,9 +233,9 @@ export class EPGService implements IService {
 
   /**
    * Get upcoming programs for a channel (includes currently playing program)
-   * Enriches programs with TMDB thumbnails if not already present
+   * TMDB thumbnails are fetched in background (non-blocking) and cached for future requests
    */
-  async getUpcomingPrograms(channelId: string, hours: number = 3): Promise<EPGProgram[]> {
+  getUpcomingPrograms(channelId: string, hours: number = 3): EPGProgram[] {
     const now = new Date();
     const endTime = new Date(now.getTime() + hours * 60 * 60 * 1000);
 
@@ -255,27 +255,41 @@ export class EPGService implements IService {
       p.endTime > now && p.startTime < endTime
     ).sort((a, b) => a.startTime.getTime() - b.startTime.getTime());
 
-    // Enrich programs without thumbnails using TMDB (in parallel, limited to first 5)
+    // Enrich programs without thumbnails using TMDB (in background, non-blocking)
+    // Results are cached so subsequent requests will have thumbnails
     if (tmdbService.isConfigured()) {
       const programsNeedingThumbnails = upcomingPrograms
         .filter(p => !p.thumbnail)
-        .slice(0, 5); // Limit to avoid too many API calls
+        .slice(0, 3); // Limit to 3 to reduce background load
 
-      await Promise.all(
-        programsNeedingThumbnails.map(async (program) => {
-          try {
-            const thumbnail = await tmdbService.getShowImage(program.title);
-            if (thumbnail) {
-              program.thumbnail = thumbnail;
-            }
-          } catch (e) {
-            // Ignore errors - thumbnail is optional
-          }
-        })
-      );
+      // Fire and forget - don't await, thumbnails will be cached for next request
+      if (programsNeedingThumbnails.length > 0) {
+        this.enrichProgramsInBackground(programsNeedingThumbnails);
+      }
     }
 
     return upcomingPrograms;
+  }
+
+  /**
+   * Background enrichment of programs with TMDB thumbnails (non-blocking)
+   */
+  private enrichProgramsInBackground(programs: EPGProgram[]): void {
+    // Don't await - runs in background
+    Promise.all(
+      programs.map(async (program) => {
+        try {
+          const thumbnail = await tmdbService.getShowImage(program.title);
+          if (thumbnail) {
+            program.thumbnail = thumbnail;
+          }
+        } catch (e) {
+          // Ignore errors - thumbnail is optional
+        }
+      })
+    ).catch(() => {
+      // Silently ignore all errors from background enrichment
+    });
   }
 
   /**

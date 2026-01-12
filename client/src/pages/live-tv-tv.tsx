@@ -2258,6 +2258,8 @@ export default function LiveTVTvPage() {
 
   const tabBarTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const tabBarCurrentState = useRef<boolean | null>(null); // null = unknown, true = shown, false = hidden
+  const lastTabBarChange = useRef<number>(0); // Track last state change time
+  const TAB_BAR_COOLDOWN = 500; // Minimum ms between state changes
 
   useEffect(() => {
     if (!isIOSNative()) {
@@ -2279,22 +2281,44 @@ export default function LiveTVTvPage() {
       return;
     }
 
-    // Debounce all state changes to prevent rapid switching
+    // Check cooldown - prevent rapid state changes
+    const timeSinceLastChange = Date.now() - lastTabBarChange.current;
+    if (timeSinceLastChange < TAB_BAR_COOLDOWN) {
+      // Schedule a delayed check instead of ignoring
+      tabBarTimer.current = setTimeout(() => {
+        const finalShouldShow = isPortraitRef.current && !isRotatingRef.current;
+        if (tabBarCurrentState.current !== finalShouldShow) {
+          lastTabBarChange.current = Date.now();
+          tabBarCurrentState.current = finalShouldShow;
+          if (finalShouldShow) {
+            showNativeTabBar().then((shown) => setUseNativeTabBar(shown));
+          } else {
+            hideNativeTabBar();
+            setUseNativeTabBar(false);
+          }
+        }
+      }, TAB_BAR_COOLDOWN - timeSinceLastChange + 50);
+      return;
+    }
+
+    // Debounce state changes
     tabBarTimer.current = setTimeout(() => {
       // Re-check current conditions using refs (they reflect latest values)
       const stillShouldShow = isPortraitRef.current && !isRotatingRef.current;
 
       if (stillShouldShow && tabBarCurrentState.current !== true) {
+        lastTabBarChange.current = Date.now();
         tabBarCurrentState.current = true;
         showNativeTabBar().then((shown) => {
           setUseNativeTabBar(shown);
         });
       } else if (!stillShouldShow && tabBarCurrentState.current !== false) {
+        lastTabBarChange.current = Date.now();
         tabBarCurrentState.current = false;
         hideNativeTabBar();
         setUseNativeTabBar(false);
       }
-    }, shouldShow ? 200 : 50); // Longer debounce for show, shorter for hide
+    }, shouldShow ? 300 : 100); // Longer debounce times
 
     return () => {
       if (tabBarTimer.current) {
@@ -3701,9 +3725,6 @@ export default function LiveTVTvPage() {
                   const channelEpg = epgDataMap.get(channel.iptvId || '');
                   const currentProgram = channelEpg?.currentProgram;
                   const hasThumbnail = !!currentProgram?.thumbnail;
-
-                  // Debug: Log thumbnail info
-                  console.log(`[Home] ${fav.channelName}: thumbnail=${currentProgram?.thumbnail || 'none'}, title=${currentProgram?.title || 'no program'}`);
 
                   return (
                     <button
