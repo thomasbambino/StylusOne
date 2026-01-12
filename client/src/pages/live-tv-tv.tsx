@@ -1218,15 +1218,42 @@ export default function LiveTVTvPage() {
   const { data: userPackages = [], isLoading: packagesLoading } = useQuery<ChannelPackage[]>({
     queryKey: ['/api/subscriptions/packages'],
     queryFn: getQueryFn({ on401: "returnNull" }),
-    enabled: viewMode === 'profile',
+    enabled: viewMode === 'profile' || viewMode === 'home',
     select: (data) => data || [],
   });
 
-  // Fetch channels for expanded package
+  // Fetch channels for expanded package (profile view)
   const { data: packageChannels = [], isLoading: packageChannelsLoading } = useQuery<PackageChannel[]>({
     queryKey: [`/api/subscriptions/packages/${expandedPackageId}/channels`],
     queryFn: getQueryFn({ on401: "returnNull" }),
     enabled: !!expandedPackageId,
+    select: (data) => data || [],
+  });
+
+  // Find sport package IDs
+  const nflPackage = userPackages.find(p => p.packageName?.toLowerCase().includes('nfl'));
+  const nbaPackage = userPackages.find(p => p.packageName?.toLowerCase().includes('nba'));
+  const mlbPackage = userPackages.find(p => p.packageName?.toLowerCase().includes('mlb'));
+
+  // Fetch channels for sport packages on Home view
+  const { data: nflChannels = [] } = useQuery<PackageChannel[]>({
+    queryKey: [`/api/subscriptions/packages/${nflPackage?.packageId}/channels`],
+    queryFn: getQueryFn({ on401: "returnNull" }),
+    enabled: viewMode === 'home' && !!nflPackage?.packageId,
+    select: (data) => data || [],
+  });
+
+  const { data: nbaChannels = [] } = useQuery<PackageChannel[]>({
+    queryKey: [`/api/subscriptions/packages/${nbaPackage?.packageId}/channels`],
+    queryFn: getQueryFn({ on401: "returnNull" }),
+    enabled: viewMode === 'home' && !!nbaPackage?.packageId,
+    select: (data) => data || [],
+  });
+
+  const { data: mlbChannels = [] } = useQuery<PackageChannel[]>({
+    queryKey: [`/api/subscriptions/packages/${mlbPackage?.packageId}/channels`],
+    queryFn: getQueryFn({ on401: "returnNull" }),
+    enabled: viewMode === 'home' && !!mlbPackage?.packageId,
     select: (data) => data || [],
   });
 
@@ -1385,6 +1412,14 @@ export default function LiveTVTvPage() {
       if (channel?.epgId) idsSet.add(channel.epgId);
     });
 
+    // Include sports package channels (for Home view NFL/NBA/MLB sections)
+    if (viewMode === 'home') {
+      [...nflChannels, ...nbaChannels, ...mlbChannels].forEach((pkgChannel) => {
+        const channel = channels.find((ch: Channel) => ch.GuideName === pkgChannel.name || ch.name === pkgChannel.name);
+        if (channel?.epgId) idsSet.add(channel.epgId);
+      });
+    }
+
     // Pre-load first 20 channels' EPG data even before guide opens (for faster initial load)
     channels.slice(0, 20).forEach((ch: Channel) => {
       if (ch.epgId) idsSet.add(ch.epgId);
@@ -1406,7 +1441,7 @@ export default function LiveTVTvPage() {
     }
 
     return Array.from(idsSet);
-  }, [channels, favorites, focusedChannelIndex, viewMode, selectedChannel]);
+  }, [channels, favorites, focusedChannelIndex, viewMode, selectedChannel, nflChannels, nbaChannels, mlbChannels]);
 
   const epgQueries = useQueries({
     queries: visibleEpgIds.map(epgId => ({
@@ -3816,7 +3851,347 @@ export default function LiveTVTvPage() {
               )}
             </div>
 
-            {/* More sections will go here */}
+            {/* NFL Section */}
+            {nflPackage && nflChannels.length > 0 && (
+              <div className="mb-6">
+                <div className="px-4 mb-3 flex items-center justify-between">
+                  <h2 className="text-lg font-semibold text-white">🏈 NFL</h2>
+                  <span className="text-white/40 text-sm">{nflChannels.length} channels</span>
+                </div>
+
+                <div
+                  className="flex gap-3 overflow-x-auto px-4 pb-2 scrollbar-hide"
+                  style={{ scrollSnapType: 'x mandatory' }}
+                >
+                  {nflChannels.map((pkgChannel) => {
+                    // Match package channel to full channel object
+                    const channel = channels.find(c => c.GuideName === pkgChannel.name || c.name === pkgChannel.name);
+                    if (!channel) return null;
+                    const channelEpg = epgDataMap.get(channel.iptvId || '');
+                    const thumbnail = channelEpg?.currentProgram?.thumbnail;
+                    const channelLogo = pkgChannel.logo || channel.logo;
+
+                    // Track if user is scrolling to prevent tap on scroll end
+                    let touchStartX = 0;
+                    let touchStartY = 0;
+                    let isScrolling = false;
+
+                    return (
+                      <div
+                        key={pkgChannel.id}
+                        className="shrink-0 w-56 rounded-xl overflow-hidden bg-white/5 active:bg-white/10"
+                        style={{ scrollSnapAlign: 'start' }}
+                        onTouchStart={(e) => {
+                          touchStartX = e.touches[0].clientX;
+                          touchStartY = e.touches[0].clientY;
+                          isScrolling = false;
+                        }}
+                        onTouchMove={(e) => {
+                          const deltaX = Math.abs(e.touches[0].clientX - touchStartX);
+                          const deltaY = Math.abs(e.touches[0].clientY - touchStartY);
+                          if (deltaX > 10 || deltaY > 10) {
+                            isScrolling = true;
+                          }
+                        }}
+                        onTouchEnd={() => {
+                          if (!isScrolling) {
+                            haptics.light();
+                            playStream(channel);
+                            setViewMode('player');
+                          }
+                        }}
+                        onClick={() => {
+                          haptics.light();
+                          playStream(channel);
+                          setViewMode('player');
+                        }}
+                      >
+                        {/* Thumbnail or Channel Logo */}
+                        <div className="w-full aspect-video bg-black/50 relative">
+                          {thumbnail ? (
+                            <img
+                              src={thumbnail}
+                              alt={channelEpg?.currentProgram?.title || ''}
+                              className="w-full h-full object-cover"
+                            />
+                          ) : channelLogo ? (
+                            <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-white/10 to-white/5 p-4">
+                              <img
+                                src={channelLogo}
+                                alt=""
+                                className="max-w-full max-h-full object-contain"
+                              />
+                            </div>
+                          ) : (
+                            <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-white/10 to-white/5">
+                              <span className="text-white/30 text-sm font-medium">{pkgChannel.name}</span>
+                            </div>
+                          )}
+                          {/* Gradient overlay */}
+                          <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent" />
+                          {/* LIVE badge */}
+                          <div className="absolute top-2 left-2 px-1.5 py-0.5 bg-red-600 rounded text-white text-[10px] font-bold">
+                            LIVE
+                          </div>
+                          {/* Play button */}
+                          <div className="absolute inset-0 flex items-center justify-center">
+                            <div className="w-10 h-10 rounded-full bg-white/20 backdrop-blur-sm flex items-center justify-center">
+                              <Play className="w-5 h-5 text-white ml-0.5" />
+                            </div>
+                          </div>
+                        </div>
+                        {/* Channel Info */}
+                        <div className="p-2.5 flex items-center gap-2.5">
+                          {channelLogo && (
+                            <img
+                              src={channelLogo}
+                              alt=""
+                              className="w-8 h-8 object-contain shrink-0"
+                            />
+                          )}
+                          <div className="flex-1 min-w-0">
+                            <p className="text-white font-medium text-sm truncate">{pkgChannel.name}</p>
+                            {channelEpg?.currentProgram ? (
+                              <p className="text-white/50 text-xs truncate mt-0.5">{channelEpg.currentProgram.title}</p>
+                            ) : (
+                              <p className="text-white/30 text-xs mt-0.5">No program info</p>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {/* NBA Section */}
+            {nbaPackage && nbaChannels.length > 0 && (
+              <div className="mb-6">
+                <div className="px-4 mb-3 flex items-center justify-between">
+                  <h2 className="text-lg font-semibold text-white">🏀 NBA</h2>
+                  <span className="text-white/40 text-sm">{nbaChannels.length} channels</span>
+                </div>
+
+                <div
+                  className="flex gap-3 overflow-x-auto px-4 pb-2 scrollbar-hide"
+                  style={{ scrollSnapType: 'x mandatory' }}
+                >
+                  {nbaChannels.map((pkgChannel) => {
+                    // Match package channel to full channel object
+                    const channel = channels.find(c => c.GuideName === pkgChannel.name || c.name === pkgChannel.name);
+                    if (!channel) return null;
+                    const channelEpg = epgDataMap.get(channel.iptvId || '');
+                    const thumbnail = channelEpg?.currentProgram?.thumbnail;
+                    const channelLogo = pkgChannel.logo || channel.logo;
+
+                    // Track if user is scrolling to prevent tap on scroll end
+                    let touchStartX = 0;
+                    let touchStartY = 0;
+                    let isScrolling = false;
+
+                    return (
+                      <div
+                        key={pkgChannel.id}
+                        className="shrink-0 w-56 rounded-xl overflow-hidden bg-white/5 active:bg-white/10"
+                        style={{ scrollSnapAlign: 'start' }}
+                        onTouchStart={(e) => {
+                          touchStartX = e.touches[0].clientX;
+                          touchStartY = e.touches[0].clientY;
+                          isScrolling = false;
+                        }}
+                        onTouchMove={(e) => {
+                          const deltaX = Math.abs(e.touches[0].clientX - touchStartX);
+                          const deltaY = Math.abs(e.touches[0].clientY - touchStartY);
+                          if (deltaX > 10 || deltaY > 10) {
+                            isScrolling = true;
+                          }
+                        }}
+                        onTouchEnd={() => {
+                          if (!isScrolling) {
+                            haptics.light();
+                            playStream(channel);
+                            setViewMode('player');
+                          }
+                        }}
+                        onClick={() => {
+                          haptics.light();
+                          playStream(channel);
+                          setViewMode('player');
+                        }}
+                      >
+                        {/* Thumbnail or Channel Logo */}
+                        <div className="w-full aspect-video bg-black/50 relative">
+                          {thumbnail ? (
+                            <img
+                              src={thumbnail}
+                              alt={channelEpg?.currentProgram?.title || ''}
+                              className="w-full h-full object-cover"
+                            />
+                          ) : channelLogo ? (
+                            <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-white/10 to-white/5 p-4">
+                              <img
+                                src={channelLogo}
+                                alt=""
+                                className="max-w-full max-h-full object-contain"
+                              />
+                            </div>
+                          ) : (
+                            <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-white/10 to-white/5">
+                              <span className="text-white/30 text-sm font-medium">{pkgChannel.name}</span>
+                            </div>
+                          )}
+                          {/* Gradient overlay */}
+                          <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent" />
+                          {/* LIVE badge */}
+                          <div className="absolute top-2 left-2 px-1.5 py-0.5 bg-red-600 rounded text-white text-[10px] font-bold">
+                            LIVE
+                          </div>
+                          {/* Play button */}
+                          <div className="absolute inset-0 flex items-center justify-center">
+                            <div className="w-10 h-10 rounded-full bg-white/20 backdrop-blur-sm flex items-center justify-center">
+                              <Play className="w-5 h-5 text-white ml-0.5" />
+                            </div>
+                          </div>
+                        </div>
+                        {/* Channel Info */}
+                        <div className="p-2.5 flex items-center gap-2.5">
+                          {channelLogo && (
+                            <img
+                              src={channelLogo}
+                              alt=""
+                              className="w-8 h-8 object-contain shrink-0"
+                            />
+                          )}
+                          <div className="flex-1 min-w-0">
+                            <p className="text-white font-medium text-sm truncate">{pkgChannel.name}</p>
+                            {channelEpg?.currentProgram ? (
+                              <p className="text-white/50 text-xs truncate mt-0.5">{channelEpg.currentProgram.title}</p>
+                            ) : (
+                              <p className="text-white/30 text-xs mt-0.5">No program info</p>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {/* MLB Section */}
+            {mlbPackage && mlbChannels.length > 0 && (
+              <div className="mb-6">
+                <div className="px-4 mb-3 flex items-center justify-between">
+                  <h2 className="text-lg font-semibold text-white">⚾ MLB</h2>
+                  <span className="text-white/40 text-sm">{mlbChannels.length} channels</span>
+                </div>
+
+                <div
+                  className="flex gap-3 overflow-x-auto px-4 pb-2 scrollbar-hide"
+                  style={{ scrollSnapType: 'x mandatory' }}
+                >
+                  {mlbChannels.map((pkgChannel) => {
+                    // Match package channel to full channel object
+                    const channel = channels.find(c => c.GuideName === pkgChannel.name || c.name === pkgChannel.name);
+                    if (!channel) return null;
+                    const channelEpg = epgDataMap.get(channel.iptvId || '');
+                    const thumbnail = channelEpg?.currentProgram?.thumbnail;
+                    const channelLogo = pkgChannel.logo || channel.logo;
+
+                    // Track if user is scrolling to prevent tap on scroll end
+                    let touchStartX = 0;
+                    let touchStartY = 0;
+                    let isScrolling = false;
+
+                    return (
+                      <div
+                        key={pkgChannel.id}
+                        className="shrink-0 w-56 rounded-xl overflow-hidden bg-white/5 active:bg-white/10"
+                        style={{ scrollSnapAlign: 'start' }}
+                        onTouchStart={(e) => {
+                          touchStartX = e.touches[0].clientX;
+                          touchStartY = e.touches[0].clientY;
+                          isScrolling = false;
+                        }}
+                        onTouchMove={(e) => {
+                          const deltaX = Math.abs(e.touches[0].clientX - touchStartX);
+                          const deltaY = Math.abs(e.touches[0].clientY - touchStartY);
+                          if (deltaX > 10 || deltaY > 10) {
+                            isScrolling = true;
+                          }
+                        }}
+                        onTouchEnd={() => {
+                          if (!isScrolling) {
+                            haptics.light();
+                            playStream(channel);
+                            setViewMode('player');
+                          }
+                        }}
+                        onClick={() => {
+                          haptics.light();
+                          playStream(channel);
+                          setViewMode('player');
+                        }}
+                      >
+                        {/* Thumbnail or Channel Logo */}
+                        <div className="w-full aspect-video bg-black/50 relative">
+                          {thumbnail ? (
+                            <img
+                              src={thumbnail}
+                              alt={channelEpg?.currentProgram?.title || ''}
+                              className="w-full h-full object-cover"
+                            />
+                          ) : channelLogo ? (
+                            <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-white/10 to-white/5 p-4">
+                              <img
+                                src={channelLogo}
+                                alt=""
+                                className="max-w-full max-h-full object-contain"
+                              />
+                            </div>
+                          ) : (
+                            <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-white/10 to-white/5">
+                              <span className="text-white/30 text-sm font-medium">{pkgChannel.name}</span>
+                            </div>
+                          )}
+                          {/* Gradient overlay */}
+                          <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent" />
+                          {/* LIVE badge */}
+                          <div className="absolute top-2 left-2 px-1.5 py-0.5 bg-red-600 rounded text-white text-[10px] font-bold">
+                            LIVE
+                          </div>
+                          {/* Play button */}
+                          <div className="absolute inset-0 flex items-center justify-center">
+                            <div className="w-10 h-10 rounded-full bg-white/20 backdrop-blur-sm flex items-center justify-center">
+                              <Play className="w-5 h-5 text-white ml-0.5" />
+                            </div>
+                          </div>
+                        </div>
+                        {/* Channel Info */}
+                        <div className="p-2.5 flex items-center gap-2.5">
+                          {channelLogo && (
+                            <img
+                              src={channelLogo}
+                              alt=""
+                              className="w-8 h-8 object-contain shrink-0"
+                            />
+                          )}
+                          <div className="flex-1 min-w-0">
+                            <p className="text-white font-medium text-sm truncate">{pkgChannel.name}</p>
+                            {channelEpg?.currentProgram ? (
+                              <p className="text-white/50 text-xs truncate mt-0.5">{channelEpg.currentProgram.title}</p>
+                            ) : (
+                              <p className="text-white/30 text-xs mt-0.5">No program info</p>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
 
           </div>
 
