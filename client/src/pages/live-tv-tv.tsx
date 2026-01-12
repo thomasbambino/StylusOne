@@ -10,7 +10,7 @@ import { useAuth } from '@/hooks/use-auth';
 import Hls from 'hls.js';
 import { ScreenOrientation } from '@capacitor/screen-orientation';
 import { KeepAwake } from '@capacitor-community/keep-awake';
-import { isIOSNative, showNativeTabBar, hideNativeTabBar, addNativeTabBarListener } from '@/lib/nativeTabBar';
+import { isIOSNative, showNativeTabBar, hideNativeTabBar, addNativeTabBarListener, setNativeTabBarSelected } from '@/lib/nativeTabBar';
 
 // ============================================================================
 // TYPES & INTERFACES
@@ -955,7 +955,8 @@ export default function LiveTVTvPage() {
   viewModeRef.current = viewMode;
   const [showOverlay, setShowOverlay] = useState(true);
   const [guideSearchQuery, setGuideSearchQuery] = useState('');
-  const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
+  const [hiddenPackages, setHiddenPackages] = useState<Set<number>>(new Set()); // Package IDs to hide from guide
+  const [showPackageDropdown, setShowPackageDropdown] = useState(false);
 
   // Home page state
   const [homeSearchQuery, setHomeSearchQuery] = useState('');
@@ -1242,40 +1243,7 @@ export default function LiveTVTvPage() {
       .sort((a, b) => a.name.localeCompare(b.name));
   }, [channels]);
 
-  // Filtered channels for guide search and category
-  const filteredChannels = useMemo(() => {
-    let filtered = channels;
-
-    // Filter by category first
-    if (selectedCategory) {
-      filtered = filtered.filter((ch: Channel) => ch.categoryId === selectedCategory);
-    }
-
-    // Then filter by search query
-    if (guideSearchQuery.trim()) {
-      const query = guideSearchQuery.toLowerCase();
-      filtered = filtered.filter((ch: Channel) =>
-        ch.GuideName.toLowerCase().includes(query) ||
-        ch.GuideNumber.includes(query)
-      );
-    }
-
-    return filtered;
-  }, [channels, guideSearchQuery, selectedCategory]);
-
-  // Favorites query
-  const { data: favoritesData } = useQuery({
-    queryKey: ['/api/favorite-channels'],
-    queryFn: getQueryFn({ on401: "returnNull" }),
-    staleTime: 60 * 1000, // Consider fresh for 1 minute
-  });
-
-  // Subscription query
-  const { data: subscriptionData, isLoading: subscriptionLoading } = useQuery<CurrentSubscription | null>({
-    queryKey: ['/api/subscriptions/current'],
-    queryFn: getQueryFn({ on401: "returnNull" }),
-    enabled: showSubscriptionPopup || viewMode === 'profile', // Fetch when popup or profile view is opened
-  });
+  // === PACKAGE FILTERING (must be defined BEFORE filteredChannels) ===
 
   // Channel packages query for user's plan
   interface ChannelPackage {
@@ -1294,14 +1262,88 @@ export default function LiveTVTvPage() {
     categoryName: string | null;
   }
 
-  const [expandedPackageId, setExpandedPackageId] = useState<number | null>(null);
-
   const { data: userPackages = [], isLoading: packagesLoading } = useQuery<ChannelPackage[]>({
     queryKey: ['/api/subscriptions/packages'],
     queryFn: getQueryFn({ on401: "returnNull" }),
-    enabled: viewMode === 'profile' || viewMode === 'home',
+    enabled: viewMode === 'profile' || viewMode === 'home' || viewMode === 'guide',
     select: (data) => data || [],
   });
+
+  // Fetch all package channels for guide filtering
+  const allPackageChannelsQueries = useQueries({
+    queries: userPackages.map(pkg => ({
+      queryKey: [`/api/subscriptions/packages/${pkg.packageId}/channels`],
+      queryFn: getQueryFn({ on401: "returnNull" }),
+      enabled: viewMode === 'guide' && !!pkg.packageId,
+      staleTime: 10 * 60 * 1000, // Cache for 10 minutes
+      select: (data: PackageChannel[] | null) => ({
+        packageId: pkg.packageId,
+        packageName: pkg.packageName,
+        channels: data || []
+      })
+    }))
+  });
+
+  // Build a map of channel name -> package IDs for filtering
+  const channelToPackages = useMemo(() => {
+    const map = new Map<string, Set<number>>();
+    allPackageChannelsQueries.forEach(query => {
+      if (query.data) {
+        const { packageId, channels } = query.data;
+        channels.forEach((ch: PackageChannel) => {
+          const existing = map.get(ch.name) || new Set();
+          existing.add(packageId);
+          map.set(ch.name, existing);
+        });
+      }
+    });
+    return map;
+  }, [allPackageChannelsQueries]);
+
+  // === END PACKAGE FILTERING ===
+
+  // Filtered channels for guide search and package visibility
+  const filteredChannels = useMemo(() => {
+    let filtered = channels;
+
+    // Filter out channels from hidden packages
+    if (hiddenPackages.size > 0 && channelToPackages.size > 0) {
+      filtered = filtered.filter((ch: Channel) => {
+        const packageIds = channelToPackages.get(ch.GuideName);
+        // If channel isn't in any package, show it
+        if (!packageIds || packageIds.size === 0) return true;
+        // Show channel if at least one of its packages is not hidden
+        return Array.from(packageIds).some(pkgId => !hiddenPackages.has(pkgId));
+      });
+    }
+
+    // Then filter by search query
+    if (guideSearchQuery.trim()) {
+      const query = guideSearchQuery.toLowerCase();
+      filtered = filtered.filter((ch: Channel) =>
+        ch.GuideName.toLowerCase().includes(query) ||
+        ch.GuideNumber.includes(query)
+      );
+    }
+
+    return filtered;
+  }, [channels, guideSearchQuery, hiddenPackages, channelToPackages]);
+
+  // Favorites query
+  const { data: favoritesData } = useQuery({
+    queryKey: ['/api/favorite-channels'],
+    queryFn: getQueryFn({ on401: "returnNull" }),
+    staleTime: 60 * 1000, // Consider fresh for 1 minute
+  });
+
+  // Subscription query
+  const { data: subscriptionData, isLoading: subscriptionLoading } = useQuery<CurrentSubscription | null>({
+    queryKey: ['/api/subscriptions/current'],
+    queryFn: getQueryFn({ on401: "returnNull" }),
+    enabled: showSubscriptionPopup || viewMode === 'profile', // Fetch when popup or profile view is opened
+  });
+
+  const [expandedPackageId, setExpandedPackageId] = useState<number | null>(null);
 
   // Fetch channels for expanded package (profile view)
   const { data: packageChannels = [], isLoading: packageChannelsLoading } = useQuery<PackageChannel[]>({
@@ -2676,7 +2718,7 @@ export default function LiveTVTvPage() {
         animate={
           viewMode === 'guide' && isPortrait && isNativePlatform() ? {
             // Portrait guide - large video in video area (below search bar)
-            top: 100,
+            top: 140,
             left: 16,
             right: 16,
             bottom: 'auto',
@@ -3214,14 +3256,27 @@ export default function LiveTVTvPage() {
       {/* CSS landscape:opacity-0 instantly hides when screen rotates, before React state updates */}
       {!isRotating && isPortrait && isNativePlatform() && viewMode === 'guide' && (
         <div
-          className="absolute inset-0 bg-black flex flex-col landscape:opacity-0 landscape:pointer-events-none animate-in fade-in duration-150"
+          className="absolute inset-0 bg-black flex flex-col landscape:opacity-0 landscape:pointer-events-none animate-viewSlideUp"
           style={{ zIndex: 30 }}
         >
           {/* Header with close button and search */}
-          <div className="shrink-0 pt-14 px-4 flex items-center gap-2">
+          <div className="shrink-0 pt-16 px-4 pb-4 flex items-center gap-2">
             <button
-              onTouchEnd={(e) => { e.preventDefault(); setViewMode('player'); setGuideSearchQuery(''); setSelectedCategory(null); setGuideTimeOffset(0); }}
-              onClick={() => { setViewMode('player'); setGuideSearchQuery(''); setSelectedCategory(null); setGuideTimeOffset(0); }}
+              onTouchEnd={(e) => {
+                e.preventDefault();
+                setViewMode('player');
+                setGuideSearchQuery('');
+                setGuideTimeOffset(0);
+                console.log('[Guide] Closing guide, setting tab to nowplaying');
+                setNativeTabBarSelected('nowplaying').then(() => console.log('[Guide] Tab selection complete'));
+              }}
+              onClick={() => {
+                setViewMode('player');
+                setGuideSearchQuery('');
+                setGuideTimeOffset(0);
+                console.log('[Guide] Closing guide, setting tab to nowplaying');
+                setNativeTabBarSelected('nowplaying').then(() => console.log('[Guide] Tab selection complete'));
+              }}
               className="p-2 bg-white/10 rounded-full active:bg-white/20 shrink-0"
             >
               <X className="w-5 h-5 text-white" />
@@ -3242,27 +3297,27 @@ export default function LiveTVTvPage() {
                 className="w-full h-10 pl-10 pr-4 bg-white/10 rounded-full text-white text-sm placeholder:text-white/40 focus:outline-none focus:ring-1 focus:ring-white/30"
               />
             </div>
-            {/* Filter button - opens dropdown */}
-            {categories.length > 0 && (
+            {/* Package filter button - opens dropdown */}
+            {userPackages.length > 0 && (
               <button
-                onTouchEnd={(e) => { e.preventDefault(); setShowCategoryDropdown(!showCategoryDropdown); haptics.light(); }}
-                onClick={() => { setShowCategoryDropdown(!showCategoryDropdown); haptics.light(); }}
+                onTouchEnd={(e) => { e.preventDefault(); setShowPackageDropdown(!showPackageDropdown); haptics.light(); }}
+                onClick={() => { setShowPackageDropdown(!showPackageDropdown); haptics.light(); }}
                 className={cn(
                   "shrink-0 h-10 px-3 rounded-full flex items-center gap-1.5",
-                  showCategoryDropdown ? "bg-white/20" : "bg-white/10 active:bg-white/20"
+                  showPackageDropdown ? "bg-white/20" : "bg-white/10 active:bg-white/20"
                 )}
               >
-                <Filter className="w-4 h-4 text-white/70" />
-                <span className="text-white text-sm max-w-20 truncate">
-                  {selectedCategory ? categories.find(c => c.id === selectedCategory)?.name || 'Filter' : 'All'}
+                <Package className="w-4 h-4 text-white/70" />
+                <span className="text-white text-sm max-w-24 truncate">
+                  {hiddenPackages.size > 0 ? `${userPackages.length - hiddenPackages.size}/${userPackages.length}` : 'All'}
                 </span>
-                <ChevronDown className={cn("w-4 h-4 text-white/50 transition-transform", showCategoryDropdown && "rotate-180")} />
+                <ChevronDown className={cn("w-4 h-4 text-white/50 transition-transform", showPackageDropdown && "rotate-180")} />
               </button>
             )}
           </div>
 
           {/* Video player area - more space from header */}
-          <div className="relative mx-4 mt-6 aspect-video">
+          <div className="relative mx-4 mt-10 aspect-video">
             {/* Video positioned here via motion.div animate */}
           </div>
 
@@ -3489,10 +3544,14 @@ export default function LiveTVTvPage() {
                         "w-40 shrink-0 text-left py-1.5 px-2.5 rounded-lg border",
                         isCurrentChannel ? "border-white/30 bg-white/10" : "border-white/10"
                       )}>
-                        <p className={cn(
-                          "text-sm truncate font-medium",
-                          isCurrentChannel ? "text-white" : "text-white/90"
-                        )}>
+                        <p
+                          key={shiftedCurrentProgram?.title || 'no-program'}
+                          className={cn(
+                            "text-sm truncate font-medium",
+                            isCurrentChannel ? "text-white" : "text-white/90",
+                            shiftedCurrentProgram && "animate-fadeSlideIn"
+                          )}
+                        >
                           {shiftedCurrentProgram?.title || channel.GuideName}
                         </p>
                         <p className="text-white/50 text-xs">{timeRemaining ? `${timeRemaining} left` : 'Live'}</p>
@@ -3501,7 +3560,7 @@ export default function LiveTVTvPage() {
                       {/* Next Program (at offset time) */}
                       {shiftedNextProgram && (
                         <div className="w-36 shrink-0 text-left py-1.5 px-2.5 rounded-lg border border-white/5 bg-white/5">
-                          <p className="text-white/70 text-sm truncate">{shiftedNextProgram.title}</p>
+                          <p key={shiftedNextProgram.title} className="text-white/70 text-sm truncate animate-fadeSlideIn">{shiftedNextProgram.title}</p>
                           <p className="text-white/40 text-xs">
                             {new Date(shiftedNextProgram.startTime).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}
                           </p>
@@ -3522,7 +3581,7 @@ export default function LiveTVTvPage() {
           {/* Bottom Tab Bar - Hidden on iOS native (uses native tab bar instead) */}
           {!isIOSNative() && (
             <div className="shrink-0 px-4 pb-8 pt-3 flex items-center justify-around border-t border-white/10 bg-black">
-              <button onTouchEnd={(e) => { e.preventDefault(); setViewMode('player'); setGuideSearchQuery(''); setSelectedCategory(null); }} onClick={() => { setViewMode('player'); setGuideSearchQuery(''); setSelectedCategory(null); }} className="flex flex-col items-center gap-1 py-2 px-4 active:opacity-70">
+              <button onTouchEnd={(e) => { e.preventDefault(); setViewMode('player'); setGuideSearchQuery(''); }} onClick={() => { setViewMode('player'); setGuideSearchQuery(''); }} className="flex flex-col items-center gap-1 py-2 px-4 active:opacity-70">
                 <LayoutGrid className="w-6 h-6 text-white" />
                 <span className="text-white text-xs font-medium">Guide</span>
               </button>
@@ -3543,10 +3602,10 @@ export default function LiveTVTvPage() {
         </div>
       )}
 
-      {/* Portrait Guide Category Dropdown - rendered outside container, positioned below header */}
-      {!isRotating && isPortrait && isNativePlatform() && viewMode === 'guide' && showCategoryDropdown && categories.length > 0 && (
+      {/* Portrait Guide Package Dropdown - rendered outside container, positioned below header */}
+      {!isRotating && isPortrait && isNativePlatform() && viewMode === 'guide' && showPackageDropdown && userPackages.length > 0 && (
         <div
-          className="fixed right-4 bg-zinc-900 rounded-xl border border-white/10 shadow-xl max-h-64 overflow-y-auto min-w-40"
+          className="fixed right-4 bg-zinc-900 rounded-xl border border-white/10 shadow-xl max-h-80 overflow-y-auto min-w-48"
           style={{ zIndex: 9999, top: 'calc(env(safe-area-inset-top, 44px) + 56px + 48px)' }}
           onTouchStart={(e) => {
             dropdownTouchStartY.current = e.touches[0].clientY;
@@ -3559,37 +3618,69 @@ export default function LiveTVTvPage() {
             }
           }}
         >
+          <div className="px-4 py-2.5 text-xs font-medium text-white/50 uppercase tracking-wider">
+            Channel Packages
+          </div>
+          {/* Show All button */}
           <button
             onTouchEnd={(e) => {
               e.preventDefault();
               if (dropdownDidScroll.current) return;
-              haptics.selection(); setSelectedCategory(null); setShowCategoryDropdown(false);
+              haptics.selection();
+              setHiddenPackages(new Set());
             }}
-            onClick={() => { haptics.selection(); setSelectedCategory(null); setShowCategoryDropdown(false); }}
+            onClick={() => { haptics.selection(); setHiddenPackages(new Set()); }}
             className={cn(
-              "w-full px-4 py-2.5 text-left text-sm",
-              selectedCategory === null ? "bg-white/10 text-white" : "text-white/70 active:bg-white/5"
+              "w-full px-4 py-2 text-left text-sm border-t border-white/5",
+              hiddenPackages.size === 0 ? "bg-white/10 text-white" : "text-white/70 active:bg-white/5"
             )}
           >
-            All Categories
+            Show All Packages
           </button>
-          {categories.map((cat) => (
-            <button
-              key={cat.id}
-              onTouchEnd={(e) => {
-                e.preventDefault();
-                if (dropdownDidScroll.current) return;
-                haptics.selection(); setSelectedCategory(cat.id); setShowCategoryDropdown(false);
-              }}
-              onClick={() => { haptics.selection(); setSelectedCategory(cat.id); setShowCategoryDropdown(false); }}
-              className={cn(
-                "w-full px-4 py-2.5 text-left text-sm border-t border-white/5",
-                selectedCategory === cat.id ? "bg-white/10 text-white" : "text-white/70 active:bg-white/5"
-              )}
-            >
-              {cat.name}
-            </button>
-          ))}
+          {/* Individual package toggles */}
+          {userPackages.map((pkg) => {
+            const isVisible = !hiddenPackages.has(pkg.packageId);
+            return (
+              <button
+                key={pkg.packageId}
+                onTouchEnd={(e) => {
+                  e.preventDefault();
+                  if (dropdownDidScroll.current) return;
+                  haptics.selection();
+                  setHiddenPackages(prev => {
+                    const newSet = new Set(prev);
+                    if (isVisible) {
+                      newSet.add(pkg.packageId);
+                    } else {
+                      newSet.delete(pkg.packageId);
+                    }
+                    return newSet;
+                  });
+                }}
+                onClick={() => {
+                  haptics.selection();
+                  setHiddenPackages(prev => {
+                    const newSet = new Set(prev);
+                    if (isVisible) {
+                      newSet.add(pkg.packageId);
+                    } else {
+                      newSet.delete(pkg.packageId);
+                    }
+                    return newSet;
+                  });
+                }}
+                className="w-full px-4 py-2.5 text-left text-sm border-t border-white/5 flex items-center justify-between active:bg-white/5"
+              >
+                <span className={isVisible ? "text-white" : "text-white/40"}>{pkg.packageName}</span>
+                <div className={cn(
+                  "w-5 h-5 rounded flex items-center justify-center",
+                  isVisible ? "bg-blue-500" : "bg-white/10"
+                )}>
+                  {isVisible && <Check className="w-3.5 h-3.5 text-white" />}
+                </div>
+              </button>
+            );
+          })}
         </div>
       )}
 
@@ -3683,7 +3774,7 @@ export default function LiveTVTvPage() {
                 })()}
 
                 {/* Large Program Title */}
-                <h1 className="text-5xl font-bold text-white">
+                <h1 key={currentEPG.currentProgram.title} className="text-5xl font-bold text-white animate-fadeSlideIn">
                   {currentEPG.currentProgram.title}
                 </h1>
               </div>
@@ -3803,7 +3894,7 @@ export default function LiveTVTvPage() {
               {/* Close Button + Search - Top Left, aligned with channel column */}
               <div className="absolute top-6 left-16 flex items-center gap-4 z-10">
                 <button
-                  onClick={() => { setViewMode('player'); setGuideSearchQuery(''); setSelectedCategory(null); }}
+                  onClick={() => { setViewMode('player'); setGuideSearchQuery(''); setNativeTabBarSelected('nowplaying'); }}
                   className="p-2 bg-white/10 hover:bg-white/20 rounded-full text-white transition-all active:scale-95"
                 >
                   <X className="w-5 h-5" />
@@ -3822,21 +3913,69 @@ export default function LiveTVTvPage() {
                     className="w-64 h-10 pl-9 pr-3 bg-white/10 hover:bg-white/15 rounded-lg text-white text-sm placeholder:text-white/40 focus:outline-none focus:ring-1 focus:ring-white/30 transition-colors"
                   />
                 </div>
-                {/* Category Filter Dropdown */}
-                {categories.length > 0 && (
-                  <select
-                    value={selectedCategory || ''}
-                    onChange={(e) => { haptics.selection(); setSelectedCategory(e.target.value || null); }}
-                    className="h-10 px-3 bg-white/10 hover:bg-white/15 rounded-lg text-white text-sm focus:outline-none focus:ring-1 focus:ring-white/30 transition-colors cursor-pointer appearance-none"
-                    style={{ minWidth: '140px' }}
-                  >
-                    <option value="" className="bg-black text-white">All Categories</option>
-                    {categories.map((cat) => (
-                      <option key={cat.id} value={cat.id} className="bg-black text-white">
-                        {cat.name}
-                      </option>
-                    ))}
-                  </select>
+                {/* Package Filter Button & Dropdown */}
+                {userPackages.length > 0 && (
+                  <div className="relative">
+                    <button
+                      onClick={() => { setShowPackageDropdown(!showPackageDropdown); haptics.light(); }}
+                      className={cn(
+                        "h-10 px-3 rounded-lg text-white text-sm transition-colors flex items-center gap-2",
+                        showPackageDropdown ? "bg-white/20" : "bg-white/10 hover:bg-white/15"
+                      )}
+                    >
+                      <Package className="w-4 h-4 text-white/70" />
+                      <span>
+                        {hiddenPackages.size > 0 ? `${userPackages.length - hiddenPackages.size}/${userPackages.length} Packages` : 'All Packages'}
+                      </span>
+                      <ChevronDown className={cn("w-4 h-4 text-white/50 transition-transform", showPackageDropdown && "rotate-180")} />
+                    </button>
+                    {/* Dropdown */}
+                    {showPackageDropdown && (
+                      <div className="absolute top-12 right-0 bg-zinc-900 rounded-xl border border-white/10 shadow-xl max-h-80 overflow-y-auto min-w-56 z-50">
+                        <div className="px-4 py-2.5 text-xs font-medium text-white/50 uppercase tracking-wider">
+                          Channel Packages
+                        </div>
+                        <button
+                          onClick={() => { haptics.selection(); setHiddenPackages(new Set()); }}
+                          className={cn(
+                            "w-full px-4 py-2 text-left text-sm border-t border-white/5",
+                            hiddenPackages.size === 0 ? "bg-white/10 text-white" : "text-white/70 hover:bg-white/5"
+                          )}
+                        >
+                          Show All Packages
+                        </button>
+                        {userPackages.map((pkg) => {
+                          const isVisible = !hiddenPackages.has(pkg.packageId);
+                          return (
+                            <button
+                              key={pkg.packageId}
+                              onClick={() => {
+                                haptics.selection();
+                                setHiddenPackages(prev => {
+                                  const newSet = new Set(prev);
+                                  if (isVisible) {
+                                    newSet.add(pkg.packageId);
+                                  } else {
+                                    newSet.delete(pkg.packageId);
+                                  }
+                                  return newSet;
+                                });
+                              }}
+                              className="w-full px-4 py-2.5 text-left text-sm border-t border-white/5 flex items-center justify-between hover:bg-white/5"
+                            >
+                              <span className={isVisible ? "text-white" : "text-white/40"}>{pkg.packageName}</span>
+                              <div className={cn(
+                                "w-5 h-5 rounded flex items-center justify-center",
+                                isVisible ? "bg-blue-500" : "bg-white/10"
+                              )}>
+                                {isVisible && <Check className="w-3.5 h-3.5 text-white" />}
+                              </div>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
                 )}
               </div>
 
@@ -3889,7 +4028,7 @@ export default function LiveTVTvPage() {
       {/* On phones: always render (orientation locked). On tablets: only in portrait */}
       {!isRotating && isNativePlatform() && viewMode === 'home' && (isPhoneDevice || isPortrait) && (
         <div
-          className="absolute inset-0 bg-black flex flex-col animate-in fade-in duration-150"
+          className="absolute inset-0 bg-black flex flex-col animate-viewSlideUp"
           style={{ zIndex: 30 }}
         >
           {/* Minimal Header */}
@@ -4303,7 +4442,7 @@ export default function LiveTVTvPage() {
       {/* On phones: always render (orientation locked). On tablets: only in portrait */}
       {!isRotating && isNativePlatform() && viewMode === 'profile' && (isPhoneDevice || isPortrait) && (
         <div
-          className="absolute inset-0 bg-black flex flex-col animate-in fade-in duration-150"
+          className="absolute inset-0 bg-black flex flex-col animate-viewSlideUp"
           style={{ zIndex: 30 }}
         >
           {/* Header */}
