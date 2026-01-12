@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef, useMemo, memo } from 'react';
 import { useQuery, useQueries, useMutation, useQueryClient } from '@tanstack/react-query';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Play, Pause, Volume2, VolumeX, Info, Plus, MoreHorizontal, Star, X, Check, CreditCard, Calendar, ExternalLink, LogOut, LayoutGrid, Airplay, Search, Volume1, Minus, Settings, PictureInPicture2, Filter, Package } from 'lucide-react';
+import { ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Play, Pause, Volume2, VolumeX, Info, Plus, MoreHorizontal, Star, X, Check, CreditCard, Calendar, ExternalLink, LogOut, LayoutGrid, Airplay, Search, Volume1, Minus, Settings, PictureInPicture2, Filter, Package, Tv } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { getQueryFn, apiRequest, queryClient } from '@/lib/queryClient';
 import { buildApiUrl, isNativePlatform, getDeviceTypeSync } from '@/lib/capacitor';
@@ -3968,13 +3968,26 @@ export default function LiveTVTvPage() {
                     <div className="h-10 w-full bg-white/10 rounded" />
                   </div>
                 ) : userPackages.length > 0 ? (
-                  userPackages.map((pkg) => (
+                  userPackages.map((pkg) => {
+                    let pkgTouchStartY = 0;
+                    let pkgIsScrolling = false;
+                    return (
                     <div key={pkg.packageId}>
                       <button
-                        onTouchEnd={(e) => {
-                          e.preventDefault();
-                          haptics.light();
-                          setExpandedPackageId(expandedPackageId === pkg.packageId ? null : pkg.packageId);
+                        onTouchStart={(e) => {
+                          pkgTouchStartY = e.touches[0].clientY;
+                          pkgIsScrolling = false;
+                        }}
+                        onTouchMove={(e) => {
+                          if (Math.abs(e.touches[0].clientY - pkgTouchStartY) > 10) {
+                            pkgIsScrolling = true;
+                          }
+                        }}
+                        onTouchEnd={() => {
+                          if (!pkgIsScrolling) {
+                            haptics.light();
+                            setExpandedPackageId(expandedPackageId === pkg.packageId ? null : pkg.packageId);
+                          }
                         }}
                         onClick={() => {
                           haptics.light();
@@ -4020,7 +4033,7 @@ export default function LiveTVTvPage() {
                         </div>
                       )}
                     </div>
-                  ))
+                  );})
                 ) : (
                   <p className="text-white/50 text-sm">No packages available</p>
                 )}
