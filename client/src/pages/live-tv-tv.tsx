@@ -962,6 +962,26 @@ export default function LiveTVTvPage() {
   const [homeSearchQuery, setHomeSearchQuery] = useState('');
   const [homeCategory, setHomeCategory] = useState<string | null>(null);
 
+  // Splash screen state
+  const [showSplash, setShowSplash] = useState(true);
+
+  // Immediately hide native tab bar and HTML splash on mount
+  useEffect(() => {
+    // Hide the HTML initial splash screen (black background with loading indicator)
+    if (typeof window !== 'undefined' && (window as any).__hideInitialSplash) {
+      (window as any).__hideInitialSplash();
+    }
+    // Immediately hide native tab bar during splash
+    hideNativeTabBar();
+  }, []);
+
+  // Splash screen timer - show for 3 seconds
+  useEffect(() => {
+    if (!showSplash) return;
+    const timer = setTimeout(() => setShowSplash(false), 3000);
+    return () => clearTimeout(timer);
+  }, [showSplash]);
+
   // Helper: Calculate program progress percentage
   const getProgramProgress = useCallback((program: EPGProgram | null | undefined): number => {
     if (!program) return 0;
@@ -1140,6 +1160,13 @@ export default function LiveTVTvPage() {
   // ============================================================================
   // DATA FETCHING
   // ============================================================================
+
+  // Settings query for logo
+  const { data: settings } = useQuery<{ logo_url_large?: string; site_title?: string }>({
+    queryKey: ['/api/settings'],
+    queryFn: getQueryFn({ on401: "returnNull" }),
+    staleTime: 60 * 60 * 1000, // Cache for 1 hour
+  });
 
   const { data: channelsData, isLoading: channelsLoading } = useQuery({
     queryKey: ['/api/iptv/channels'],
@@ -2360,6 +2387,8 @@ export default function LiveTVTvPage() {
 
   const tabBarTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const tabBarCurrentState = useRef<boolean | null>(null); // null = unknown, true = shown, false = hidden
+  const showSplashRef = useRef(showSplash);
+  showSplashRef.current = showSplash;
 
   useEffect(() => {
     if (!isIOSNative()) {
@@ -2373,8 +2402,8 @@ export default function LiveTVTvPage() {
       tabBarTimer.current = null;
     }
 
-    // Determine if we should show: portrait AND not rotating
-    const shouldShow = isPortrait && !isRotating;
+    // Determine if we should show: portrait AND not rotating AND splash is done
+    const shouldShow = isPortrait && !isRotating && !showSplash;
 
     // Skip if already in desired state
     if (tabBarCurrentState.current === shouldShow) {
@@ -2384,7 +2413,7 @@ export default function LiveTVTvPage() {
     // Debounce all state changes to prevent rapid switching
     tabBarTimer.current = setTimeout(() => {
       // Re-check current conditions using refs (they reflect latest values)
-      const stillShouldShow = isPortraitRef.current && !isRotatingRef.current;
+      const stillShouldShow = isPortraitRef.current && !isRotatingRef.current && !showSplashRef.current;
 
       if (stillShouldShow && tabBarCurrentState.current !== true) {
         tabBarCurrentState.current = true;
@@ -2403,7 +2432,7 @@ export default function LiveTVTvPage() {
         clearTimeout(tabBarTimer.current);
       }
     };
-  }, [isPortrait, isRotating]);
+  }, [isPortrait, isRotating, showSplash]);
 
   // Listen for native tab bar selections
   useEffect(() => {
@@ -2506,6 +2535,75 @@ export default function LiveTVTvPage() {
       onTouchStart={handleTouchStart}
       onTouchEnd={handleTouchEnd}
     >
+      {/* Splash Screen - renders immediately with no delays */}
+      <AnimatePresence>
+        {showSplash && (
+          <motion.div
+            initial={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.4 }}
+            className="fixed inset-0 z-[100] bg-black flex flex-col items-center justify-center"
+          >
+            {/* Animated particles background */}
+            <div className="absolute inset-0 overflow-hidden">
+              {[...Array(20)].map((_, i) => (
+                <motion.div
+                  key={i}
+                  className="absolute w-1 h-1 bg-white/20 rounded-full"
+                  initial={{
+                    x: Math.random() * (typeof window !== 'undefined' ? window.innerWidth : 400),
+                    y: Math.random() * (typeof window !== 'undefined' ? window.innerHeight : 800),
+                  }}
+                  animate={{
+                    y: [null, -100],
+                    opacity: [0, 0.5, 0],
+                  }}
+                  transition={{
+                    duration: 3 + Math.random() * 2,
+                    repeat: Infinity,
+                    delay: Math.random() * 2,
+                  }}
+                />
+              ))}
+            </div>
+
+            {/* Gradient glow effect */}
+            <div className="absolute inset-0 bg-gradient-radial from-blue-900/20 via-transparent to-transparent" />
+
+            {/* App Logo - only show when settings loaded */}
+            {settings?.logo_url_large && (
+              <div className="relative">
+                {/* Logo glow */}
+                <div className="absolute inset-0 flex items-center justify-center">
+                  <div className="absolute w-64 h-64 bg-blue-600/20 rounded-full blur-[80px]" />
+                </div>
+
+                {/* App Logo */}
+                <img
+                  src={settings.logo_url_large}
+                  alt="Logo"
+                  className="relative w-24 h-24 object-contain"
+                />
+              </div>
+            )}
+
+            {/* App Name - shows immediately */}
+            <h1 className="mt-6 text-2xl font-bold text-white tracking-wide">
+              {settings?.site_title || 'Stylus One'}
+            </h1>
+
+            {/* Pulsing blue loading line - shows immediately */}
+            <div className="mt-8 w-32 h-1 bg-white/10 rounded-full overflow-hidden">
+              <motion.div
+                className="h-full w-1/3 bg-gradient-to-r from-transparent via-blue-500 to-transparent rounded-full"
+                animate={{ x: ['-100%', '400%'] }}
+                transition={{ duration: 1.2, repeat: Infinity, ease: 'easeInOut' }}
+              />
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* Network Status Indicator - positioned below notch */}
       <AnimatePresence>
         {showOfflineIndicator && (
