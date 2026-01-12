@@ -30,6 +30,7 @@ import fetch from 'node-fetch';
 import { db, pool } from './db';
 import { eq, and, inArray } from 'drizzle-orm';
 import { EPGService } from './services/epg-service';
+import { tmdbService } from './services/tmdb-service';
 import { randomBytes } from 'crypto';
 import {
   apiRateLimiter,
@@ -63,6 +64,31 @@ async function getEPGService(): Promise<EPGService> {
     epgServiceInstance = new EPGService();
     await epgServiceInstance.initialize();
     console.log('EPG service singleton initialized');
+
+    // Start TMDB worker with callback to get favorite titles
+    tmdbService.startAfterEPGReady(async () => {
+      try {
+        const { favoriteChannels } = await import('@shared/schema');
+        // Get all unique favorite channel IDs
+        const allFavorites = await db.select({ channelId: favoriteChannels.channelId })
+          .from(favoriteChannels)
+          .groupBy(favoriteChannels.channelId);
+
+        const titles: string[] = [];
+        for (const fav of allFavorites) {
+          const programs = epgServiceInstance!.getUpcomingPrograms(fav.channelId, 1);
+          for (const program of programs.slice(0, 2)) {
+            if (program.title) {
+              titles.push(program.title);
+            }
+          }
+        }
+        return titles;
+      } catch (error) {
+        console.error('Error getting favorite titles:', error);
+        return [];
+      }
+    });
   }
   return epgServiceInstance;
 }

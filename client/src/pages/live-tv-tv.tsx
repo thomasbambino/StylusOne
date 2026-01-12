@@ -3712,33 +3712,60 @@ export default function LiveTVTvPage() {
                         playStream(channel);
                         setViewMode('player');
                       }}
-                      className="bg-white/5 rounded-xl p-4 flex items-start gap-4 active:bg-white/10 text-left"
+                      className="bg-white/5 rounded-xl overflow-hidden active:bg-white/10 text-left flex flex-col"
                     >
-                      {/* Channel Logo */}
-                      <div className="w-16 h-12 shrink-0 flex items-center justify-center bg-black/30 rounded-lg overflow-hidden">
-                        {fav.channelLogo ? (
-                          <img src={fav.channelLogo} alt="" className="max-w-full max-h-full object-contain" />
-                        ) : (
-                          <span className="text-white/30 text-xs">{fav.channelId}</span>
+                      {/* Program Thumbnail (TMDB) - shown when available */}
+                      {channelEpg?.currentProgram?.thumbnail && (
+                        <div className="w-full aspect-video bg-black/50 relative">
+                          <img
+                            src={channelEpg.currentProgram.thumbnail}
+                            alt={channelEpg.currentProgram.title}
+                            className="w-full h-full object-cover"
+                          />
+                          {/* Gradient overlay for text readability */}
+                          <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent" />
+                          {/* LIVE badge */}
+                          <div className="absolute top-2 left-2 px-2 py-0.5 bg-red-600 rounded text-white text-xs font-bold">
+                            LIVE
+                          </div>
+                          {/* Play button overlay */}
+                          <div className="absolute inset-0 flex items-center justify-center">
+                            <div className="w-12 h-12 rounded-full bg-white/20 backdrop-blur-sm flex items-center justify-center">
+                              <Play className="w-6 h-6 text-white ml-0.5" />
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                      {/* Channel Info Row */}
+                      <div className="p-4 flex items-start gap-4">
+                        {/* Channel Logo */}
+                        <div className="w-16 h-12 shrink-0 flex items-center justify-center bg-black/30 rounded-lg overflow-hidden">
+                          {fav.channelLogo ? (
+                            <img src={fav.channelLogo} alt="" className="max-w-full max-h-full object-contain" />
+                          ) : (
+                            <span className="text-white/30 text-xs">{fav.channelId}</span>
+                          )}
+                        </div>
+                        {/* Channel Info */}
+                        <div className="flex-1 min-w-0">
+                          <p className="text-white font-medium truncate">{fav.channelName || channel.GuideName}</p>
+                          {channelEpg?.currentProgram ? (
+                            <>
+                              <p className="text-white/70 text-sm truncate mt-0.5">{channelEpg.currentProgram.title}</p>
+                              <p className="text-white/40 text-xs mt-1">
+                                {formatTimeRange(channelEpg.currentProgram.startTime, channelEpg.currentProgram.endTime)}
+                              </p>
+                            </>
+                          ) : (
+                            <p className="text-white/40 text-sm mt-0.5">No program info</p>
+                          )}
+                        </div>
+                        {/* Play indicator (only when no thumbnail) */}
+                        {!channelEpg?.currentProgram?.thumbnail && (
+                          <div className="shrink-0 w-10 h-10 rounded-full bg-white/10 flex items-center justify-center">
+                            <Play className="w-5 h-5 text-white ml-0.5" />
+                          </div>
                         )}
-                      </div>
-                      {/* Channel Info */}
-                      <div className="flex-1 min-w-0">
-                        <p className="text-white font-medium truncate">{fav.channelName || channel.GuideName}</p>
-                        {channelEpg?.currentProgram ? (
-                          <>
-                            <p className="text-white/70 text-sm truncate mt-0.5">{channelEpg.currentProgram.title}</p>
-                            <p className="text-white/40 text-xs mt-1">
-                              {formatTimeRange(channelEpg.currentProgram.startTime, channelEpg.currentProgram.endTime)}
-                            </p>
-                          </>
-                        ) : (
-                          <p className="text-white/40 text-sm mt-0.5">No program info</p>
-                        )}
-                      </div>
-                      {/* Play indicator */}
-                      <div className="shrink-0 w-10 h-10 rounded-full bg-white/10 flex items-center justify-center">
-                        <Play className="w-5 h-5 text-white ml-0.5" />
                       </div>
                     </button>
                   );

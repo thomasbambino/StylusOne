@@ -1,4 +1,5 @@
 import { isNativePlatform } from './capacitor';
+import { CapacitorHttp } from '@capacitor/core';
 
 const DB_NAME = 'ImageCache';
 const STORE_NAME = 'images';
@@ -95,11 +96,39 @@ export async function cacheImage(url: string): Promise<string | null> {
     const cached = await getCachedImage(url);
     if (cached) return cached;
 
-    // Fetch the image
-    const response = await fetch(url, { mode: 'cors' });
-    if (!response.ok) return null;
+    let blob: Blob;
 
-    const blob = await response.blob();
+    // Use Capacitor HTTP for native apps to bypass CORS
+    if (isNativePlatform()) {
+      console.log('[ImageCache] Using CapacitorHttp for:', url);
+      const response = await CapacitorHttp.get({
+        url,
+        responseType: 'blob', // Returns base64-encoded data
+      });
+
+      if (response.status !== 200) {
+        console.warn('[ImageCache] HTTP error:', response.status, url);
+        return null;
+      }
+
+      // CapacitorHttp returns blob as base64 string
+      const base64Data = response.data as string;
+      const contentType = response.headers?.['Content-Type'] || response.headers?.['content-type'] || 'image/png';
+
+      // Convert base64 to Blob
+      const byteCharacters = atob(base64Data);
+      const byteNumbers = new Array(byteCharacters.length);
+      for (let i = 0; i < byteCharacters.length; i++) {
+        byteNumbers[i] = byteCharacters.charCodeAt(i);
+      }
+      const byteArray = new Uint8Array(byteNumbers);
+      blob = new Blob([byteArray], { type: contentType });
+    } else {
+      // Use fetch for web
+      const response = await fetch(url, { mode: 'cors' });
+      if (!response.ok) return null;
+      blob = await response.blob();
+    }
 
     // Store in IndexedDB
     const database = await initDB();
