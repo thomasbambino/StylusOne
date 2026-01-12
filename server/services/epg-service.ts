@@ -271,32 +271,6 @@ export class EPGService implements IService {
   }
 
   /**
-   * Queue thumbnails for favorite channels only
-   * Call this when loading home page favorites
-   */
-  queueThumbnailsForFavorites(channelIds: string[]): void {
-    if (!tmdbService.isConfigured()) return;
-
-    const titlesToQueue: string[] = [];
-
-    for (const channelId of channelIds) {
-      const programs = this.getUpcomingPrograms(channelId, 1); // Just current/next hour
-      for (const program of programs.slice(0, 2)) { // Current + next program
-        if (!program.thumbnail && program.title) {
-          const cached = tmdbService.getCachedImage(program.title);
-          if (!cached) {
-            titlesToQueue.push(program.title);
-          }
-        }
-      }
-    }
-
-    if (titlesToQueue.length > 0) {
-      tmdbService.queueTitles(titlesToQueue);
-    }
-  }
-
-  /**
    * Map HDHomeRun channel to EPG channel ID
    */
   mapChannel(hdhrChannelName: string): string | null {

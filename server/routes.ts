@@ -64,8 +64,31 @@ async function getEPGService(): Promise<EPGService> {
     epgServiceInstance = new EPGService();
     await epgServiceInstance.initialize();
     console.log('EPG service singleton initialized');
-    // Start TMDB worker now that EPG data is loaded
-    tmdbService.startAfterEPGReady();
+
+    // Start TMDB worker with callback to get favorite titles
+    tmdbService.startAfterEPGReady(async () => {
+      try {
+        const { favoriteChannels } = await import('@shared/schema');
+        // Get all unique favorite channel IDs
+        const allFavorites = await db.select({ channelId: favoriteChannels.channelId })
+          .from(favoriteChannels)
+          .groupBy(favoriteChannels.channelId);
+
+        const titles: string[] = [];
+        for (const fav of allFavorites) {
+          const programs = epgServiceInstance!.getUpcomingPrograms(fav.channelId, 1);
+          for (const program of programs.slice(0, 2)) {
+            if (program.title) {
+              titles.push(program.title);
+            }
+          }
+        }
+        return titles;
+      } catch (error) {
+        console.error('Error getting favorite titles:', error);
+        return [];
+      }
+    });
   }
   return epgServiceInstance;
 }
@@ -2340,11 +2363,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
       }
 
-      // Queue TMDB thumbnails for favorite channels (non-blocking)
-      if (favorites.length > 0 && epgServiceInstance) {
-        const channelIds = favorites.map(f => f.channelId);
-        epgServiceInstance.queueThumbnailsForFavorites(channelIds);
-      }
+      // Thumbnails are preloaded by background worker - no need to queue here
 
       res.json(favorites);
     } catch (error) {

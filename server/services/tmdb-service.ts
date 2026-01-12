@@ -33,6 +33,9 @@ const MAX_QUEUE_SIZE = 100; // Max titles in queue
 const TITLES_PER_RUN = 5; // Process 5 titles per worker run
 const REQUEST_TIMEOUT = 5000; // 5 second timeout per request
 
+// Callback to get titles for favorites (set by EPG service)
+type GetFavoriteTitlesCallback = () => Promise<string[]>;
+
 export class TMDBService {
   private apiKey: string;
   private baseUrl = 'https://api.themoviedb.org/3';
@@ -40,6 +43,7 @@ export class TMDBService {
   private queue: Set<string> = new Set(); // Unique titles to process
   private workerTimer: NodeJS.Timeout | null = null;
   private isProcessing = false;
+  private getFavoriteTitles: GetFavoriteTitlesCallback | null = null;
 
   constructor() {
     this.apiKey = process.env.TMDB_API_KEY || '';
@@ -52,10 +56,33 @@ export class TMDBService {
 
   /**
    * Start worker after EPG is initialized
+   * @param getFavoriteTitles - Callback to get program titles for all favorites
    */
-  startAfterEPGReady(): void {
+  startAfterEPGReady(getFavoriteTitles?: GetFavoriteTitlesCallback): void {
     if (!this.apiKey || this.workerTimer) return;
+    if (getFavoriteTitles) {
+      this.getFavoriteTitles = getFavoriteTitles;
+    }
     this.startWorker();
+    // Run immediately on startup to preload cache
+    setTimeout(() => this.refreshFavorites(), 5000);
+  }
+
+  /**
+   * Refresh thumbnails for all favorites (called periodically)
+   */
+  private async refreshFavorites(): Promise<void> {
+    if (!this.getFavoriteTitles) return;
+
+    try {
+      const titles = await this.getFavoriteTitles();
+      if (titles.length > 0) {
+        console.log(`[TMDB] Refreshing thumbnails for ${titles.length} favorite program titles`);
+        this.queueTitles(titles);
+      }
+    } catch (error) {
+      console.error('[TMDB] Error refreshing favorites:', error);
+    }
   }
 
   /**
@@ -64,8 +91,15 @@ export class TMDBService {
   private startWorker(): void {
     if (this.workerTimer) return;
 
+    let cycleCount = 0;
     this.workerTimer = setInterval(() => {
+      cycleCount++;
+      // Process queue every cycle
       this.processQueue();
+      // Refresh favorites every 10 cycles (5 minutes)
+      if (cycleCount % 10 === 0) {
+        this.refreshFavorites();
+      }
     }, WORKER_INTERVAL);
 
     console.log(`TMDB background worker started (runs every ${WORKER_INTERVAL / 1000}s)`);
