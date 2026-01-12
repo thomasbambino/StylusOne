@@ -233,9 +233,9 @@ export class EPGService implements IService {
 
   /**
    * Get upcoming programs for a channel (includes currently playing program)
-   * Enriches programs with TMDB thumbnails if not already present
+   * Returns immediately with cached TMDB thumbnails, queues missing ones for background fetch
    */
-  async getUpcomingPrograms(channelId: string, hours: number = 3): Promise<EPGProgram[]> {
+  getUpcomingPrograms(channelId: string, hours: number = 3): EPGProgram[] {
     const now = new Date();
     const endTime = new Date(now.getTime() + hours * 60 * 60 * 1000);
 
@@ -255,24 +255,27 @@ export class EPGService implements IService {
       p.endTime > now && p.startTime < endTime
     ).sort((a, b) => a.startTime.getTime() - b.startTime.getTime());
 
-    // Enrich programs without thumbnails using TMDB (in parallel, limited to first 5)
+    // Check cache and queue missing thumbnails (non-blocking)
     if (tmdbService.isConfigured()) {
-      const programsNeedingThumbnails = upcomingPrograms
-        .filter(p => !p.thumbnail)
-        .slice(0, 5); // Limit to avoid too many API calls
+      const titlesToQueue: string[] = [];
 
-      await Promise.all(
-        programsNeedingThumbnails.map(async (program) => {
-          try {
-            const thumbnail = await tmdbService.getShowImage(program.title);
-            if (thumbnail) {
-              program.thumbnail = thumbnail;
-            }
-          } catch (e) {
-            // Ignore errors - thumbnail is optional
+      for (const program of upcomingPrograms.slice(0, 10)) {
+        if (!program.thumbnail) {
+          // Check if TMDB has it cached
+          const cached = tmdbService.getCachedImage(program.title);
+          if (cached) {
+            program.thumbnail = cached;
+          } else {
+            // Queue for background fetch
+            titlesToQueue.push(program.title);
           }
-        })
-      );
+        }
+      }
+
+      // Queue titles for background processing
+      if (titlesToQueue.length > 0) {
+        tmdbService.queueTitles(titlesToQueue);
+      }
     }
 
     return upcomingPrograms;
