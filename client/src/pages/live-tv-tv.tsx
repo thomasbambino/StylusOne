@@ -3793,7 +3793,16 @@ export default function LiveTVTvPage() {
                         </div>
                         {/* Channel Info */}
                         <div className="p-2.5">
-                          <p className="text-white font-medium text-sm truncate">{fav.channelName || channel.GuideName}</p>
+                          <div className="flex items-center gap-2">
+                            {channelLogo && (
+                              <img
+                                src={channelLogo}
+                                alt=""
+                                className="w-5 h-5 object-contain shrink-0"
+                              />
+                            )}
+                            <p className="text-white font-medium text-sm truncate">{fav.channelName || channel.GuideName}</p>
+                          </div>
                           {channelEpg?.currentProgram ? (
                             <p className="text-white/50 text-xs truncate mt-0.5">{channelEpg.currentProgram.title}</p>
                           ) : (
