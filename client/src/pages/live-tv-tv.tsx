@@ -829,43 +829,42 @@ const GuideChannelRow = memo(({
         isFocused && "bg-white/10 ring-2 ring-white/50"
       )}
     >
-      {/* Favorite Button */}
-      <button
-        onClick={(e) => {
-          e.stopPropagation();
-          onToggleFavorite();
-        }}
-        className="w-10 shrink-0 flex items-center justify-center hover:bg-white/10 active:bg-white/20"
-      >
-        <Star className={cn("w-4 h-4", isFavorite ? "text-yellow-400 fill-yellow-400" : "text-white/30")} />
-      </button>
-
-      {/* Channel Info */}
+      {/* Sticky Channel Section - stays visible when scrolling horizontally */}
       <div className={cn(
-        "w-40 shrink-0 flex items-center gap-2 px-2 border-r border-white/10",
-        isPlaying && "bg-red-600/20"
+        "sticky left-0 z-10 flex shrink-0 bg-black",
+        isFocused && "bg-zinc-900"
       )}>
-        <div className="w-8 h-8 rounded bg-white/10 flex items-center justify-center overflow-hidden shrink-0">
-          {channel.logo ? (
-            <img src={channel.logo} alt="" className="w-full h-full object-contain p-0.5" loading="lazy" />
-          ) : (
-            <span className="text-xs font-bold text-white/60">{channel.GuideNumber}</span>
-          )}
-        </div>
-        <div className="min-w-0 flex-1">
-          <div className="text-sm font-medium text-white truncate">{channel.GuideName}</div>
+        {/* Favorite Button */}
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            onToggleFavorite();
+          }}
+          className="w-10 shrink-0 flex items-center justify-center hover:bg-white/10 active:bg-white/20"
+        >
+          <Star className={cn("w-4 h-4", isFavorite ? "text-yellow-400 fill-yellow-400" : "text-white/30")} />
+        </button>
+
+        {/* Channel Info */}
+        <div className={cn(
+          "w-40 shrink-0 flex items-center gap-2 px-2 border-r border-white/10",
+          isPlaying && "bg-red-600/20"
+        )}>
+          <div className="w-8 h-8 rounded bg-white/10 flex items-center justify-center overflow-hidden shrink-0">
+            {channel.logo ? (
+              <img src={channel.logo} alt="" className="w-full h-full object-contain p-0.5" loading="lazy" />
+            ) : (
+              <span className="text-xs font-bold text-white/60">{channel.GuideNumber}</span>
+            )}
+          </div>
+          <div className="min-w-0 flex-1">
+            <div className="text-sm font-medium text-white truncate">{channel.GuideName}</div>
+          </div>
         </div>
       </div>
 
       {/* Programs - scrolls horizontally */}
       <div className="flex-1 relative">
-        {/* Now indicator */}
-        <div
-          className="absolute top-0 bottom-0 w-0.5 bg-red-500 z-10"
-          style={{
-            left: `${Math.min(100, Math.max(0, ((now.getTime() - timelineStart.getTime()) / totalMs) * 100))}%`
-          }}
-        />
         {renderProgram(epgData?.currentProgram || null, true, channel.GuideName)}
         {renderProgram(epgData?.nextProgram || null, false)}
       </div>
@@ -1038,6 +1037,11 @@ export default function LiveTVTvPage() {
   const [focusedChannelIndex, setFocusedChannelIndex] = useState(0);
   const [guideTimeOffset, setGuideTimeOffset] = useState(0); // Offset in 30-minute increments from now
   const [showCategoryDropdown, setShowCategoryDropdown] = useState(false);
+  const [guideScrollIndex, setGuideScrollIndex] = useState(0); // Track scroll position for EPG loading
+
+  // Persistent set of EPG IDs we've loaded - never shrinks, only grows
+  const loadedEpgIdsRef = useRef<Set<string>>(new Set());
+  const scrollDebounceRef = useRef<NodeJS.Timeout | null>(null);
 
   // Progressive rendering - start with fewer channels for faster initial load
   const [renderLimit, setRenderLimit] = useState(30);
@@ -1507,34 +1511,46 @@ export default function LiveTVTvPage() {
       });
     }
 
-    // Pre-load first 20 channels' EPG data even before guide opens (for faster initial load)
-    channels.slice(0, 20).forEach((ch: Channel) => {
+    // Pre-load first 50 channels' EPG data even before guide opens (for faster initial load)
+    channels.slice(0, 50).forEach((ch: Channel) => {
       if (ch.epgId) idsSet.add(ch.epgId);
     });
 
-    // When guide is open, load more channels
+    // When guide is open, load EPG for visible channels based on scroll position
     if (viewMode === 'guide') {
-      // First 50 channels
-      channels.slice(0, 50).forEach((ch: Channel) => {
+      // Always load first 100 channels
+      channels.slice(0, 100).forEach((ch: Channel) => {
         if (ch.epgId) idsSet.add(ch.epgId);
       });
 
-      // Also include channels around the focused one (for scrolling beyond 50)
-      const start = Math.max(0, focusedChannelIndex - 10);
-      const end = Math.min(channels.length, focusedChannelIndex + 20);
-      channels.slice(start, end).forEach((ch: Channel) => {
+      // Load large buffer around current scroll position (100 channels before, 100 after)
+      const scrollStart = Math.max(0, guideScrollIndex - 100);
+      const scrollEnd = Math.min(channels.length, guideScrollIndex + 100);
+      channels.slice(scrollStart, scrollEnd).forEach((ch: Channel) => {
+        if (ch.epgId) idsSet.add(ch.epgId);
+      });
+
+      // Also include channels around the focused one (for keyboard navigation)
+      const focusStart = Math.max(0, focusedChannelIndex - 50);
+      const focusEnd = Math.min(channels.length, focusedChannelIndex + 50);
+      channels.slice(focusStart, focusEnd).forEach((ch: Channel) => {
         if (ch.epgId) idsSet.add(ch.epgId);
       });
     }
 
-    return Array.from(idsSet);
-  }, [channels, favorites, focusedChannelIndex, viewMode, selectedChannel, nflChannels, nbaChannels, mlbChannels]);
+    // Add all new IDs to the persistent set (never shrinks)
+    idsSet.forEach(id => loadedEpgIdsRef.current.add(id));
+
+    // Return ALL IDs we've ever loaded - this ensures data never disappears
+    return Array.from(loadedEpgIdsRef.current);
+  }, [channels, favorites, focusedChannelIndex, guideScrollIndex, viewMode, selectedChannel, nflChannels, nbaChannels, mlbChannels]);
 
   const epgQueries = useQueries({
     queries: visibleEpgIds.map(epgId => ({
       queryKey: [`/api/epg/upcoming/${encodeURIComponent(epgId)}?hours=3`],
       queryFn: getQueryFn({ on401: "returnNull" }),
-      staleTime: 5 * 60 * 1000,
+      staleTime: 10 * 60 * 1000, // 10 minutes before refetch
+      gcTime: 60 * 60 * 1000, // Keep in cache for 1 hour
       retry: 1,
     }))
   });
@@ -2253,6 +2269,26 @@ export default function LiveTVTvPage() {
     touchStartY.current = null;
     touchStartX.current = null;
   }, [viewMode, showOverlay, selectedChannel, channels]);
+
+  // Handle guide scroll to load EPG data for visible channels (debounced)
+  const handleGuideScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
+    const scrollTop = e.currentTarget.scrollTop;
+    const rowHeight = 56; // h-14 = 56px
+    const newScrollIndex = Math.floor(scrollTop / rowHeight);
+
+    // Clear any pending debounce
+    if (scrollDebounceRef.current) {
+      clearTimeout(scrollDebounceRef.current);
+    }
+
+    // Debounce scroll updates - wait 200ms after scrolling stops
+    // Only update if scrolled at least 20 rows to batch requests
+    scrollDebounceRef.current = setTimeout(() => {
+      if (Math.abs(newScrollIndex - guideScrollIndex) >= 20) {
+        setGuideScrollIndex(newScrollIndex);
+      }
+    }, 200);
+  }, [guideScrollIndex]);
 
   // Detect portrait/landscape on native platforms using Capacitor ScreenOrientation API
   useEffect(() => {
@@ -3300,25 +3336,8 @@ export default function LiveTVTvPage() {
             </div>
           </div>
 
-          {/* Channel List with red time indicator */}
-          <div className="flex-1 overflow-y-auto relative">
-            {/* Red current time line - only in channel list area */}
-            {guideTimeOffset === 0 && (
-              <div
-                className="absolute top-0 bottom-0 w-0.5 bg-red-500 z-10 pointer-events-none"
-                style={{
-                  // Position based on time remaining in current 30-min block
-                  // Logo section is ~88px, then programs fill the rest
-                  left: (() => {
-                    const now = new Date();
-                    const minutesIntoBlock = now.getMinutes() % 30;
-                    const percentIntoBlock = minutesIntoBlock / 30;
-                    // Current program takes ~60% width, line should be at the boundary
-                    return `calc(88px + (100% - 88px - 8px) * 0.55 * ${1 - percentIntoBlock})`;
-                  })()
-                }}
-              />
-            )}
+          {/* Channel List */}
+          <div className="flex-1 overflow-y-auto relative" onScroll={handleGuideScroll}>
             {filteredChannels.slice(0, renderLimit).map((channel: Channel, index: number) => {
               const channelEpg = epgDataMap.get(channel.iptvId || '');
               const isCurrentChannel = selectedChannel?.iptvId === channel.iptvId;
@@ -3841,7 +3860,7 @@ export default function LiveTVTvPage() {
             </div>
 
             {/* Channel Grid - takes remaining space, supports horizontal scrolling, pb-24 for tab bar */}
-            <div ref={guideScrollRef} className="flex-1 overflow-auto pb-24">
+            <div ref={guideScrollRef} className="flex-1 overflow-auto pb-24" onScroll={handleGuideScroll}>
               {filteredChannels.slice(0, renderLimit).map((channel: Channel, index: number) => (
                 <GuideChannelRow
                   key={channel.iptvId || channel.GuideNumber}
