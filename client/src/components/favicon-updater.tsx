@@ -18,7 +18,11 @@ export function FaviconUpdater() {
     if (settings?.favicon_url) {
       updateFavicon(settings.favicon_url);
     }
-  }, [settings?.favicon_url]);
+    // Update document title when settings load
+    if (settings?.favicon_label) {
+      document.title = settings.favicon_label;
+    }
+  }, [settings?.favicon_url, settings?.favicon_label]);
 
   return null; // This component doesn't render anything
 }
