@@ -3687,99 +3687,137 @@ export default function LiveTVTvPage() {
           style={{ zIndex: 30 }}
         >
           {/* Header */}
-          <div className="shrink-0 pt-14 px-4 pb-4">
+          <div className="shrink-0 pt-20 px-4 pb-2">
             <h1 className="text-2xl font-bold text-white">Home</h1>
-            <p className="text-white/50 text-sm mt-1">Your favorite channels</p>
           </div>
 
-          {/* Favorite Channels Grid */}
-          <div className="flex-1 overflow-y-auto px-4 pb-24">
-            {!favorites || favorites.length === 0 ? (
-              <div className="flex flex-col items-center justify-center h-64 text-center">
-                <Star className="w-12 h-12 text-white/20 mb-4" />
-                <p className="text-white/50 text-lg">No favorites yet</p>
-                <p className="text-white/30 text-sm mt-2">Add channels to favorites from the Guide or Player</p>
+          {/* Scrollable Content */}
+          <div className="flex-1 overflow-y-auto pb-24">
+            {/* Favorites Section */}
+            <div className="mb-6">
+              <div className="px-4 mb-3 flex items-center justify-between">
+                <h2 className="text-lg font-semibold text-white">Favorites</h2>
+                {favorites && favorites.length > 0 && (
+                  <span className="text-white/40 text-sm">{favorites.length} channels</span>
+                )}
               </div>
-            ) : (
-              <div className="grid grid-cols-1 gap-3">
-                {favorites.map((fav) => {
-                  const channel = channels.find(c => c.iptvId === fav.channelId);
-                  if (!channel) return null;
-                  const channelEpg = epgDataMap.get(channel.iptvId || '');
-                  return (
-                    <button
-                      key={fav.channelId}
-                      onTouchEnd={(e) => {
-                        e.preventDefault();
-                        haptics.light();
-                        playStream(channel);
-                        setViewMode('player');
-                      }}
-                      onClick={() => {
-                        haptics.light();
-                        playStream(channel);
-                        setViewMode('player');
-                      }}
-                      className="bg-white/5 rounded-xl overflow-hidden active:bg-white/10 text-left flex flex-col"
-                    >
-                      {/* Program Thumbnail (TMDB) - shown when available */}
-                      {channelEpg?.currentProgram?.thumbnail && (
+
+              {!favorites || favorites.length === 0 ? (
+                <div className="px-4">
+                  <div className="flex flex-col items-center justify-center h-40 bg-white/5 rounded-xl text-center">
+                    <Star className="w-10 h-10 text-white/20 mb-3" />
+                    <p className="text-white/50">No favorites yet</p>
+                    <p className="text-white/30 text-sm mt-1">Add channels from the Guide</p>
+                  </div>
+                </div>
+              ) : (
+                <div
+                  className="flex gap-3 overflow-x-auto px-4 pb-2 scrollbar-hide"
+                  style={{ scrollSnapType: 'x mandatory' }}
+                >
+                  {favorites.map((fav) => {
+                    const channel = channels.find(c => c.iptvId === fav.channelId);
+                    if (!channel) return null;
+                    const channelEpg = epgDataMap.get(channel.iptvId || '');
+                    const thumbnail = channelEpg?.currentProgram?.thumbnail;
+                    const channelLogo = fav.channelLogo || channel.logo;
+
+                    // Track if user is scrolling to prevent tap on scroll end
+                    let touchStartX = 0;
+                    let touchStartY = 0;
+                    let isScrolling = false;
+
+                    return (
+                      <div
+                        key={fav.channelId}
+                        className="shrink-0 w-56 rounded-xl overflow-hidden bg-white/5 active:bg-white/10"
+                        style={{ scrollSnapAlign: 'start' }}
+                        onTouchStart={(e) => {
+                          touchStartX = e.touches[0].clientX;
+                          touchStartY = e.touches[0].clientY;
+                          isScrolling = false;
+                        }}
+                        onTouchMove={(e) => {
+                          const deltaX = Math.abs(e.touches[0].clientX - touchStartX);
+                          const deltaY = Math.abs(e.touches[0].clientY - touchStartY);
+                          if (deltaX > 10 || deltaY > 10) {
+                            isScrolling = true;
+                          }
+                        }}
+                        onTouchEnd={() => {
+                          if (!isScrolling) {
+                            haptics.light();
+                            playStream(channel);
+                            setViewMode('player');
+                          }
+                        }}
+                        onClick={() => {
+                          haptics.light();
+                          playStream(channel);
+                          setViewMode('player');
+                        }}
+                      >
+                        {/* Thumbnail or Channel Logo */}
                         <div className="w-full aspect-video bg-black/50 relative">
-                          <img
-                            src={channelEpg.currentProgram.thumbnail}
-                            alt={channelEpg.currentProgram.title}
-                            className="w-full h-full object-cover"
-                          />
-                          {/* Gradient overlay for text readability */}
+                          {thumbnail ? (
+                            <img
+                              src={thumbnail}
+                              alt={channelEpg?.currentProgram?.title || ''}
+                              className="w-full h-full object-cover"
+                            />
+                          ) : channelLogo ? (
+                            <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-white/10 to-white/5 p-4">
+                              <img
+                                src={channelLogo}
+                                alt=""
+                                className="max-w-full max-h-full object-contain"
+                              />
+                            </div>
+                          ) : (
+                            <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-white/10 to-white/5">
+                              <span className="text-white/30 text-sm font-medium">{fav.channelName || channel.GuideName}</span>
+                            </div>
+                          )}
+                          {/* Gradient overlay */}
                           <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent" />
                           {/* LIVE badge */}
-                          <div className="absolute top-2 left-2 px-2 py-0.5 bg-red-600 rounded text-white text-xs font-bold">
+                          <div className="absolute top-2 left-2 px-1.5 py-0.5 bg-red-600 rounded text-white text-[10px] font-bold">
                             LIVE
                           </div>
-                          {/* Play button overlay */}
+                          {/* Play button */}
                           <div className="absolute inset-0 flex items-center justify-center">
-                            <div className="w-12 h-12 rounded-full bg-white/20 backdrop-blur-sm flex items-center justify-center">
-                              <Play className="w-6 h-6 text-white ml-0.5" />
+                            <div className="w-10 h-10 rounded-full bg-white/20 backdrop-blur-sm flex items-center justify-center">
+                              <Play className="w-5 h-5 text-white ml-0.5" />
                             </div>
                           </div>
                         </div>
-                      )}
-                      {/* Channel Info Row */}
-                      <div className="p-4 flex items-start gap-4">
-                        {/* Channel Logo */}
-                        <div className="w-16 h-12 shrink-0 flex items-center justify-center bg-black/30 rounded-lg overflow-hidden">
-                          {fav.channelLogo ? (
-                            <img src={fav.channelLogo} alt="" className="max-w-full max-h-full object-contain" />
-                          ) : (
-                            <span className="text-white/30 text-xs">{fav.channelId}</span>
-                          )}
-                        </div>
                         {/* Channel Info */}
-                        <div className="flex-1 min-w-0">
-                          <p className="text-white font-medium truncate">{fav.channelName || channel.GuideName}</p>
-                          {channelEpg?.currentProgram ? (
-                            <>
-                              <p className="text-white/70 text-sm truncate mt-0.5">{channelEpg.currentProgram.title}</p>
-                              <p className="text-white/40 text-xs mt-1">
-                                {formatTimeRange(channelEpg.currentProgram.startTime, channelEpg.currentProgram.endTime)}
-                              </p>
-                            </>
-                          ) : (
-                            <p className="text-white/40 text-sm mt-0.5">No program info</p>
+                        <div className="p-2.5 flex items-center gap-2.5">
+                          {channelLogo && (
+                            <img
+                              src={channelLogo}
+                              alt=""
+                              className="w-8 h-8 object-contain shrink-0"
+                            />
                           )}
-                        </div>
-                        {/* Play indicator (only when no thumbnail) */}
-                        {!channelEpg?.currentProgram?.thumbnail && (
-                          <div className="shrink-0 w-10 h-10 rounded-full bg-white/10 flex items-center justify-center">
-                            <Play className="w-5 h-5 text-white ml-0.5" />
+                          <div className="flex-1 min-w-0">
+                            <p className="text-white font-medium text-sm truncate">{fav.channelName || channel.GuideName}</p>
+                            {channelEpg?.currentProgram ? (
+                              <p className="text-white/50 text-xs truncate mt-0.5">{channelEpg.currentProgram.title}</p>
+                            ) : (
+                              <p className="text-white/30 text-xs mt-0.5">No program info</p>
+                            )}
                           </div>
-                        )}
+                        </div>
                       </div>
-                    </button>
-                  );
-                })}
-              </div>
-            )}
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            {/* More sections will go here */}
+
           </div>
 
           {/* Spacer for native tab bar */}
@@ -3795,7 +3833,7 @@ export default function LiveTVTvPage() {
           style={{ zIndex: 30 }}
         >
           {/* Header */}
-          <div className="shrink-0 pt-14 px-4 pb-4">
+          <div className="shrink-0 pt-20 px-4 pb-4">
             <h1 className="text-2xl font-bold text-white">My Profile</h1>
           </div>
 
