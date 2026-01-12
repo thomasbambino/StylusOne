@@ -3792,22 +3792,22 @@ export default function LiveTVTvPage() {
                           </div>
                         </div>
                         {/* Channel Info */}
-                        <div className="p-2.5">
-                          <div className="flex items-center gap-2">
-                            {channelLogo && (
-                              <img
-                                src={channelLogo}
-                                alt=""
-                                className="w-5 h-5 object-contain shrink-0"
-                              />
-                            )}
-                            <p className="text-white font-medium text-sm truncate">{fav.channelName || channel.GuideName}</p>
-                          </div>
-                          {channelEpg?.currentProgram ? (
-                            <p className="text-white/50 text-xs truncate mt-0.5">{channelEpg.currentProgram.title}</p>
-                          ) : (
-                            <p className="text-white/30 text-xs mt-0.5">No program info</p>
+                        <div className="p-2.5 flex items-center gap-2.5">
+                          {channelLogo && (
+                            <img
+                              src={channelLogo}
+                              alt=""
+                              className="w-8 h-8 object-contain shrink-0"
+                            />
                           )}
+                          <div className="flex-1 min-w-0">
+                            <p className="text-white font-medium text-sm truncate">{fav.channelName || channel.GuideName}</p>
+                            {channelEpg?.currentProgram ? (
+                              <p className="text-white/50 text-xs truncate mt-0.5">{channelEpg.currentProgram.title}</p>
+                            ) : (
+                              <p className="text-white/30 text-xs mt-0.5">No program info</p>
+                            )}
+                          </div>
                         </div>
                       </div>
                     );
