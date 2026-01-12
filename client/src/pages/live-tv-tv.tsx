@@ -3968,30 +3968,12 @@ export default function LiveTVTvPage() {
                     <div className="h-10 w-full bg-white/10 rounded" />
                   </div>
                 ) : userPackages.length > 0 ? (
-                  userPackages.map((pkg) => {
-                    let pkgTouchStartY = 0;
-                    let pkgIsScrolling = false;
-                    return (
+                  userPackages.map((pkg) => (
                     <div key={pkg.packageId}>
                       <button
-                        onTouchStart={(e) => {
-                          pkgTouchStartY = e.touches[0].clientY;
-                          pkgIsScrolling = false;
-                        }}
-                        onTouchMove={(e) => {
-                          if (Math.abs(e.touches[0].clientY - pkgTouchStartY) > 10) {
-                            pkgIsScrolling = true;
-                          }
-                        }}
-                        onTouchEnd={() => {
-                          if (!pkgIsScrolling) {
-                            haptics.light();
-                            setExpandedPackageId(expandedPackageId === pkg.packageId ? null : pkg.packageId);
-                          }
-                        }}
                         onClick={() => {
                           haptics.light();
-                          setExpandedPackageId(expandedPackageId === pkg.packageId ? null : pkg.packageId);
+                          setExpandedPackageId(prev => prev === pkg.packageId ? null : pkg.packageId);
                         }}
                         className="w-full flex items-center justify-between p-3 bg-white/5 rounded-lg active:bg-white/10"
                       >
@@ -4033,7 +4015,7 @@ export default function LiveTVTvPage() {
                         </div>
                       )}
                     </div>
-                  );})
+                  ))
                 ) : (
                   <p className="text-white/50 text-sm">No packages available</p>
                 )}
