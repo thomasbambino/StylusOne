@@ -2258,6 +2258,8 @@ export default function LiveTVTvPage() {
 
   const tabBarTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const tabBarCurrentState = useRef<boolean | null>(null); // null = unknown, true = shown, false = hidden
+  const lastTabBarChange = useRef<number>(0); // Track last state change time
+  const TAB_BAR_COOLDOWN = 500; // Minimum ms between state changes
 
   useEffect(() => {
     if (!isIOSNative()) {
@@ -2279,22 +2281,44 @@ export default function LiveTVTvPage() {
       return;
     }
 
-    // Debounce all state changes to prevent rapid switching
+    // Check cooldown - prevent rapid state changes
+    const timeSinceLastChange = Date.now() - lastTabBarChange.current;
+    if (timeSinceLastChange < TAB_BAR_COOLDOWN) {
+      // Schedule a delayed check instead of ignoring
+      tabBarTimer.current = setTimeout(() => {
+        const finalShouldShow = isPortraitRef.current && !isRotatingRef.current;
+        if (tabBarCurrentState.current !== finalShouldShow) {
+          lastTabBarChange.current = Date.now();
+          tabBarCurrentState.current = finalShouldShow;
+          if (finalShouldShow) {
+            showNativeTabBar().then((shown) => setUseNativeTabBar(shown));
+          } else {
+            hideNativeTabBar();
+            setUseNativeTabBar(false);
+          }
+        }
+      }, TAB_BAR_COOLDOWN - timeSinceLastChange + 50);
+      return;
+    }
+
+    // Debounce state changes
     tabBarTimer.current = setTimeout(() => {
       // Re-check current conditions using refs (they reflect latest values)
       const stillShouldShow = isPortraitRef.current && !isRotatingRef.current;
 
       if (stillShouldShow && tabBarCurrentState.current !== true) {
+        lastTabBarChange.current = Date.now();
         tabBarCurrentState.current = true;
         showNativeTabBar().then((shown) => {
           setUseNativeTabBar(shown);
         });
       } else if (!stillShouldShow && tabBarCurrentState.current !== false) {
+        lastTabBarChange.current = Date.now();
         tabBarCurrentState.current = false;
         hideNativeTabBar();
         setUseNativeTabBar(false);
       }
-    }, shouldShow ? 200 : 50); // Longer debounce for show, shorter for hide
+    }, shouldShow ? 300 : 100); // Longer debounce times
 
     return () => {
       if (tabBarTimer.current) {
@@ -3705,11 +3729,25 @@ export default function LiveTVTvPage() {
                   return (
                     <button
                       key={fav.channelId}
+                      onTouchStart={(e) => {
+                        // Store touch start position for scroll detection
+                        const touch = e.touches[0];
+                        (e.currentTarget as any)._touchStart = { x: touch.clientX, y: touch.clientY };
+                      }}
                       onTouchEnd={(e) => {
-                        e.preventDefault();
-                        haptics.light();
-                        playStream(channel);
-                        setViewMode('player');
+                        // Check if this was a tap (not a scroll)
+                        const touchStart = (e.currentTarget as any)._touchStart;
+                        if (!touchStart) return;
+                        const touch = e.changedTouches[0];
+                        const deltaX = Math.abs(touch.clientX - touchStart.x);
+                        const deltaY = Math.abs(touch.clientY - touchStart.y);
+                        // Only trigger if movement was less than 10px (tap, not scroll)
+                        if (deltaX < 10 && deltaY < 10) {
+                          e.preventDefault();
+                          haptics.light();
+                          playStream(channel);
+                          setViewMode('player');
+                        }
                       }}
                       onClick={() => {
                         haptics.light();
