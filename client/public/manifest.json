@@ -1,6 +1,6 @@
 {
-  "short_name": "StylusOne",
-  "name": "StylusOne Dashboard",
+  "short_name": "Dashboard",
+  "name": "Homelab Dashboard",
   "icons": [
     {
       "src": "favicon.ico",
