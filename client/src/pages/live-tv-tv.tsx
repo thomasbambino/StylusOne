@@ -1380,8 +1380,9 @@ export default function LiveTVTvPage() {
     }
 
     // Always include favorite channels (for Home view thumbnails)
-    favoriteChannels.forEach((ch: Channel) => {
-      if (ch.epgId) idsSet.add(ch.epgId);
+    favorites.forEach((fav: any) => {
+      const channel = channels.find((ch: Channel) => ch.iptvId === fav.channelId);
+      if (channel?.epgId) idsSet.add(channel.epgId);
     });
 
     // Pre-load first 20 channels' EPG data even before guide opens (for faster initial load)
@@ -1405,7 +1406,7 @@ export default function LiveTVTvPage() {
     }
 
     return Array.from(idsSet);
-  }, [channels, favoriteChannels, focusedChannelIndex, viewMode, selectedChannel]);
+  }, [channels, favorites, focusedChannelIndex, viewMode, selectedChannel]);
 
   const epgQueries = useQueries({
     queries: visibleEpgIds.map(epgId => ({
