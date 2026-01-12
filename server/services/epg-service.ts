@@ -255,30 +255,45 @@ export class EPGService implements IService {
       p.endTime > now && p.startTime < endTime
     ).sort((a, b) => a.startTime.getTime() - b.startTime.getTime());
 
-    // Check cache and queue missing thumbnails (non-blocking)
+    // Apply cached TMDB thumbnails only (no auto-queuing)
     if (tmdbService.isConfigured()) {
-      const titlesToQueue: string[] = [];
-
       for (const program of upcomingPrograms.slice(0, 10)) {
         if (!program.thumbnail) {
-          // Check if TMDB has it cached
           const cached = tmdbService.getCachedImage(program.title);
           if (cached) {
             program.thumbnail = cached;
-          } else {
-            // Queue for background fetch
-            titlesToQueue.push(program.title);
           }
         }
-      }
-
-      // Queue titles for background processing
-      if (titlesToQueue.length > 0) {
-        tmdbService.queueTitles(titlesToQueue);
       }
     }
 
     return upcomingPrograms;
+  }
+
+  /**
+   * Queue thumbnails for favorite channels only
+   * Call this when loading home page favorites
+   */
+  queueThumbnailsForFavorites(channelIds: string[]): void {
+    if (!tmdbService.isConfigured()) return;
+
+    const titlesToQueue: string[] = [];
+
+    for (const channelId of channelIds) {
+      const programs = this.getUpcomingPrograms(channelId, 1); // Just current/next hour
+      for (const program of programs.slice(0, 2)) { // Current + next program
+        if (!program.thumbnail && program.title) {
+          const cached = tmdbService.getCachedImage(program.title);
+          if (!cached) {
+            titlesToQueue.push(program.title);
+          }
+        }
+      }
+    }
+
+    if (titlesToQueue.length > 0) {
+      tmdbService.queueTitles(titlesToQueue);
+    }
   }
 
   /**

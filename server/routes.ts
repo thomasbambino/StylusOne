@@ -30,6 +30,7 @@ import fetch from 'node-fetch';
 import { db, pool } from './db';
 import { eq, and, inArray } from 'drizzle-orm';
 import { EPGService } from './services/epg-service';
+import { tmdbService } from './services/tmdb-service';
 import { randomBytes } from 'crypto';
 import {
   apiRateLimiter,
@@ -63,6 +64,8 @@ async function getEPGService(): Promise<EPGService> {
     epgServiceInstance = new EPGService();
     await epgServiceInstance.initialize();
     console.log('EPG service singleton initialized');
+    // Start TMDB worker now that EPG data is loaded
+    tmdbService.startAfterEPGReady();
   }
   return epgServiceInstance;
 }
@@ -2335,6 +2338,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
         if (superadmin.length > 0) {
           favorites = await db.select().from(favoriteChannels).where(eq(favoriteChannels.userId, superadmin[0].id));
         }
+      }
+
+      // Queue TMDB thumbnails for favorite channels (non-blocking)
+      if (favorites.length > 0 && epgServiceInstance) {
+        const channelIds = favorites.map(f => f.channelId);
+        epgServiceInstance.queueThumbnailsForFavorites(channelIds);
       }
 
       res.json(favorites);

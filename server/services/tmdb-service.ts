@@ -44,11 +44,18 @@ export class TMDBService {
   constructor() {
     this.apiKey = process.env.TMDB_API_KEY || '';
     if (this.apiKey) {
-      console.log('TMDB Service initialized with background worker');
-      this.startWorker();
+      console.log('TMDB Service initialized (worker will start when EPG is ready)');
     } else {
       console.log('TMDB Service: No API key configured - thumbnails will use fallback');
     }
+  }
+
+  /**
+   * Start worker after EPG is initialized
+   */
+  startAfterEPGReady(): void {
+    if (!this.apiKey || this.workerTimer) return;
+    this.startWorker();
   }
 
   /**
