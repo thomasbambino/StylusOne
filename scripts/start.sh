@@ -25,6 +25,20 @@ if [ -z "$SESSION_SECRET" ]; then
     echo "WARNING: SESSION_SECRET is not set - using default (insecure)"
 fi
 
+# Log optional service configurations
+echo "Optional services:"
+if [ -n "$TMDB_API_KEY" ]; then
+    echo "  ✅ TMDB_API_KEY configured (thumbnails enabled)"
+else
+    echo "  ⚠️  TMDB_API_KEY not set (no thumbnails)"
+fi
+
+if [ -n "$XTREAM_SERVER_URL" ]; then
+    echo "  ✅ IPTV configured"
+else
+    echo "  ⚠️  IPTV not configured"
+fi
+
 # Check if this is first-time setup
 echo "Checking system setup status..."
 if [ ! -f "/app/.setup-complete" ]; then

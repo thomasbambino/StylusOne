@@ -48,9 +48,9 @@ export class TMDBService {
   constructor() {
     this.apiKey = process.env.TMDB_API_KEY || '';
     if (this.apiKey) {
-      console.log('TMDB Service initialized (worker will start when EPG is ready)');
+      console.log(`[TMDB] Service initialized with API key (${this.apiKey.substring(0, 4)}...)`);
     } else {
-      console.log('TMDB Service: No API key configured - thumbnails will use fallback');
+      console.log('[TMDB] No API key configured - thumbnails disabled');
     }
   }
 
@@ -59,10 +59,18 @@ export class TMDBService {
    * @param getFavoriteTitles - Callback to get program titles for all favorites
    */
   startAfterEPGReady(getFavoriteTitles?: GetFavoriteTitlesCallback): void {
-    if (!this.apiKey || this.workerTimer) return;
+    if (!this.apiKey) {
+      console.log('[TMDB] Worker not starting - no API key');
+      return;
+    }
+    if (this.workerTimer) {
+      console.log('[TMDB] Worker already running');
+      return;
+    }
     if (getFavoriteTitles) {
       this.getFavoriteTitles = getFavoriteTitles;
     }
+    console.log('[TMDB] Starting background worker...');
     this.startWorker();
     // Run immediately on startup to preload cache
     setTimeout(() => this.refreshFavorites(), 5000);
@@ -102,7 +110,7 @@ export class TMDBService {
       }
     }, WORKER_INTERVAL);
 
-    console.log(`TMDB background worker started (runs every ${WORKER_INTERVAL / 1000}s)`);
+    console.log(`[TMDB] Background worker started (interval: ${WORKER_INTERVAL / 1000}s, batch: ${TITLES_PER_RUN} titles)`);
   }
 
   /**
@@ -324,6 +332,8 @@ export class TMDBService {
       // Cache the result
       imageCache.set(cacheKey, imageUrl);
       cacheTimestamps.set(cacheKey, Date.now());
+
+      console.log(`[TMDB] Found thumbnail for "${cleanedTitle}" -> ${show.name}`);
 
       return imageUrl;
     } catch (error) {
