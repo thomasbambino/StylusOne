@@ -2531,51 +2531,32 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const userId = req.user!.id;
       const token = generateStreamToken(userId, streamId);
 
-      // Also acquire stream session for tracking
+      // Also acquire stream session for tracking (uses same logic as /api/iptv/stream/acquire)
       let sessionToken: string | null = null;
       try {
-        const { userSubscriptions, planIptvCredentials, iptvCredentials } = await import('@shared/schema');
+        const { xtreamCodesService } = await import('./services/xtream-codes-service');
+        const { streamTrackerService } = await import('./services/stream-tracker-service');
 
-        // Get user's active subscription
-        const [subscription] = await db.select()
-          .from(userSubscriptions)
-          .where(and(
-            eq(userSubscriptions.user_id, userId),
-            eq(userSubscriptions.status, 'active')
-          ));
+        // Use the service to select a credential (supports both packages and legacy)
+        const credentialId = await xtreamCodesService.selectCredentialForStream(userId, streamId);
 
-        if (subscription) {
-          // Get credential assigned to this plan via junction table
-          const [planCredential] = await db.select()
-            .from(planIptvCredentials)
-            .innerJoin(iptvCredentials, eq(planIptvCredentials.credentialId, iptvCredentials.id))
-            .where(and(
-              eq(planIptvCredentials.planId, subscription.plan_id),
-              eq(iptvCredentials.isActive, true)
-            ))
-            .orderBy(planIptvCredentials.priority)
-            .limit(1);
-
-          if (planCredential) {
-            const credentialId = planCredential.iptv_credentials.id;
-            const { streamTrackerService } = await import('./services/stream-tracker-service');
-            const ipAddress = req.ip || req.socket.remoteAddress;
-            sessionToken = await streamTrackerService.acquireStream(
-              userId,
-              credentialId,
-              streamId,
-              ipAddress
-            );
-            if (sessionToken) {
-              console.log(`[Token+Track] User ${userId} acquired stream ${streamId} on credential ${credentialId}`);
-            } else {
-              console.log(`[Token+Track] User ${userId} could not acquire stream ${streamId} - no slots available`);
-            }
+        if (credentialId && credentialId !== -1) {
+          const ipAddress = req.ip || req.socket.remoteAddress;
+          sessionToken = await streamTrackerService.acquireStream(
+            userId,
+            credentialId,
+            streamId,
+            ipAddress
+          );
+          if (sessionToken) {
+            console.log(`[Token+Track] User ${userId} acquired stream ${streamId} on credential ${credentialId}`);
           } else {
-            console.log(`[Token+Track] User ${userId} has no IPTV credential assigned to plan ${subscription.plan_id}`);
+            console.log(`[Token+Track] User ${userId} could not acquire stream ${streamId} - no slots available`);
           }
+        } else if (credentialId === -1) {
+          console.log(`[Token+Track] User ${userId} using ENV client for stream ${streamId} (no tracking)`);
         } else {
-          console.log(`[Token+Track] User ${userId} has no active subscription`);
+          console.log(`[Token+Track] User ${userId} has no credential for stream ${streamId}`);
         }
       } catch (trackError) {
         console.error('Error tracking stream at token generation:', trackError);
