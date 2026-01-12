@@ -50,7 +50,7 @@ export class EPGService implements IService {
     // Only use real data sources - EPGShare, then fallback to no data
     const epgSharePath = path.join(process.cwd(), 'data', 'epgshare_guide.xmltv');
     const fallbackPath = path.join(process.cwd(), 'data', 'xmlguide.xmltv');
-    
+
     if (fs.existsSync(epgSharePath)) {
       this.xmltvPath = epgSharePath;
       console.log(`EPG Service using real data from: ${this.xmltvPath}`);
@@ -109,10 +109,10 @@ export class EPGService implements IService {
       const xmlData = fs.readFileSync(this.xmltvPath, 'utf-8');
       const parser = new xml2js.Parser();
       const result = await parser.parseStringPromise(xmlData);
-      
+
       if (result.tv && result.tv.programme) {
         const programs: EPGProgram[] = [];
-        
+
         for (const prog of result.tv.programme) {
           // Clean title by removing superscript Unicode characters (ᴺᵉʷ, etc.) but detect them first
           const rawTitle = prog.title?.[0]?._ || prog.title?.[0] || 'Unknown';
@@ -189,11 +189,11 @@ export class EPGService implements IService {
     const hour = dateStr.substr(8, 2);
     const minute = dateStr.substr(10, 2);
     const second = dateStr.substr(12, 2);
-    
+
     // Extract timezone offset (e.g., " -0400")
     const timezonePart = dateStr.substr(14).trim();
     let timezoneOffset = '';
-    
+
     if (timezonePart.match(/^[+-]\d{4}$/)) {
       // Convert "+0000" or "-0400" to "+00:00" or "-04:00" format
       const sign = timezonePart.substr(0, 1);
@@ -204,7 +204,7 @@ export class EPGService implements IService {
       // Default to UTC if no timezone specified
       timezoneOffset = '+00:00';
     }
-    
+
     return new Date(`${year}-${month}-${day}T${hour}:${minute}:${second}${timezoneOffset}`);
   }
 
@@ -214,10 +214,10 @@ export class EPGService implements IService {
    */
   getCurrentProgram(channelId: string): EPGProgram | null {
     const now = new Date();
-    
+
     // Try direct lookup first
     let programs = this.programCache.get(channelId) || [];
-    
+
     // If no programs found, try using channel mapping
     if (programs.length === 0) {
       const mappedChannelId = this.mapChannel(channelId);
@@ -225,8 +225,8 @@ export class EPGService implements IService {
         programs = this.programCache.get(mappedChannelId) || [];
       }
     }
-    
-    return programs.find(p => 
+
+    return programs.find(p =>
       p.startTime <= now && p.endTime > now
     ) || null;
   }
@@ -276,10 +276,10 @@ export class EPGService implements IService {
   mapChannel(hdhrChannelName: string): string | null {
     // Map HDHomeRun channel names to San Diego OTA channel IDs
     const channelMap: Record<string, string> = {
-      // Major San Diego broadcast networks  
+      // Major San Diego broadcast networks
       'KGTV-HD': '10.1',  // ABC San Diego
       'KGTV': '10.1',     // ABC San Diego
-      'KFMB-HD': '8.1',   // CBS San Diego  
+      'KFMB-HD': '8.1',   // CBS San Diego
       'KFMB': '8.1',      // CBS San Diego
       'KNSD-DT': '39.1',  // NBC San Diego
       'KNSD': '39.1',     // NBC San Diego
@@ -287,7 +287,7 @@ export class EPGService implements IService {
       'KSWB': '69.1',     // FOX San Diego
       'KUSI-HD': '51.1',  // KUSI Independent
       'KUSI': '51.1',     // KUSI Independent
-      
+
       // PBS San Diego
       'KPBSHD': '15.1',   // PBS San Diego
       'KPBS': '15.1',     // PBS San Diego
@@ -295,7 +295,7 @@ export class EPGService implements IService {
       'KPBS2': '15.2',    // PBS Kids
       'PBSKIDS': '15.2',  // PBS Kids
       'CREATE': '15.3',   // Create TV
-      
+
       // Digital subchannels and cable networks
       'ION': '7.1',       // ION Television
       'QVC': '7.2',       // QVC Shopping

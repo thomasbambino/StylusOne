@@ -17,8 +17,10 @@ class PiPBridgeViewController: CAPBridgeViewController {
         webView?.scrollView.backgroundColor = .black
 
         // Configure audio session for background playback and PiP
+        // Use .default mode to prevent AirPlay popup on launch
+        // (.moviePlayback mode triggers iOS to scan for AirPlay devices)
         do {
-            try AVAudioSession.sharedInstance().setCategory(.playback, mode: .moviePlayback)
+            try AVAudioSession.sharedInstance().setCategory(.playback, mode: .default)
             try AVAudioSession.sharedInstance().setActive(true)
         } catch {
             print("Failed to set audio session category: \(error)")

@@ -37,7 +37,6 @@ interface EPGProgram {
   season?: number;
   episode?: number;
   rating?: string;
-  thumbnail?: string;
 }
 
 interface ChannelEPG {
@@ -2258,8 +2257,6 @@ export default function LiveTVTvPage() {
 
   const tabBarTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const tabBarCurrentState = useRef<boolean | null>(null); // null = unknown, true = shown, false = hidden
-  const lastTabBarChange = useRef<number>(0); // Track last state change time
-  const TAB_BAR_COOLDOWN = 500; // Minimum ms between state changes
 
   useEffect(() => {
     if (!isIOSNative()) {
@@ -2281,44 +2278,22 @@ export default function LiveTVTvPage() {
       return;
     }
 
-    // Check cooldown - prevent rapid state changes
-    const timeSinceLastChange = Date.now() - lastTabBarChange.current;
-    if (timeSinceLastChange < TAB_BAR_COOLDOWN) {
-      // Schedule a delayed check instead of ignoring
-      tabBarTimer.current = setTimeout(() => {
-        const finalShouldShow = isPortraitRef.current && !isRotatingRef.current;
-        if (tabBarCurrentState.current !== finalShouldShow) {
-          lastTabBarChange.current = Date.now();
-          tabBarCurrentState.current = finalShouldShow;
-          if (finalShouldShow) {
-            showNativeTabBar().then((shown) => setUseNativeTabBar(shown));
-          } else {
-            hideNativeTabBar();
-            setUseNativeTabBar(false);
-          }
-        }
-      }, TAB_BAR_COOLDOWN - timeSinceLastChange + 50);
-      return;
-    }
-
-    // Debounce state changes
+    // Debounce all state changes to prevent rapid switching
     tabBarTimer.current = setTimeout(() => {
       // Re-check current conditions using refs (they reflect latest values)
       const stillShouldShow = isPortraitRef.current && !isRotatingRef.current;
 
       if (stillShouldShow && tabBarCurrentState.current !== true) {
-        lastTabBarChange.current = Date.now();
         tabBarCurrentState.current = true;
         showNativeTabBar().then((shown) => {
           setUseNativeTabBar(shown);
         });
       } else if (!stillShouldShow && tabBarCurrentState.current !== false) {
-        lastTabBarChange.current = Date.now();
         tabBarCurrentState.current = false;
         hideNativeTabBar();
         setUseNativeTabBar(false);
       }
-    }, shouldShow ? 300 : 100); // Longer debounce times
+    }, shouldShow ? 200 : 50); // Longer debounce for show, shorter for hide
 
     return () => {
       if (tabBarTimer.current) {
@@ -3718,113 +3693,78 @@ export default function LiveTVTvPage() {
                 <p className="text-white/30 text-sm mt-2">Add channels to favorites from the Guide or Player</p>
               </div>
             ) : (
-              <div className="grid grid-cols-1 gap-4">
+              <div className="grid grid-cols-1 gap-3">
                 {favorites.map((fav) => {
                   const channel = channels.find(c => c.iptvId === fav.channelId);
                   if (!channel) return null;
                   const channelEpg = epgDataMap.get(channel.iptvId || '');
-                  const currentProgram = channelEpg?.currentProgram;
-                  const hasThumbnail = !!currentProgram?.thumbnail;
-
                   return (
                     <button
                       key={fav.channelId}
-                      onTouchStart={(e) => {
-                        // Store touch start position for scroll detection
-                        const touch = e.touches[0];
-                        (e.currentTarget as any)._touchStart = { x: touch.clientX, y: touch.clientY };
-                      }}
                       onTouchEnd={(e) => {
-                        // Check if this was a tap (not a scroll)
-                        const touchStart = (e.currentTarget as any)._touchStart;
-                        if (!touchStart) return;
-                        const touch = e.changedTouches[0];
-                        const deltaX = Math.abs(touch.clientX - touchStart.x);
-                        const deltaY = Math.abs(touch.clientY - touchStart.y);
-                        // Only trigger if movement was less than 10px (tap, not scroll)
-                        if (deltaX < 10 && deltaY < 10) {
-                          e.preventDefault();
-                          haptics.light();
-                          playStream(channel);
-                          setViewMode('player');
-                        }
+                        e.preventDefault();
+                        haptics.light();
+                        playStream(channel);
+                        setViewMode('player');
                       }}
                       onClick={() => {
                         haptics.light();
                         playStream(channel);
                         setViewMode('player');
                       }}
-                      className="bg-white/5 rounded-xl overflow-hidden active:bg-white/10 text-left"
+                      className="bg-white/5 rounded-xl overflow-hidden active:bg-white/10 text-left flex flex-col"
                     >
-                      {/* Thumbnail or Channel Logo Area */}
-                      <div className="relative w-full aspect-video bg-black/50">
-                        {hasThumbnail ? (
+                      {/* Program Thumbnail (TMDB) - shown when available */}
+                      {channelEpg?.currentProgram?.thumbnail && (
+                        <div className="w-full aspect-video bg-black/50 relative">
                           <img
-                            src={currentProgram.thumbnail}
-                            alt={currentProgram.title}
+                            src={channelEpg.currentProgram.thumbnail}
+                            alt={channelEpg.currentProgram.title}
                             className="w-full h-full object-cover"
-                            onError={(e) => {
-                              // Hide image on error, will show fallback
-                              (e.target as HTMLImageElement).style.display = 'none';
-                            }}
                           />
-                        ) : (
-                          <div className="w-full h-full flex items-center justify-center">
-                            {fav.channelLogo ? (
-                              <img
-                                src={fav.channelLogo}
-                                alt=""
-                                className="max-w-[40%] max-h-[60%] object-contain opacity-50"
-                              />
-                            ) : (
-                              <span className="text-white/20 text-2xl font-bold">
-                                {(fav.channelName || channel.GuideName).charAt(0)}
-                              </span>
-                            )}
+                          {/* Gradient overlay for text readability */}
+                          <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent" />
+                          {/* LIVE badge */}
+                          <div className="absolute top-2 left-2 px-2 py-0.5 bg-red-600 rounded text-white text-xs font-bold">
+                            LIVE
                           </div>
-                        )}
-
-                        {/* Channel logo overlay (top-left) */}
-                        {hasThumbnail && fav.channelLogo && (
-                          <div className="absolute top-2 left-2 w-10 h-8 bg-black/60 rounded-md flex items-center justify-center p-1">
-                            <img
-                              src={fav.channelLogo}
-                              alt=""
-                              className="max-w-full max-h-full object-contain"
-                            />
-                          </div>
-                        )}
-
-                        {/* Play button overlay (center) */}
-                        <div className="absolute inset-0 flex items-center justify-center">
-                          <div className="w-14 h-14 rounded-full bg-black/50 backdrop-blur-sm flex items-center justify-center border border-white/20">
-                            <Play className="w-7 h-7 text-white ml-1" fill="white" />
+                          {/* Play button overlay */}
+                          <div className="absolute inset-0 flex items-center justify-center">
+                            <div className="w-12 h-12 rounded-full bg-white/20 backdrop-blur-sm flex items-center justify-center">
+                              <Play className="w-6 h-6 text-white ml-0.5" />
+                            </div>
                           </div>
                         </div>
-
-                        {/* Progress bar (bottom) */}
-                        {currentProgram && (
-                          <div className="absolute bottom-0 left-0 right-0 h-1 bg-white/20">
-                            <div
-                              className="h-full bg-red-500"
-                              style={{ width: `${getProgramProgress(currentProgram)}%` }}
-                            />
+                      )}
+                      {/* Channel Info Row */}
+                      <div className="p-4 flex items-start gap-4">
+                        {/* Channel Logo */}
+                        <div className="w-16 h-12 shrink-0 flex items-center justify-center bg-black/30 rounded-lg overflow-hidden">
+                          {fav.channelLogo ? (
+                            <img src={fav.channelLogo} alt="" className="max-w-full max-h-full object-contain" />
+                          ) : (
+                            <span className="text-white/30 text-xs">{fav.channelId}</span>
+                          )}
+                        </div>
+                        {/* Channel Info */}
+                        <div className="flex-1 min-w-0">
+                          <p className="text-white font-medium truncate">{fav.channelName || channel.GuideName}</p>
+                          {channelEpg?.currentProgram ? (
+                            <>
+                              <p className="text-white/70 text-sm truncate mt-0.5">{channelEpg.currentProgram.title}</p>
+                              <p className="text-white/40 text-xs mt-1">
+                                {formatTimeRange(channelEpg.currentProgram.startTime, channelEpg.currentProgram.endTime)}
+                              </p>
+                            </>
+                          ) : (
+                            <p className="text-white/40 text-sm mt-0.5">No program info</p>
+                          )}
+                        </div>
+                        {/* Play indicator (only when no thumbnail) */}
+                        {!channelEpg?.currentProgram?.thumbnail && (
+                          <div className="shrink-0 w-10 h-10 rounded-full bg-white/10 flex items-center justify-center">
+                            <Play className="w-5 h-5 text-white ml-0.5" />
                           </div>
-                        )}
-                      </div>
-
-                      {/* Channel Info */}
-                      <div className="p-3">
-                        <p className="text-white font-medium truncate">{fav.channelName || channel.GuideName}</p>
-                        {currentProgram ? (
-                          <>
-                            <p className="text-white/70 text-sm truncate mt-0.5">{currentProgram.title}</p>
-                            <p className="text-white/40 text-xs mt-1">
-                              {formatTimeRange(currentProgram.startTime, currentProgram.endTime)} • {getTimeRemaining(currentProgram.endTime)} left
-                            </p>
-                          </>
-                        ) : (
-                          <p className="text-white/40 text-sm mt-0.5">No program info</p>
                         )}
                       </div>
                     </button>
