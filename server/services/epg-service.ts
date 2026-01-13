@@ -75,6 +75,7 @@ export interface ChannelMapping {
 export class EPGService implements IService {
   private initialized: boolean = false;
   private programCache: Map<string, EPGProgram[]> = new Map();
+  private channelNameToId: Map<string, string> = new Map(); // Maps normalized channel names to EPG channel IDs
   private lastFetch: Date | null = null;
   private lastCleanup: Date | null = null;
   private xmltvPath: string;
@@ -269,6 +270,27 @@ export class EPGService implements IService {
       if (!result.tv || !result.tv.programme) {
         console.log('[EPG] No programs in response');
         return;
+      }
+
+      // Parse channel elements to build name->ID mapping
+      if (result.tv.channel) {
+        for (const channel of result.tv.channel) {
+          const channelId = channel.$.id;
+          const displayNames = channel['display-name'];
+          if (displayNames && Array.isArray(displayNames)) {
+            for (const name of displayNames) {
+              const displayName = name._ || name;
+              if (displayName && typeof displayName === 'string') {
+                // Normalize: lowercase, remove special chars, trim
+                const normalized = displayName.toLowerCase().replace(/[^a-z0-9]/g, '');
+                if (normalized.length > 2) {
+                  this.channelNameToId.set(normalized, channelId);
+                }
+              }
+            }
+          }
+        }
+        console.log(`[EPG] Built channel name mapping: ${this.channelNameToId.size} entries`);
       }
 
       const now = new Date();
@@ -588,6 +610,43 @@ export class EPGService implements IService {
       const bStart = b.startTime instanceof Date ? b.startTime : new Date(b.startTime);
       return aStart.getTime() - bStart.getTime();
     });
+  }
+
+  /**
+   * Get upcoming programs by channel name (fallback when ID lookup fails)
+   */
+  getUpcomingProgramsByName(channelName: string, hours: number = 3): EPGProgram[] {
+    // Normalize the channel name for matching
+    const normalized = channelName.toLowerCase().replace(/[^a-z0-9]/g, '');
+
+    // Try exact match in name->ID mapping
+    let epgChannelId = this.channelNameToId.get(normalized);
+
+    // Try partial matches if exact fails
+    if (!epgChannelId) {
+      // Try finding a key that contains our name or vice versa
+      for (const [mappedName, id] of this.channelNameToId.entries()) {
+        if (mappedName.includes(normalized) || normalized.includes(mappedName)) {
+          epgChannelId = id;
+          break;
+        }
+      }
+    }
+
+    // If still no match, try matching against all cached channel IDs
+    if (!epgChannelId) {
+      for (const cachedChannelId of this.programCache.keys()) {
+        const normalizedCached = cachedChannelId.toLowerCase().replace(/[^a-z0-9]/g, '');
+        if (normalizedCached.includes(normalized) || normalized.includes(normalizedCached)) {
+          epgChannelId = cachedChannelId;
+          break;
+        }
+      }
+    }
+
+    if (!epgChannelId) return [];
+
+    return this.getUpcomingPrograms(epgChannelId, hours);
   }
 
   /**

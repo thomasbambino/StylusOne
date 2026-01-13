@@ -3658,12 +3658,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const { channelId } = req.params;
       const hours = parseInt(req.query.hours as string) || 3;
+      const channelName = req.query.name as string | undefined;
       const epgService = await getEPGService();
 
       // Refresh EPG data if stale (older than 6 hours)
       await epgService.refreshIfNeeded();
 
-      const upcomingPrograms = epgService.getUpcomingPrograms(channelId, hours);
+      // Try channelId first, then fall back to name-based matching
+      let upcomingPrograms = epgService.getUpcomingPrograms(channelId, hours);
+
+      // If no results and we have a channel name, try matching by name
+      if (upcomingPrograms.length === 0 && channelName) {
+        upcomingPrograms = epgService.getUpcomingProgramsByName(channelName, hours);
+      }
+
       res.json({ programs: upcomingPrograms });
     } catch (error) {
       console.error('Error fetching upcoming programs:', error);
