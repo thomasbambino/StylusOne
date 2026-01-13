@@ -40,7 +40,7 @@ interface EPGStats {
   cacheSizeBytes: number;
   nextRefresh: string | null;
   refreshIntervalHours: number;
-  daysToKeep: number;
+  dataRangeDays: number;
 }
 
 interface ActiveStream {
@@ -746,7 +746,7 @@ export default function IptvProvidersPage() {
                 <div>
                   <p className="text-sm font-medium">Data Range</p>
                   <p className="text-sm text-muted-foreground">
-                    {epgStats.daysToKeep} days, refresh every {epgStats.refreshIntervalHours}h
+                    {epgStats.dataRangeDays} days of data, refresh every {epgStats.refreshIntervalHours}h
                   </p>
                 </div>
               </div>

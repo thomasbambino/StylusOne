@@ -11,6 +11,7 @@ import Hls from 'hls.js';
 import { ScreenOrientation } from '@capacitor/screen-orientation';
 import { KeepAwake } from '@capacitor-community/keep-awake';
 import { isIOSNative, showNativeTabBar, hideNativeTabBar, addNativeTabBarListener, setNativeTabBarSelected } from '@/lib/nativeTabBar';
+import { getCachedEPG, cacheEPG, cleanupExpiredCache } from '@/lib/epgCache';
 
 // ============================================================================
 // TYPES & INTERFACES
@@ -1589,10 +1590,32 @@ export default function LiveTVTvPage() {
 
   const epgQueries = useQueries({
     queries: visibleEpgIds.map(epgId => ({
-      queryKey: [`/api/epg/upcoming/${encodeURIComponent(epgId)}?hours=3`],
-      queryFn: getQueryFn({ on401: "returnNull" }),
-      staleTime: 10 * 60 * 1000, // 10 minutes before refetch
-      gcTime: 60 * 60 * 1000, // Keep in cache for 1 hour
+      queryKey: [`/api/epg/upcoming/${encodeURIComponent(epgId)}?hours=168`], // 7 days of EPG data
+      queryFn: async () => {
+        // Check IndexedDB cache first (for native apps)
+        if (isNativePlatform()) {
+          const cached = await getCachedEPG(epgId);
+          if (cached && cached.length > 0) {
+            return { programs: cached, fromCache: true };
+          }
+        }
+
+        // Fetch from API
+        const response = await fetch(buildApiUrl(`/api/epg/upcoming/${encodeURIComponent(epgId)}?hours=168`), {
+          credentials: 'include'
+        });
+        if (!response.ok) return null;
+        const data = await response.json();
+
+        // Cache the data for native apps
+        if (isNativePlatform() && data?.programs?.length > 0) {
+          cacheEPG(epgId, data.programs).catch(console.error);
+        }
+
+        return data;
+      },
+      staleTime: 30 * 60 * 1000, // 30 minutes before refetch (data is cached for longer)
+      gcTime: 6 * 60 * 60 * 1000, // Keep in cache for 6 hours
       retry: 1,
     }))
   });
@@ -3367,7 +3390,21 @@ export default function LiveTVTvPage() {
           <div className="shrink-0 py-2.5 px-4 flex items-center border-b border-white/10 bg-black/50">
             {/* Today label */}
             <div className="shrink-0 bg-white/10 rounded-full px-3 py-1.5">
-              <span className="text-white text-sm font-medium">Today</span>
+              <span className="text-white text-sm font-medium">
+                {(() => {
+                  const now = new Date();
+                  const displayTime = new Date(now);
+                  displayTime.setTime(displayTime.getTime() + guideTimeOffset * 30 * 60 * 1000);
+                  const today = new Date();
+                  today.setHours(0, 0, 0, 0);
+                  const displayDay = new Date(displayTime);
+                  displayDay.setHours(0, 0, 0, 0);
+                  const dayDiff = Math.round((displayDay.getTime() - today.getTime()) / (24 * 60 * 60 * 1000));
+                  if (dayDiff === 0) return 'Today';
+                  if (dayDiff === 1) return 'Tomorrow';
+                  return displayTime.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' });
+                })()}
+              </span>
             </div>
             {/* Current time slot */}
             <div className="flex-1 px-4">
@@ -3383,6 +3420,15 @@ export default function LiveTVTvPage() {
             </div>
             {/* Navigation arrows */}
             <div className="flex items-center gap-1 shrink-0">
+              {guideTimeOffset > 0 && (
+                <button
+                  onTouchEnd={(e) => { e.preventDefault(); setGuideTimeOffset(0); haptics.light(); }}
+                  onClick={() => { setGuideTimeOffset(0); haptics.light(); }}
+                  className="px-2 py-1 rounded-full bg-red-600 text-white text-xs font-medium mr-1 active:bg-red-700"
+                >
+                  Now
+                </button>
+              )}
               <button
                 onTouchEnd={(e) => { e.preventDefault(); if (guideTimeOffset > 0) { setGuideTimeOffset(guideTimeOffset - 1); haptics.light(); } }}
                 onClick={() => { if (guideTimeOffset > 0) { setGuideTimeOffset(guideTimeOffset - 1); haptics.light(); } }}
@@ -3392,10 +3438,10 @@ export default function LiveTVTvPage() {
                 <ChevronLeft className="w-4 h-4 text-white" />
               </button>
               <button
-                onTouchEnd={(e) => { e.preventDefault(); if (guideTimeOffset < 8) { setGuideTimeOffset(guideTimeOffset + 1); haptics.light(); } }}
-                onClick={() => { if (guideTimeOffset < 8) { setGuideTimeOffset(guideTimeOffset + 1); haptics.light(); } }}
-                className={cn("p-2 rounded-full bg-white/10", guideTimeOffset < 8 ? "active:bg-white/20" : "opacity-30")}
-                disabled={guideTimeOffset >= 8}
+                onTouchEnd={(e) => { e.preventDefault(); if (guideTimeOffset < 336) { setGuideTimeOffset(guideTimeOffset + 1); haptics.light(); } }}
+                onClick={() => { if (guideTimeOffset < 336) { setGuideTimeOffset(guideTimeOffset + 1); haptics.light(); } }}
+                className={cn("p-2 rounded-full bg-white/10", guideTimeOffset < 336 ? "active:bg-white/20" : "opacity-30")}
+                disabled={guideTimeOffset >= 336}
               >
                 <ChevronRight className="w-4 h-4 text-white" />
               </button>
@@ -4003,9 +4049,9 @@ export default function LiveTVTvPage() {
               <TimelineHeader
                 slots={timelineSlots}
                 onPrev={() => { if (guideTimeOffset > 0) { setGuideTimeOffset(guideTimeOffset - 1); haptics.light(); } }}
-                onNext={() => { if (guideTimeOffset < 8) { setGuideTimeOffset(guideTimeOffset + 1); haptics.light(); } }}
+                onNext={() => { if (guideTimeOffset < 336) { setGuideTimeOffset(guideTimeOffset + 1); haptics.light(); } }}
                 canGoPrev={guideTimeOffset > 0}
-                canGoNext={guideTimeOffset < 8}
+                canGoNext={guideTimeOffset < 336}
               />
             </div>
 
