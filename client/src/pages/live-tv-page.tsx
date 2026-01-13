@@ -1054,7 +1054,8 @@ export default function LiveTVPage() {
                 try {
                   console.log('🔑 Requesting stream token for Chromecast...');
                   const tokenResponse = await apiRequest('POST', '/api/iptv/generate-token', {
-                    streamId: selectedChannel.iptvId
+                    streamId: selectedChannel.iptvId,
+                    deviceType: getPlatform()
                   });
 
                   const { token } = await tokenResponse.json();
@@ -1715,7 +1716,8 @@ export default function LiveTVPage() {
           try {
             console.log('🔐 Generating stream token for native platform');
             const tokenResponse = await apiRequest('POST', '/api/iptv/generate-token', {
-              streamId: channel.iptvId
+              streamId: channel.iptvId,
+              deviceType: getPlatform()
             });
             const { token } = await tokenResponse.json();
             streamUrl = `${streamUrl}?token=${token}`;

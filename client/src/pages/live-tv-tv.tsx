@@ -1827,9 +1827,10 @@ export default function LiveTVTvPage() {
         if (isNative) {
           // Native platforms: need token for URL (generate-token also does acquire internally)
           try {
-            console.log('[TV] Getting stream token for:', channel.iptvId);
+            console.log('[TV] Getting stream token for:', channel.iptvId, 'platform:', getPlatform());
             const tokenResponse = await apiRequest('POST', '/api/iptv/generate-token', {
-              streamId: channel.iptvId
+              streamId: channel.iptvId,
+              deviceType: getPlatform()
             });
             const tokenData = await tokenResponse.json();
 

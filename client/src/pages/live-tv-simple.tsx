@@ -3,7 +3,7 @@ import { useState, useRef, useEffect, useCallback, memo, useMemo } from "react";
 import { Button } from "@/components/ui/button";
 import Hls from "hls.js";
 import { List, Volume2, VolumeX, Menu, Play, Pause, Maximize, Cast } from "lucide-react";
-import { buildApiUrl, isNativePlatform, getDeviceType } from "@/lib/capacitor";
+import { buildApiUrl, isNativePlatform, getDeviceType, getPlatform } from "@/lib/capacitor";
 import { apiRequest, getQueryFn } from "@/lib/queryClient";
 import { Chromecast } from "@caprockapps/capacitor-chromecast";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
@@ -295,7 +295,8 @@ export default function LiveTVSimple() {
         console.log('[LiveTV] Native platform detected, getting token for:', channel.iptvId);
         try {
           const tokenResponse = await apiRequest('POST', '/api/iptv/generate-token', {
-            streamId: channel.iptvId
+            streamId: channel.iptvId,
+            deviceType: getPlatform()
           });
           console.log('[LiveTV] Token response status:', tokenResponse.status);
           const tokenData = await tokenResponse.json();
@@ -501,7 +502,8 @@ export default function LiveTVSimple() {
           if (selectedChannel.source === 'iptv' && selectedChannel.iptvId) {
             try {
               const tokenResponse = await apiRequest('POST', '/api/iptv/generate-token', {
-                streamId: selectedChannel.iptvId
+                streamId: selectedChannel.iptvId,
+                deviceType: getPlatform()
               });
               const { token } = await tokenResponse.json();
               streamUrl = `${streamUrl}?token=${token}`;

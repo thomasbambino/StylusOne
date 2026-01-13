@@ -6,7 +6,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import Hls from "hls.js";
 import { Play, Volume2, VolumeX, Maximize, Star, StarOff } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { buildApiUrl, isNativePlatform } from "@/lib/capacitor";
+import { buildApiUrl, isNativePlatform, getPlatform } from "@/lib/capacitor";
 import { getQueryFn, apiRequest } from "@/lib/queryClient";
 
 interface Channel {
@@ -103,7 +103,8 @@ export default function LiveTVTablet() {
       // On native platforms, IPTV streams need a token for authentication
       if (isNativePlatform() && channel.source === 'iptv' && channel.iptvId) {
         const tokenResponse = await apiRequest('POST', '/api/iptv/generate-token', {
-          streamId: channel.iptvId
+          streamId: channel.iptvId,
+          deviceType: getPlatform()
         });
         const { token } = await tokenResponse.json();
         streamUrl = `${streamUrl}?token=${token}`;
