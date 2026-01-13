@@ -23,14 +23,14 @@ const imageCache = new Map<string, string | null>();
 const CACHE_TTL = 24 * 60 * 60 * 1000; // 24 hours
 const cacheTimestamps = new Map<string, number>();
 
-// Rate limiting
+// Rate limiting - TMDB allows ~50 req/sec, we use 20 req/sec to be safe
 let lastRequestTime = 0;
-const MIN_REQUEST_INTERVAL = 250; // 250ms between requests (4 req/sec max)
+const MIN_REQUEST_INTERVAL = 50; // 50ms between requests (20 req/sec max)
 
 // Background worker settings
-const WORKER_INTERVAL = 30 * 1000; // Run every 30 seconds
-const MAX_QUEUE_SIZE = 100; // Max titles in queue
-const TITLES_PER_RUN = 5; // Process 5 titles per worker run
+const WORKER_INTERVAL = 10 * 1000; // Run every 10 seconds
+const MAX_QUEUE_SIZE = 500; // Max titles in queue
+const TITLES_PER_RUN = 20; // Process 20 titles per worker run
 const REQUEST_TIMEOUT = 5000; // 5 second timeout per request
 
 // Callback to get titles for favorites (set by EPG service)

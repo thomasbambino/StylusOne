@@ -150,6 +150,9 @@ export class EPGService implements IService {
       // Start background refresh interval (checks if 6 hours have passed)
       this.startBackgroundRefresh();
 
+      // Queue program titles for TMDB thumbnail fetching
+      this.queueTitlesForTMDB();
+
       console.log(`[EPG] Service initialized with ${this.programCache.size} channels, ${this.getTotalProgramCount()} programs`);
     } catch (error) {
       console.error('[EPG] Failed to initialize:', error);
@@ -459,6 +462,9 @@ export class EPGService implements IService {
       // Save to disk
       this.saveToDisk();
 
+      // Queue program titles for TMDB thumbnail fetching
+      this.queueTitlesForTMDB();
+
       console.log(`[EPG] Fetched ${newProgramCount} programs, merged ${mergedProgramCount} new, total: ${this.getTotalProgramCount()}`);
     } catch (error) {
       console.error('[EPG] Error fetching from provider:', error);
@@ -486,6 +492,35 @@ export class EPGService implements IService {
       this.lastCleanup = new Date();
       console.log(`[EPG] Cleaned up ${removedCount} expired programs`);
       this.saveToDisk();
+    }
+  }
+
+  /**
+   * Queue all unique program titles for TMDB thumbnail fetching
+   * Collects titles from the next 2 hours across all channels
+   */
+  private queueTitlesForTMDB(): void {
+    if (!tmdbService.isConfigured()) return;
+
+    const now = new Date();
+    const cutoff = new Date(now.getTime() + 2 * 60 * 60 * 1000); // 2 hours
+    const uniqueTitles = new Set<string>();
+
+    for (const [, programs] of this.programCache.entries()) {
+      for (const program of programs) {
+        const start = program.startTime instanceof Date ? program.startTime : new Date(program.startTime);
+        const end = program.endTime instanceof Date ? program.endTime : new Date(program.endTime);
+
+        // Include currently airing and upcoming programs within 2 hours
+        if (end > now && start <= cutoff) {
+          uniqueTitles.add(program.title);
+        }
+      }
+    }
+
+    if (uniqueTitles.size > 0) {
+      console.log(`[EPG] Queuing ${uniqueTitles.size} unique titles for TMDB thumbnail fetch`);
+      tmdbService.queueTitles(Array.from(uniqueTitles));
     }
   }
 
