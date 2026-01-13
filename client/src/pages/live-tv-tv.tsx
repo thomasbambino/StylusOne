@@ -2752,16 +2752,31 @@ export default function LiveTVTvPage() {
           style={{ WebkitAppearance: 'none' } as React.CSSProperties}
           {...(airPlayEnabled ? { 'x-webkit-airplay': 'allow' } : {})}
         />
-        {/* Loading Indicator - inside video container */}
+        {/* Loading Indicator - inside video container, with TMDB thumbnail background if available */}
         {isLoading && (
           <div className="absolute inset-0 flex flex-col items-center justify-center bg-black z-30">
-            <div className="w-12 h-12 border-4 border-white/30 border-t-white rounded-full animate-spin mb-4" />
-            <p className="text-white text-lg font-medium">
-              {streamError ? streamError : 'Loading Stream'}
-            </p>
-            {currentChannel && (
-              <p className="text-white/60 text-sm mt-1">{currentChannel.GuideName}</p>
+            {/* TMDB thumbnail background - only if available */}
+            {currentEPG?.currentProgram?.thumbnail && (
+              <div className="absolute inset-0">
+                <img
+                  src={currentEPG.currentProgram.thumbnail}
+                  alt=""
+                  className="w-full h-full object-cover opacity-40"
+                  onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                />
+                <div className="absolute inset-0 bg-gradient-to-t from-black via-black/60 to-black/40" />
+              </div>
             )}
+            {/* Loading content */}
+            <div className="relative z-10 flex flex-col items-center">
+              <div className="w-12 h-12 border-4 border-white/30 border-t-white rounded-full animate-spin mb-4" />
+              <p className="text-white text-lg font-medium">
+                {streamError ? streamError : 'Loading Stream'}
+              </p>
+              {currentChannel && (
+                <p className="text-white/60 text-sm mt-1">{currentChannel.GuideName}</p>
+              )}
+            </div>
           </div>
         )}
         {/* Stream Error - when max retries reached */}
