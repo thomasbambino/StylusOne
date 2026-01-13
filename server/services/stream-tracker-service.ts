@@ -2,22 +2,7 @@ import crypto from 'crypto';
 import { db } from '../db';
 import { activeIptvStreams, iptvCredentials, iptvChannels, viewingHistory } from '@shared/schema';
 import { eq, and, lt } from 'drizzle-orm';
-import { EPGService } from './epg-service';
-
-// Lazy-loaded EPG service instance with proper initialization
-let epgServiceInstance: EPGService | null = null;
-let epgInitPromise: Promise<void> | null = null;
-
-async function getEPGService(): Promise<EPGService> {
-  if (!epgServiceInstance) {
-    epgServiceInstance = new EPGService();
-    epgInitPromise = epgServiceInstance.initialize();
-  }
-  if (epgInitPromise) {
-    await epgInitPromise;
-  }
-  return epgServiceInstance;
-}
+import { getSharedEPGService } from './epg-singleton';
 
 /**
  * Service for tracking active IPTV streams and enforcing concurrent stream limits
@@ -117,7 +102,7 @@ export class StreamTrackerService {
         .limit(1);
 
       if (channel?.name) {
-        const epgService = await getEPGService();
+        const epgService = await getSharedEPGService();
         const currentProgram = epgService.getCurrentProgram(channel.name);
         if (currentProgram) {
           startProgramTitle = currentProgram.title;
@@ -177,7 +162,7 @@ export class StreamTrackerService {
       let endProgramTitle: string | null = null;
       if (channelName) {
         try {
-          const epgService = await getEPGService();
+          const epgService = await getSharedEPGService();
           const currentProgram = epgService.getCurrentProgram(channelName);
           if (currentProgram) {
             endProgramTitle = currentProgram.title;
