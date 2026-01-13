@@ -593,9 +593,19 @@ export class EPGService implements IService {
   }
 
   /**
-   * Get cache stats for debugging
+   * Get cache stats for admin dashboard
    */
-  getCacheStats(): { channels: number; programs: number; lastFetch: string | null; oldestProgram: string | null; newestProgram: string | null } {
+  getCacheStats(): {
+    channels: number;
+    programs: number;
+    lastFetch: string | null;
+    oldestProgram: string | null;
+    newestProgram: string | null;
+    cacheSizeBytes: number;
+    nextRefresh: string | null;
+    refreshIntervalHours: number;
+    daysToKeep: number;
+  } {
     let oldestProgram: Date | null = null;
     let newestProgram: Date | null = null;
     let totalPrograms = 0;
@@ -609,12 +619,42 @@ export class EPGService implements IService {
       }
     }
 
+    // Get file size
+    let cacheSizeBytes = 0;
+    try {
+      if (fs.existsSync(EPG_CACHE_FILE)) {
+        const stats = fs.statSync(EPG_CACHE_FILE);
+        cacheSizeBytes = stats.size;
+      }
+    } catch (e) {
+      // Ignore errors
+    }
+
+    // Calculate next refresh time
+    let nextRefresh: string | null = null;
+    if (this.lastFetch) {
+      const nextRefreshTime = new Date(this.lastFetch.getTime() + this.REFRESH_INTERVAL_MS);
+      nextRefresh = nextRefreshTime.toISOString();
+    }
+
     return {
       channels: this.programCache.size,
       programs: totalPrograms,
       lastFetch: this.lastFetch?.toISOString() || null,
       oldestProgram: oldestProgram?.toISOString() || null,
-      newestProgram: newestProgram?.toISOString() || null
+      newestProgram: newestProgram?.toISOString() || null,
+      cacheSizeBytes,
+      nextRefresh,
+      refreshIntervalHours: this.REFRESH_INTERVAL_MS / (1000 * 60 * 60),
+      daysToKeep: this.DAYS_TO_KEEP
     };
+  }
+
+  /**
+   * Force a refresh of EPG data from provider
+   */
+  async forceRefresh(): Promise<void> {
+    console.log('[EPG] Manual refresh triggered');
+    await this.fetchAndMergeEPGData();
   }
 }
