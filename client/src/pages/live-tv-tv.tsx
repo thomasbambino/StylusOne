@@ -10,6 +10,7 @@ import { useAuth } from '@/hooks/use-auth';
 import Hls from 'hls.js';
 import { ScreenOrientation } from '@capacitor/screen-orientation';
 import { KeepAwake } from '@capacitor-community/keep-awake';
+import { CapacitorHttp, HttpResponse } from '@capacitor/core';
 import { isIOSNative, showNativeTabBar, hideNativeTabBar, addNativeTabBarListener, setNativeTabBarSelected } from '@/lib/nativeTabBar';
 import { getCachedEPG, cacheEPG, cleanupExpiredCache } from '@/lib/epgCache';
 
@@ -1607,11 +1608,26 @@ export default function LiveTVTvPage() {
 
           // Fetch from API - include channel name for fallback matching
           const url = `/api/epg/upcoming/${encodeURIComponent(epgId)}?hours=168&name=${encodeURIComponent(channelName)}`;
-          const response = await fetch(buildApiUrl(url), {
-            credentials: 'include'
-          });
-          if (!response.ok) return null;
-          const data = await response.json();
+          const fullUrl = buildApiUrl(url);
+
+          let data: any = null;
+
+          // Use CapacitorHttp for native apps to handle auth properly
+          if (isNativePlatform()) {
+            const response: HttpResponse = await CapacitorHttp.get({
+              url: fullUrl,
+              responseType: 'json',
+            });
+            if (response.status !== 200) return null;
+            data = response.data;
+          } else {
+            // Use fetch for web
+            const response = await fetch(fullUrl, {
+              credentials: 'include'
+            });
+            if (!response.ok) return null;
+            data = await response.json();
+          }
 
           // Cache the data for native apps
           if (isNativePlatform() && data?.programs?.length > 0) {
