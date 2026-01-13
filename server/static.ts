@@ -63,9 +63,14 @@ export function serveStatic(app: Express) {
 
   // Dynamic HTML serving with meta tags
   app.get("*", async (req, res) => {
-    // Don't serve index.html for API routes or stream files
+    // Don't serve index.html for API routes, stream files, or static assets
     if (req.path.startsWith('/api/') || req.path.startsWith('/streams/')) {
       return res.status(404).json({ error: 'Endpoint not found' });
+    }
+
+    // Return 404 for missing static assets (don't serve index.html for .js, .css, .png, etc.)
+    if (req.path.startsWith('/assets/') || /\.(js|css|png|jpg|jpeg|gif|svg|ico|woff|woff2|ttf|eot|map)$/.test(req.path)) {
+      return res.status(404).send('Not found');
     }
 
     try {
