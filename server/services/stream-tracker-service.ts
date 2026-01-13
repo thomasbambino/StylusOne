@@ -108,6 +108,29 @@ export class StreamTrackerService {
     // Create new stream entry
     const sessionToken = this.generateSessionToken();
 
+    // Look up channel name and current program for start of stream
+    let startProgramTitle: string | null = null;
+    try {
+      const [channel] = await db.select({ name: iptvChannels.name })
+        .from(iptvChannels)
+        .where(eq(iptvChannels.streamId, streamId))
+        .limit(1);
+
+      if (channel?.name) {
+        const epgService = await getEPGService();
+        const currentProgram = epgService.getCurrentProgram(channel.name);
+        if (currentProgram) {
+          startProgramTitle = currentProgram.title;
+          if (currentProgram.episodeTitle) {
+            startProgramTitle += ` - ${currentProgram.episodeTitle}`;
+          }
+          console.log(`[EPG] Stream start program: ${startProgramTitle}`);
+        }
+      }
+    } catch (epgError) {
+      console.error('Error looking up start program:', epgError);
+    }
+
     try {
       await db.insert(activeIptvStreams).values({
         credentialId,
@@ -115,7 +138,8 @@ export class StreamTrackerService {
         streamId,
         sessionToken,
         ipAddress: ipAddress || null,
-        deviceType: deviceType || null
+        deviceType: deviceType || null,
+        startProgramTitle
       });
 
       console.log(`Stream acquired: user=${userId}, credential=${credentialId}, stream=${streamId}`);
@@ -146,23 +170,32 @@ export class StreamTrackerService {
         channelName = channel.name;
       }
 
-      // Look up current program from EPG using channel name
-      let programTitle: string | null = null;
+      // Use startProgramTitle from stream record (captured when stream started)
+      const programTitle = stream.startProgramTitle || null;
+
+      // Look up END program from EPG using channel name
+      let endProgramTitle: string | null = null;
       if (channelName) {
         try {
           const epgService = await getEPGService();
           const currentProgram = epgService.getCurrentProgram(channelName);
           if (currentProgram) {
-            programTitle = currentProgram.title;
+            endProgramTitle = currentProgram.title;
             if (currentProgram.episodeTitle) {
-              programTitle += ` - ${currentProgram.episodeTitle}`;
+              endProgramTitle += ` - ${currentProgram.episodeTitle}`;
             }
-            console.log(`[EPG] Found program for ${channelName}: ${programTitle}`);
-          } else {
-            console.log(`[EPG] No current program found for ${channelName}`);
           }
         } catch (epgError) {
-          console.error('Error looking up EPG program:', epgError);
+          console.error('Error looking up end program:', epgError);
+        }
+      }
+
+      // Log program info
+      if (programTitle || endProgramTitle) {
+        if (programTitle === endProgramTitle || !endProgramTitle) {
+          console.log(`[EPG] Program: ${programTitle || endProgramTitle}`);
+        } else {
+          console.log(`[EPG] Started: ${programTitle || 'unknown'} → Ended: ${endProgramTitle}`);
         }
       }
 
@@ -171,6 +204,7 @@ export class StreamTrackerService {
         channelId: stream.streamId,
         channelName,
         programTitle,
+        endProgramTitle: endProgramTitle !== programTitle ? endProgramTitle : null, // Only store if different
         credentialId: stream.credentialId,
         startedAt: stream.startedAt,
         endedAt,
