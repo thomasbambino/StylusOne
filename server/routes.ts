@@ -30,7 +30,7 @@ import { spawn } from 'child_process';
 import fetch from 'node-fetch';
 import { db, pool } from './db';
 import { eq, and, inArray } from 'drizzle-orm';
-import { EPGService } from './services/epg-service';
+import { getSharedEPGService } from './services/epg-singleton';
 import { tmdbService } from './services/tmdb-service';
 import { randomBytes } from 'crypto';
 import {
@@ -75,13 +75,17 @@ function detectDeviceType(userAgent?: string): string {
   return 'web';
 }
 
-// Singleton EPG service instance to prevent re-initialization on every request
-let epgServiceInstance: EPGService | null = null;
-async function getEPGService(): Promise<EPGService> {
-  if (!epgServiceInstance) {
-    epgServiceInstance = new EPGService();
-    await epgServiceInstance.initialize();
-    console.log('EPG service singleton initialized');
+// Track if we've started the TMDB worker
+let tmdbWorkerStarted = false;
+
+// Get EPG service using shared singleton
+async function getEPGService() {
+  const epgService = await getSharedEPGService();
+
+  // Start TMDB worker once after EPG is ready
+  if (!tmdbWorkerStarted) {
+    tmdbWorkerStarted = true;
+    console.log('[EPG] Routes using shared EPG service singleton');
 
     // Start TMDB worker with callback to get favorite titles
     tmdbService.startAfterEPGReady(async () => {
@@ -93,8 +97,9 @@ async function getEPGService(): Promise<EPGService> {
           .groupBy(favoriteChannels.channelId);
 
         const titles: string[] = [];
+        const epg = await getSharedEPGService();
         for (const fav of allFavorites) {
-          const programs = epgServiceInstance!.getUpcomingPrograms(fav.channelId, 1);
+          const programs = epg.getUpcomingPrograms(fav.channelId, 1);
           for (const program of programs.slice(0, 2)) {
             if (program.title) {
               titles.push(program.title);
@@ -108,7 +113,8 @@ async function getEPGService(): Promise<EPGService> {
       }
     });
   }
-  return epgServiceInstance;
+
+  return epgService;
 }
 
 const plexInviteSchema = z.object({
