@@ -9,7 +9,8 @@ const STORE_NAME = 'programs';
 
 // Cache format version - increment this to force a cache clear
 // v2: Server now includes currently-airing programs (fix for missing current program)
-const CACHE_FORMAT_VERSION = 2;
+// v3: Server now enriches programs with TMDB thumbnails
+const CACHE_FORMAT_VERSION = 3;
 const CACHE_VERSION_KEY = 'epg-cache-version';
 
 interface CachedEPGData {
