@@ -542,6 +542,7 @@ router.post('/iptv-providers/:id/sync', requireSuperAdmin, async (req, res) => {
             logo: stream.stream_icon || null,
             categoryId: stream.category_id ? String(stream.category_id) : null,
             categoryName: stream.category_name || null,
+            epgChannelId: stream.epg_channel_id || null, // XMLTV channel ID for EPG lookup
             hasEPG: stream.epg_channel_id ? true : false,
             lastSeen: new Date(),
           })
@@ -558,6 +559,7 @@ router.post('/iptv-providers/:id/sync', requireSuperAdmin, async (req, res) => {
             logo: stream.stream_icon || null,
             categoryId: stream.category_id ? String(stream.category_id) : null,
             categoryName: stream.category_name || null,
+            epgChannelId: stream.epg_channel_id || null, // XMLTV channel ID for EPG lookup
             isEnabled: false, // Disabled by default
             quality: 'unknown',
             hasEPG: stream.epg_channel_id ? true : false,

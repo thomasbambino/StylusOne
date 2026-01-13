@@ -325,6 +325,7 @@ export const iptvChannels = pgTable("iptv_channels", {
   logo: text("logo"), // Channel logo URL
   categoryId: text("category_id"), // Provider's category ID
   categoryName: text("category_name"), // Category display name
+  epgChannelId: text("epg_channel_id"), // XMLTV channel ID for EPG lookup
   isEnabled: boolean("is_enabled").notNull().default(false), // Admin enables channels for use
   quality: text("quality", { enum: ['4k', 'hd', 'sd', 'unknown'] }).default('unknown'), // Stream quality
   hasEPG: boolean("has_epg").notNull().default(false), // Whether channel has EPG data

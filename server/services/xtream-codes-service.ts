@@ -747,7 +747,7 @@ export class XtreamCodesManager implements IService {
           name: channel.name,
           streamUrl,
           logo: channel.logo || '',
-          epgId: channel.streamId,
+          epgId: channel.epgChannelId || '', // Use XMLTV channel ID for EPG lookup
           categoryName: channel.categoryName || 'Uncategorized',
           categoryId: channel.categoryId || '',
           hasArchive: false, // Package channels don't track archive status yet
