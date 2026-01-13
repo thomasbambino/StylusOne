@@ -111,19 +111,12 @@ export class EPGService implements IService {
       const loadedFromDisk = this.loadFromDisk();
 
       if (loadedFromDisk) {
-        console.log(`[EPG] Loaded ${this.programCache.size} channels from disk cache`);
-        this.initialized = true;
-
-        // Check if we need to fetch fresh data
         const hoursSinceLastFetch = this.lastFetch
           ? (Date.now() - this.lastFetch.getTime()) / (1000 * 60 * 60)
           : Infinity;
-
-        if (hoursSinceLastFetch > 6) {
-          console.log(`[EPG] Cache is ${hoursSinceLastFetch.toFixed(1)} hours old, scheduling refresh`);
-          // Fetch in background, don't block initialization
-          setTimeout(() => this.fetchAndMergeEPGData(), 5000);
-        }
+        console.log(`[EPG] Loaded ${this.programCache.size} channels from disk cache (${hoursSinceLastFetch.toFixed(1)} hours old)`);
+        this.initialized = true;
+        // Do NOT auto-fetch on startup - let the background interval handle it
       } else {
         // No disk cache, need to fetch
         console.log('[EPG] No disk cache found, fetching from provider...');
@@ -138,7 +131,7 @@ export class EPGService implements IService {
         this.initialized = true;
       }
 
-      // Start background refresh interval
+      // Start background refresh interval (checks if 6 hours have passed)
       this.startBackgroundRefresh();
 
       console.log(`[EPG] Service initialized with ${this.programCache.size} channels, ${this.getTotalProgramCount()} programs`);
@@ -156,18 +149,24 @@ export class EPGService implements IService {
       clearInterval(this.refreshIntervalId);
     }
 
-    // Refresh every 6 hours
+    // Check every hour if we need to refresh (only if 6+ hours since last fetch)
     this.refreshIntervalId = setInterval(async () => {
-      console.log('[EPG] Background refresh triggered');
-      await this.fetchAndMergeEPGData();
-    }, this.REFRESH_INTERVAL_MS);
+      const hoursSinceLastFetch = this.lastFetch
+        ? (Date.now() - this.lastFetch.getTime()) / (1000 * 60 * 60)
+        : Infinity;
+
+      if (hoursSinceLastFetch >= 6) {
+        console.log(`[EPG] Background refresh triggered (${hoursSinceLastFetch.toFixed(1)} hours since last fetch)`);
+        await this.fetchAndMergeEPGData();
+      }
+    }, this.CLEANUP_INTERVAL_MS); // Check every hour
 
     // Also run cleanup periodically
     setInterval(() => {
       this.cleanupOldPrograms();
     }, this.CLEANUP_INTERVAL_MS);
 
-    console.log('[EPG] Background refresh scheduled every 6 hours');
+    console.log('[EPG] Background refresh will run when 6+ hours have passed since last fetch');
   }
 
   /**
@@ -273,7 +272,6 @@ export class EPGService implements IService {
       }
 
       const now = new Date();
-      const sevenDaysFromNow = new Date(now.getTime() + this.DAYS_TO_KEEP * 24 * 60 * 60 * 1000);
       let newProgramCount = 0;
       let mergedProgramCount = 0;
 
@@ -284,8 +282,8 @@ export class EPGService implements IService {
         const startTime = this.parseXMLTVDate(prog.$.start);
         const endTime = this.parseXMLTVDate(prog.$.stop);
 
-        // Only keep programs within our 7-day window
-        if (endTime < now || startTime > sevenDaysFromNow) {
+        // Only filter out programs that have already ended - keep ALL future programs
+        if (endTime < now) {
           continue;
         }
 
@@ -604,18 +602,19 @@ export class EPGService implements IService {
     cacheSizeBytes: number;
     nextRefresh: string | null;
     refreshIntervalHours: number;
-    daysToKeep: number;
+    dataRangeDays: number;
   } {
-    let oldestProgram: Date | null = null;
-    let newestProgram: Date | null = null;
+    let oldestStart: Date | null = null;
+    let newestEnd: Date | null = null;
     let totalPrograms = 0;
 
     for (const programs of this.programCache.values()) {
       totalPrograms += programs.length;
       for (const p of programs) {
+        const start = p.startTime instanceof Date ? p.startTime : new Date(p.startTime);
         const end = p.endTime instanceof Date ? p.endTime : new Date(p.endTime);
-        if (!oldestProgram || end < oldestProgram) oldestProgram = end;
-        if (!newestProgram || end > newestProgram) newestProgram = end;
+        if (!oldestStart || start < oldestStart) oldestStart = start;
+        if (!newestEnd || end > newestEnd) newestEnd = end;
       }
     }
 
@@ -637,16 +636,22 @@ export class EPGService implements IService {
       nextRefresh = nextRefreshTime.toISOString();
     }
 
+    // Calculate actual data range in days
+    let dataRangeDays = 0;
+    if (oldestStart && newestEnd) {
+      dataRangeDays = Math.ceil((newestEnd.getTime() - oldestStart.getTime()) / (1000 * 60 * 60 * 24));
+    }
+
     return {
       channels: this.programCache.size,
       programs: totalPrograms,
       lastFetch: this.lastFetch?.toISOString() || null,
-      oldestProgram: oldestProgram?.toISOString() || null,
-      newestProgram: newestProgram?.toISOString() || null,
+      oldestProgram: oldestStart?.toISOString() || null,
+      newestProgram: newestEnd?.toISOString() || null,
       cacheSizeBytes,
       nextRefresh,
       refreshIntervalHours: this.REFRESH_INTERVAL_MS / (1000 * 60 * 60),
-      daysToKeep: this.DAYS_TO_KEEP
+      dataRangeDays
     };
   }
 
