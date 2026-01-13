@@ -901,11 +901,11 @@ export default function LiveTVPage() {
         };
       }
       return {
-        queryKey: [`/api/epg/upcoming/${encodeURIComponent(channelKey)}`],
+        queryKey: [`/api/epg/upcoming/${encodeURIComponent(channelKey)}?hours=168`], // 7 days of EPG data
         queryFn: getQueryFn({ on401: "returnNull" }),
         select: (data: any) => (data?.programs || []) as EPGProgram[],
-        staleTime: 5 * 60 * 1000, // 5 minutes
-        refetchInterval: 5 * 60 * 1000,
+        staleTime: 30 * 60 * 1000, // 30 minutes (extended EPG data doesn't change often)
+        refetchInterval: 30 * 60 * 1000,
       };
     })
   });
