@@ -4287,9 +4287,9 @@ export default function LiveTVTvPage() {
 
             {/* Favorites - Remaining Favorites */}
             {favorites && favorites.length > 1 && (
-              <div className="mb-6">
+              <div className="mb-6 relative z-10">
                 <h2 className="px-5 text-xl font-semibold text-white/90 mb-4">Favorites</h2>
-                <div className="flex gap-4 overflow-x-auto px-5 scrollbar-hide">
+                <div className="flex gap-4 overflow-x-auto overflow-y-hidden px-5 scrollbar-hide">
                   {favorites.slice(1).map((fav) => {
                     const channel = channels.find(c => c.iptvId === fav.channelId);
                     if (!channel) return null;
@@ -4401,7 +4401,7 @@ export default function LiveTVTvPage() {
                     <TrendingUp className="h-5 w-5 text-orange-500" />
                     <h2 className="text-xl font-semibold text-white/90">Trending</h2>
                   </motion.div>
-                  <div className="flex gap-4 overflow-x-auto px-5 scrollbar-hide">
+                  <div className="flex gap-4 overflow-x-auto overflow-y-hidden px-5 scrollbar-hide">
                     {trendingChannels.map((trending, index) => {
                       const channel = channels.find(c => c.iptvId === trending.channelId);
                       if (!channel) return null;
@@ -4500,12 +4500,12 @@ export default function LiveTVTvPage() {
 
             {/* NFL Section - Large Cards */}
             {nflPackage && nflChannels.length > 0 && (
-              <div className="mb-6">
+              <div className="mb-6 relative z-10">
                 <div className="px-5 mb-4 flex items-center gap-3">
                   <img src="https://a.espncdn.com/combiner/i?img=/i/teamlogos/leagues/500/nfl.png&w=100&h=100" alt="NFL" className="h-6 w-6 object-contain" />
                   <h2 className="text-xl font-semibold text-white/90">NFL</h2>
                 </div>
-                <div className="flex gap-4 overflow-x-auto px-5 scrollbar-hide">
+                <div className="flex gap-4 overflow-x-auto overflow-y-hidden px-5 scrollbar-hide">
                   {nflChannels.map((pkgChannel) => {
                     const channel = channels.find(c => c.GuideName === pkgChannel.name || c.name === pkgChannel.name);
                     if (!channel) return null;
@@ -4575,12 +4575,12 @@ export default function LiveTVTvPage() {
 
             {/* NBA Section - Compact Cards for variety */}
             {nbaPackage && nbaChannels.length > 0 && (
-              <div className="mb-6">
+              <div className="mb-6 relative z-10">
                 <div className="px-5 mb-4 flex items-center gap-3">
                   <img src="https://a.espncdn.com/combiner/i?img=/i/teamlogos/leagues/500/nba.png&w=100&h=100" alt="NBA" className="h-6 w-6 object-contain" />
                   <h2 className="text-xl font-semibold text-white/90">NBA</h2>
                 </div>
-                <div className="flex gap-3 overflow-x-auto px-5 scrollbar-hide">
+                <div className="flex gap-3 overflow-x-auto overflow-y-hidden px-5 scrollbar-hide">
                   {nbaChannels.map((pkgChannel) => {
                     const channel = channels.find(c => c.GuideName === pkgChannel.name || c.name === pkgChannel.name);
                     if (!channel) return null;
@@ -4638,12 +4638,12 @@ export default function LiveTVTvPage() {
 
             {/* MLB Section - Large Cards */}
             {mlbPackage && mlbChannels.length > 0 && (
-              <div className="mb-6">
+              <div className="mb-6 relative z-10">
                 <div className="px-5 mb-4 flex items-center gap-3">
                   <img src="https://a.espncdn.com/combiner/i?img=/i/teamlogos/leagues/500/mlb.png&w=100&h=100" alt="MLB" className="h-6 w-6 object-contain" />
                   <h2 className="text-xl font-semibold text-white/90">MLB</h2>
                 </div>
-                <div className="flex gap-4 overflow-x-auto px-5 scrollbar-hide">
+                <div className="flex gap-4 overflow-x-auto overflow-y-hidden px-5 scrollbar-hide">
                   {mlbChannels.map((pkgChannel) => {
                     const channel = channels.find(c => c.GuideName === pkgChannel.name || c.name === pkgChannel.name);
                     if (!channel) return null;
