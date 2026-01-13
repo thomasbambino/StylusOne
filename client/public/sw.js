@@ -1,6 +1,6 @@
 // Cache version - update this when cache structure changes
 // INCREMENT THIS VERSION TO FORCE CACHE REFRESH
-const CACHE_VERSION = 'v2.0.1-20251107';
+const CACHE_VERSION = 'v2.0.2-20260112';
 const CACHE_NAME = `homelab-dashboard-${CACHE_VERSION}`;
 
 // Add message to notify clients of updates
