@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef, useMemo, memo } from 'react';
 import { useQuery, useQueries, useMutation, useQueryClient } from '@tanstack/react-query';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Play, Pause, Volume2, VolumeX, Info, Plus, MoreHorizontal, Star, X, Check, CreditCard, Calendar, ExternalLink, LogOut, LayoutGrid, Airplay, Search, Volume1, Minus, Settings, PictureInPicture2, Filter, Package, Tv, Clock, Zap, Radio } from 'lucide-react';
+import { ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Play, Pause, Volume2, VolumeX, Info, Plus, MoreHorizontal, Star, X, Check, CreditCard, Calendar, ExternalLink, LogOut, LayoutGrid, Airplay, Search, Volume1, Minus, Settings, PictureInPicture2, Filter, Package, Tv, Clock, Zap, Radio, TrendingUp, Flame, Users } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { getQueryFn, apiRequest, queryClient } from '@/lib/queryClient';
 import { buildApiUrl, isNativePlatform, getDeviceTypeSync, getPlatform } from '@/lib/capacitor';
@@ -1390,6 +1390,24 @@ export default function LiveTVTvPage() {
     queryFn: getQueryFn({ on401: "returnNull" }),
     enabled: viewMode === 'home' && !!mlbPackage?.packageId,
     select: (data) => data || [],
+  });
+
+  // Trending channels query
+  interface TrendingChannel {
+    channelId: string;
+    channelName: string;
+    viewCount: number;
+    currentViewers: number;
+    logo: string | null;
+    isHotNow: boolean;
+  }
+
+  const { data: trendingChannels = [] } = useQuery<TrendingChannel[]>({
+    queryKey: ['/api/iptv/trending'],
+    queryFn: getQueryFn({ on401: "returnNull" }),
+    enabled: viewMode === 'home',
+    refetchInterval: 60000, // Refresh every minute
+    select: (data: any) => data?.trending || [],
   });
 
   // Cache favorites to localStorage for offline/faster startup
@@ -4297,6 +4315,95 @@ export default function LiveTVTvPage() {
                   <p className="text-white/60 text-lg font-medium">No favorites yet</p>
                   <p className="text-white/30 text-sm mt-2">Add channels from the Guide tab</p>
                 </div>
+              </div>
+            )}
+
+            {/* Trending Section */}
+            {trendingChannels.length > 0 && (
+              <div className="mb-10">
+                <div className="px-5 mb-4 flex items-center gap-2">
+                  <TrendingUp className="h-5 w-5 text-orange-500" />
+                  <h2 className="text-xl font-semibold text-white/90">Trending</h2>
+                </div>
+                <div className="flex gap-4 overflow-x-auto px-5 scrollbar-hide">
+                  {trendingChannels.map((trending) => {
+                    const channel = channels.find(c => c.iptvId === trending.channelId);
+                    if (!channel) return null;
+                    const channelEpg = epgDataMap.get(channel.iptvId || '');
+                    const thumbnail = channelEpg?.currentProgram?.thumbnail;
+                    const channelLogo = trending.logo || channel.logo;
+                    const progress = getProgramProgress(channelEpg?.currentProgram);
+                    const timeLeft = channelEpg?.currentProgram ? getTimeRemaining(channelEpg.currentProgram.endTime) : null;
+
+                    return (
+                      <div
+                        key={trending.channelId}
+                        className="shrink-0 w-72 active:scale-[0.97] transition-transform duration-200"
+                        onClick={() => { haptics.light(); playStream(channel); setViewMode('player'); }}
+                      >
+                        <div className="relative rounded-xl overflow-hidden mb-3">
+                          <div className="aspect-video">
+                            {thumbnail ? (
+                              <img src={thumbnail} alt="" className="w-full h-full object-cover" />
+                            ) : channelLogo ? (
+                              <div className="w-full h-full flex items-center justify-center bg-zinc-900 p-6">
+                                <img src={channelLogo} alt="" className="max-w-[50%] max-h-[50%] object-contain opacity-70" />
+                              </div>
+                            ) : (
+                              <div className="w-full h-full bg-zinc-900" />
+                            )}
+                          </div>
+                          {/* Top row badges */}
+                          <div className="absolute top-2 left-2 right-2 flex items-center justify-between">
+                            {/* Hot Now / Viewer count badge */}
+                            <div className="flex items-center gap-1.5">
+                              {trending.isHotNow && (
+                                <div className="flex items-center gap-1 px-2 py-1 bg-orange-600 rounded">
+                                  <Flame className="w-3 h-3 text-white" />
+                                  <span className="text-white text-[10px] font-bold">HOT</span>
+                                </div>
+                              )}
+                              {trending.currentViewers > 0 && (
+                                <div className="flex items-center gap-1 px-2 py-1 bg-black/60 backdrop-blur-sm rounded">
+                                  <Users className="w-3 h-3 text-white" />
+                                  <span className="text-white text-[10px] font-medium">{trending.currentViewers}</span>
+                                </div>
+                              )}
+                            </div>
+                            {/* Network logo */}
+                            {channelLogo && thumbnail && (
+                              <div className="w-8 h-8 rounded bg-black/40 backdrop-blur-sm p-1 flex items-center justify-center">
+                                <img src={channelLogo} alt="" className="max-w-full max-h-full object-contain" />
+                              </div>
+                            )}
+                          </div>
+                          {/* Progress bar at bottom */}
+                          {progress > 0 && (
+                            <div className="absolute bottom-0 left-0 right-0 h-1 bg-black/50">
+                              <div className="h-full bg-white/80" style={{ width: `${progress}%` }} />
+                            </div>
+                          )}
+                        </div>
+                        <p className="text-white font-medium text-sm">{trending.channelName}</p>
+                        <div className="flex items-center gap-1.5 mt-0.5">
+                          <p className="text-white/40 text-xs truncate flex-1">
+                            {channelEpg?.currentProgram?.title || 'Live'}
+                          </p>
+                          {timeLeft && progress > 0 && (
+                            <span className="text-white/30 text-[10px] shrink-0">{timeLeft}</span>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {/* Section Divider - Between Trending and Sports */}
+            {trendingChannels.length > 0 && (nflPackage || nbaPackage || mlbPackage) && (
+              <div className="px-5 mb-8">
+                <div className="h-px bg-white/10" />
               </div>
             )}
 

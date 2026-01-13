@@ -2351,6 +2351,120 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Trending channels endpoint - returns most watched channels
+  app.get("/api/iptv/trending", async (req, res) => {
+    if (!req.isAuthenticated()) return res.sendStatus(401);
+
+    try {
+      const { viewingHistory, activeIptvStreams, iptvChannels } = await import('@shared/schema');
+      const { gte, desc, sql } = await import('drizzle-orm');
+
+      const now = new Date();
+      const oneHourAgo = new Date(now.getTime() - 60 * 60 * 1000);
+      const oneDayAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+
+      // Get channels watched in the last hour with view counts
+      const lastHourStats = await db
+        .select({
+          channelId: viewingHistory.channelId,
+          channelName: viewingHistory.channelName,
+          viewCount: sql<number>`count(*)::int`,
+          totalWatchTime: sql<number>`COALESCE(SUM(duration_seconds), 0)::int`,
+        })
+        .from(viewingHistory)
+        .where(gte(viewingHistory.startedAt, oneHourAgo))
+        .groupBy(viewingHistory.channelId, viewingHistory.channelName)
+        .orderBy(desc(sql`count(*)`))
+        .limit(20);
+
+      // Get channels watched in the last 24 hours for fallback
+      const lastDayStats = await db
+        .select({
+          channelId: viewingHistory.channelId,
+          channelName: viewingHistory.channelName,
+          viewCount: sql<number>`count(*)::int`,
+          totalWatchTime: sql<number>`COALESCE(SUM(duration_seconds), 0)::int`,
+        })
+        .from(viewingHistory)
+        .where(gte(viewingHistory.startedAt, oneDayAgo))
+        .groupBy(viewingHistory.channelId, viewingHistory.channelName)
+        .orderBy(desc(sql`count(*)`))
+        .limit(50);
+
+      // Get current viewer counts for all channels
+      const currentViewers = await db
+        .select({
+          streamId: activeIptvStreams.streamId,
+          viewerCount: sql<number>`count(*)::int`,
+        })
+        .from(activeIptvStreams)
+        .groupBy(activeIptvStreams.streamId);
+
+      const viewerMap = new Map(currentViewers.map(v => [v.streamId, v.viewerCount]));
+
+      // Combine: prioritize last hour, then fill with last 24 hours
+      const seenChannels = new Set<string>();
+      const trendingChannels: Array<{
+        channelId: string;
+        channelName: string;
+        viewCount: number;
+        currentViewers: number;
+        logo: string | null;
+        isHotNow: boolean;
+      }> = [];
+
+      // First add last hour channels (these are "hot now")
+      for (const stat of lastHourStats) {
+        if (!stat.channelId) continue;
+        seenChannels.add(stat.channelId);
+
+        // Get channel logo
+        const [channel] = await db
+          .select({ logo: iptvChannels.logo })
+          .from(iptvChannels)
+          .where(eq(iptvChannels.streamId, stat.channelId))
+          .limit(1);
+
+        trendingChannels.push({
+          channelId: stat.channelId,
+          channelName: stat.channelName || `Channel ${stat.channelId}`,
+          viewCount: stat.viewCount,
+          currentViewers: viewerMap.get(stat.channelId) || 0,
+          logo: channel?.logo || null,
+          isHotNow: true,
+        });
+      }
+
+      // Then add last 24 hour channels that aren't already included
+      for (const stat of lastDayStats) {
+        if (!stat.channelId || seenChannels.has(stat.channelId)) continue;
+        if (trendingChannels.length >= 30) break;
+
+        seenChannels.add(stat.channelId);
+
+        const [channel] = await db
+          .select({ logo: iptvChannels.logo })
+          .from(iptvChannels)
+          .where(eq(iptvChannels.streamId, stat.channelId))
+          .limit(1);
+
+        trendingChannels.push({
+          channelId: stat.channelId,
+          channelName: stat.channelName || `Channel ${stat.channelId}`,
+          viewCount: stat.viewCount,
+          currentViewers: viewerMap.get(stat.channelId) || 0,
+          logo: channel?.logo || null,
+          isHotNow: false,
+        });
+      }
+
+      res.json({ trending: trendingChannels });
+    } catch (error) {
+      console.error('Error fetching trending channels:', error);
+      res.status(500).json({ error: 'Failed to fetch trending channels' });
+    }
+  });
+
   app.get("/api/iptv/epg/:streamId", requireFeature('live_tv_access'), async (req, res) => {
     if (!req.isAuthenticated()) return res.sendStatus(401);
 
