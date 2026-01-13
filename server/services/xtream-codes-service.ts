@@ -924,7 +924,23 @@ export class XtreamCodesManager implements IService {
   async selectCredentialForStream(userId: number, streamId: string): Promise<number | null> {
     console.log(`[IPTV] selectCredentialForStream called for user ${userId}, stream ${streamId}`);
 
-    // First, check if this is a package-based channel
+    // First, check if user already has an active stream for this exact streamId
+    // This prevents the case where acquire creates a session, then the stream request
+    // fails because it sees its own session as using capacity
+    const [existingStream] = await db.select()
+      .from(activeIptvStreams)
+      .where(and(
+        eq(activeIptvStreams.userId, userId),
+        eq(activeIptvStreams.streamId, streamId)
+      ))
+      .limit(1);
+
+    if (existingStream) {
+      console.log(`[IPTV] User ${userId} already has active stream ${streamId} on credential ${existingStream.credentialId}`);
+      return existingStream.credentialId;
+    }
+
+    // Next, check if this is a package-based channel
     const packageChannelCredential = await this.selectPackageChannelCredential(userId, streamId);
     if (packageChannelCredential !== null) {
       console.log(`[IPTV] Found package credential ${packageChannelCredential} for stream ${streamId}`);
