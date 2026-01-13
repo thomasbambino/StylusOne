@@ -4404,12 +4404,12 @@ export default function LiveTVTvPage() {
                         <motion.div
                           key={trending.channelId}
                           layout
-                          initial={{ opacity: 0, scale: 0.8, x: -20 }}
+                          initial={false}
                           animate={{ opacity: 1, scale: 1, x: 0 }}
-                          exit={{ opacity: 0, scale: 0.8, x: 20 }}
+                          exit={{ opacity: 0, scale: 0.9, x: -20 }}
                           transition={{
-                            duration: 0.3,
-                            layout: { duration: 0.3, ease: 'easeInOut' }
+                            duration: 0.25,
+                            layout: { duration: 0.25, ease: 'easeInOut' }
                           }}
                           className="shrink-0 w-72 active:scale-[0.97] transition-transform duration-200"
                           onClick={() => { haptics.light(); playStream(channel); setViewMode('player'); }}
@@ -4507,6 +4507,8 @@ export default function LiveTVTvPage() {
                     const channelLogo = pkgChannel.logo || channel.logo;
                     const progress = getProgramProgress(channelEpg?.currentProgram);
                     const timeLeft = channelEpg?.currentProgram ? getTimeRemaining(channelEpg.currentProgram.endTime) : null;
+                    const programTitle = channelEpg?.currentProgram?.title || '';
+                    const isNoGame = programTitle.toLowerCase().includes('no game');
 
                     return (
                       <div
@@ -4528,14 +4530,17 @@ export default function LiveTVTvPage() {
                           </div>
                           {/* Top row badges */}
                           <div className="absolute top-2 left-2 right-2 flex items-center justify-between">
-                            {/* LIVE badge */}
-                            <div className="flex items-center gap-1 px-2 py-1 bg-red-600 rounded">
-                              <span className="relative flex h-1.5 w-1.5">
-                                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-white opacity-75"></span>
-                                <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-white"></span>
-                              </span>
-                              <span className="text-white text-[10px] font-bold">LIVE</span>
-                            </div>
+                            {/* LIVE badge - only show if there's an actual game */}
+                            {!isNoGame && (
+                              <div className="flex items-center gap-1 px-2 py-1 bg-red-600 rounded">
+                                <span className="relative flex h-1.5 w-1.5">
+                                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-white opacity-75"></span>
+                                  <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-white"></span>
+                                </span>
+                                <span className="text-white text-[10px] font-bold">LIVE</span>
+                              </div>
+                            )}
+                            {isNoGame && <div />}
                             {/* Network logo */}
                             {channelLogo && thumbnail && (
                               <div className="w-8 h-8 rounded bg-black/40 backdrop-blur-sm p-1 flex items-center justify-center">
@@ -4553,7 +4558,7 @@ export default function LiveTVTvPage() {
                         <p className="text-white font-medium text-sm">{pkgChannel.name}</p>
                         <div className="flex items-center gap-1.5 mt-0.5">
                           <p className="text-white/40 text-xs truncate flex-1">
-                            {channelEpg?.currentProgram?.title || 'Live'}
+                            {programTitle || 'Live'}
                           </p>
                           {timeLeft && progress > 0 && (
                             <span className="text-white/30 text-[10px] shrink-0">{timeLeft}</span>
@@ -4580,6 +4585,8 @@ export default function LiveTVTvPage() {
                     const channelEpg = epgDataMap.get(channel.iptvId || '');
                     const channelLogo = pkgChannel.logo || channel.logo;
                     const progress = getProgramProgress(channelEpg?.currentProgram);
+                    const programTitle = channelEpg?.currentProgram?.title || '';
+                    const isNoGame = programTitle.toLowerCase().includes('no game');
 
                     return (
                       <div
@@ -4599,14 +4606,16 @@ export default function LiveTVTvPage() {
                               </div>
                             )}
                           </div>
-                          {/* LIVE badge - smaller */}
-                          <div className="absolute top-1.5 left-1.5 flex items-center gap-0.5 px-1.5 py-0.5 bg-red-600 rounded">
-                            <span className="relative flex h-1 w-1">
-                              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-white opacity-75"></span>
-                              <span className="relative inline-flex rounded-full h-1 w-1 bg-white"></span>
-                            </span>
-                            <span className="text-white text-[8px] font-bold">LIVE</span>
-                          </div>
+                          {/* LIVE badge - smaller (hidden for No Game) */}
+                          {!isNoGame && (
+                            <div className="absolute top-1.5 left-1.5 flex items-center gap-0.5 px-1.5 py-0.5 bg-red-600 rounded">
+                              <span className="relative flex h-1 w-1">
+                                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-white opacity-75"></span>
+                                <span className="relative inline-flex rounded-full h-1 w-1 bg-white"></span>
+                              </span>
+                              <span className="text-white text-[8px] font-bold">LIVE</span>
+                            </div>
+                          )}
                           {/* Progress bar at bottom */}
                           {progress > 0 && (
                             <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-black/50">
@@ -4645,6 +4654,8 @@ export default function LiveTVTvPage() {
                     const channelLogo = pkgChannel.logo || channel.logo;
                     const progress = getProgramProgress(channelEpg?.currentProgram);
                     const timeLeft = channelEpg?.currentProgram ? getTimeRemaining(channelEpg.currentProgram.endTime) : null;
+                    const programTitle = channelEpg?.currentProgram?.title || '';
+                    const isNoGame = programTitle.toLowerCase().includes('no game');
 
                     return (
                       <div
@@ -4666,14 +4677,18 @@ export default function LiveTVTvPage() {
                           </div>
                           {/* Top row badges */}
                           <div className="absolute top-2 left-2 right-2 flex items-center justify-between">
-                            {/* LIVE badge */}
-                            <div className="flex items-center gap-1 px-2 py-1 bg-red-600 rounded">
-                              <span className="relative flex h-1.5 w-1.5">
-                                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-white opacity-75"></span>
-                                <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-white"></span>
-                              </span>
-                              <span className="text-white text-[10px] font-bold">LIVE</span>
-                            </div>
+                            {/* LIVE badge (hidden for No Game) */}
+                            {!isNoGame ? (
+                              <div className="flex items-center gap-1 px-2 py-1 bg-red-600 rounded">
+                                <span className="relative flex h-1.5 w-1.5">
+                                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-white opacity-75"></span>
+                                  <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-white"></span>
+                                </span>
+                                <span className="text-white text-[10px] font-bold">LIVE</span>
+                              </div>
+                            ) : (
+                              <div />
+                            )}
                             {/* Network logo */}
                             {channelLogo && thumbnail && (
                               <div className="w-8 h-8 rounded bg-black/40 backdrop-blur-sm p-1 flex items-center justify-center">
