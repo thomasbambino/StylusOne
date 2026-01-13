@@ -1589,35 +1589,42 @@ export default function LiveTVTvPage() {
   }, [channels, favorites, focusedChannelIndex, guideScrollIndex, viewMode, selectedChannel, nflChannels, nbaChannels, mlbChannels]);
 
   const epgQueries = useQueries({
-    queries: visibleEpgIds.map(epgId => ({
-      queryKey: [`/api/epg/upcoming/${encodeURIComponent(epgId)}?hours=168`], // 7 days of EPG data
-      queryFn: async () => {
-        // Check IndexedDB cache first (for native apps)
-        if (isNativePlatform()) {
-          const cached = await getCachedEPG(epgId);
-          if (cached && cached.length > 0) {
-            return { programs: cached, fromCache: true };
+    queries: visibleEpgIds.map(epgId => {
+      // Find channel name for this epgId for fallback matching
+      const channel = channels.find((ch: Channel) => ch.epgId === epgId);
+      const channelName = channel?.GuideName || '';
+
+      return {
+        queryKey: [`/api/epg/upcoming/${encodeURIComponent(epgId)}?hours=168&name=${encodeURIComponent(channelName)}`],
+        queryFn: async () => {
+          // Check IndexedDB cache first (for native apps)
+          if (isNativePlatform()) {
+            const cached = await getCachedEPG(epgId);
+            if (cached && cached.length > 0) {
+              return { programs: cached, fromCache: true };
+            }
           }
-        }
 
-        // Fetch from API
-        const response = await fetch(buildApiUrl(`/api/epg/upcoming/${encodeURIComponent(epgId)}?hours=168`), {
-          credentials: 'include'
-        });
-        if (!response.ok) return null;
-        const data = await response.json();
+          // Fetch from API - include channel name for fallback matching
+          const url = `/api/epg/upcoming/${encodeURIComponent(epgId)}?hours=168&name=${encodeURIComponent(channelName)}`;
+          const response = await fetch(buildApiUrl(url), {
+            credentials: 'include'
+          });
+          if (!response.ok) return null;
+          const data = await response.json();
 
-        // Cache the data for native apps
-        if (isNativePlatform() && data?.programs?.length > 0) {
-          cacheEPG(epgId, data.programs).catch(console.error);
-        }
+          // Cache the data for native apps
+          if (isNativePlatform() && data?.programs?.length > 0) {
+            cacheEPG(epgId, data.programs).catch(console.error);
+          }
 
-        return data;
-      },
-      staleTime: 30 * 60 * 1000, // 30 minutes before refetch (data is cached for longer)
-      gcTime: 6 * 60 * 60 * 1000, // Keep in cache for 6 hours
-      retry: 1,
-    }))
+          return data;
+        },
+        staleTime: 30 * 60 * 1000, // 30 minutes before refetch (data is cached for longer)
+        gcTime: 6 * 60 * 60 * 1000, // Keep in cache for 6 hours
+        retry: 1,
+      };
+    })
   });
 
   // Build EPG data map from /api/epg/upcoming response (array of programs)

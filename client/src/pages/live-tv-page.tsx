@@ -892,6 +892,7 @@ export default function LiveTVPage() {
     queries: channelsForEPG.map((channel) => {
       // For IPTV channels, use epgId (XMLTV channel ID), for HDHomeRun use GuideNumber
       const channelKey = channel.source === 'iptv' ? channel.epgId : channel.GuideNumber;
+      const channelName = channel.GuideName || '';
       if (!channelKey) {
         return {
           queryKey: ['epg', 'upcoming', 'none'],
@@ -900,8 +901,9 @@ export default function LiveTVPage() {
           refetchInterval: 5 * 60 * 1000,
         };
       }
+      // Include channel name for fallback matching when epgId doesn't match
       return {
-        queryKey: [`/api/epg/upcoming/${encodeURIComponent(channelKey)}?hours=168`], // 7 days of EPG data
+        queryKey: [`/api/epg/upcoming/${encodeURIComponent(channelKey)}?hours=168&name=${encodeURIComponent(channelName)}`],
         queryFn: getQueryFn({ on401: "returnNull" }),
         select: (data: any) => (data?.programs || []) as EPGProgram[],
         staleTime: 30 * 60 * 1000, // 30 minutes (extended EPG data doesn't change often)
