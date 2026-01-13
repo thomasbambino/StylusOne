@@ -28,7 +28,7 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { format, formatDistanceToNow } from 'date-fns';
+import { formatDistanceToNow } from 'date-fns';
 import { buildApiUrl } from '@/lib/capacitor';
 import {
   BarChart,
@@ -106,6 +106,21 @@ function formatDuration(seconds: number): string {
   const hours = Math.floor(seconds / 3600);
   const mins = Math.floor((seconds % 3600) / 60);
   return `${hours}h ${mins}m`;
+}
+
+/**
+ * Format date/time in local timezone with 12-hour format
+ */
+function formatLocalDateTime(dateString: string): string {
+  const date = new Date(dateString);
+  return date.toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric',
+  }) + ', ' + date.toLocaleTimeString('en-US', {
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true,
+  });
 }
 
 function getDeviceIcon(deviceType: string | null) {
@@ -462,7 +477,7 @@ export default function AnalyticsPage() {
                         <TableCell>
                           <div className="flex items-center gap-2">
                             {stream.channelLogo && (
-                              <img src={stream.channelLogo} alt="" className="h-6 w-6 rounded" />
+                              <img src={stream.channelLogo} alt="" className="h-8 w-auto max-w-[48px] object-contain rounded" />
                             )}
                             <span>{stream.channelName}</span>
                           </div>
@@ -556,7 +571,7 @@ export default function AnalyticsPage() {
                         <TableCell>
                           <div className="flex items-center gap-2">
                             {stat.channelLogo && (
-                              <img src={stat.channelLogo} alt="" className="h-6 w-6 rounded" />
+                              <img src={stat.channelLogo} alt="" className="h-8 w-auto max-w-[48px] object-contain rounded" />
                             )}
                             <span>{stat.channelName || stat.channelId}</span>
                           </div>
@@ -624,16 +639,18 @@ export default function AnalyticsPage() {
                         <TableCell className="text-right">{stat.channelsWatched}</TableCell>
                         <TableCell className="text-right">{stat.totalSessions}</TableCell>
                         <TableCell>
-                          {stat.lastWatched
-                            ? formatDistanceToNow(new Date(stat.lastWatched), { addSuffix: true })
-                            : '-'
+                          {stat.isWatching
+                            ? 'Now'
+                            : stat.lastWatched
+                              ? formatDistanceToNow(new Date(stat.lastWatched), { addSuffix: true })
+                              : '-'
                           }
                         </TableCell>
                         <TableCell>
                           {stat.isWatching ? (
                             <Badge variant="default" className="bg-green-600">
                               <Play className="h-3 w-3 mr-1" />
-                              Watching
+                              {stat.currentChannel || 'Watching'}
                             </Badge>
                           ) : (
                             <Badge variant="secondary">Offline</Badge>
@@ -681,7 +698,7 @@ export default function AnalyticsPage() {
                       {historyData.history.map((entry) => (
                         <TableRow key={entry.id}>
                           <TableCell className="text-sm">
-                            {format(new Date(entry.startedAt), 'MMM d, HH:mm')}
+                            {formatLocalDateTime(entry.startedAt)}
                           </TableCell>
                           <TableCell>{entry.username}</TableCell>
                           <TableCell>{entry.channelName || entry.channelId}</TableCell>

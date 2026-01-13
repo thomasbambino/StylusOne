@@ -2,6 +2,7 @@ import crypto from 'crypto';
 import { db } from '../db';
 import { activeIptvStreams, iptvCredentials, iptvChannels, viewingHistory } from '@shared/schema';
 import { eq, and, lt } from 'drizzle-orm';
+import { epgService } from './epg-service';
 
 /**
  * Service for tracking active IPTV streams and enforcing concurrent stream limits
@@ -130,11 +131,25 @@ export class StreamTrackerService {
         channelName = channel.name;
       }
 
+      // Look up current program from EPG
+      let programTitle: string | null = null;
+      try {
+        const currentProgram = epgService.getCurrentProgram(stream.streamId);
+        if (currentProgram) {
+          programTitle = currentProgram.title;
+          if (currentProgram.episodeTitle) {
+            programTitle += ` - ${currentProgram.episodeTitle}`;
+          }
+        }
+      } catch (epgError) {
+        console.error('Error looking up EPG program:', epgError);
+      }
+
       await db.insert(viewingHistory).values({
         userId: stream.userId,
         channelId: stream.streamId,
         channelName,
-        programTitle: null, // EPG lookup could be added later
+        programTitle,
         credentialId: stream.credentialId,
         startedAt: stream.startedAt,
         endedAt,
