@@ -5,7 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tv, Signal, AlertTriangle, Wifi, WifiOff, Play, Pause, Volume2, VolumeX, Maximize, Star, StarOff, Loader2, Cast } from "lucide-react";
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import { cn } from "@/lib/utils";
 import Hls from "hls.js";
 import { motion } from "framer-motion";
@@ -959,16 +959,23 @@ export default function LiveTVPage() {
     };
   }, []);
 
+  // Track scroll container element for infinite scroll
+  const [scrollElement, setScrollElement] = useState<HTMLDivElement | null>(null);
+
+  // Callback ref to capture scroll container when it mounts
+  const setChannelListRef = useCallback((node: HTMLDivElement | null) => {
+    channelListRef.current = node;
+    setScrollElement(node);
+  }, []);
+
   // Infinite scroll for channel guide - load more EPG data as user scrolls
   useEffect(() => {
-    const handleScroll = () => {
-      if (!channelListRef.current) return;
+    if (!scrollElement) return;
 
-      const { scrollTop, scrollHeight, clientHeight } = channelListRef.current;
+    const handleScroll = () => {
+      const { scrollTop, scrollHeight, clientHeight } = scrollElement;
       const scrollPercentage = (scrollTop + clientHeight) / scrollHeight;
       const remainingChannels = filteredChannels.length - visibleChannelCount;
-
-      console.log(`📊 Scroll: ${Math.round(scrollPercentage * 100)}%, visible: ${visibleChannelCount}/${filteredChannels.length}`);
 
       // Load more when scrolled 70% down and there are more channels to load
       if (scrollPercentage > 0.7 && remainingChannels > 0) {
@@ -978,12 +985,9 @@ export default function LiveTVPage() {
       }
     };
 
-    const scrollContainer = channelListRef.current;
-    if (scrollContainer) {
-      scrollContainer.addEventListener('scroll', handleScroll);
-      return () => scrollContainer.removeEventListener('scroll', handleScroll);
-    }
-  }, [visibleChannelCount, filteredChannels.length]);
+    scrollElement.addEventListener('scroll', handleScroll);
+    return () => scrollElement.removeEventListener('scroll', handleScroll);
+  }, [scrollElement, visibleChannelCount, filteredChannels.length]);
 
   // Reset visible channel count when filters change
   useEffect(() => {
@@ -2611,7 +2615,7 @@ export default function LiveTVPage() {
                   </div>
                 </div>
                 {/* Channel Rows */}
-                <div ref={channelListRef} className="max-h-[600px] overflow-y-auto overflow-x-auto">
+                <div ref={setChannelListRef} className="max-h-[600px] overflow-y-auto overflow-x-auto">
                   {(channelsLoading || iptvChannelsLoading) ? (
                     // Loading skeleton
                     Array.from({ length: 10 }).map((_, index) => (

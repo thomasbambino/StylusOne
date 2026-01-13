@@ -520,8 +520,16 @@ router.post('/iptv-providers/:id/sync', requireSuperAdmin, async (req, res) => {
     // Upsert channels
     let insertCount = 0;
     let updateCount = 0;
+    let withEpgCount = 0;
+
+    // Log first 5 streams to see what epg_channel_id looks like
+    console.log(`[IPTV Sync] First 5 streams from provider ${providerId}:`);
+    liveStreams.slice(0, 5).forEach((s: any, i: number) => {
+      console.log(`  ${i + 1}. ${s.name} | stream_id: ${s.stream_id} | epg_channel_id: "${s.epg_channel_id || 'NULL'}"`);
+    });
 
     for (const stream of liveStreams) {
+      if (stream.epg_channel_id) withEpgCount++;
       const streamId = String(stream.stream_id);
 
       // Check if channel exists
@@ -575,11 +583,14 @@ router.post('/iptv-providers/:id/sync', requireSuperAdmin, async (req, res) => {
       .set({ lastChannelSync: new Date(), updatedAt: new Date() })
       .where(eq(iptvProviders.id, providerId));
 
+    console.log(`[IPTV Sync] Provider ${providerId}: ${liveStreams.length} total, ${withEpgCount} have epg_channel_id`);
+
     res.json({
       success: true,
       totalChannels: liveStreams.length,
       newChannels: insertCount,
       updatedChannels: updateCount,
+      channelsWithEpg: withEpgCount,
     });
   } catch (error) {
     console.error('Error syncing channels from provider:', error);
