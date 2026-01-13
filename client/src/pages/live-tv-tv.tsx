@@ -977,10 +977,10 @@ export default function LiveTVTvPage() {
     hideNativeTabBar();
   }, []);
 
-  // Splash screen timer - show for 4 seconds
+  // Splash screen timer - show for 3 seconds
   useEffect(() => {
     if (!showSplash) return;
-    const timer = setTimeout(() => setShowSplash(false), 4000);
+    const timer = setTimeout(() => setShowSplash(false), 3000);
     return () => clearTimeout(timer);
   }, [showSplash]);
 
