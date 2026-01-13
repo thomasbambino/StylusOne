@@ -7,6 +7,11 @@ const DB_NAME = 'epg-cache';
 const DB_VERSION = 1;
 const STORE_NAME = 'programs';
 
+// Cache format version - increment this to force a cache clear
+// v2: Server now includes currently-airing programs (fix for missing current program)
+const CACHE_FORMAT_VERSION = 2;
+const CACHE_VERSION_KEY = 'epg-cache-version';
+
 interface CachedEPGData {
   channelId: string;
   programs: any[];
@@ -44,6 +49,44 @@ function openDB(): Promise<IDBDatabase> {
   });
 
   return dbPromise;
+}
+
+/**
+ * Check if cache needs to be cleared due to format version change
+ */
+async function checkCacheVersion(): Promise<void> {
+  try {
+    const storedVersion = localStorage.getItem(CACHE_VERSION_KEY);
+    const currentVersion = String(CACHE_FORMAT_VERSION);
+
+    if (storedVersion !== currentVersion) {
+      console.log(`[EPG Cache] Version changed from ${storedVersion} to ${currentVersion}, clearing cache...`);
+      await clearAllCache();
+      localStorage.setItem(CACHE_VERSION_KEY, currentVersion);
+      console.log('[EPG Cache] Cache cleared and version updated');
+    }
+  } catch (error) {
+    console.error('[EPG Cache] Error checking cache version:', error);
+  }
+}
+
+/**
+ * Clear all cached EPG data
+ */
+async function clearAllCache(): Promise<void> {
+  try {
+    const db = await openDB();
+    return new Promise((resolve, reject) => {
+      const transaction = db.transaction(STORE_NAME, 'readwrite');
+      const store = transaction.objectStore(STORE_NAME);
+      const request = store.clear();
+
+      request.onerror = () => reject(request.error);
+      request.onsuccess = () => resolve();
+    });
+  } catch (error) {
+    console.error('[EPG Cache] Error clearing cache:', error);
+  }
 }
 
 /**
@@ -256,5 +299,5 @@ export async function prefetchEPG(
   console.log('[EPG Cache] Prefetch complete');
 }
 
-// Clean up expired cache on module load
-cleanupExpiredCache();
+// Check cache version and clean up on module load
+checkCacheVersion().then(() => cleanupExpiredCache());
