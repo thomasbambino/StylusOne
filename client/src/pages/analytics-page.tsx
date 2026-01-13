@@ -93,6 +93,7 @@ interface HistoryEntry {
   channelId: string;
   channelName: string | null;
   programTitle: string | null;
+  endProgramTitle: string | null;
   startedAt: string;
   endedAt: string | null;
   durationSeconds: number | null;
@@ -664,7 +665,7 @@ export default function AnalyticsPage() {
                           {stat.isWatching ? (
                             <Badge variant="default" className="bg-green-600">
                               <Play className="h-3 w-3 mr-1" />
-                              {stat.currentChannel || 'Watching'}
+                              Watching
                             </Badge>
                           ) : (
                             <Badge variant="secondary">Offline</Badge>
@@ -717,7 +718,18 @@ export default function AnalyticsPage() {
                           <TableCell>{entry.username}</TableCell>
                           <TableCell>{entry.channelName || entry.channelId}</TableCell>
                           <TableCell className="text-muted-foreground">
-                            {entry.programTitle || '-'}
+                            {entry.programTitle ? (
+                              entry.endProgramTitle ? (
+                                <div className="text-xs">
+                                  <div>{entry.programTitle}</div>
+                                  <div className="text-muted-foreground/60">→ {entry.endProgramTitle}</div>
+                                </div>
+                              ) : (
+                                entry.programTitle
+                              )
+                            ) : (
+                              entry.endProgramTitle || '-'
+                            )}
                           </TableCell>
                           <TableCell className="text-right">
                             {entry.durationSeconds ? formatDuration(entry.durationSeconds) : '-'}

@@ -380,6 +380,7 @@ export const activeIptvStreams = pgTable("active_iptv_streams", {
   lastHeartbeat: timestamp("last_heartbeat").notNull().defaultNow(),
   ipAddress: text("ip_address"),
   deviceType: text("device_type"), // 'ios', 'web', 'android'
+  startProgramTitle: text("start_program_title"), // Program playing when stream started
 });
 
 // Viewing History - Persistent record of all watch sessions for analytics
@@ -388,7 +389,8 @@ export const viewingHistory = pgTable("viewing_history", {
   userId: integer("user_id").notNull().references(() => users.id, { onDelete: 'cascade' }),
   channelId: text("channel_id").notNull(), // IPTV channel/stream ID
   channelName: text("channel_name"), // Denormalized for easy display
-  programTitle: text("program_title"), // What was playing (from EPG if available)
+  programTitle: text("program_title"), // Program playing at START of session
+  endProgramTitle: text("end_program_title"), // Program playing at END of session (if different)
   credentialId: integer("credential_id").references(() => iptvCredentials.id, { onDelete: 'set null' }),
   startedAt: timestamp("started_at").notNull(),
   endedAt: timestamp("ended_at"),
