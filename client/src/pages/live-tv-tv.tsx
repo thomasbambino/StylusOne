@@ -4383,26 +4383,15 @@ export default function LiveTVTvPage() {
             )}
 
             {/* Trending Section */}
-            <AnimatePresence>
-              {trendingChannels.length > 0 && (
-                <motion.div
-                  initial={{ opacity: 0, height: 0 }}
-                  animate={{ opacity: 1, height: 'auto' }}
-                  exit={{ opacity: 0, height: 0 }}
-                  transition={{ duration: 0.3, ease: 'easeInOut' }}
-                  className="mb-6 overflow-hidden"
-                >
-                  <motion.div
-                    initial={{ opacity: 0, y: 10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ duration: 0.3, delay: 0.1 }}
-                    className="px-5 mb-4 flex items-center gap-2"
-                  >
-                    <TrendingUp className="h-5 w-5 text-orange-500" />
-                    <h2 className="text-xl font-semibold text-white/90">Trending</h2>
-                  </motion.div>
-                  <div className="flex gap-4 overflow-x-auto overflow-y-hidden px-5 scrollbar-hide">
-                    {trendingChannels.map((trending, index) => {
+            {trendingChannels.length > 0 && (
+              <div className="mb-6 relative z-10">
+                <div className="px-5 mb-4 flex items-center gap-2">
+                  <TrendingUp className="h-5 w-5 text-orange-500" />
+                  <h2 className="text-xl font-semibold text-white/90">Trending</h2>
+                </div>
+                <div className="flex gap-4 overflow-x-auto overflow-y-hidden px-5 scrollbar-hide">
+                  <AnimatePresence mode="popLayout">
+                    {trendingChannels.map((trending) => {
                       const channel = channels.find(c => c.iptvId === trending.channelId);
                       if (!channel) return null;
                       const channelEpg = epgDataMap.get(channel.iptvId || '');
@@ -4414,10 +4403,14 @@ export default function LiveTVTvPage() {
                       return (
                         <motion.div
                           key={trending.channelId}
-                          initial={{ opacity: 0, scale: 0.9 }}
-                          animate={{ opacity: 1, scale: 1 }}
-                          exit={{ opacity: 0, scale: 0.9 }}
-                          transition={{ duration: 0.25, delay: index * 0.05 }}
+                          layout
+                          initial={{ opacity: 0, scale: 0.8, x: -20 }}
+                          animate={{ opacity: 1, scale: 1, x: 0 }}
+                          exit={{ opacity: 0, scale: 0.8, x: 20 }}
+                          transition={{
+                            duration: 0.3,
+                            layout: { duration: 0.3, ease: 'easeInOut' }
+                          }}
                           className="shrink-0 w-72 active:scale-[0.97] transition-transform duration-200"
                           onClick={() => { haptics.light(); playStream(channel); setViewMode('player'); }}
                         >
@@ -4436,9 +4429,10 @@ export default function LiveTVTvPage() {
                             {/* Top row badges */}
                             <div className="absolute top-2 left-2 right-2 flex items-center justify-between">
                               {/* Viewer count badge */}
-                              <AnimatePresence>
+                              <AnimatePresence mode="wait">
                                 {trending.currentViewers > 0 && (
                                   <motion.div
+                                    key="viewers"
                                     initial={{ opacity: 0, scale: 0.8 }}
                                     animate={{ opacity: 1, scale: 1 }}
                                     exit={{ opacity: 0, scale: 0.8 }}
@@ -4446,7 +4440,14 @@ export default function LiveTVTvPage() {
                                     className="flex items-center gap-1 px-2 py-1 bg-black/60 backdrop-blur-sm rounded"
                                   >
                                     <Users className="w-3 h-3 text-white" />
-                                    <span className="text-white text-[10px] font-medium">{trending.currentViewers} watching</span>
+                                    <motion.span
+                                      key={trending.currentViewers}
+                                      initial={{ opacity: 0 }}
+                                      animate={{ opacity: 1 }}
+                                      className="text-white text-[10px] font-medium"
+                                    >
+                                      {trending.currentViewers} watching
+                                    </motion.span>
                                   </motion.div>
                                 )}
                               </AnimatePresence>
@@ -4478,25 +4479,17 @@ export default function LiveTVTvPage() {
                         </motion.div>
                       );
                     })}
-                  </div>
-                </motion.div>
-              )}
-            </AnimatePresence>
+                  </AnimatePresence>
+                </div>
+              </div>
+            )}
 
             {/* Section Divider - Between Trending and Sports */}
-            <AnimatePresence>
-              {trendingChannels.length > 0 && (nflPackage || nbaPackage || mlbPackage) && (
-                <motion.div
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  exit={{ opacity: 0 }}
-                  transition={{ duration: 0.2 }}
-                  className="px-5 mb-4"
-                >
-                  <div className="h-px bg-white/10" />
-                </motion.div>
-              )}
-            </AnimatePresence>
+            {trendingChannels.length > 0 && (nflPackage || nbaPackage || mlbPackage) && (
+              <div className="px-5 mb-4">
+                <div className="h-px bg-white/10" />
+              </div>
+            )}
 
             {/* NFL Section - Large Cards */}
             {nflPackage && nflChannels.length > 0 && (
