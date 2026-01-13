@@ -957,7 +957,21 @@ export default function LiveTVTvPage() {
   viewModeRef.current = viewMode;
   const [showOverlay, setShowOverlay] = useState(true);
   const [guideSearchQuery, setGuideSearchQuery] = useState('');
-  const [hiddenPackages, setHiddenPackages] = useState<Set<number>>(new Set()); // Package IDs to hide from guide
+  // Package IDs to hide from guide - load from localStorage
+  const [hiddenPackages, setHiddenPackages] = useState<Set<number>>(() => {
+    try {
+      const saved = localStorage.getItem('guideHiddenPackages');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) {
+          return new Set(parsed);
+        }
+      }
+    } catch (e) {
+      console.warn('[Guide] Failed to load hidden packages from localStorage:', e);
+    }
+    return new Set();
+  });
   const [showPackageDropdown, setShowPackageDropdown] = useState(false);
 
   // Home page state
@@ -983,6 +997,30 @@ export default function LiveTVTvPage() {
     const timer = setTimeout(() => setShowSplash(false), 3000);
     return () => clearTimeout(timer);
   }, [showSplash]);
+
+  // Sync viewMode with native tab bar selection
+  useEffect(() => {
+    if (showSplash) return; // Don't update during splash
+    const tabMap: Record<string, string> = {
+      home: 'home',
+      player: 'nowplaying',
+      guide: 'guide',
+      profile: 'profile',
+    };
+    const tabId = tabMap[viewMode];
+    if (tabId) {
+      setNativeTabBarSelected(tabId);
+    }
+  }, [viewMode, showSplash]);
+
+  // Save hidden packages to localStorage when changed
+  useEffect(() => {
+    try {
+      localStorage.setItem('guideHiddenPackages', JSON.stringify(Array.from(hiddenPackages)));
+    } catch (e) {
+      console.warn('[Guide] Failed to save hidden packages to localStorage:', e);
+    }
+  }, [hiddenPackages]);
 
   // Helper: Calculate program progress percentage
   const getProgramProgress = useCallback((program: EPGProgram | null | undefined): number => {
