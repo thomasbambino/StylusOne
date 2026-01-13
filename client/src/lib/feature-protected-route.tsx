@@ -6,7 +6,7 @@ import { NavigationBar } from "@/components/navigation-bar";
 import { useQuery } from "@tanstack/react-query";
 import { FeatureGate } from "./feature-gate";
 import { isNativePlatform, getDeviceType } from "@/lib/capacitor";
-import { useEffect, useState } from "react";
+import { useEffect, useState, Suspense } from "react";
 
 interface FeatureProtectedRouteProps {
   path: string;
@@ -61,12 +61,23 @@ export function FeatureProtectedRoute({
       return <Redirect to="/pending" />;
     }
 
+    // Wrap lazy-loaded components in Suspense for proper loading handling
+    const LazyContent = (
+      <Suspense fallback={
+        <div className="flex items-center justify-center min-h-[50vh]">
+          <Loader2 className="h-8 w-8 animate-spin text-border" />
+        </div>
+      }>
+        <Component />
+      </Suspense>
+    );
+
     const content = feature ? (
       <FeatureGate feature={feature}>
-        <Component />
+        {LazyContent}
       </FeatureGate>
     ) : (
-      <Component />
+      LazyContent
     );
 
     // On native mobile apps, TV devices, or fullscreen mode, don't show navigation bar
