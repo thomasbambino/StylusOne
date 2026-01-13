@@ -5,6 +5,7 @@ import { PageTransition } from "@/components/page-transition";
 import { NavigationBar } from "@/components/navigation-bar";
 import { useQuery } from "@tanstack/react-query";
 import { isNativePlatform } from "@/lib/capacitor";
+import { Suspense } from "react";
 
 interface ProtectedRouteProps {
   path: string;
@@ -49,7 +50,13 @@ export function ProtectedRoute({
         {!isNative && <NavigationBar settings={settings} />}
         <div className={isNative ? "" : "pt-20"}>
           <PageTransition>
-            <Component />
+            <Suspense fallback={
+              <div className="flex items-center justify-center min-h-[50vh]">
+                <Loader2 className="h-8 w-8 animate-spin text-border" />
+              </div>
+            }>
+              <Component />
+            </Suspense>
           </PageTransition>
         </div>
       </>

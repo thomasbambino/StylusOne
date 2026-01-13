@@ -1,6 +1,6 @@
 // Cache version - update this when cache structure changes
 // INCREMENT THIS VERSION TO FORCE CACHE REFRESH
-const CACHE_VERSION = 'v2.0.3-20260112';
+const CACHE_VERSION = 'v2.0.4-20260112';
 const CACHE_NAME = `homelab-dashboard-${CACHE_VERSION}`;
 
 // Add message to notify clients of updates
@@ -148,8 +148,8 @@ self.addEventListener('fetch', (event) => {
       })
     );
   } 
-  // Network-first strategy for other API calls
-  else if (url.pathname.startsWith('/api/')) {
+  // Network-first strategy for other API calls (GET only)
+  else if (url.pathname.startsWith('/api/') && event.request.method === 'GET') {
     event.respondWith(
       fetch(event.request)
         .then((response) => {
