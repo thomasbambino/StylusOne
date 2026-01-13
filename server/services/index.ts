@@ -20,6 +20,7 @@ import { emailService } from './email-service';
 import { epubService } from './epub-service';
 import { xtreamCodesService } from './xtream-codes-service';
 import { streamTrackerService } from './stream-tracker-service';
+import { getSharedEPGService } from './epg-singleton';
 
 /**
  * Initialize all services and register them with the service registry
@@ -37,6 +38,14 @@ export async function initializeServices(): Promise<void> {
 
   // Start stream tracker cleanup interval
   streamTrackerService.startCleanupInterval();
+
+  // Initialize EPG service on startup to build 7-day cache
+  console.log('[EPG] Initializing EPG service on startup...');
+  getSharedEPGService().then(() => {
+    console.log('[EPG] EPG service initialized and caching started');
+  }).catch((err) => {
+    console.error('[EPG] Failed to initialize EPG service:', err);
+  });
 
   console.log('All services initialized');
 }
