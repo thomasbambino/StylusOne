@@ -140,19 +140,24 @@ export class StreamTrackerService {
         channelName = channel.name;
       }
 
-      // Look up current program from EPG
+      // Look up current program from EPG using channel name
       let programTitle: string | null = null;
-      try {
-        const epgService = getEPGService();
-        const currentProgram = epgService.getCurrentProgram(stream.streamId);
-        if (currentProgram) {
-          programTitle = currentProgram.title;
-          if (currentProgram.episodeTitle) {
-            programTitle += ` - ${currentProgram.episodeTitle}`;
+      if (channelName) {
+        try {
+          const epgService = getEPGService();
+          const currentProgram = epgService.getCurrentProgram(channelName);
+          if (currentProgram) {
+            programTitle = currentProgram.title;
+            if (currentProgram.episodeTitle) {
+              programTitle += ` - ${currentProgram.episodeTitle}`;
+            }
+            console.log(`[EPG] Found program for ${channelName}: ${programTitle}`);
+          } else {
+            console.log(`[EPG] No current program found for ${channelName}`);
           }
+        } catch (epgError) {
+          console.error('Error looking up EPG program:', epgError);
         }
-      } catch (epgError) {
-        console.error('Error looking up EPG program:', epgError);
       }
 
       await db.insert(viewingHistory).values({

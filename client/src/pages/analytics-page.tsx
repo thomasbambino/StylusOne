@@ -486,9 +486,11 @@ export default function AnalyticsPage() {
                         </TableCell>
                         <TableCell>
                           <div className="flex items-center gap-2">
-                            {stream.channelLogo && (
-                              <img src={stream.channelLogo} alt="" className="h-8 w-auto max-w-[48px] object-contain rounded" />
-                            )}
+                            <div className="w-8 h-8 flex-shrink-0 flex items-center justify-center">
+                              {stream.channelLogo && (
+                                <img src={stream.channelLogo} alt="" className="w-8 h-8 object-contain rounded" />
+                              )}
+                            </div>
                             <span>{stream.channelName}</span>
                           </div>
                         </TableCell>
@@ -580,9 +582,11 @@ export default function AnalyticsPage() {
                       <TableRow key={stat.channelId}>
                         <TableCell>
                           <div className="flex items-center gap-2">
-                            {stat.channelLogo && (
-                              <img src={stat.channelLogo} alt="" className="h-8 w-auto max-w-[48px] object-contain rounded" />
-                            )}
+                            <div className="w-8 h-8 flex-shrink-0 flex items-center justify-center">
+                              {stat.channelLogo && (
+                                <img src={stat.channelLogo} alt="" className="w-8 h-8 object-contain rounded" />
+                              )}
+                            </div>
                             <span>{stat.channelName || stat.channelId}</span>
                           </div>
                         </TableCell>
