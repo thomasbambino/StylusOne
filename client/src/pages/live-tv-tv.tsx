@@ -4383,87 +4383,120 @@ export default function LiveTVTvPage() {
             )}
 
             {/* Trending Section */}
-            {trendingChannels.length > 0 && (
-              <div className="mb-6">
-                <div className="px-5 mb-4 flex items-center gap-2">
-                  <TrendingUp className="h-5 w-5 text-orange-500" />
-                  <h2 className="text-xl font-semibold text-white/90">Trending</h2>
-                </div>
-                <div className="flex gap-4 overflow-x-auto px-5 scrollbar-hide">
-                  {trendingChannels.map((trending) => {
-                    const channel = channels.find(c => c.iptvId === trending.channelId);
-                    if (!channel) return null;
-                    const channelEpg = epgDataMap.get(channel.iptvId || '');
-                    const thumbnail = channelEpg?.currentProgram?.thumbnail;
-                    const channelLogo = trending.logo || channel.logo;
-                    const progress = getProgramProgress(channelEpg?.currentProgram);
-                    const timeLeft = channelEpg?.currentProgram ? getTimeRemaining(channelEpg.currentProgram.endTime) : null;
+            <AnimatePresence>
+              {trendingChannels.length > 0 && (
+                <motion.div
+                  initial={{ opacity: 0, height: 0 }}
+                  animate={{ opacity: 1, height: 'auto' }}
+                  exit={{ opacity: 0, height: 0 }}
+                  transition={{ duration: 0.3, ease: 'easeInOut' }}
+                  className="mb-6 overflow-hidden"
+                >
+                  <motion.div
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.3, delay: 0.1 }}
+                    className="px-5 mb-4 flex items-center gap-2"
+                  >
+                    <TrendingUp className="h-5 w-5 text-orange-500" />
+                    <h2 className="text-xl font-semibold text-white/90">Trending</h2>
+                  </motion.div>
+                  <div className="flex gap-4 overflow-x-auto px-5 scrollbar-hide">
+                    {trendingChannels.map((trending, index) => {
+                      const channel = channels.find(c => c.iptvId === trending.channelId);
+                      if (!channel) return null;
+                      const channelEpg = epgDataMap.get(channel.iptvId || '');
+                      const thumbnail = channelEpg?.currentProgram?.thumbnail;
+                      const channelLogo = trending.logo || channel.logo;
+                      const progress = getProgramProgress(channelEpg?.currentProgram);
+                      const timeLeft = channelEpg?.currentProgram ? getTimeRemaining(channelEpg.currentProgram.endTime) : null;
 
-                    return (
-                      <div
-                        key={trending.channelId}
-                        className="shrink-0 w-72 active:scale-[0.97] transition-transform duration-200"
-                        onClick={() => { haptics.light(); playStream(channel); setViewMode('player'); }}
-                      >
-                        <div className="relative rounded-xl overflow-hidden mb-3">
-                          <div className="aspect-video">
-                            {thumbnail ? (
-                              <img src={thumbnail} alt="" className="w-full h-full object-cover" />
-                            ) : channelLogo ? (
-                              <div className="w-full h-full flex items-center justify-center bg-zinc-900 p-6">
-                                <img src={channelLogo} alt="" className="max-w-[50%] max-h-[50%] object-contain opacity-70" />
-                              </div>
-                            ) : (
-                              <div className="w-full h-full bg-zinc-900" />
-                            )}
-                          </div>
-                          {/* Top row badges */}
-                          <div className="absolute top-2 left-2 right-2 flex items-center justify-between">
-                            {/* Viewer count badge */}
-                            {trending.currentViewers > 0 && (
-                              <div className="flex items-center gap-1 px-2 py-1 bg-black/60 backdrop-blur-sm rounded">
-                                <Users className="w-3 h-3 text-white" />
-                                <span className="text-white text-[10px] font-medium">{trending.currentViewers} watching</span>
-                              </div>
-                            )}
-                            {/* Spacer when no viewers */}
-                            {trending.currentViewers === 0 && <div />}
-                            {/* Network logo */}
-                            {channelLogo && thumbnail && (
-                              <div className="w-8 h-8 rounded bg-black/40 backdrop-blur-sm p-1 flex items-center justify-center">
-                                <img src={channelLogo} alt="" className="max-w-full max-h-full object-contain" />
-                              </div>
-                            )}
-                          </div>
-                          {/* Progress bar at bottom */}
-                          {progress > 0 && (
-                            <div className="absolute bottom-0 left-0 right-0 h-1 bg-black/50">
-                              <div className="h-full bg-white/80" style={{ width: `${progress}%` }} />
+                      return (
+                        <motion.div
+                          key={trending.channelId}
+                          initial={{ opacity: 0, scale: 0.9 }}
+                          animate={{ opacity: 1, scale: 1 }}
+                          exit={{ opacity: 0, scale: 0.9 }}
+                          transition={{ duration: 0.25, delay: index * 0.05 }}
+                          className="shrink-0 w-72 active:scale-[0.97] transition-transform duration-200"
+                          onClick={() => { haptics.light(); playStream(channel); setViewMode('player'); }}
+                        >
+                          <div className="relative rounded-xl overflow-hidden mb-3">
+                            <div className="aspect-video">
+                              {thumbnail ? (
+                                <img src={thumbnail} alt="" className="w-full h-full object-cover" />
+                              ) : channelLogo ? (
+                                <div className="w-full h-full flex items-center justify-center bg-zinc-900 p-6">
+                                  <img src={channelLogo} alt="" className="max-w-[50%] max-h-[50%] object-contain opacity-70" />
+                                </div>
+                              ) : (
+                                <div className="w-full h-full bg-zinc-900" />
+                              )}
                             </div>
-                          )}
-                        </div>
-                        <p className="text-white font-medium text-sm">{trending.channelName}</p>
-                        <div className="flex items-center gap-1.5 mt-0.5">
-                          <p className="text-white/40 text-xs truncate flex-1">
-                            {channelEpg?.currentProgram?.title || 'Live'}
-                          </p>
-                          {timeLeft && progress > 0 && (
-                            <span className="text-white/30 text-[10px] shrink-0">{timeLeft}</span>
-                          )}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
+                            {/* Top row badges */}
+                            <div className="absolute top-2 left-2 right-2 flex items-center justify-between">
+                              {/* Viewer count badge */}
+                              <AnimatePresence>
+                                {trending.currentViewers > 0 && (
+                                  <motion.div
+                                    initial={{ opacity: 0, scale: 0.8 }}
+                                    animate={{ opacity: 1, scale: 1 }}
+                                    exit={{ opacity: 0, scale: 0.8 }}
+                                    transition={{ duration: 0.2 }}
+                                    className="flex items-center gap-1 px-2 py-1 bg-black/60 backdrop-blur-sm rounded"
+                                  >
+                                    <Users className="w-3 h-3 text-white" />
+                                    <span className="text-white text-[10px] font-medium">{trending.currentViewers} watching</span>
+                                  </motion.div>
+                                )}
+                              </AnimatePresence>
+                              {/* Spacer when no viewers */}
+                              {trending.currentViewers === 0 && <div />}
+                              {/* Network logo */}
+                              {channelLogo && thumbnail && (
+                                <div className="w-8 h-8 rounded bg-black/40 backdrop-blur-sm p-1 flex items-center justify-center">
+                                  <img src={channelLogo} alt="" className="max-w-full max-h-full object-contain" />
+                                </div>
+                              )}
+                            </div>
+                            {/* Progress bar at bottom */}
+                            {progress > 0 && (
+                              <div className="absolute bottom-0 left-0 right-0 h-1 bg-black/50">
+                                <div className="h-full bg-white/80" style={{ width: `${progress}%` }} />
+                              </div>
+                            )}
+                          </div>
+                          <p className="text-white font-medium text-sm">{trending.channelName}</p>
+                          <div className="flex items-center gap-1.5 mt-0.5">
+                            <p className="text-white/40 text-xs truncate flex-1">
+                              {channelEpg?.currentProgram?.title || 'Live'}
+                            </p>
+                            {timeLeft && progress > 0 && (
+                              <span className="text-white/30 text-[10px] shrink-0">{timeLeft}</span>
+                            )}
+                          </div>
+                        </motion.div>
+                      );
+                    })}
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
 
             {/* Section Divider - Between Trending and Sports */}
-            {trendingChannels.length > 0 && (nflPackage || nbaPackage || mlbPackage) && (
-              <div className="px-5 mb-4">
-                <div className="h-px bg-white/10" />
-              </div>
-            )}
+            <AnimatePresence>
+              {trendingChannels.length > 0 && (nflPackage || nbaPackage || mlbPackage) && (
+                <motion.div
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  transition={{ duration: 0.2 }}
+                  className="px-5 mb-4"
+                >
+                  <div className="h-px bg-white/10" />
+                </motion.div>
+              )}
+            </AnimatePresence>
 
             {/* NFL Section - Large Cards */}
             {nflPackage && nflChannels.length > 0 && (
