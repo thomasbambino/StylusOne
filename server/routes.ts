@@ -2543,7 +2543,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
     if (!req.isAuthenticated()) return res.sendStatus(401);
 
     try {
-      const { streamId } = req.body;
+      const { streamId, deviceType } = req.body;
+      console.log(`[Generate Token] streamId: ${streamId}, deviceType: ${deviceType}`);
 
       if (!streamId) {
         return res.status(400).json({ message: "streamId is required" });
@@ -2567,7 +2568,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
             userId,
             credentialId,
             streamId,
-            ipAddress
+            ipAddress,
+            deviceType // Pass device type for analytics
           );
           if (sessionToken) {
             console.log(`[Token+Track] User ${userId} acquired stream ${streamId} on credential ${credentialId}`);
