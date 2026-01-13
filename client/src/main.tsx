@@ -39,11 +39,3 @@ if ('serviceWorker' in navigator) {
 }
 
 createRoot(document.getElementById("root")!).render(<App />);
-
-// Hide the initial splash screen once React has rendered
-if (typeof window !== 'undefined' && (window as any).__hideInitialSplash) {
-  // Small delay to ensure the app has painted
-  setTimeout(() => {
-    (window as any).__hideInitialSplash();
-  }, 100);
-}
