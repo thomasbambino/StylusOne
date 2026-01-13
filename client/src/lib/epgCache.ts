@@ -13,6 +13,9 @@ const STORE_NAME = 'programs';
 const CACHE_FORMAT_VERSION = 3;
 const CACHE_VERSION_KEY = 'epg-cache-version';
 
+// Max cache age - refresh after this time to pick up new TMDB thumbnails
+const MAX_CACHE_AGE_MS = 2 * 60 * 60 * 1000; // 2 hours
+
 interface CachedEPGData {
   channelId: string;
   programs: any[];
@@ -109,8 +112,18 @@ export async function getCachedEPG(channelId: string): Promise<any[] | null> {
           return;
         }
 
-        // Check if cache is still valid (has future programs)
+        // Check if cache is still valid
         const now = Date.now();
+
+        // Check max cache age (to pick up new TMDB thumbnails)
+        if (now - data.cachedAt > MAX_CACHE_AGE_MS) {
+          // Cache too old, delete and refetch
+          deleteFromCache(channelId);
+          resolve(null);
+          return;
+        }
+
+        // Check if all programs have expired
         if (data.expiresAt <= now) {
           // Cache expired, delete it
           deleteFromCache(channelId);
