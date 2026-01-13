@@ -193,8 +193,7 @@ public class NativeTabBarPlugin: CAPPlugin, CAPBridgedPlugin {
             items.append(item)
         }
         tabBar.setItems(items, animated: false)
-        // Default to "Now Playing" tab (index 1) since app launches to player
-        tabBar.selectedItem = items.count > 1 ? items[1] : items.first
+        tabBar.selectedItem = items.first  // Default to Home tab
 
         viewController.view.addSubview(tabBar)
 

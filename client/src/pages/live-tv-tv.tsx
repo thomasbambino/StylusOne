@@ -949,7 +949,7 @@ export default function LiveTVTvPage() {
   }, []);
 
   // View state: 'player' (fullscreen), 'guide' (with PiP), 'home' (favorites), 'profile' (user profile)
-  const [viewMode, setViewMode] = useState<'player' | 'guide' | 'home' | 'profile'>('player');
+  const [viewMode, setViewMode] = useState<'player' | 'guide' | 'home' | 'profile'>('home');
   // Ref to track viewMode for orientation listener (which can't access state directly)
   const viewModeRef = useRef(viewMode);
   viewModeRef.current = viewMode;
@@ -975,10 +975,10 @@ export default function LiveTVTvPage() {
     hideNativeTabBar();
   }, []);
 
-  // Splash screen timer - show for 3 seconds
+  // Splash screen timer - show for 4 seconds
   useEffect(() => {
     if (!showSplash) return;
-    const timer = setTimeout(() => setShowSplash(false), 3000);
+    const timer = setTimeout(() => setShowSplash(false), 4000);
     return () => clearTimeout(timer);
   }, [showSplash]);
 
@@ -2427,27 +2427,7 @@ export default function LiveTVTvPage() {
     };
   }, []);
 
-  // Auto-play last watched channel (or first channel) with delay
-  useEffect(() => {
-    if (channels.length > 0 && !selectedChannel) {
-      // Try to get last watched channel from localStorage
-      const lastChannelId = localStorage.getItem('lastWatchedChannelId');
-      let channelToPlay = channels[0]; // Default to first channel
-
-      if (lastChannelId) {
-        const savedChannel = channels.find((ch: Channel) => ch.iptvId === lastChannelId);
-        if (savedChannel) {
-          channelToPlay = savedChannel;
-        }
-      }
-
-      // Small delay before auto-playing to let UI settle
-      const timer = setTimeout(() => {
-        playStream(channelToPlay);
-      }, 300);
-      return () => clearTimeout(timer);
-    }
-  }, [channels, selectedChannel, playStream]);
+  // No auto-play - user starts from Home page and selects a channel manually
 
   // Save last watched channel to localStorage
   useEffect(() => {
@@ -2804,12 +2784,14 @@ export default function LiveTVTvPage() {
             </button>
           </div>
         )}
-        {/* Initial startup indicator - before first channel loads */}
-        {!isLoading && !selectedChannel && viewMode === 'player' && (
-          <div className="absolute inset-0 flex flex-col items-center justify-center bg-black">
-            <div className="w-12 h-12 border-4 border-white/30 border-t-white rounded-full animate-spin mb-4" />
-            <p className="text-white text-lg font-medium">Starting Up</p>
-            <p className="text-white/50 text-sm mt-1">Preparing your stream...</p>
+        {/* No channel selected - prompt user to select one */}
+        {!isLoading && !selectedChannel && (viewMode === 'player' || viewMode === 'guide') && (
+          <div className="absolute inset-0 flex flex-col items-center justify-center bg-black rounded-xl">
+            <Play className={cn("text-white/30 mb-2", viewMode === 'guide' ? "w-8 h-8" : "w-12 h-12 mb-4")} />
+            <p className={cn("text-white font-medium", viewMode === 'guide' ? "text-sm" : "text-lg")}>No Channel Selected</p>
+            {viewMode === 'player' && (
+              <p className="text-white/50 text-sm mt-1">Choose a channel from Home or Guide</p>
+            )}
           </div>
         )}
         {/* Tap zone for portrait video to toggle overlay */}
@@ -3002,15 +2984,17 @@ export default function LiveTVTvPage() {
         >
           {/* Channel Bar - Fixed height */}
           <div className="px-4 py-3 flex items-center gap-3 border-b border-white/10 h-[72px] shrink-0">
-            {channelsLoading || !currentChannel ? (
+            {channelsLoading ? (
               <>
-                {/* Skeleton loader */}
+                {/* Skeleton loader - only when actually loading */}
                 <div className="w-16 h-12 bg-white/10 rounded animate-pulse shrink-0" />
                 <div className="flex-1 min-w-0">
                   <div className="h-5 w-32 bg-white/10 rounded animate-pulse mb-2" />
                   <div className="h-4 w-48 bg-white/10 rounded animate-pulse" />
                 </div>
               </>
+            ) : !currentChannel ? (
+              <div className="flex-1" />
             ) : (
               <>
                 {/* Fixed-width logo container for consistent layout */}
@@ -3040,7 +3024,7 @@ export default function LiveTVTvPage() {
 
           {/* Program Info & Progress - Fixed height with scrollable content */}
           <div className="h-[140px] shrink-0 border-b border-white/10">
-            {channelsLoading || !currentChannel ? (
+            {channelsLoading ? (
               <div className="px-4 py-3 h-full">
                 <div className="flex justify-between items-center mb-2">
                   <div className="h-4 w-24 bg-white/10 rounded animate-pulse" />
@@ -3049,6 +3033,8 @@ export default function LiveTVTvPage() {
                 <div className="h-1.5 bg-white/10 rounded-full animate-pulse" />
                 <div className="h-4 w-full bg-white/10 rounded animate-pulse mt-2" />
               </div>
+            ) : !currentChannel ? (
+              <div className="h-full" />
             ) : currentEPG?.currentProgram ? (
               (() => {
                 // Extract season/episode from description if not in dedicated fields
@@ -3323,12 +3309,20 @@ export default function LiveTVTvPage() {
 
           {/* Current Channel Info */}
           <div className="px-4 py-2 flex items-center gap-3 border-b border-white/10">
-            {channelsLoading || !currentChannel ? (
+            {channelsLoading ? (
               <>
                 <div className="h-8 w-12 bg-white/10 rounded animate-pulse" />
                 <div className="flex-1 min-w-0">
                   <div className="h-4 w-24 bg-white/10 rounded animate-pulse mb-1" />
                   <div className="h-3 w-32 bg-white/10 rounded animate-pulse" />
+                </div>
+              </>
+            ) : !currentChannel ? (
+              <>
+                <Play className="w-8 h-8 text-white/20" />
+                <div className="flex-1 min-w-0">
+                  <p className="text-white/50 text-sm">No channel selected</p>
+                  <p className="text-white/30 text-xs">Tap a channel below to start</p>
                 </div>
               </>
             ) : (
