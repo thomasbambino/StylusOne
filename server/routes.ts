@@ -3670,7 +3670,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
         upcomingPrograms = epgService.getUpcomingProgramsByName(channelName, hours);
       }
 
-      res.json({ programs: upcomingPrograms });
+      // Enrich programs with TMDB thumbnails if available
+      const enrichedPrograms = upcomingPrograms.map(program => {
+        // Try to get TMDB thumbnail, queue title for background fetch if not cached
+        const tmdbThumbnail = tmdbService.getCachedImage(program.title);
+        if (tmdbThumbnail) {
+          // Queue the title to keep it fresh in cache
+          tmdbService.queueTitle(program.title);
+          return { ...program, thumbnail: tmdbThumbnail };
+        }
+        // If no TMDB thumbnail, queue it for future fetch and use existing thumbnail
+        tmdbService.queueTitle(program.title);
+        return program;
+      });
+
+      res.json({ programs: enrichedPrograms });
     } catch (error) {
       console.error('Error fetching upcoming programs:', error);
       res.status(500).json({
