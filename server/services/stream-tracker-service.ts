@@ -1,6 +1,6 @@
 import crypto from 'crypto';
 import { db } from '../db';
-import { activeIptvStreams, iptvCredentials } from '@shared/schema';
+import { activeIptvStreams, iptvCredentials, iptvChannels, viewingHistory } from '@shared/schema';
 import { eq, and, lt } from 'drizzle-orm';
 
 /**
@@ -55,7 +55,8 @@ export class StreamTrackerService {
     userId: number,
     credentialId: number,
     streamId: string,
-    ipAddress?: string
+    ipAddress?: string,
+    deviceType?: string
   ): Promise<string | null> {
     // Check credential capacity
     const [credential] = await db.select()
@@ -97,7 +98,8 @@ export class StreamTrackerService {
         userId,
         streamId,
         sessionToken,
-        ipAddress: ipAddress || null
+        ipAddress: ipAddress || null,
+        deviceType: deviceType || null
       });
 
       console.log(`Stream acquired: user=${userId}, credential=${credentialId}, stream=${streamId}`);
@@ -105,6 +107,45 @@ export class StreamTrackerService {
     } catch (error) {
       console.error('Error acquiring stream:', error);
       return null;
+    }
+  }
+
+  /**
+   * Save a stream to viewing history before deletion
+   */
+  private async saveToViewingHistory(stream: typeof activeIptvStreams.$inferSelect): Promise<void> {
+    try {
+      const endedAt = new Date();
+      const startedAt = new Date(stream.startedAt);
+      const durationSeconds = Math.floor((endedAt.getTime() - startedAt.getTime()) / 1000);
+
+      // Look up channel name from database
+      let channelName: string | null = null;
+      const [channel] = await db.select({ name: iptvChannels.name })
+        .from(iptvChannels)
+        .where(eq(iptvChannels.streamId, stream.streamId))
+        .limit(1);
+
+      if (channel) {
+        channelName = channel.name;
+      }
+
+      await db.insert(viewingHistory).values({
+        userId: stream.userId,
+        channelId: stream.streamId,
+        channelName,
+        programTitle: null, // EPG lookup could be added later
+        credentialId: stream.credentialId,
+        startedAt: stream.startedAt,
+        endedAt,
+        durationSeconds,
+        ipAddress: stream.ipAddress,
+        deviceType: stream.deviceType,
+      });
+
+      console.log(`Viewing history saved: user=${stream.userId}, channel=${stream.streamId}, duration=${durationSeconds}s`);
+    } catch (error) {
+      console.error('Error saving to viewing history:', error);
     }
   }
 
@@ -118,6 +159,8 @@ export class StreamTrackerService {
         .returning();
 
       if (result.length > 0) {
+        // Save to viewing history
+        await this.saveToViewingHistory(result[0]);
         console.log(`Stream released: token=${sessionToken.substring(0, 8)}...`);
         return true;
       }
@@ -157,6 +200,10 @@ export class StreamTrackerService {
         .returning();
 
       if (result.length > 0) {
+        // Save each stale stream to viewing history
+        for (const stream of result) {
+          await this.saveToViewingHistory(stream);
+        }
         console.log(`Cleaned up ${result.length} stale streams`);
       }
 
@@ -205,6 +252,10 @@ export class StreamTrackerService {
         .returning();
 
       if (result.length > 0) {
+        // Save each stream to viewing history
+        for (const stream of result) {
+          await this.saveToViewingHistory(stream);
+        }
         console.log(`Released ${result.length} streams for user ${userId}`);
       }
 
@@ -225,6 +276,10 @@ export class StreamTrackerService {
         .returning();
 
       if (result.length > 0) {
+        // Save each stream to viewing history
+        for (const stream of result) {
+          await this.saveToViewingHistory(stream);
+        }
         console.log(`Released ${result.length} streams for credential ${credentialId}`);
       }
 

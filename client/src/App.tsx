@@ -27,10 +27,10 @@ const LiveTVAdaptive = lazy(() => import("@/pages/live-tv-adaptive"));
 const BooksPage = lazy(() => import("@/pages/books-page"));
 const ServerSharePage = lazy(() => import("@/pages/server-share-page"));
 const SubscriptionPlansPage = lazy(() => import("@/pages/subscription-plans-page"));
-const IptvCredentialsPage = lazy(() => import("@/pages/iptv-credentials-page"));
 const IptvProvidersPage = lazy(() => import("@/pages/iptv-providers-page"));
 const IptvChannelsPage = lazy(() => import("@/pages/iptv-channels-page"));
 const IptvPackagesPage = lazy(() => import("@/pages/iptv-packages-page"));
+const AnalyticsPage = lazy(() => import("@/pages/analytics-page"));
 const MySubscriptionPage = lazy(() => import("@/pages/my-subscription-page"));
 const MyReferralsPage = lazy(() => import("@/pages/my-referrals-page"));
 
@@ -55,10 +55,10 @@ function Router() {
         <ProtectedRoute path="/users" component={UsersPage} />
         <ProtectedRoute path="/settings" component={SettingsPage} />
         <ProtectedRoute path="/subscription-plans" component={SubscriptionPlansPage} />
-        <ProtectedRoute path="/iptv-credentials" component={IptvCredentialsPage} />
         <ProtectedRoute path="/iptv-providers" component={IptvProvidersPage} />
         <ProtectedRoute path="/iptv-channels" component={IptvChannelsPage} />
         <ProtectedRoute path="/iptv-packages" component={IptvPackagesPage} />
+        <ProtectedRoute path="/analytics" component={AnalyticsPage} />
         <ProtectedRoute path="/my-subscription" component={MySubscriptionPage} />
         <ProtectedRoute path="/my-referrals" component={MyReferralsPage} />
         <Route path="/server/:serverId" component={ServerSharePage} />

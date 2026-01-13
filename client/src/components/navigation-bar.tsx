@@ -1,4 +1,4 @@
-import { Users, Settings as SettingsIcon, LogOut, Menu, Search, CreditCard, Eye, Gift, Server, Tv, Package } from "lucide-react"
+import { Users, Settings as SettingsIcon, LogOut, Menu, Search, CreditCard, Eye, Gift, Server, Tv, Package, BarChart3 } from "lucide-react"
 import { Link, useLocation } from "wouter"
 import { Settings } from "@shared/schema"
 import { motion } from "framer-motion"
@@ -142,6 +142,12 @@ export function NavigationBar({ settings, pageTitle }: NavigationBarProps) {
                       <DropdownMenuItem className="cursor-pointer">
                         <SettingsIcon className="h-4 w-4 mr-2" />
                         Settings
+                      </DropdownMenuItem>
+                    </Link>
+                    <Link href="/analytics">
+                      <DropdownMenuItem className="cursor-pointer">
+                        <BarChart3 className="h-4 w-4 mr-2" />
+                        Analytics
                       </DropdownMenuItem>
                     </Link>
                     {isSuperAdmin && (
