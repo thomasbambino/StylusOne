@@ -135,6 +135,16 @@ function getDeviceIcon(deviceType: string | null) {
   }
 }
 
+function formatDeviceType(deviceType: string | null): string {
+  if (!deviceType) return 'Web';
+  switch (deviceType.toLowerCase()) {
+    case 'ios': return 'iOS';
+    case 'android': return 'Android';
+    case 'web': return 'Web';
+    default: return deviceType;
+  }
+}
+
 export default function AnalyticsPage() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -488,7 +498,7 @@ export default function AnalyticsPage() {
                         <TableCell>
                           <div className="flex items-center gap-1">
                             {getDeviceIcon(stream.deviceType)}
-                            <span className="text-xs">{stream.deviceType || 'web'}</span>
+                            <span className="text-xs">{formatDeviceType(stream.deviceType)}</span>
                           </div>
                         </TableCell>
                         <TableCell className="text-xs text-muted-foreground">
@@ -711,7 +721,7 @@ export default function AnalyticsPage() {
                           <TableCell>
                             <div className="flex items-center gap-1">
                               {getDeviceIcon(entry.deviceType)}
-                              <span className="text-xs">{entry.deviceType || 'web'}</span>
+                              <span className="text-xs">{formatDeviceType(entry.deviceType)}</span>
                             </div>
                           </TableCell>
                         </TableRow>
