@@ -214,15 +214,18 @@ export class EPGService implements IService {
    */
   getCurrentProgram(channelId: string): EPGProgram | null {
     const now = new Date();
+    let matchMethod = 'none';
 
     // Try direct lookup first
     let programs = this.programCache.get(channelId) || [];
+    if (programs.length > 0) matchMethod = 'direct';
 
     // If no programs found, try using channel mapping
     if (programs.length === 0) {
       const mappedChannelId = this.mapChannel(channelId);
       if (mappedChannelId) {
         programs = this.programCache.get(mappedChannelId) || [];
+        if (programs.length > 0) matchMethod = `mapped:${mappedChannelId}`;
       }
     }
 
@@ -233,14 +236,24 @@ export class EPGService implements IService {
         const normalizedEpgId = epgChannelId.toLowerCase().replace(/[^a-z0-9]/g, '');
         if (normalizedEpgId.includes(normalizedName) || normalizedName.includes(normalizedEpgId)) {
           programs = channelPrograms;
+          matchMethod = `fuzzy:${epgChannelId}`;
           break;
         }
       }
     }
 
-    return programs.find(p =>
+    const currentProgram = programs.find(p =>
       p.startTime <= now && p.endTime > now
     ) || null;
+
+    // Log EPG lookup result for debugging
+    if (programs.length === 0) {
+      console.log(`[EPG] No programs found for "${channelId}" (cache has ${this.programCache.size} channels)`);
+    } else if (!currentProgram) {
+      console.log(`[EPG] Found ${programs.length} programs for "${channelId}" via ${matchMethod}, but none current`);
+    }
+
+    return currentProgram;
   }
 
   /**

@@ -265,15 +265,26 @@ router.get('/users', requireAdmin, async (req, res) => {
     const enrichedStats = await Promise.all(
       userStats.map(async (stat) => {
         const [currentStream] = await db
-          .select({ channelId: activeIptvStreams.streamId })
+          .select({ streamId: activeIptvStreams.streamId })
           .from(activeIptvStreams)
           .where(eq(activeIptvStreams.userId, stat.userId))
           .limit(1);
 
+        // Look up channel name if user is watching
+        let currentChannelName: string | null = null;
+        if (currentStream) {
+          const [channel] = await db
+            .select({ name: iptvChannels.name })
+            .from(iptvChannels)
+            .where(eq(iptvChannels.streamId, currentStream.streamId))
+            .limit(1);
+          currentChannelName = channel?.name || currentStream.streamId;
+        }
+
         return {
           ...stat,
           isWatching: !!currentStream,
-          currentChannel: currentStream?.channelId || null,
+          currentChannel: currentChannelName,
         };
       })
     );
