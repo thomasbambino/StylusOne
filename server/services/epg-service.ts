@@ -56,6 +56,7 @@ interface EPGCacheData {
   lastFetch: string | null;
   lastCleanup: string | null;
   programs: { [channelId: string]: SerializedEPGProgram[] };
+  channelNameMapping?: { [normalizedName: string]: string }; // Maps normalized channel names to EPG IDs
 }
 
 /**
@@ -117,11 +118,21 @@ export class EPGService implements IService {
           : Infinity;
         console.log(`[EPG] Loaded ${this.programCache.size} channels from disk cache (${hoursSinceLastFetch.toFixed(1)} hours old)`);
 
-        // Build channel name mapping from local XMLTV file (for name-based lookups)
-        await this.buildChannelNameMapping();
+        // If no channel name mappings were loaded from cache (old cache format), build from local file
+        if (this.channelNameToId.size === 0) {
+          console.log('[EPG] No channel name mappings in cache, building from local XMLTV...');
+          await this.buildChannelNameMapping();
+        }
 
         this.initialized = true;
-        // Do NOT auto-fetch on startup - let the background interval handle it
+
+        // If we have lots of channels but few name mappings, trigger a refresh to rebuild mappings
+        // This handles upgrading from old cache format that didn't save mappings
+        if (this.programCache.size > 100 && this.channelNameToId.size < 100) {
+          console.log(`[EPG] Too few channel name mappings (${this.channelNameToId.size}) for ${this.programCache.size} channels - triggering refresh to rebuild`);
+          // Don't await - let it run in background
+          this.fetchAndMergeEPGData().catch(err => console.error('[EPG] Background refresh error:', err));
+        }
       } else {
         // No disk cache, need to fetch
         console.log('[EPG] No disk cache found, fetching from provider...');
@@ -240,7 +251,8 @@ export class EPGService implements IService {
       const cacheData: EPGCacheData = {
         lastFetch: this.lastFetch?.toISOString() || null,
         lastCleanup: this.lastCleanup?.toISOString() || null,
-        programs: {}
+        programs: {},
+        channelNameMapping: {}
       };
 
       // Convert Map to serializable object
@@ -252,8 +264,13 @@ export class EPGService implements IService {
         }));
       }
 
+      // Save channel name mapping
+      for (const [name, id] of this.channelNameToId.entries()) {
+        cacheData.channelNameMapping![name] = id;
+      }
+
       fs.writeFileSync(EPG_CACHE_FILE, JSON.stringify(cacheData), 'utf-8');
-      console.log(`[EPG] Saved ${this.programCache.size} channels, ${this.getTotalProgramCount()} programs to disk`);
+      console.log(`[EPG] Saved ${this.programCache.size} channels, ${this.getTotalProgramCount()} programs, ${this.channelNameToId.size} name mappings to disk`);
     } catch (error) {
       console.error('[EPG] Error saving to disk:', error);
     }
@@ -282,6 +299,15 @@ export class EPGService implements IService {
           endTime: new Date(p.endTime)
         }));
         this.programCache.set(channelId, parsed);
+      }
+
+      // Load channel name mapping from disk cache
+      this.channelNameToId.clear();
+      if (data.channelNameMapping) {
+        for (const [name, id] of Object.entries(data.channelNameMapping)) {
+          this.channelNameToId.set(name, id);
+        }
+        console.log(`[EPG] Loaded ${this.channelNameToId.size} channel name mappings from disk`);
       }
 
       return true;
@@ -672,6 +698,7 @@ export class EPGService implements IService {
 
     // Try exact match in name->ID mapping
     let epgChannelId = this.channelNameToId.get(normalized);
+    let matchType = epgChannelId ? 'exact-name' : '';
 
     // Try partial matches if exact fails
     if (!epgChannelId) {
@@ -679,6 +706,7 @@ export class EPGService implements IService {
       for (const [mappedName, id] of this.channelNameToId.entries()) {
         if (mappedName.includes(normalized) || normalized.includes(mappedName)) {
           epgChannelId = id;
+          matchType = 'partial-name';
           break;
         }
       }
@@ -690,14 +718,23 @@ export class EPGService implements IService {
         const normalizedCached = cachedChannelId.toLowerCase().replace(/[^a-z0-9]/g, '');
         if (normalizedCached.includes(normalized) || normalized.includes(normalizedCached)) {
           epgChannelId = cachedChannelId;
+          matchType = 'cache-id';
           break;
         }
       }
     }
 
-    if (!epgChannelId) return [];
+    if (!epgChannelId) {
+      // Log first few failures for debugging
+      console.log(`[EPG] No match for name "${channelName}" (normalized: ${normalized}, mapping size: ${this.channelNameToId.size})`);
+      return [];
+    }
 
-    return this.getUpcomingPrograms(epgChannelId, hours);
+    const programs = this.getUpcomingPrograms(epgChannelId, hours);
+    if (programs.length > 0) {
+      console.log(`[EPG] Found ${programs.length} programs for "${channelName}" -> ${epgChannelId} (${matchType})`);
+    }
+    return programs;
   }
 
   /**
