@@ -664,7 +664,7 @@ export default function AnalyticsPage() {
                           {stat.isWatching ? (
                             <Badge variant="default" className="bg-green-600">
                               <Play className="h-3 w-3 mr-1" />
-                              {stat.currentChannel || 'Watching'}
+                              Watching
                             </Badge>
                           ) : (
                             <Badge variant="secondary">Offline</Badge>

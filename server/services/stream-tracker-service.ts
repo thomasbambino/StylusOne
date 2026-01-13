@@ -4,11 +4,17 @@ import { activeIptvStreams, iptvCredentials, iptvChannels, viewingHistory } from
 import { eq, and, lt } from 'drizzle-orm';
 import { EPGService } from './epg-service';
 
-// Lazy-loaded EPG service instance
+// Lazy-loaded EPG service instance with proper initialization
 let epgServiceInstance: EPGService | null = null;
-function getEPGService(): EPGService {
+let epgInitPromise: Promise<void> | null = null;
+
+async function getEPGService(): Promise<EPGService> {
   if (!epgServiceInstance) {
     epgServiceInstance = new EPGService();
+    epgInitPromise = epgServiceInstance.initialize();
+  }
+  if (epgInitPromise) {
+    await epgInitPromise;
   }
   return epgServiceInstance;
 }
@@ -144,7 +150,7 @@ export class StreamTrackerService {
       let programTitle: string | null = null;
       if (channelName) {
         try {
-          const epgService = getEPGService();
+          const epgService = await getEPGService();
           const currentProgram = epgService.getCurrentProgram(channelName);
           if (currentProgram) {
             programTitle = currentProgram.title;
