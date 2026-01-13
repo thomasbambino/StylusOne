@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef, useMemo, memo } from 'react';
 import { useQuery, useQueries, useMutation, useQueryClient } from '@tanstack/react-query';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Play, Pause, Volume2, VolumeX, Info, Plus, MoreHorizontal, Star, X, Check, CreditCard, Calendar, ExternalLink, LogOut, LayoutGrid, Airplay, Search, Volume1, Minus, Settings, PictureInPicture2, Filter, Package, Tv, Clock, Zap, Radio, TrendingUp, Flame, Users } from 'lucide-react';
+import { ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Play, Pause, Volume2, VolumeX, Info, Plus, MoreHorizontal, Star, X, Check, CreditCard, Calendar, ExternalLink, LogOut, LayoutGrid, Airplay, Search, Volume1, Minus, Settings, PictureInPicture2, Filter, Package, Tv, Clock, Zap, Radio, TrendingUp, Users } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { getQueryFn, apiRequest, queryClient } from '@/lib/queryClient';
 import { buildApiUrl, isNativePlatform, getDeviceTypeSync, getPlatform } from '@/lib/capacitor';
@@ -1396,17 +1396,15 @@ export default function LiveTVTvPage() {
   interface TrendingChannel {
     channelId: string;
     channelName: string;
-    viewCount: number;
     currentViewers: number;
     logo: string | null;
-    isHotNow: boolean;
   }
 
   const { data: trendingChannels = [] } = useQuery<TrendingChannel[]>({
     queryKey: ['/api/iptv/trending'],
     queryFn: getQueryFn({ on401: "returnNull" }),
     enabled: viewMode === 'home',
-    refetchInterval: 60000, // Refresh every minute
+    refetchInterval: 15000, // Refresh every 15 seconds for real-time viewer counts
     select: (data: any) => data?.trending || [],
   });
 
@@ -4355,21 +4353,15 @@ export default function LiveTVTvPage() {
                           </div>
                           {/* Top row badges */}
                           <div className="absolute top-2 left-2 right-2 flex items-center justify-between">
-                            {/* Hot Now / Viewer count badge */}
-                            <div className="flex items-center gap-1.5">
-                              {trending.isHotNow && (
-                                <div className="flex items-center gap-1 px-2 py-1 bg-orange-600 rounded">
-                                  <Flame className="w-3 h-3 text-white" />
-                                  <span className="text-white text-[10px] font-bold">HOT</span>
-                                </div>
-                              )}
-                              {trending.currentViewers > 0 && (
-                                <div className="flex items-center gap-1 px-2 py-1 bg-black/60 backdrop-blur-sm rounded">
-                                  <Users className="w-3 h-3 text-white" />
-                                  <span className="text-white text-[10px] font-medium">{trending.currentViewers}</span>
-                                </div>
-                              )}
-                            </div>
+                            {/* Viewer count badge */}
+                            {trending.currentViewers > 0 && (
+                              <div className="flex items-center gap-1 px-2 py-1 bg-black/60 backdrop-blur-sm rounded">
+                                <Users className="w-3 h-3 text-white" />
+                                <span className="text-white text-[10px] font-medium">{trending.currentViewers} watching</span>
+                              </div>
+                            )}
+                            {/* Spacer when no viewers */}
+                            {trending.currentViewers === 0 && <div />}
                             {/* Network logo */}
                             {channelLogo && thumbnail && (
                               <div className="w-8 h-8 rounded bg-black/40 backdrop-blur-sm p-1 flex items-center justify-center">

@@ -2352,6 +2352,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Trending channels endpoint - returns most watched channels
+  // Priority: 1) Currently being watched (active streams), 2) Last hour, 3) Last 24 hours
   app.get("/api/iptv/trending", async (req, res) => {
     if (!req.isAuthenticated()) return res.sendStatus(401);
 
@@ -2363,27 +2364,35 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const oneHourAgo = new Date(now.getTime() - 60 * 60 * 1000);
       const oneDayAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000);
 
-      // Get channels watched in the last hour with view counts
+      // Get channels with active viewers RIGHT NOW (sorted by viewer count)
+      const activeNow = await db
+        .select({
+          streamId: activeIptvStreams.streamId,
+          viewerCount: sql<number>`count(*)::int`,
+        })
+        .from(activeIptvStreams)
+        .groupBy(activeIptvStreams.streamId)
+        .orderBy(desc(sql`count(*)`));
+
+      // Get channels watched in the last hour
       const lastHourStats = await db
         .select({
           channelId: viewingHistory.channelId,
           channelName: viewingHistory.channelName,
           viewCount: sql<number>`count(*)::int`,
-          totalWatchTime: sql<number>`COALESCE(SUM(duration_seconds), 0)::int`,
         })
         .from(viewingHistory)
         .where(gte(viewingHistory.startedAt, oneHourAgo))
         .groupBy(viewingHistory.channelId, viewingHistory.channelName)
         .orderBy(desc(sql`count(*)`))
-        .limit(20);
+        .limit(30);
 
-      // Get channels watched in the last 24 hours for fallback
+      // Get channels watched in the last 24 hours
       const lastDayStats = await db
         .select({
           channelId: viewingHistory.channelId,
           channelName: viewingHistory.channelName,
           viewCount: sql<number>`count(*)::int`,
-          totalWatchTime: sql<number>`COALESCE(SUM(duration_seconds), 0)::int`,
         })
         .from(viewingHistory)
         .where(gte(viewingHistory.startedAt, oneDayAgo))
@@ -2391,71 +2400,59 @@ export async function registerRoutes(app: Express): Promise<Server> {
         .orderBy(desc(sql`count(*)`))
         .limit(50);
 
-      // Get current viewer counts for all channels
-      const currentViewers = await db
-        .select({
-          streamId: activeIptvStreams.streamId,
-          viewerCount: sql<number>`count(*)::int`,
-        })
-        .from(activeIptvStreams)
-        .groupBy(activeIptvStreams.streamId);
+      // Build viewer count map
+      const viewerMap = new Map(activeNow.map(v => [v.streamId, v.viewerCount]));
 
-      const viewerMap = new Map(currentViewers.map(v => [v.streamId, v.viewerCount]));
-
-      // Combine: prioritize last hour, then fill with last 24 hours
+      // Build trending list with priority ordering
       const seenChannels = new Set<string>();
       const trendingChannels: Array<{
         channelId: string;
         channelName: string;
-        viewCount: number;
         currentViewers: number;
         logo: string | null;
-        isHotNow: boolean;
       }> = [];
 
-      // First add last hour channels (these are "hot now")
-      for (const stat of lastHourStats) {
-        if (!stat.channelId) continue;
-        seenChannels.add(stat.channelId);
+      // Helper to add channel
+      const addChannel = async (channelId: string, channelName: string | null) => {
+        if (!channelId || seenChannels.has(channelId)) return;
+        if (trendingChannels.length >= 30) return;
 
-        // Get channel logo
+        seenChannels.add(channelId);
+
         const [channel] = await db
-          .select({ logo: iptvChannels.logo })
+          .select({ logo: iptvChannels.logo, name: iptvChannels.name })
           .from(iptvChannels)
-          .where(eq(iptvChannels.streamId, stat.channelId))
+          .where(eq(iptvChannels.streamId, channelId))
           .limit(1);
 
         trendingChannels.push({
-          channelId: stat.channelId,
-          channelName: stat.channelName || `Channel ${stat.channelId}`,
-          viewCount: stat.viewCount,
-          currentViewers: viewerMap.get(stat.channelId) || 0,
+          channelId,
+          channelName: channelName || channel?.name || `Channel ${channelId}`,
+          currentViewers: viewerMap.get(channelId) || 0,
           logo: channel?.logo || null,
-          isHotNow: true,
         });
+      };
+
+      // 1. First: Channels being watched RIGHT NOW (sorted by viewer count)
+      for (const active of activeNow) {
+        // Get channel name from history or channels table
+        const historyEntry = lastHourStats.find(s => s.channelId === active.streamId)
+          || lastDayStats.find(s => s.channelId === active.streamId);
+        await addChannel(active.streamId, historyEntry?.channelName || null);
       }
 
-      // Then add last 24 hour channels that aren't already included
+      // 2. Second: Channels from last hour (not already added)
+      for (const stat of lastHourStats) {
+        if (stat.channelId) {
+          await addChannel(stat.channelId, stat.channelName);
+        }
+      }
+
+      // 3. Third: Channels from last 24 hours (not already added)
       for (const stat of lastDayStats) {
-        if (!stat.channelId || seenChannels.has(stat.channelId)) continue;
-        if (trendingChannels.length >= 30) break;
-
-        seenChannels.add(stat.channelId);
-
-        const [channel] = await db
-          .select({ logo: iptvChannels.logo })
-          .from(iptvChannels)
-          .where(eq(iptvChannels.streamId, stat.channelId))
-          .limit(1);
-
-        trendingChannels.push({
-          channelId: stat.channelId,
-          channelName: stat.channelName || `Channel ${stat.channelId}`,
-          viewCount: stat.viewCount,
-          currentViewers: viewerMap.get(stat.channelId) || 0,
-          logo: channel?.logo || null,
-          isHotNow: false,
-        });
+        if (stat.channelId) {
+          await addChannel(stat.channelId, stat.channelName);
+        }
       }
 
       res.json({ trending: trendingChannels });
