@@ -2683,14 +2683,17 @@ export default function LiveTVTvPage() {
       );
 
       if (playingIndex >= 0) {
-        const rowHeight = 56; // h-14 = 56px
         const scrollContainer = guideScrollRef.current;
-        // Scroll so the playing channel is near the top (with a small offset)
-        const targetScroll = playingIndex * rowHeight;
         // Use setTimeout to ensure DOM is ready
         setTimeout(() => {
-          scrollContainer.scrollTo({ top: Math.max(0, targetScroll), behavior: 'smooth' });
-        }, 100);
+          // Find the actual element in the scroll container
+          const channelElements = scrollContainer.children;
+          if (channelElements[playingIndex]) {
+            const element = channelElements[playingIndex] as HTMLElement;
+            // Scroll so the playing channel is at the top
+            scrollContainer.scrollTo({ top: element.offsetTop, behavior: 'smooth' });
+          }
+        }, 150);
       }
     }
   }, [viewMode, selectedChannel, filteredChannels]);
@@ -3554,7 +3557,7 @@ export default function LiveTVTvPage() {
           </div>
 
           {/* Channel List */}
-          <div className="flex-1 overflow-y-auto relative" onScroll={handleGuideScroll}>
+          <div ref={guideScrollRef} className="flex-1 overflow-y-auto relative" onScroll={handleGuideScroll}>
             {filteredChannels.slice(0, renderLimit).map((channel: Channel, index: number) => {
               const channelEpg = epgDataMap.get(channel.iptvId || '');
               const isCurrentChannel = selectedChannel?.iptvId === channel.iptvId;
