@@ -116,6 +116,10 @@ export class EPGService implements IService {
           ? (Date.now() - this.lastFetch.getTime()) / (1000 * 60 * 60)
           : Infinity;
         console.log(`[EPG] Loaded ${this.programCache.size} channels from disk cache (${hoursSinceLastFetch.toFixed(1)} hours old)`);
+
+        // Build channel name mapping from local XMLTV file (for name-based lookups)
+        await this.buildChannelNameMapping();
+
         this.initialized = true;
         // Do NOT auto-fetch on startup - let the background interval handle it
       } else {
@@ -168,6 +172,53 @@ export class EPGService implements IService {
     }, this.CLEANUP_INTERVAL_MS);
 
     console.log('[EPG] Background refresh will run when 6+ hours have passed since last fetch');
+  }
+
+  /**
+   * Build channel name to ID mapping from local XMLTV file or provider fetch
+   */
+  private async buildChannelNameMapping(): Promise<void> {
+    try {
+      // Try local XMLTV file first
+      const xmltvPath = this.xmltvPath || path.join(process.cwd(), 'data', 'epgshare_guide.xmltv');
+
+      if (!fs.existsSync(xmltvPath)) {
+        console.log('[EPG] No local XMLTV file for channel name mapping');
+        return;
+      }
+
+      const xmlData = fs.readFileSync(xmltvPath, 'utf-8');
+      const parser = new xml2js.Parser();
+      const result = await parser.parseStringPromise(xmlData);
+
+      if (!result.tv?.channel) {
+        console.log('[EPG] No channel data in XMLTV file');
+        return;
+      }
+
+      this.channelNameToId.clear();
+
+      for (const channel of result.tv.channel) {
+        const channelId = channel.$.id;
+        const displayNames = channel['display-name'];
+        if (displayNames && Array.isArray(displayNames)) {
+          for (const name of displayNames) {
+            const displayName = name._ || name;
+            if (displayName && typeof displayName === 'string') {
+              // Normalize: lowercase, remove special chars, trim
+              const normalized = displayName.toLowerCase().replace(/[^a-z0-9]/g, '');
+              if (normalized.length > 2) {
+                this.channelNameToId.set(normalized, channelId);
+              }
+            }
+          }
+        }
+      }
+
+      console.log(`[EPG] Built channel name mapping: ${this.channelNameToId.size} entries`);
+    } catch (error) {
+      console.error('[EPG] Error building channel name mapping:', error);
+    }
   }
 
   /**
