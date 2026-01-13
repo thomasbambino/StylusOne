@@ -1,9 +1,19 @@
 import axios from 'axios';
+import * as fs from 'fs';
+import * as path from 'path';
 import { IService } from './interfaces';
 import { db } from '../db';
 import { iptvCredentials, planIptvCredentials, activeIptvStreams, userSubscriptions, subscriptionPlans, iptvChannels, planPackages, packageChannels, channelPackages, iptvProviders } from '@shared/schema';
 import { eq, and, inArray, desc } from 'drizzle-orm';
 import { decrypt, maskCredential } from '../utils/encryption';
+
+// Cache directory for IPTV data
+const CACHE_DIR = path.join(process.cwd(), 'data', 'iptv-cache');
+
+// Ensure cache directory exists
+if (!fs.existsSync(CACHE_DIR)) {
+  fs.mkdirSync(CACHE_DIR, { recursive: true });
+}
 
 /**
  * Interface for Xtream Codes authentication
@@ -104,13 +114,70 @@ export class XtreamCodesClient {
   private categoriesCache: XtreamCategory[] | null = null;
   private channelsCache: IPTVChannel[] | null = null;
   private cacheTimestamp: number = 0;
-  private cacheExpirationMs: number = 30000; // 30 second cache
+  private cacheExpirationMs: number = 1800000; // 30 minute cache (was 30 seconds - caused rate limiting)
 
   constructor(credentials: { serverUrl: string; username: string; password: string; credentialId?: number }) {
     this.serverUrl = credentials.serverUrl;
     this.username = credentials.username;
     this.password = credentials.password;
     this.credentialId = credentials.credentialId || null;
+
+    // Try to load from disk cache on startup
+    this.loadFromDisk();
+  }
+
+  /**
+   * Get cache file path for this credential
+   */
+  private getCacheFilePath(): string {
+    const safeUsername = this.username.replace(/[^a-zA-Z0-9]/g, '_');
+    return path.join(CACHE_DIR, `${safeUsername}_channels.json`);
+  }
+
+  /**
+   * Save cache to disk
+   */
+  private saveToDisk(): void {
+    try {
+      const cacheData = {
+        categories: this.categoriesCache,
+        channels: this.channelsCache,
+        timestamp: this.cacheTimestamp
+      };
+      fs.writeFileSync(this.getCacheFilePath(), JSON.stringify(cacheData), 'utf-8');
+      console.log(`[IPTV Cache] Saved ${this.channelsCache?.length || 0} channels to disk`);
+    } catch (error) {
+      console.error('[IPTV Cache] Error saving to disk:', error);
+    }
+  }
+
+  /**
+   * Load cache from disk
+   */
+  private loadFromDisk(): boolean {
+    try {
+      const filePath = this.getCacheFilePath();
+      if (!fs.existsSync(filePath)) {
+        return false;
+      }
+
+      const data = JSON.parse(fs.readFileSync(filePath, 'utf-8'));
+
+      // Check if disk cache is still valid (within expiration)
+      if (data.timestamp && (Date.now() - data.timestamp) < this.cacheExpirationMs) {
+        this.categoriesCache = data.categories;
+        this.channelsCache = data.channels;
+        this.cacheTimestamp = data.timestamp;
+        console.log(`[IPTV Cache] Loaded ${this.channelsCache?.length || 0} channels from disk`);
+        return true;
+      }
+
+      console.log('[IPTV Cache] Disk cache expired, will refresh from provider');
+      return false;
+    } catch (error) {
+      console.error('[IPTV Cache] Error loading from disk:', error);
+      return false;
+    }
   }
 
   /**
@@ -360,6 +427,9 @@ export class XtreamCodesClient {
       });
 
       this.cacheTimestamp = Date.now();
+
+      // Save to disk for persistence across restarts
+      this.saveToDisk();
     } catch (error) {
       console.error('Error refreshing Xtream Codes cache:', error);
       throw error;
@@ -377,7 +447,7 @@ export class XtreamCodesManager implements IService {
 
   // Cache for user channels (merged from all credentials)
   private userChannelCache: Map<number, { channels: IPTVChannel[]; timestamp: number }> = new Map();
-  private userCacheExpiration: number = 30000; // 30 seconds
+  private userCacheExpiration: number = 1800000; // 30 minutes (was 30 seconds - caused rate limiting)
 
   constructor() {
     // Check for environment variable fallback
