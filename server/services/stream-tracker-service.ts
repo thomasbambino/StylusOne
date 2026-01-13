@@ -2,7 +2,16 @@ import crypto from 'crypto';
 import { db } from '../db';
 import { activeIptvStreams, iptvCredentials, iptvChannels, viewingHistory } from '@shared/schema';
 import { eq, and, lt } from 'drizzle-orm';
-import { epgService } from './epg-service';
+import { EPGService } from './epg-service';
+
+// Lazy-loaded EPG service instance
+let epgServiceInstance: EPGService | null = null;
+function getEPGService(): EPGService {
+  if (!epgServiceInstance) {
+    epgServiceInstance = new EPGService();
+  }
+  return epgServiceInstance;
+}
 
 /**
  * Service for tracking active IPTV streams and enforcing concurrent stream limits
@@ -134,6 +143,7 @@ export class StreamTrackerService {
       // Look up current program from EPG
       let programTitle: string | null = null;
       try {
+        const epgService = getEPGService();
         const currentProgram = epgService.getCurrentProgram(stream.streamId);
         if (currentProgram) {
           programTitle = currentProgram.title;
