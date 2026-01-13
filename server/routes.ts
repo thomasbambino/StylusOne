@@ -58,6 +58,23 @@ import {
 import cors from 'cors';
 import helmet from 'helmet';
 
+// Helper to detect device type from User-Agent
+function detectDeviceType(userAgent?: string): string {
+  if (!userAgent) return 'web';
+  const ua = userAgent.toLowerCase();
+
+  if (ua.includes('iphone') || ua.includes('ipad') || ua.includes('ios')) {
+    return 'ios';
+  }
+  if (ua.includes('android')) {
+    if (ua.includes('tv') || ua.includes('atv') || ua.includes('shield')) {
+      return 'android-tv';
+    }
+    return 'android';
+  }
+  return 'web';
+}
+
 // Singleton EPG service instance to prevent re-initialization on every request
 let epgServiceInstance: EPGService | null = null;
 async function getEPGService(): Promise<EPGService> {
@@ -3137,7 +3154,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     if (!req.isAuthenticated()) return res.sendStatus(401);
 
     try {
-      const { streamId } = req.body;
+      const { streamId, deviceType } = req.body;
 
       if (!streamId) {
         return res.status(400).json({ error: "Stream ID required" });
@@ -3168,7 +3185,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         userId,
         credentialId,
         streamId,
-        ipAddress
+        ipAddress,
+        deviceType // 'ios', 'android', or 'web'
       );
 
       if (sessionToken) {

@@ -14,6 +14,16 @@ import { streamTrackerService } from '../services/stream-tracker-service';
 const router = Router();
 
 /**
+ * Helper to set a date to end-of-day (23:59:59.999)
+ * This ensures date ranges include the entire end day
+ */
+function setEndOfDay(date: Date): Date {
+  const d = new Date(date);
+  d.setHours(23, 59, 59, 999);
+  return d;
+}
+
+/**
  * Middleware to check if user is admin or superadmin
  */
 function requireAdmin(req: any, res: any, next: any) {
@@ -163,8 +173,8 @@ router.get('/channels', requireAdmin, async (req, res) => {
       ? new Date(req.query.startDate as string)
       : new Date(Date.now() - 30 * 24 * 60 * 60 * 1000); // Default: last 30 days
     const endDate = req.query.endDate
-      ? new Date(req.query.endDate as string)
-      : new Date();
+      ? setEndOfDay(new Date(req.query.endDate as string))
+      : setEndOfDay(new Date());
 
     const channelStats = await db
       .select({
@@ -228,8 +238,8 @@ router.get('/users', requireAdmin, async (req, res) => {
       ? new Date(req.query.startDate as string)
       : new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
     const endDate = req.query.endDate
-      ? new Date(req.query.endDate as string)
-      : new Date();
+      ? setEndOfDay(new Date(req.query.endDate as string))
+      : setEndOfDay(new Date());
 
     const userStats = await db
       .select({
@@ -364,7 +374,7 @@ router.get('/history', requireAdmin, async (req, res) => {
       ? new Date(req.query.startDate as string)
       : undefined;
     const endDate = req.query.endDate
-      ? new Date(req.query.endDate as string)
+      ? setEndOfDay(new Date(req.query.endDate as string))
       : undefined;
     const userId = req.query.userId
       ? parseInt(req.query.userId as string)
@@ -451,7 +461,7 @@ router.post('/export', requireAdmin, async (req, res) => {
       conditions.push(gte(viewingHistory.startedAt, new Date(startDate)));
     }
     if (endDate) {
-      conditions.push(lte(viewingHistory.startedAt, new Date(endDate)));
+      conditions.push(lte(viewingHistory.startedAt, setEndOfDay(new Date(endDate))));
     }
 
     const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
@@ -592,7 +602,7 @@ router.delete('/history', requireAdmin, async (req, res) => {
       conditions.push(gte(viewingHistory.startedAt, new Date(startDate)));
     }
     if (endDate) {
-      conditions.push(lte(viewingHistory.startedAt, new Date(endDate)));
+      conditions.push(lte(viewingHistory.startedAt, setEndOfDay(new Date(endDate))));
     }
 
     const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
