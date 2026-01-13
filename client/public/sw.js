@@ -1,18 +1,15 @@
 // Cache version - update this when cache structure changes
 // INCREMENT THIS VERSION TO FORCE CACHE REFRESH
-const CACHE_VERSION = 'v2.0.2-20260112';
+const CACHE_VERSION = 'v2.0.3-20260112';
 const CACHE_NAME = `homelab-dashboard-${CACHE_VERSION}`;
 
 // Add message to notify clients of updates
 const UPDATE_NOTIFICATION = true;
 
-// Assets to cache on install
+// Assets to cache on install (only core files that always exist)
 const STATIC_CACHE_URLS = [
   '/',
-  '/index.html',
-  '/src/main.tsx',
-  '/src/index.css',
-  '/vite.svg'
+  '/index.html'
 ];
 
 // Install service worker and cache static assets
