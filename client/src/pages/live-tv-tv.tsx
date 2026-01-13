@@ -4149,7 +4149,7 @@ export default function LiveTVTvPage() {
               const rating = channelEpg?.currentProgram?.rating;
 
               return (
-                <div className="px-5 mb-10 mt-6">
+                <div className="px-5 mb-6 mt-4">
                   <div
                     className="relative rounded-2xl overflow-hidden active:scale-[0.98] transition-transform duration-200"
                     onClick={() => { haptics.medium(); playStream(channel); setViewMode('player'); }}
@@ -4221,7 +4221,7 @@ export default function LiveTVTvPage() {
 
             {/* Favorites - Remaining Favorites */}
             {favorites && favorites.length > 1 && (
-              <div className="mb-10">
+              <div className="mb-6">
                 <h2 className="px-5 text-xl font-semibold text-white/90 mb-4">Favorites</h2>
                 <div className="flex gap-4 overflow-x-auto px-5 scrollbar-hide">
                   {favorites.slice(1).map((fav) => {
@@ -4301,14 +4301,14 @@ export default function LiveTVTvPage() {
 
             {/* Section Divider */}
             {favorites && favorites.length > 0 && (nflPackage || nbaPackage || mlbPackage) && (
-              <div className="px-5 mb-8">
+              <div className="px-5 mb-4">
                 <div className="h-px bg-white/10" />
               </div>
             )}
 
             {/* No Favorites - Clean empty state */}
             {(!favorites || favorites.length === 0) && (
-              <div className="px-5 mb-8 mt-4">
+              <div className="px-5 mb-4 mt-2">
                 <div className="rounded-2xl bg-zinc-900/50 p-8 text-center">
                   <p className="text-white/60 text-lg font-medium">No favorites yet</p>
                   <p className="text-white/30 text-sm mt-2">Add channels from the Guide tab</p>
@@ -4318,7 +4318,7 @@ export default function LiveTVTvPage() {
 
             {/* Trending Section */}
             {trendingChannels.length > 0 && (
-              <div className="mb-10">
+              <div className="mb-6">
                 <div className="px-5 mb-4 flex items-center gap-2">
                   <TrendingUp className="h-5 w-5 text-orange-500" />
                   <h2 className="text-xl font-semibold text-white/90">Trending</h2>
@@ -4394,14 +4394,14 @@ export default function LiveTVTvPage() {
 
             {/* Section Divider - Between Trending and Sports */}
             {trendingChannels.length > 0 && (nflPackage || nbaPackage || mlbPackage) && (
-              <div className="px-5 mb-8">
+              <div className="px-5 mb-4">
                 <div className="h-px bg-white/10" />
               </div>
             )}
 
             {/* NFL Section - Large Cards */}
             {nflPackage && nflChannels.length > 0 && (
-              <div className="mb-10">
+              <div className="mb-6">
                 <div className="px-5 mb-4 flex items-center gap-3">
                   <img src="https://a.espncdn.com/combiner/i?img=/i/teamlogos/leagues/500/nfl.png&w=100&h=100" alt="NFL" className="h-6 w-6 object-contain" />
                   <h2 className="text-xl font-semibold text-white/90">NFL</h2>
@@ -4476,7 +4476,7 @@ export default function LiveTVTvPage() {
 
             {/* NBA Section - Compact Cards for variety */}
             {nbaPackage && nbaChannels.length > 0 && (
-              <div className="mb-10">
+              <div className="mb-6">
                 <div className="px-5 mb-4 flex items-center gap-3">
                   <img src="https://a.espncdn.com/combiner/i?img=/i/teamlogos/leagues/500/nba.png&w=100&h=100" alt="NBA" className="h-6 w-6 object-contain" />
                   <h2 className="text-xl font-semibold text-white/90">NBA</h2>
@@ -4532,14 +4532,14 @@ export default function LiveTVTvPage() {
 
             {/* Section Divider */}
             {(nflPackage || nbaPackage) && mlbPackage && (
-              <div className="px-5 mb-8">
+              <div className="px-5 mb-4">
                 <div className="h-px bg-white/10" />
               </div>
             )}
 
             {/* MLB Section - Large Cards */}
             {mlbPackage && mlbChannels.length > 0 && (
-              <div className="mb-10">
+              <div className="mb-6">
                 <div className="px-5 mb-4 flex items-center gap-3">
                   <img src="https://a.espncdn.com/combiner/i?img=/i/teamlogos/leagues/500/mlb.png&w=100&h=100" alt="MLB" className="h-6 w-6 object-contain" />
                   <h2 className="text-xl font-semibold text-white/90">MLB</h2>
