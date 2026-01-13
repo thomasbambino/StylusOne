@@ -144,23 +144,21 @@ public class NativeTabBarPlugin: CAPPlugin, CAPBridgedPlugin {
         tabBar.delegate = self
         tabBar.translatesAutoresizingMaskIntoConstraints = false
 
-        // CRITICAL: Set all background properties FIRST before anything else
-        tabBar.clipsToBounds = true
-        tabBar.layer.backgroundColor = UIColor.black.cgColor
-        tabBar.backgroundColor = .black
-        tabBar.barTintColor = .black
-        tabBar.isTranslucent = false
-        tabBar.isOpaque = true
+        // Make tab bar translucent so content can scroll underneath
+        tabBar.clipsToBounds = false
+        tabBar.isTranslucent = true
+        tabBar.isOpaque = false
 
         // Start completely invisible - off-screen and hidden
         tabBar.alpha = 0
         tabBar.isHidden = true
 
-        // Configure appearance for iOS 15+ with dark background
+        // Configure appearance for iOS 15+ with translucent dark background
         if #available(iOS 15.0, *) {
             let appearance = UITabBarAppearance()
-            appearance.configureWithOpaqueBackground()
-            appearance.backgroundColor = UIColor.black
+            appearance.configureWithTransparentBackground()
+            appearance.backgroundColor = UIColor.black.withAlphaComponent(0.85)
+            appearance.backgroundEffect = UIBlurEffect(style: .dark)
             appearance.shadowColor = .clear
             appearance.shadowImage = UIImage()
 
@@ -195,8 +193,7 @@ public class NativeTabBarPlugin: CAPPlugin, CAPBridgedPlugin {
             items.append(item)
         }
         tabBar.setItems(items, animated: false)
-        // Default to "Now Playing" tab (index 1) since app launches to player
-        tabBar.selectedItem = items.count > 1 ? items[1] : items.first
+        tabBar.selectedItem = items.first  // Default to Home tab
 
         viewController.view.addSubview(tabBar)
 

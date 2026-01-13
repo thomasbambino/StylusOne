@@ -16,6 +16,20 @@ class PiPBridgeViewController: CAPBridgeViewController {
         webView?.backgroundColor = .black
         webView?.scrollView.backgroundColor = .black
 
+        // Allow web content to extend to full screen (under tab bar)
+        webView?.scrollView.contentInsetAdjustmentBehavior = .never
+
+        // Ensure webview extends edge-to-edge (no safe area constraints)
+        if let webView = webView {
+            webView.translatesAutoresizingMaskIntoConstraints = false
+            NSLayoutConstraint.activate([
+                webView.topAnchor.constraint(equalTo: view.topAnchor),
+                webView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+                webView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+                webView.trailingAnchor.constraint(equalTo: view.trailingAnchor)
+            ])
+        }
+
         // Configure audio session for background playback and PiP
         // Use .default mode to prevent AirPlay popup on launch
         // (.moviePlayback mode triggers iOS to scan for AirPlay devices)

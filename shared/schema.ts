@@ -379,6 +379,23 @@ export const activeIptvStreams = pgTable("active_iptv_streams", {
   startedAt: timestamp("started_at").notNull().defaultNow(),
   lastHeartbeat: timestamp("last_heartbeat").notNull().defaultNow(),
   ipAddress: text("ip_address"),
+  deviceType: text("device_type"), // 'ios', 'web', 'android'
+});
+
+// Viewing History - Persistent record of all watch sessions for analytics
+export const viewingHistory = pgTable("viewing_history", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").notNull().references(() => users.id, { onDelete: 'cascade' }),
+  channelId: text("channel_id").notNull(), // IPTV channel/stream ID
+  channelName: text("channel_name"), // Denormalized for easy display
+  programTitle: text("program_title"), // What was playing (from EPG if available)
+  credentialId: integer("credential_id").references(() => iptvCredentials.id, { onDelete: 'set null' }),
+  startedAt: timestamp("started_at").notNull(),
+  endedAt: timestamp("ended_at"),
+  durationSeconds: integer("duration_seconds"), // Calculated when stream ends
+  ipAddress: text("ip_address"),
+  deviceType: text("device_type"), // 'ios', 'web', 'android'
+  createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
 export const insertUserSchema = createInsertSchema(users);
@@ -408,6 +425,7 @@ export const insertPackageChannelSchema = createInsertSchema(packageChannels);
 export const insertPlanPackageSchema = createInsertSchema(planPackages);
 export const insertPlanIptvCredentialSchema = createInsertSchema(planIptvCredentials);
 export const insertActiveIptvStreamSchema = createInsertSchema(activeIptvStreams);
+export const insertViewingHistorySchema = createInsertSchema(viewingHistory);
 
 // Export the update schemas
 export const updateServiceSchema = insertServiceSchema.extend({
@@ -482,6 +500,10 @@ export const updateActiveIptvStreamSchema = insertActiveIptvStreamSchema.extend(
   id: z.number(),
 }).partial().required({ id: true });
 
+export const updateViewingHistorySchema = insertViewingHistorySchema.extend({
+  id: z.number(),
+}).partial().required({ id: true });
+
 // Export types
 export type InsertUser = z.infer<typeof insertUserSchema>;
 export type InsertService = z.infer<typeof insertServiceSchema>;
@@ -538,3 +560,6 @@ export type PlanIptvCredential = typeof planIptvCredentials.$inferSelect;
 export type InsertActiveIptvStream = z.infer<typeof insertActiveIptvStreamSchema>;
 export type UpdateActiveIptvStream = z.infer<typeof updateActiveIptvStreamSchema>;
 export type ActiveIptvStream = typeof activeIptvStreams.$inferSelect;
+export type InsertViewingHistory = z.infer<typeof insertViewingHistorySchema>;
+export type UpdateViewingHistory = z.infer<typeof updateViewingHistorySchema>;
+export type ViewingHistory = typeof viewingHistory.$inferSelect;

@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef, useMemo, memo } from 'react';
 import { useQuery, useQueries, useMutation, useQueryClient } from '@tanstack/react-query';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Play, Pause, Volume2, VolumeX, Info, Plus, MoreHorizontal, Star, X, Check, CreditCard, Calendar, ExternalLink, LogOut, LayoutGrid, Airplay, Search, Volume1, Minus, Settings, PictureInPicture2, Filter, Package, Tv } from 'lucide-react';
+import { ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Play, Pause, Volume2, VolumeX, Info, Plus, MoreHorizontal, Star, X, Check, CreditCard, Calendar, ExternalLink, LogOut, LayoutGrid, Airplay, Search, Volume1, Minus, Settings, PictureInPicture2, Filter, Package, Tv, Clock, Zap, Radio } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { getQueryFn, apiRequest, queryClient } from '@/lib/queryClient';
 import { buildApiUrl, isNativePlatform, getDeviceTypeSync } from '@/lib/capacitor';
@@ -10,7 +10,7 @@ import { useAuth } from '@/hooks/use-auth';
 import Hls from 'hls.js';
 import { ScreenOrientation } from '@capacitor/screen-orientation';
 import { KeepAwake } from '@capacitor-community/keep-awake';
-import { isIOSNative, showNativeTabBar, hideNativeTabBar, addNativeTabBarListener } from '@/lib/nativeTabBar';
+import { isIOSNative, showNativeTabBar, hideNativeTabBar, addNativeTabBarListener, setNativeTabBarSelected } from '@/lib/nativeTabBar';
 
 // ============================================================================
 // TYPES & INTERFACES
@@ -78,14 +78,17 @@ const formatTimeRange = (start: string, end: string): string => {
   return `${formatTime(startDate)} - ${formatTime(endDate)}`;
 };
 
-const getTimeRemaining = (endTime: string): string => {
-  const end = new Date(endTime).getTime();
-  const now = new Date().getTime();
+const getTimeRemaining = (endTime: string | Date | undefined): string | null => {
+  if (!endTime) return null;
+  const end = endTime instanceof Date ? endTime.getTime() : new Date(endTime).getTime();
+  if (isNaN(end)) return null;
+  const now = Date.now();
   const remaining = Math.floor((end - now) / 60000);
+  if (remaining <= 0) return null;
   if (remaining < 60) return `${remaining} min`;
   const hours = Math.floor(remaining / 60);
   const mins = remaining % 60;
-  return `${hours}h ${mins}m`;
+  return mins > 0 ? `${hours}h ${mins}m` : `${hours}h`;
 };
 
 const getProgramProgress = (program: EPGProgram): number => {
@@ -826,43 +829,42 @@ const GuideChannelRow = memo(({
         isFocused && "bg-white/10 ring-2 ring-white/50"
       )}
     >
-      {/* Favorite Button */}
-      <button
-        onClick={(e) => {
-          e.stopPropagation();
-          onToggleFavorite();
-        }}
-        className="w-10 shrink-0 flex items-center justify-center hover:bg-white/10 active:bg-white/20"
-      >
-        <Star className={cn("w-4 h-4", isFavorite ? "text-yellow-400 fill-yellow-400" : "text-white/30")} />
-      </button>
-
-      {/* Channel Info */}
+      {/* Sticky Channel Section - stays visible when scrolling horizontally */}
       <div className={cn(
-        "w-40 shrink-0 flex items-center gap-2 px-2 border-r border-white/10",
-        isPlaying && "bg-red-600/20"
+        "sticky left-0 z-10 flex shrink-0 bg-black",
+        isFocused && "bg-zinc-900"
       )}>
-        <div className="w-8 h-8 rounded bg-white/10 flex items-center justify-center overflow-hidden shrink-0">
-          {channel.logo ? (
-            <img src={channel.logo} alt="" className="w-full h-full object-contain p-0.5" loading="lazy" />
-          ) : (
-            <span className="text-xs font-bold text-white/60">{channel.GuideNumber}</span>
-          )}
-        </div>
-        <div className="min-w-0 flex-1">
-          <div className="text-sm font-medium text-white truncate">{channel.GuideName}</div>
+        {/* Favorite Button */}
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            onToggleFavorite();
+          }}
+          className="w-10 shrink-0 flex items-center justify-center hover:bg-white/10 active:bg-white/20"
+        >
+          <Star className={cn("w-4 h-4", isFavorite ? "text-yellow-400 fill-yellow-400" : "text-white/30")} />
+        </button>
+
+        {/* Channel Info */}
+        <div className={cn(
+          "w-40 shrink-0 flex items-center gap-2 px-2 border-r border-white/10",
+          isPlaying && "bg-red-600/20"
+        )}>
+          <div className="w-8 h-8 rounded bg-white/10 flex items-center justify-center overflow-hidden shrink-0">
+            {channel.logo ? (
+              <img src={channel.logo} alt="" className="w-full h-full object-contain p-0.5" loading="lazy" />
+            ) : (
+              <span className="text-xs font-bold text-white/60">{channel.GuideNumber}</span>
+            )}
+          </div>
+          <div className="min-w-0 flex-1">
+            <div className="text-sm font-medium text-white truncate">{channel.GuideName}</div>
+          </div>
         </div>
       </div>
 
       {/* Programs - scrolls horizontally */}
       <div className="flex-1 relative">
-        {/* Now indicator */}
-        <div
-          className="absolute top-0 bottom-0 w-0.5 bg-red-500 z-10"
-          style={{
-            left: `${Math.min(100, Math.max(0, ((now.getTime() - timelineStart.getTime()) / totalMs) * 100))}%`
-          }}
-        />
         {renderProgram(epgData?.currentProgram || null, true, channel.GuideName)}
         {renderProgram(epgData?.nextProgram || null, false)}
       </div>
@@ -947,13 +949,81 @@ export default function LiveTVTvPage() {
   }, []);
 
   // View state: 'player' (fullscreen), 'guide' (with PiP), 'home' (favorites), 'profile' (user profile)
-  const [viewMode, setViewMode] = useState<'player' | 'guide' | 'home' | 'profile'>('player');
+  const [viewMode, setViewMode] = useState<'player' | 'guide' | 'home' | 'profile'>('home');
   // Ref to track viewMode for orientation listener (which can't access state directly)
   const viewModeRef = useRef(viewMode);
   viewModeRef.current = viewMode;
   const [showOverlay, setShowOverlay] = useState(true);
   const [guideSearchQuery, setGuideSearchQuery] = useState('');
-  const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
+  const [hiddenPackages, setHiddenPackages] = useState<Set<number>>(new Set()); // Package IDs to hide from guide
+  const [showPackageDropdown, setShowPackageDropdown] = useState(false);
+
+  // Home page state
+  const [homeSearchQuery, setHomeSearchQuery] = useState('');
+  const [homeCategory, setHomeCategory] = useState<string | null>(null);
+
+  // Splash screen state
+  const [showSplash, setShowSplash] = useState(true);
+
+  // Immediately hide native tab bar and HTML splash on mount
+  useEffect(() => {
+    // Hide the HTML initial splash screen (black background with loading indicator)
+    if (typeof window !== 'undefined' && (window as any).__hideInitialSplash) {
+      (window as any).__hideInitialSplash();
+    }
+    // Immediately hide native tab bar during splash
+    hideNativeTabBar();
+  }, []);
+
+  // Splash screen timer - show for 4 seconds
+  useEffect(() => {
+    if (!showSplash) return;
+    const timer = setTimeout(() => setShowSplash(false), 4000);
+    return () => clearTimeout(timer);
+  }, [showSplash]);
+
+  // Helper: Calculate program progress percentage
+  const getProgramProgress = useCallback((program: EPGProgram | null | undefined): number => {
+    if (!program) return 0;
+    const now = Date.now();
+    const start = new Date(program.startTime).getTime();
+    const end = new Date(program.endTime).getTime();
+    if (now < start) return 0;
+    if (now > end) return 100;
+    return Math.round(((now - start) / (end - start)) * 100);
+  }, []);
+
+  // Helper: Get time remaining in program (takes full program object)
+  const getProgramTimeRemaining = useCallback((program: EPGProgram | null | undefined): string => {
+    if (!program || !program.endTime) return '';
+    const now = Date.now();
+    const end = program.endTime instanceof Date ? program.endTime.getTime() : new Date(program.endTime).getTime();
+    if (isNaN(end)) return '';
+    const remaining = Math.max(0, end - now);
+    const minutes = Math.floor(remaining / 60000);
+    if (minutes <= 0) return '';
+    if (minutes < 60) return `${minutes}m left`;
+    const hours = Math.floor(minutes / 60);
+    const mins = minutes % 60;
+    return mins > 0 ? `${hours}h ${mins}m left` : `${hours}h left`;
+  }, []);
+
+  // Helper: Check if program is starting soon (within 15 minutes)
+  const isStartingSoon = useCallback((program: EPGProgram | null | undefined): boolean => {
+    if (!program) return false;
+    const now = Date.now();
+    const start = new Date(program.startTime).getTime();
+    const diff = start - now;
+    return diff > 0 && diff <= 15 * 60 * 1000; // Within 15 minutes
+  }, []);
+
+  // Helper: Get minutes until program starts
+  const getMinutesUntilStart = useCallback((program: EPGProgram | null | undefined): number => {
+    if (!program) return 0;
+    const now = Date.now();
+    const start = new Date(program.startTime).getTime();
+    return Math.max(0, Math.ceil((start - now) / 60000));
+  }, []);
 
   // Playback state
   const [selectedChannel, setSelectedChannel] = useState<Channel | null>(null);
@@ -968,6 +1038,11 @@ export default function LiveTVTvPage() {
   const [focusedChannelIndex, setFocusedChannelIndex] = useState(0);
   const [guideTimeOffset, setGuideTimeOffset] = useState(0); // Offset in 30-minute increments from now
   const [showCategoryDropdown, setShowCategoryDropdown] = useState(false);
+  const [guideScrollIndex, setGuideScrollIndex] = useState(0); // Track scroll position for EPG loading
+
+  // Persistent set of EPG IDs we've loaded - never shrinks, only grows
+  const loadedEpgIdsRef = useRef<Set<string>>(new Set());
+  const scrollDebounceRef = useRef<NodeJS.Timeout | null>(null);
 
   // Progressive rendering - start with fewer channels for faster initial load
   const [renderLimit, setRenderLimit] = useState(30);
@@ -1091,6 +1166,13 @@ export default function LiveTVTvPage() {
   // DATA FETCHING
   // ============================================================================
 
+  // Settings query for logo
+  const { data: settings } = useQuery<{ logo_url_large?: string; site_title?: string }>({
+    queryKey: ['/api/settings'],
+    queryFn: getQueryFn({ on401: "returnNull" }),
+    staleTime: 60 * 60 * 1000, // Cache for 1 hour
+  });
+
   const { data: channelsData, isLoading: channelsLoading } = useQuery({
     queryKey: ['/api/iptv/channels'],
     queryFn: getQueryFn({ on401: "returnNull" }),
@@ -1161,40 +1243,7 @@ export default function LiveTVTvPage() {
       .sort((a, b) => a.name.localeCompare(b.name));
   }, [channels]);
 
-  // Filtered channels for guide search and category
-  const filteredChannels = useMemo(() => {
-    let filtered = channels;
-
-    // Filter by category first
-    if (selectedCategory) {
-      filtered = filtered.filter((ch: Channel) => ch.categoryId === selectedCategory);
-    }
-
-    // Then filter by search query
-    if (guideSearchQuery.trim()) {
-      const query = guideSearchQuery.toLowerCase();
-      filtered = filtered.filter((ch: Channel) =>
-        ch.GuideName.toLowerCase().includes(query) ||
-        ch.GuideNumber.includes(query)
-      );
-    }
-
-    return filtered;
-  }, [channels, guideSearchQuery, selectedCategory]);
-
-  // Favorites query
-  const { data: favoritesData } = useQuery({
-    queryKey: ['/api/favorite-channels'],
-    queryFn: getQueryFn({ on401: "returnNull" }),
-    staleTime: 60 * 1000, // Consider fresh for 1 minute
-  });
-
-  // Subscription query
-  const { data: subscriptionData, isLoading: subscriptionLoading } = useQuery<CurrentSubscription | null>({
-    queryKey: ['/api/subscriptions/current'],
-    queryFn: getQueryFn({ on401: "returnNull" }),
-    enabled: showSubscriptionPopup || viewMode === 'profile', // Fetch when popup or profile view is opened
-  });
+  // === PACKAGE FILTERING (must be defined BEFORE filteredChannels) ===
 
   // Channel packages query for user's plan
   interface ChannelPackage {
@@ -1213,14 +1262,88 @@ export default function LiveTVTvPage() {
     categoryName: string | null;
   }
 
-  const [expandedPackageId, setExpandedPackageId] = useState<number | null>(null);
-
   const { data: userPackages = [], isLoading: packagesLoading } = useQuery<ChannelPackage[]>({
     queryKey: ['/api/subscriptions/packages'],
     queryFn: getQueryFn({ on401: "returnNull" }),
-    enabled: viewMode === 'profile' || viewMode === 'home',
+    enabled: viewMode === 'profile' || viewMode === 'home' || viewMode === 'guide',
     select: (data) => data || [],
   });
+
+  // Fetch all package channels for guide filtering
+  const allPackageChannelsQueries = useQueries({
+    queries: userPackages.map(pkg => ({
+      queryKey: [`/api/subscriptions/packages/${pkg.packageId}/channels`],
+      queryFn: getQueryFn({ on401: "returnNull" }),
+      enabled: viewMode === 'guide' && !!pkg.packageId,
+      staleTime: 10 * 60 * 1000, // Cache for 10 minutes
+      select: (data: PackageChannel[] | null) => ({
+        packageId: pkg.packageId,
+        packageName: pkg.packageName,
+        channels: data || []
+      })
+    }))
+  });
+
+  // Build a map of channel name -> package IDs for filtering
+  const channelToPackages = useMemo(() => {
+    const map = new Map<string, Set<number>>();
+    allPackageChannelsQueries.forEach(query => {
+      if (query.data) {
+        const { packageId, channels } = query.data;
+        channels.forEach((ch: PackageChannel) => {
+          const existing = map.get(ch.name) || new Set();
+          existing.add(packageId);
+          map.set(ch.name, existing);
+        });
+      }
+    });
+    return map;
+  }, [allPackageChannelsQueries]);
+
+  // === END PACKAGE FILTERING ===
+
+  // Filtered channels for guide search and package visibility
+  const filteredChannels = useMemo(() => {
+    let filtered = channels;
+
+    // Filter out channels from hidden packages
+    if (hiddenPackages.size > 0 && channelToPackages.size > 0) {
+      filtered = filtered.filter((ch: Channel) => {
+        const packageIds = channelToPackages.get(ch.GuideName);
+        // If channel isn't in any package, show it
+        if (!packageIds || packageIds.size === 0) return true;
+        // Show channel if at least one of its packages is not hidden
+        return Array.from(packageIds).some(pkgId => !hiddenPackages.has(pkgId));
+      });
+    }
+
+    // Then filter by search query
+    if (guideSearchQuery.trim()) {
+      const query = guideSearchQuery.toLowerCase();
+      filtered = filtered.filter((ch: Channel) =>
+        ch.GuideName.toLowerCase().includes(query) ||
+        ch.GuideNumber.includes(query)
+      );
+    }
+
+    return filtered;
+  }, [channels, guideSearchQuery, hiddenPackages, channelToPackages]);
+
+  // Favorites query
+  const { data: favoritesData } = useQuery({
+    queryKey: ['/api/favorite-channels'],
+    queryFn: getQueryFn({ on401: "returnNull" }),
+    staleTime: 60 * 1000, // Consider fresh for 1 minute
+  });
+
+  // Subscription query
+  const { data: subscriptionData, isLoading: subscriptionLoading } = useQuery<CurrentSubscription | null>({
+    queryKey: ['/api/subscriptions/current'],
+    queryFn: getQueryFn({ on401: "returnNull" }),
+    enabled: showSubscriptionPopup || viewMode === 'profile', // Fetch when popup or profile view is opened
+  });
+
+  const [expandedPackageId, setExpandedPackageId] = useState<number | null>(null);
 
   // Fetch channels for expanded package (profile view)
   const { data: packageChannels = [], isLoading: packageChannelsLoading } = useQuery<PackageChannel[]>({
@@ -1234,6 +1357,16 @@ export default function LiveTVTvPage() {
   const nflPackage = userPackages.find(p => p.packageName?.toLowerCase().includes('nfl'));
   const nbaPackage = userPackages.find(p => p.packageName?.toLowerCase().includes('nba'));
   const mlbPackage = userPackages.find(p => p.packageName?.toLowerCase().includes('mlb'));
+
+  // Debug logging for sports packages
+  useEffect(() => {
+    if (userPackages.length > 0 && viewMode === 'home') {
+      console.log('[Sports] User packages:', userPackages.map(p => p.packageName));
+      console.log('[Sports] NFL package:', nflPackage?.packageName || 'NOT FOUND');
+      console.log('[Sports] NBA package:', nbaPackage?.packageName || 'NOT FOUND');
+      console.log('[Sports] MLB package:', mlbPackage?.packageName || 'NOT FOUND');
+    }
+  }, [userPackages, nflPackage, nbaPackage, mlbPackage, viewMode]);
 
   // Fetch channels for sport packages on Home view
   const { data: nflChannels = [] } = useQuery<PackageChannel[]>({
@@ -1420,34 +1553,46 @@ export default function LiveTVTvPage() {
       });
     }
 
-    // Pre-load first 20 channels' EPG data even before guide opens (for faster initial load)
-    channels.slice(0, 20).forEach((ch: Channel) => {
+    // Pre-load first 50 channels' EPG data even before guide opens (for faster initial load)
+    channels.slice(0, 50).forEach((ch: Channel) => {
       if (ch.epgId) idsSet.add(ch.epgId);
     });
 
-    // When guide is open, load more channels
+    // When guide is open, load EPG for visible channels based on scroll position
     if (viewMode === 'guide') {
-      // First 50 channels
-      channels.slice(0, 50).forEach((ch: Channel) => {
+      // Always load first 100 channels
+      channels.slice(0, 100).forEach((ch: Channel) => {
         if (ch.epgId) idsSet.add(ch.epgId);
       });
 
-      // Also include channels around the focused one (for scrolling beyond 50)
-      const start = Math.max(0, focusedChannelIndex - 10);
-      const end = Math.min(channels.length, focusedChannelIndex + 20);
-      channels.slice(start, end).forEach((ch: Channel) => {
+      // Load large buffer around current scroll position (100 channels before, 100 after)
+      const scrollStart = Math.max(0, guideScrollIndex - 100);
+      const scrollEnd = Math.min(channels.length, guideScrollIndex + 100);
+      channels.slice(scrollStart, scrollEnd).forEach((ch: Channel) => {
+        if (ch.epgId) idsSet.add(ch.epgId);
+      });
+
+      // Also include channels around the focused one (for keyboard navigation)
+      const focusStart = Math.max(0, focusedChannelIndex - 50);
+      const focusEnd = Math.min(channels.length, focusedChannelIndex + 50);
+      channels.slice(focusStart, focusEnd).forEach((ch: Channel) => {
         if (ch.epgId) idsSet.add(ch.epgId);
       });
     }
 
-    return Array.from(idsSet);
-  }, [channels, favorites, focusedChannelIndex, viewMode, selectedChannel, nflChannels, nbaChannels, mlbChannels]);
+    // Add all new IDs to the persistent set (never shrinks)
+    idsSet.forEach(id => loadedEpgIdsRef.current.add(id));
+
+    // Return ALL IDs we've ever loaded - this ensures data never disappears
+    return Array.from(loadedEpgIdsRef.current);
+  }, [channels, favorites, focusedChannelIndex, guideScrollIndex, viewMode, selectedChannel, nflChannels, nbaChannels, mlbChannels]);
 
   const epgQueries = useQueries({
     queries: visibleEpgIds.map(epgId => ({
       queryKey: [`/api/epg/upcoming/${encodeURIComponent(epgId)}?hours=3`],
       queryFn: getQueryFn({ on401: "returnNull" }),
-      staleTime: 5 * 60 * 1000,
+      staleTime: 10 * 60 * 1000, // 10 minutes before refetch
+      gcTime: 60 * 60 * 1000, // Keep in cache for 1 hour
       retry: 1,
     }))
   });
@@ -2167,6 +2312,26 @@ export default function LiveTVTvPage() {
     touchStartX.current = null;
   }, [viewMode, showOverlay, selectedChannel, channels]);
 
+  // Handle guide scroll to load EPG data for visible channels (debounced)
+  const handleGuideScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
+    const scrollTop = e.currentTarget.scrollTop;
+    const rowHeight = 56; // h-14 = 56px
+    const newScrollIndex = Math.floor(scrollTop / rowHeight);
+
+    // Clear any pending debounce
+    if (scrollDebounceRef.current) {
+      clearTimeout(scrollDebounceRef.current);
+    }
+
+    // Debounce scroll updates - wait 200ms after scrolling stops
+    // Only update if scrolled at least 20 rows to batch requests
+    scrollDebounceRef.current = setTimeout(() => {
+      if (Math.abs(newScrollIndex - guideScrollIndex) >= 20) {
+        setGuideScrollIndex(newScrollIndex);
+      }
+    }, 200);
+  }, [guideScrollIndex]);
+
   // Detect portrait/landscape on native platforms using Capacitor ScreenOrientation API
   useEffect(() => {
     if (!isNativePlatform()) {
@@ -2262,27 +2427,7 @@ export default function LiveTVTvPage() {
     };
   }, []);
 
-  // Auto-play last watched channel (or first channel) with delay
-  useEffect(() => {
-    if (channels.length > 0 && !selectedChannel) {
-      // Try to get last watched channel from localStorage
-      const lastChannelId = localStorage.getItem('lastWatchedChannelId');
-      let channelToPlay = channels[0]; // Default to first channel
-
-      if (lastChannelId) {
-        const savedChannel = channels.find((ch: Channel) => ch.iptvId === lastChannelId);
-        if (savedChannel) {
-          channelToPlay = savedChannel;
-        }
-      }
-
-      // Small delay before auto-playing to let UI settle
-      const timer = setTimeout(() => {
-        playStream(channelToPlay);
-      }, 300);
-      return () => clearTimeout(timer);
-    }
-  }, [channels, selectedChannel, playStream]);
+  // No auto-play - user starts from Home page and selects a channel manually
 
   // Save last watched channel to localStorage
   useEffect(() => {
@@ -2300,6 +2445,8 @@ export default function LiveTVTvPage() {
 
   const tabBarTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const tabBarCurrentState = useRef<boolean | null>(null); // null = unknown, true = shown, false = hidden
+  const showSplashRef = useRef(showSplash);
+  showSplashRef.current = showSplash;
 
   useEffect(() => {
     if (!isIOSNative()) {
@@ -2313,8 +2460,8 @@ export default function LiveTVTvPage() {
       tabBarTimer.current = null;
     }
 
-    // Determine if we should show: portrait AND not rotating
-    const shouldShow = isPortrait && !isRotating;
+    // Determine if we should show: portrait AND not rotating AND splash is done
+    const shouldShow = isPortrait && !isRotating && !showSplash;
 
     // Skip if already in desired state
     if (tabBarCurrentState.current === shouldShow) {
@@ -2324,7 +2471,7 @@ export default function LiveTVTvPage() {
     // Debounce all state changes to prevent rapid switching
     tabBarTimer.current = setTimeout(() => {
       // Re-check current conditions using refs (they reflect latest values)
-      const stillShouldShow = isPortraitRef.current && !isRotatingRef.current;
+      const stillShouldShow = isPortraitRef.current && !isRotatingRef.current && !showSplashRef.current;
 
       if (stillShouldShow && tabBarCurrentState.current !== true) {
         tabBarCurrentState.current = true;
@@ -2343,7 +2490,7 @@ export default function LiveTVTvPage() {
         clearTimeout(tabBarTimer.current);
       }
     };
-  }, [isPortrait, isRotating]);
+  }, [isPortrait, isRotating, showSplash]);
 
   // Listen for native tab bar selections
   useEffect(() => {
@@ -2446,6 +2593,75 @@ export default function LiveTVTvPage() {
       onTouchStart={handleTouchStart}
       onTouchEnd={handleTouchEnd}
     >
+      {/* Splash Screen - renders immediately with no delays */}
+      <AnimatePresence>
+        {showSplash && (
+          <motion.div
+            initial={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.4 }}
+            className="fixed inset-0 z-[100] bg-black flex flex-col items-center justify-center"
+          >
+            {/* Animated particles background */}
+            <div className="absolute inset-0 overflow-hidden">
+              {[...Array(20)].map((_, i) => (
+                <motion.div
+                  key={i}
+                  className="absolute w-1 h-1 bg-white/20 rounded-full"
+                  initial={{
+                    x: Math.random() * (typeof window !== 'undefined' ? window.innerWidth : 400),
+                    y: Math.random() * (typeof window !== 'undefined' ? window.innerHeight : 800),
+                  }}
+                  animate={{
+                    y: [null, -100],
+                    opacity: [0, 0.5, 0],
+                  }}
+                  transition={{
+                    duration: 3 + Math.random() * 2,
+                    repeat: Infinity,
+                    delay: Math.random() * 2,
+                  }}
+                />
+              ))}
+            </div>
+
+            {/* Gradient glow effect */}
+            <div className="absolute inset-0 bg-gradient-radial from-blue-900/20 via-transparent to-transparent" />
+
+            {/* App Logo - only show when settings loaded */}
+            {settings?.logo_url_large && (
+              <div className="relative">
+                {/* Logo glow */}
+                <div className="absolute inset-0 flex items-center justify-center">
+                  <div className="absolute w-64 h-64 bg-blue-600/20 rounded-full blur-[80px]" />
+                </div>
+
+                {/* App Logo */}
+                <img
+                  src={settings.logo_url_large}
+                  alt="Logo"
+                  className="relative w-24 h-24 object-contain"
+                />
+              </div>
+            )}
+
+            {/* App Name - shows immediately */}
+            <h1 className="mt-6 text-2xl font-bold text-white tracking-wide">
+              {settings?.site_title || 'Stylus One'}
+            </h1>
+
+            {/* Pulsing blue loading line - shows immediately */}
+            <div className="mt-8 w-32 h-1 bg-white/10 rounded-full overflow-hidden">
+              <motion.div
+                className="h-full w-1/3 bg-gradient-to-r from-transparent via-blue-500 to-transparent rounded-full"
+                animate={{ x: ['-100%', '400%'] }}
+                transition={{ duration: 1.2, repeat: Infinity, ease: 'easeInOut' }}
+              />
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* Network Status Indicator - positioned below notch */}
       <AnimatePresence>
         {showOfflineIndicator && (
@@ -2482,7 +2698,7 @@ export default function LiveTVTvPage() {
         animate={
           viewMode === 'guide' && isPortrait && isNativePlatform() ? {
             // Portrait guide - large video in video area (below search bar)
-            top: 100,
+            top: 140,
             left: 16,
             right: 16,
             bottom: 'auto',
@@ -2536,16 +2752,31 @@ export default function LiveTVTvPage() {
           style={{ WebkitAppearance: 'none' } as React.CSSProperties}
           {...(airPlayEnabled ? { 'x-webkit-airplay': 'allow' } : {})}
         />
-        {/* Loading Indicator - inside video container */}
+        {/* Loading Indicator - inside video container, with TMDB thumbnail background if available */}
         {isLoading && (
           <div className="absolute inset-0 flex flex-col items-center justify-center bg-black z-30">
-            <div className="w-12 h-12 border-4 border-white/30 border-t-white rounded-full animate-spin mb-4" />
-            <p className="text-white text-lg font-medium">
-              {streamError ? streamError : 'Loading Stream'}
-            </p>
-            {currentChannel && (
-              <p className="text-white/60 text-sm mt-1">{currentChannel.GuideName}</p>
+            {/* TMDB thumbnail background - only if available */}
+            {currentEPG?.currentProgram?.thumbnail && (
+              <div className="absolute inset-0">
+                <img
+                  src={currentEPG.currentProgram.thumbnail}
+                  alt=""
+                  className="w-full h-full object-cover opacity-40"
+                  onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                />
+                <div className="absolute inset-0 bg-gradient-to-t from-black via-black/60 to-black/40" />
+              </div>
             )}
+            {/* Loading content */}
+            <div className="relative z-10 flex flex-col items-center">
+              <div className="w-12 h-12 border-4 border-white/30 border-t-white rounded-full animate-spin mb-4" />
+              <p className="text-white text-lg font-medium">
+                {streamError ? streamError : 'Loading Stream'}
+              </p>
+              {currentChannel && (
+                <p className="text-white/60 text-sm mt-1">{currentChannel.GuideName}</p>
+              )}
+            </div>
           </div>
         )}
         {/* Stream Error - when max retries reached */}
@@ -2568,12 +2799,14 @@ export default function LiveTVTvPage() {
             </button>
           </div>
         )}
-        {/* Initial startup indicator - before first channel loads */}
-        {!isLoading && !selectedChannel && viewMode === 'player' && (
-          <div className="absolute inset-0 flex flex-col items-center justify-center bg-black">
-            <div className="w-12 h-12 border-4 border-white/30 border-t-white rounded-full animate-spin mb-4" />
-            <p className="text-white text-lg font-medium">Starting Up</p>
-            <p className="text-white/50 text-sm mt-1">Preparing your stream...</p>
+        {/* No channel selected - prompt user to select one */}
+        {!isLoading && !selectedChannel && (viewMode === 'player' || viewMode === 'guide') && (
+          <div className="absolute inset-0 flex flex-col items-center justify-center bg-black rounded-xl">
+            <Play className={cn("text-white/30 mb-2", viewMode === 'guide' ? "w-8 h-8" : "w-12 h-12 mb-4")} />
+            <p className={cn("text-white font-medium", viewMode === 'guide' ? "text-sm" : "text-lg")}>No Channel Selected</p>
+            {viewMode === 'player' && (
+              <p className="text-white/50 text-sm mt-1">Choose a channel from Home or Guide</p>
+            )}
           </div>
         )}
         {/* Tap zone for portrait video to toggle overlay */}
@@ -2647,7 +2880,7 @@ export default function LiveTVTvPage() {
                 </div>
                 <div className="flex justify-between mt-1.5 text-xs text-white/40">
                   <span>{new Date(currentEPG.currentProgram.startTime).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}</span>
-                  <span>{getTimeRemaining(currentEPG.currentProgram.endTime)} left</span>
+                  <span>{getTimeRemaining(currentEPG.currentProgram.endTime) ? `${getTimeRemaining(currentEPG.currentProgram.endTime)} left` : ''}</span>
                   <span>{new Date(currentEPG.currentProgram.endTime).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}</span>
                 </div>
               </div>
@@ -2755,8 +2988,6 @@ export default function LiveTVTvPage() {
           {/* Spacer */}
           <div className="flex-1" />
 
-          {/* Spacer for native tab bar */}
-          {useNativeTabBar && <div className="shrink-0 h-20" />}
         </div>
       )}
 
@@ -2768,15 +2999,17 @@ export default function LiveTVTvPage() {
         >
           {/* Channel Bar - Fixed height */}
           <div className="px-4 py-3 flex items-center gap-3 border-b border-white/10 h-[72px] shrink-0">
-            {channelsLoading || !currentChannel ? (
+            {channelsLoading ? (
               <>
-                {/* Skeleton loader */}
+                {/* Skeleton loader - only when actually loading */}
                 <div className="w-16 h-12 bg-white/10 rounded animate-pulse shrink-0" />
                 <div className="flex-1 min-w-0">
                   <div className="h-5 w-32 bg-white/10 rounded animate-pulse mb-2" />
                   <div className="h-4 w-48 bg-white/10 rounded animate-pulse" />
                 </div>
               </>
+            ) : !currentChannel ? (
+              <div className="flex-1" />
             ) : (
               <>
                 {/* Fixed-width logo container for consistent layout */}
@@ -2806,7 +3039,7 @@ export default function LiveTVTvPage() {
 
           {/* Program Info & Progress - Fixed height with scrollable content */}
           <div className="h-[140px] shrink-0 border-b border-white/10">
-            {channelsLoading || !currentChannel ? (
+            {channelsLoading ? (
               <div className="px-4 py-3 h-full">
                 <div className="flex justify-between items-center mb-2">
                   <div className="h-4 w-24 bg-white/10 rounded animate-pulse" />
@@ -2815,6 +3048,8 @@ export default function LiveTVTvPage() {
                 <div className="h-1.5 bg-white/10 rounded-full animate-pulse" />
                 <div className="h-4 w-full bg-white/10 rounded animate-pulse mt-2" />
               </div>
+            ) : !currentChannel ? (
+              <div className="h-full" />
             ) : currentEPG?.currentProgram ? (
               (() => {
                 // Extract season/episode from description if not in dedicated fields
@@ -2858,7 +3093,7 @@ export default function LiveTVTvPage() {
                       <span className="text-white/50 text-sm">
                         {new Date(currentEPG.currentProgram.startTime).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })} - {new Date(currentEPG.currentProgram.endTime).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}
                       </span>
-                      <span className="text-white/50 text-sm">{getTimeRemaining(currentEPG.currentProgram.endTime)} left</span>
+                      <span className="text-white/50 text-sm">{getTimeRemaining(currentEPG.currentProgram.endTime) ? `${getTimeRemaining(currentEPG.currentProgram.endTime)} left` : ''}</span>
                     </div>
                     <div className="h-1.5 bg-white/20 rounded-full overflow-hidden mt-2 shrink-0">
                       <div
@@ -3007,8 +3242,6 @@ export default function LiveTVTvPage() {
               </button>
             </div>
           )}
-          {/* Spacer when using native tab bar */}
-          {useNativeTabBar && <div className="shrink-0 h-20" />}
         </div>
       )}
 
@@ -3024,14 +3257,27 @@ export default function LiveTVTvPage() {
       {/* CSS landscape:opacity-0 instantly hides when screen rotates, before React state updates */}
       {!isRotating && isPortrait && isNativePlatform() && viewMode === 'guide' && (
         <div
-          className="absolute inset-0 bg-black flex flex-col landscape:opacity-0 landscape:pointer-events-none animate-in fade-in duration-150"
+          className="absolute inset-0 bg-black flex flex-col landscape:opacity-0 landscape:pointer-events-none animate-viewSlideUp"
           style={{ zIndex: 30 }}
         >
           {/* Header with close button and search */}
-          <div className="shrink-0 pt-14 px-4 flex items-center gap-2">
+          <div className="shrink-0 pt-16 px-4 pb-4 flex items-center gap-2">
             <button
-              onTouchEnd={(e) => { e.preventDefault(); setViewMode('player'); setGuideSearchQuery(''); setSelectedCategory(null); setGuideTimeOffset(0); }}
-              onClick={() => { setViewMode('player'); setGuideSearchQuery(''); setSelectedCategory(null); setGuideTimeOffset(0); }}
+              onTouchEnd={(e) => {
+                e.preventDefault();
+                setViewMode('player');
+                setGuideSearchQuery('');
+                setGuideTimeOffset(0);
+                console.log('[Guide] Closing guide, setting tab to nowplaying');
+                setNativeTabBarSelected('nowplaying').then(() => console.log('[Guide] Tab selection complete'));
+              }}
+              onClick={() => {
+                setViewMode('player');
+                setGuideSearchQuery('');
+                setGuideTimeOffset(0);
+                console.log('[Guide] Closing guide, setting tab to nowplaying');
+                setNativeTabBarSelected('nowplaying').then(() => console.log('[Guide] Tab selection complete'));
+              }}
               className="p-2 bg-white/10 rounded-full active:bg-white/20 shrink-0"
             >
               <X className="w-5 h-5 text-white" />
@@ -3052,38 +3298,46 @@ export default function LiveTVTvPage() {
                 className="w-full h-10 pl-10 pr-4 bg-white/10 rounded-full text-white text-sm placeholder:text-white/40 focus:outline-none focus:ring-1 focus:ring-white/30"
               />
             </div>
-            {/* Filter button - opens dropdown */}
-            {categories.length > 0 && (
+            {/* Package filter button - opens dropdown */}
+            {userPackages.length > 0 && (
               <button
-                onTouchEnd={(e) => { e.preventDefault(); setShowCategoryDropdown(!showCategoryDropdown); haptics.light(); }}
-                onClick={() => { setShowCategoryDropdown(!showCategoryDropdown); haptics.light(); }}
+                onTouchEnd={(e) => { e.preventDefault(); setShowPackageDropdown(!showPackageDropdown); haptics.light(); }}
+                onClick={() => { setShowPackageDropdown(!showPackageDropdown); haptics.light(); }}
                 className={cn(
                   "shrink-0 h-10 px-3 rounded-full flex items-center gap-1.5",
-                  showCategoryDropdown ? "bg-white/20" : "bg-white/10 active:bg-white/20"
+                  showPackageDropdown ? "bg-white/20" : "bg-white/10 active:bg-white/20"
                 )}
               >
-                <Filter className="w-4 h-4 text-white/70" />
-                <span className="text-white text-sm max-w-20 truncate">
-                  {selectedCategory ? categories.find(c => c.id === selectedCategory)?.name || 'Filter' : 'All'}
+                <Package className="w-4 h-4 text-white/70" />
+                <span className="text-white text-sm max-w-24 truncate">
+                  {hiddenPackages.size > 0 ? `${userPackages.length - hiddenPackages.size}/${userPackages.length}` : 'All'}
                 </span>
-                <ChevronDown className={cn("w-4 h-4 text-white/50 transition-transform", showCategoryDropdown && "rotate-180")} />
+                <ChevronDown className={cn("w-4 h-4 text-white/50 transition-transform", showPackageDropdown && "rotate-180")} />
               </button>
             )}
           </div>
 
           {/* Video player area - more space from header */}
-          <div className="relative mx-4 mt-6 aspect-video">
+          <div className="relative mx-4 mt-10 aspect-video">
             {/* Video positioned here via motion.div animate */}
           </div>
 
           {/* Current Channel Info */}
           <div className="px-4 py-2 flex items-center gap-3 border-b border-white/10">
-            {channelsLoading || !currentChannel ? (
+            {channelsLoading ? (
               <>
                 <div className="h-8 w-12 bg-white/10 rounded animate-pulse" />
                 <div className="flex-1 min-w-0">
                   <div className="h-4 w-24 bg-white/10 rounded animate-pulse mb-1" />
                   <div className="h-3 w-32 bg-white/10 rounded animate-pulse" />
+                </div>
+              </>
+            ) : !currentChannel ? (
+              <>
+                <Play className="w-8 h-8 text-white/20" />
+                <div className="flex-1 min-w-0">
+                  <p className="text-white/50 text-sm">No channel selected</p>
+                  <p className="text-white/30 text-xs">Tap a channel below to start</p>
                 </div>
               </>
             ) : (
@@ -3146,25 +3400,8 @@ export default function LiveTVTvPage() {
             </div>
           </div>
 
-          {/* Channel List with red time indicator */}
-          <div className="flex-1 overflow-y-auto relative">
-            {/* Red current time line - only in channel list area */}
-            {guideTimeOffset === 0 && (
-              <div
-                className="absolute top-0 bottom-0 w-0.5 bg-red-500 z-10 pointer-events-none"
-                style={{
-                  // Position based on time remaining in current 30-min block
-                  // Logo section is ~88px, then programs fill the rest
-                  left: (() => {
-                    const now = new Date();
-                    const minutesIntoBlock = now.getMinutes() % 30;
-                    const percentIntoBlock = minutesIntoBlock / 30;
-                    // Current program takes ~60% width, line should be at the boundary
-                    return `calc(88px + (100% - 88px - 8px) * 0.55 * ${1 - percentIntoBlock})`;
-                  })()
-                }}
-              />
-            )}
+          {/* Channel List */}
+          <div className="flex-1 overflow-y-auto relative" onScroll={handleGuideScroll}>
             {filteredChannels.slice(0, renderLimit).map((channel: Channel, index: number) => {
               const channelEpg = epgDataMap.get(channel.iptvId || '');
               const isCurrentChannel = selectedChannel?.iptvId === channel.iptvId;
@@ -3316,10 +3553,14 @@ export default function LiveTVTvPage() {
                         "w-40 shrink-0 text-left py-1.5 px-2.5 rounded-lg border",
                         isCurrentChannel ? "border-white/30 bg-white/10" : "border-white/10"
                       )}>
-                        <p className={cn(
-                          "text-sm truncate font-medium",
-                          isCurrentChannel ? "text-white" : "text-white/90"
-                        )}>
+                        <p
+                          key={shiftedCurrentProgram?.title || 'no-program'}
+                          className={cn(
+                            "text-sm truncate font-medium",
+                            isCurrentChannel ? "text-white" : "text-white/90",
+                            shiftedCurrentProgram && "animate-fadeSlideIn"
+                          )}
+                        >
                           {shiftedCurrentProgram?.title || channel.GuideName}
                         </p>
                         <p className="text-white/50 text-xs">{timeRemaining ? `${timeRemaining} left` : 'Live'}</p>
@@ -3328,7 +3569,7 @@ export default function LiveTVTvPage() {
                       {/* Next Program (at offset time) */}
                       {shiftedNextProgram && (
                         <div className="w-36 shrink-0 text-left py-1.5 px-2.5 rounded-lg border border-white/5 bg-white/5">
-                          <p className="text-white/70 text-sm truncate">{shiftedNextProgram.title}</p>
+                          <p key={shiftedNextProgram.title} className="text-white/70 text-sm truncate animate-fadeSlideIn">{shiftedNextProgram.title}</p>
                           <p className="text-white/40 text-xs">
                             {new Date(shiftedNextProgram.startTime).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}
                           </p>
@@ -3349,7 +3590,7 @@ export default function LiveTVTvPage() {
           {/* Bottom Tab Bar - Hidden on iOS native (uses native tab bar instead) */}
           {!isIOSNative() && (
             <div className="shrink-0 px-4 pb-8 pt-3 flex items-center justify-around border-t border-white/10 bg-black">
-              <button onTouchEnd={(e) => { e.preventDefault(); setViewMode('player'); setGuideSearchQuery(''); setSelectedCategory(null); }} onClick={() => { setViewMode('player'); setGuideSearchQuery(''); setSelectedCategory(null); }} className="flex flex-col items-center gap-1 py-2 px-4 active:opacity-70">
+              <button onTouchEnd={(e) => { e.preventDefault(); setViewMode('player'); setGuideSearchQuery(''); }} onClick={() => { setViewMode('player'); setGuideSearchQuery(''); }} className="flex flex-col items-center gap-1 py-2 px-4 active:opacity-70">
                 <LayoutGrid className="w-6 h-6 text-white" />
                 <span className="text-white text-xs font-medium">Guide</span>
               </button>
@@ -3367,15 +3608,13 @@ export default function LiveTVTvPage() {
               </button>
             </div>
           )}
-          {/* Spacer when using native tab bar */}
-          {useNativeTabBar && <div className="shrink-0 h-20" />}
         </div>
       )}
 
-      {/* Portrait Guide Category Dropdown - rendered outside container, positioned below header */}
-      {!isRotating && isPortrait && isNativePlatform() && viewMode === 'guide' && showCategoryDropdown && categories.length > 0 && (
+      {/* Portrait Guide Package Dropdown - rendered outside container, positioned below header */}
+      {!isRotating && isPortrait && isNativePlatform() && viewMode === 'guide' && showPackageDropdown && userPackages.length > 0 && (
         <div
-          className="fixed right-4 bg-zinc-900 rounded-xl border border-white/10 shadow-xl max-h-64 overflow-y-auto min-w-40"
+          className="fixed right-4 bg-zinc-900 rounded-xl border border-white/10 shadow-xl max-h-80 overflow-y-auto min-w-48"
           style={{ zIndex: 9999, top: 'calc(env(safe-area-inset-top, 44px) + 56px + 48px)' }}
           onTouchStart={(e) => {
             dropdownTouchStartY.current = e.touches[0].clientY;
@@ -3388,37 +3627,69 @@ export default function LiveTVTvPage() {
             }
           }}
         >
+          <div className="px-4 py-2.5 text-xs font-medium text-white/50 uppercase tracking-wider">
+            Channel Packages
+          </div>
+          {/* Show All button */}
           <button
             onTouchEnd={(e) => {
               e.preventDefault();
               if (dropdownDidScroll.current) return;
-              haptics.selection(); setSelectedCategory(null); setShowCategoryDropdown(false);
+              haptics.selection();
+              setHiddenPackages(new Set());
             }}
-            onClick={() => { haptics.selection(); setSelectedCategory(null); setShowCategoryDropdown(false); }}
+            onClick={() => { haptics.selection(); setHiddenPackages(new Set()); }}
             className={cn(
-              "w-full px-4 py-2.5 text-left text-sm",
-              selectedCategory === null ? "bg-white/10 text-white" : "text-white/70 active:bg-white/5"
+              "w-full px-4 py-2 text-left text-sm border-t border-white/5",
+              hiddenPackages.size === 0 ? "bg-white/10 text-white" : "text-white/70 active:bg-white/5"
             )}
           >
-            All Categories
+            Show All Packages
           </button>
-          {categories.map((cat) => (
-            <button
-              key={cat.id}
-              onTouchEnd={(e) => {
-                e.preventDefault();
-                if (dropdownDidScroll.current) return;
-                haptics.selection(); setSelectedCategory(cat.id); setShowCategoryDropdown(false);
-              }}
-              onClick={() => { haptics.selection(); setSelectedCategory(cat.id); setShowCategoryDropdown(false); }}
-              className={cn(
-                "w-full px-4 py-2.5 text-left text-sm border-t border-white/5",
-                selectedCategory === cat.id ? "bg-white/10 text-white" : "text-white/70 active:bg-white/5"
-              )}
-            >
-              {cat.name}
-            </button>
-          ))}
+          {/* Individual package toggles */}
+          {userPackages.map((pkg) => {
+            const isVisible = !hiddenPackages.has(pkg.packageId);
+            return (
+              <button
+                key={pkg.packageId}
+                onTouchEnd={(e) => {
+                  e.preventDefault();
+                  if (dropdownDidScroll.current) return;
+                  haptics.selection();
+                  setHiddenPackages(prev => {
+                    const newSet = new Set(prev);
+                    if (isVisible) {
+                      newSet.add(pkg.packageId);
+                    } else {
+                      newSet.delete(pkg.packageId);
+                    }
+                    return newSet;
+                  });
+                }}
+                onClick={() => {
+                  haptics.selection();
+                  setHiddenPackages(prev => {
+                    const newSet = new Set(prev);
+                    if (isVisible) {
+                      newSet.add(pkg.packageId);
+                    } else {
+                      newSet.delete(pkg.packageId);
+                    }
+                    return newSet;
+                  });
+                }}
+                className="w-full px-4 py-2.5 text-left text-sm border-t border-white/5 flex items-center justify-between active:bg-white/5"
+              >
+                <span className={isVisible ? "text-white" : "text-white/40"}>{pkg.packageName}</span>
+                <div className={cn(
+                  "w-5 h-5 rounded flex items-center justify-center",
+                  isVisible ? "bg-blue-500" : "bg-white/10"
+                )}>
+                  {isVisible && <Check className="w-3.5 h-3.5 text-white" />}
+                </div>
+              </button>
+            );
+          })}
         </div>
       )}
 
@@ -3512,7 +3783,7 @@ export default function LiveTVTvPage() {
                 })()}
 
                 {/* Large Program Title */}
-                <h1 className="text-5xl font-bold text-white">
+                <h1 key={currentEPG.currentProgram.title} className="text-5xl font-bold text-white animate-fadeSlideIn">
                   {currentEPG.currentProgram.title}
                 </h1>
               </div>
@@ -3529,7 +3800,7 @@ export default function LiveTVTvPage() {
                 </div>
                 <div className="flex justify-between items-center mt-2">
                   <span className="text-red-500 text-sm font-bold tracking-wider">LIVE</span>
-                  <span className="text-white/70 text-sm">{getTimeRemaining(currentEPG.currentProgram.endTime)} left</span>
+                  <span className="text-white/70 text-sm">{getTimeRemaining(currentEPG.currentProgram.endTime) ? `${getTimeRemaining(currentEPG.currentProgram.endTime)} left` : ''}</span>
                 </div>
               </div>
             )}
@@ -3632,7 +3903,7 @@ export default function LiveTVTvPage() {
               {/* Close Button + Search - Top Left, aligned with channel column */}
               <div className="absolute top-6 left-16 flex items-center gap-4 z-10">
                 <button
-                  onClick={() => { setViewMode('player'); setGuideSearchQuery(''); setSelectedCategory(null); }}
+                  onClick={() => { setViewMode('player'); setGuideSearchQuery(''); setNativeTabBarSelected('nowplaying'); }}
                   className="p-2 bg-white/10 hover:bg-white/20 rounded-full text-white transition-all active:scale-95"
                 >
                   <X className="w-5 h-5" />
@@ -3651,21 +3922,69 @@ export default function LiveTVTvPage() {
                     className="w-64 h-10 pl-9 pr-3 bg-white/10 hover:bg-white/15 rounded-lg text-white text-sm placeholder:text-white/40 focus:outline-none focus:ring-1 focus:ring-white/30 transition-colors"
                   />
                 </div>
-                {/* Category Filter Dropdown */}
-                {categories.length > 0 && (
-                  <select
-                    value={selectedCategory || ''}
-                    onChange={(e) => { haptics.selection(); setSelectedCategory(e.target.value || null); }}
-                    className="h-10 px-3 bg-white/10 hover:bg-white/15 rounded-lg text-white text-sm focus:outline-none focus:ring-1 focus:ring-white/30 transition-colors cursor-pointer appearance-none"
-                    style={{ minWidth: '140px' }}
-                  >
-                    <option value="" className="bg-black text-white">All Categories</option>
-                    {categories.map((cat) => (
-                      <option key={cat.id} value={cat.id} className="bg-black text-white">
-                        {cat.name}
-                      </option>
-                    ))}
-                  </select>
+                {/* Package Filter Button & Dropdown */}
+                {userPackages.length > 0 && (
+                  <div className="relative">
+                    <button
+                      onClick={() => { setShowPackageDropdown(!showPackageDropdown); haptics.light(); }}
+                      className={cn(
+                        "h-10 px-3 rounded-lg text-white text-sm transition-colors flex items-center gap-2",
+                        showPackageDropdown ? "bg-white/20" : "bg-white/10 hover:bg-white/15"
+                      )}
+                    >
+                      <Package className="w-4 h-4 text-white/70" />
+                      <span>
+                        {hiddenPackages.size > 0 ? `${userPackages.length - hiddenPackages.size}/${userPackages.length} Packages` : 'All Packages'}
+                      </span>
+                      <ChevronDown className={cn("w-4 h-4 text-white/50 transition-transform", showPackageDropdown && "rotate-180")} />
+                    </button>
+                    {/* Dropdown */}
+                    {showPackageDropdown && (
+                      <div className="absolute top-12 right-0 bg-zinc-900 rounded-xl border border-white/10 shadow-xl max-h-80 overflow-y-auto min-w-56 z-50">
+                        <div className="px-4 py-2.5 text-xs font-medium text-white/50 uppercase tracking-wider">
+                          Channel Packages
+                        </div>
+                        <button
+                          onClick={() => { haptics.selection(); setHiddenPackages(new Set()); }}
+                          className={cn(
+                            "w-full px-4 py-2 text-left text-sm border-t border-white/5",
+                            hiddenPackages.size === 0 ? "bg-white/10 text-white" : "text-white/70 hover:bg-white/5"
+                          )}
+                        >
+                          Show All Packages
+                        </button>
+                        {userPackages.map((pkg) => {
+                          const isVisible = !hiddenPackages.has(pkg.packageId);
+                          return (
+                            <button
+                              key={pkg.packageId}
+                              onClick={() => {
+                                haptics.selection();
+                                setHiddenPackages(prev => {
+                                  const newSet = new Set(prev);
+                                  if (isVisible) {
+                                    newSet.add(pkg.packageId);
+                                  } else {
+                                    newSet.delete(pkg.packageId);
+                                  }
+                                  return newSet;
+                                });
+                              }}
+                              className="w-full px-4 py-2.5 text-left text-sm border-t border-white/5 flex items-center justify-between hover:bg-white/5"
+                            >
+                              <span className={isVisible ? "text-white" : "text-white/40"}>{pkg.packageName}</span>
+                              <div className={cn(
+                                "w-5 h-5 rounded flex items-center justify-center",
+                                isVisible ? "bg-blue-500" : "bg-white/10"
+                              )}>
+                                {isVisible && <Check className="w-3.5 h-3.5 text-white" />}
+                              </div>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
                 )}
               </div>
 
@@ -3688,8 +4007,8 @@ export default function LiveTVTvPage() {
               />
             </div>
 
-            {/* Channel Grid - takes remaining space, supports horizontal scrolling */}
-            <div ref={guideScrollRef} className="flex-1 overflow-auto">
+            {/* Channel Grid - takes remaining space, supports horizontal scrolling, pb-24 for tab bar */}
+            <div ref={guideScrollRef} className="flex-1 overflow-auto pb-24" onScroll={handleGuideScroll}>
               {filteredChannels.slice(0, renderLimit).map((channel: Channel, index: number) => (
                 <GuideChannelRow
                   key={channel.iptvId || channel.GuideNumber}
@@ -3714,249 +4033,269 @@ export default function LiveTVTvPage() {
       </div>
       )}
 
-      {/* Portrait Home View - Favorite channels with current programs */}
+      {/* Portrait Home View - Apple TV+ Style */}
       {/* On phones: always render (orientation locked). On tablets: only in portrait */}
       {!isRotating && isNativePlatform() && viewMode === 'home' && (isPhoneDevice || isPortrait) && (
         <div
-          className="absolute inset-0 bg-black flex flex-col animate-in fade-in duration-150"
+          className="absolute inset-0 bg-black flex flex-col animate-viewSlideUp"
           style={{ zIndex: 30 }}
         >
-          {/* Header */}
-          <div className="shrink-0 pt-20 px-4 pb-2">
-            <h1 className="text-2xl font-bold text-white">Home</h1>
+          {/* Minimal Header */}
+          <div className="shrink-0 pt-16 px-5 pb-2">
+            <h1 className="text-3xl font-bold text-white tracking-tight">Watch Now</h1>
           </div>
 
-          {/* Scrollable Content */}
+          {/* Scrollable Content - pb-24 allows content to scroll under tab bar */}
           <div className="flex-1 overflow-y-auto pb-24">
-            {/* Favorites Section */}
-            <div className="mb-6">
-              <div className="px-4 mb-3 flex items-center justify-between">
-                <h2 className="text-lg font-semibold text-white">Favorites</h2>
-                {favorites && favorites.length > 0 && (
-                  <span className="text-white/40 text-sm">{favorites.length} channels</span>
-                )}
-              </div>
 
-              {!favorites || favorites.length === 0 ? (
-                <div className="px-4">
-                  <div className="flex flex-col items-center justify-center h-40 bg-white/5 rounded-xl text-center">
-                    <Star className="w-10 h-10 text-white/20 mb-3" />
-                    <p className="text-white/50">No favorites yet</p>
-                    <p className="text-white/30 text-sm mt-1">Add channels from the Guide</p>
+            {/* Featured - First Favorite (Large Card) */}
+            {favorites && favorites.length > 0 && (() => {
+              const fav = favorites[0];
+              const channel = channels.find(c => c.iptvId === fav.channelId);
+              if (!channel) return null;
+              const channelEpg = epgDataMap.get(channel.iptvId || '');
+              const thumbnail = channelEpg?.currentProgram?.thumbnail;
+              const channelLogo = fav.channelLogo || channel.logo;
+              const progress = getProgramProgress(channelEpg?.currentProgram);
+              const timeLeft = channelEpg?.currentProgram ? getTimeRemaining(channelEpg.currentProgram.endTime) : null;
+              const category = channel.categoryName;
+              const rating = channelEpg?.currentProgram?.rating;
+
+              return (
+                <div className="px-5 mb-10 mt-6">
+                  <div
+                    className="relative rounded-2xl overflow-hidden active:scale-[0.98] transition-transform duration-200"
+                    onClick={() => { haptics.medium(); playStream(channel); setViewMode('player'); }}
+                  >
+                    <div className="aspect-[16/9]">
+                      {thumbnail ? (
+                        <img src={thumbnail} alt="" className="w-full h-full object-cover" />
+                      ) : channelLogo ? (
+                        <div className="w-full h-full flex items-center justify-center bg-zinc-900 p-12">
+                          <img src={channelLogo} alt="" className="max-w-[60%] max-h-[60%] object-contain opacity-80" />
+                        </div>
+                      ) : (
+                        <div className="w-full h-full bg-zinc-900" />
+                      )}
+                    </div>
+                    {/* Top badges row */}
+                    <div className="absolute top-3 left-3 right-3 flex items-center gap-2">
+                      {/* Category tag */}
+                      {category && (
+                        <span className="px-2 py-1 bg-white/20 backdrop-blur-sm rounded text-white text-[10px] font-medium uppercase tracking-wide">
+                          {category}
+                        </span>
+                      )}
+                      {/* Rating badge */}
+                      {rating && (
+                        <span className="px-1.5 py-0.5 border border-white/40 rounded text-white/90 text-[10px] font-medium">
+                          {rating}
+                        </span>
+                      )}
+                    </div>
+                    {/* Play button */}
+                    <div className="absolute inset-0 flex items-center justify-center">
+                      <div className="w-16 h-16 rounded-full bg-black/40 backdrop-blur-sm flex items-center justify-center">
+                        <Play className="w-8 h-8 text-white ml-1" fill="white" />
+                      </div>
+                    </div>
+                    {/* Bottom info overlay */}
+                    <div className="absolute bottom-0 left-0 right-0 p-5 bg-gradient-to-t from-black/90 via-black/50 to-transparent">
+                      <div className="flex items-start gap-4">
+                        {/* Channel logo */}
+                        {channelLogo && (
+                          <div className="shrink-0 w-14 h-14 rounded-lg bg-white/10 p-2 flex items-center justify-center">
+                            <img src={channelLogo} alt="" className="max-w-full max-h-full object-contain" />
+                          </div>
+                        )}
+                        <div className="flex-1 min-w-0">
+                          <p className="text-white font-semibold text-xl">{fav.channelName || channel.GuideName}</p>
+                          {channelEpg?.currentProgram && (
+                            <div className="flex items-center gap-2 mt-1">
+                              <p className="text-white/60 text-sm truncate">{channelEpg.currentProgram.title}</p>
+                              {timeLeft && (
+                                <span className="text-white/40 text-xs shrink-0">• {timeLeft}</span>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                      {/* Progress bar */}
+                      {progress > 0 && (
+                        <div className="mt-3 h-1 bg-white/20 rounded-full overflow-hidden">
+                          <div className="h-full bg-white/80 rounded-full" style={{ width: `${progress}%` }} />
+                        </div>
+                      )}
+                    </div>
                   </div>
                 </div>
-              ) : (
-                <div
-                  className="flex gap-3 overflow-x-auto px-4 pb-2 scrollbar-hide"
-                  style={{ scrollSnapType: 'x mandatory' }}
-                >
-                  {favorites.map((fav) => {
+              );
+            })()}
+
+            {/* Favorites - Remaining Favorites */}
+            {favorites && favorites.length > 1 && (
+              <div className="mb-10">
+                <h2 className="px-5 text-xl font-semibold text-white/90 mb-4">Favorites</h2>
+                <div className="flex gap-4 overflow-x-auto px-5 scrollbar-hide">
+                  {favorites.slice(1).map((fav) => {
                     const channel = channels.find(c => c.iptvId === fav.channelId);
                     if (!channel) return null;
                     const channelEpg = epgDataMap.get(channel.iptvId || '');
                     const thumbnail = channelEpg?.currentProgram?.thumbnail;
                     const channelLogo = fav.channelLogo || channel.logo;
-
-                    // Track if user is scrolling to prevent tap on scroll end
-                    let touchStartX = 0;
-                    let touchStartY = 0;
-                    let isScrolling = false;
+                    const progress = getProgramProgress(channelEpg?.currentProgram);
+                    const timeLeft = channelEpg?.currentProgram ? getTimeRemaining(channelEpg.currentProgram.endTime) : null;
+                    const rating = channelEpg?.currentProgram?.rating;
 
                     return (
                       <div
                         key={fav.channelId}
-                        className="shrink-0 w-56 rounded-xl overflow-hidden bg-white/5 active:bg-white/10"
-                        style={{ scrollSnapAlign: 'start' }}
-                        onTouchStart={(e) => {
-                          touchStartX = e.touches[0].clientX;
-                          touchStartY = e.touches[0].clientY;
-                          isScrolling = false;
-                        }}
-                        onTouchMove={(e) => {
-                          const deltaX = Math.abs(e.touches[0].clientX - touchStartX);
-                          const deltaY = Math.abs(e.touches[0].clientY - touchStartY);
-                          if (deltaX > 10 || deltaY > 10) {
-                            isScrolling = true;
-                          }
-                        }}
-                        onTouchEnd={() => {
-                          if (!isScrolling) {
-                            haptics.light();
-                            playStream(channel);
-                            setViewMode('player');
-                          }
-                        }}
-                        onClick={() => {
-                          haptics.light();
-                          playStream(channel);
-                          setViewMode('player');
-                        }}
+                        className="shrink-0 w-72 active:scale-[0.97] transition-transform duration-200"
+                        onClick={() => { haptics.light(); playStream(channel); setViewMode('player'); }}
                       >
-                        {/* Thumbnail or Channel Logo */}
-                        <div className="w-full aspect-video bg-black/50 relative">
-                          {thumbnail ? (
-                            <img
-                              src={thumbnail}
-                              alt={channelEpg?.currentProgram?.title || ''}
-                              className="w-full h-full object-cover"
-                            />
-                          ) : channelLogo ? (
-                            <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-white/10 to-white/5 p-4">
-                              <img
-                                src={channelLogo}
-                                alt=""
-                                className="max-w-full max-h-full object-contain"
-                              />
-                            </div>
-                          ) : (
-                            <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-white/10 to-white/5">
-                              <span className="text-white/30 text-sm font-medium">{fav.channelName || channel.GuideName}</span>
+                        <div className="relative rounded-xl overflow-hidden mb-3">
+                          <div className="aspect-video">
+                            {thumbnail ? (
+                              <img src={thumbnail} alt="" className="w-full h-full object-cover" />
+                            ) : channelLogo ? (
+                              <div className="w-full h-full flex items-center justify-center bg-zinc-900 p-6">
+                                <img src={channelLogo} alt="" className="max-w-[50%] max-h-[50%] object-contain opacity-70" />
+                              </div>
+                            ) : (
+                              <div className="w-full h-full bg-zinc-900" />
+                            )}
+                          </div>
+                          {/* Rating badge top-right */}
+                          {rating && (
+                            <div className="absolute top-2 right-2">
+                              <span className="px-1.5 py-0.5 bg-black/60 backdrop-blur-sm border border-white/30 rounded text-white/90 text-[9px] font-medium">
+                                {rating}
+                              </span>
                             </div>
                           )}
-                          {/* Gradient overlay */}
-                          <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent" />
-                          {/* LIVE badge */}
-                          <div className="absolute top-2 left-2 px-1.5 py-0.5 bg-red-600 rounded text-white text-[10px] font-bold">
-                            LIVE
-                          </div>
                           {/* Play button */}
                           <div className="absolute inset-0 flex items-center justify-center">
-                            <div className="w-10 h-10 rounded-full bg-white/20 backdrop-blur-sm flex items-center justify-center">
-                              <Play className="w-5 h-5 text-white ml-0.5" />
+                            <div className="w-12 h-12 rounded-full bg-black/40 backdrop-blur-sm flex items-center justify-center">
+                              <Play className="w-6 h-6 text-white ml-0.5" fill="white" />
                             </div>
                           </div>
+                          {/* Progress bar at bottom */}
+                          {progress > 0 && (
+                            <div className="absolute bottom-0 left-0 right-0 h-1 bg-black/50">
+                              <div className="h-full bg-white/80" style={{ width: `${progress}%` }} />
+                            </div>
+                          )}
                         </div>
-                        {/* Channel Info */}
-                        <div className="p-2.5 flex items-center gap-2.5">
+                        {/* Channel info with logo on left */}
+                        <div className="flex items-start gap-3">
                           {channelLogo && (
-                            <img
-                              src={channelLogo}
-                              alt=""
-                              className="w-8 h-8 object-contain shrink-0"
-                            />
+                            <div className="shrink-0 w-10 h-10 rounded-lg bg-zinc-800 p-1.5 flex items-center justify-center">
+                              <img src={channelLogo} alt="" className="max-w-full max-h-full object-contain" />
+                            </div>
                           )}
                           <div className="flex-1 min-w-0">
                             <p className="text-white font-medium text-sm truncate">{fav.channelName || channel.GuideName}</p>
-                            {channelEpg?.currentProgram ? (
-                              <p className="text-white/50 text-xs truncate mt-0.5">{channelEpg.currentProgram.title}</p>
-                            ) : (
-                              <p className="text-white/30 text-xs mt-0.5">No program info</p>
-                            )}
+                            <div className="flex items-center gap-1.5 mt-0.5">
+                              <p className="text-white/40 text-xs truncate flex-1">
+                                {channelEpg?.currentProgram?.title || 'No program info'}
+                              </p>
+                              {timeLeft && (
+                                <span className="text-white/30 text-[10px] shrink-0">{timeLeft}</span>
+                              )}
+                            </div>
                           </div>
                         </div>
                       </div>
                     );
                   })}
                 </div>
-              )}
-            </div>
+              </div>
+            )}
 
-            {/* NFL Section */}
+            {/* Section Divider */}
+            {favorites && favorites.length > 0 && (nflPackage || nbaPackage || mlbPackage) && (
+              <div className="px-5 mb-8">
+                <div className="h-px bg-white/10" />
+              </div>
+            )}
+
+            {/* No Favorites - Clean empty state */}
+            {(!favorites || favorites.length === 0) && (
+              <div className="px-5 mb-8 mt-4">
+                <div className="rounded-2xl bg-zinc-900/50 p-8 text-center">
+                  <p className="text-white/60 text-lg font-medium">No favorites yet</p>
+                  <p className="text-white/30 text-sm mt-2">Add channels from the Guide tab</p>
+                </div>
+              </div>
+            )}
+
+            {/* NFL Section - Large Cards */}
             {nflPackage && nflChannels.length > 0 && (
-              <div className="mb-6">
-                <div className="px-4 mb-3 flex items-center justify-between">
-                  <h2 className="text-lg font-semibold text-white">🏈 NFL</h2>
-                  <span className="text-white/40 text-sm">{nflChannels.length} channels</span>
+              <div className="mb-10">
+                <div className="px-5 mb-4 flex items-center gap-3">
+                  <img src="https://a.espncdn.com/combiner/i?img=/i/teamlogos/leagues/500/nfl.png&w=100&h=100" alt="NFL" className="h-6 w-6 object-contain" />
+                  <h2 className="text-xl font-semibold text-white/90">NFL</h2>
                 </div>
-
-                <div
-                  className="flex gap-3 overflow-x-auto px-4 pb-2 scrollbar-hide"
-                  style={{ scrollSnapType: 'x mandatory' }}
-                >
+                <div className="flex gap-4 overflow-x-auto px-5 scrollbar-hide">
                   {nflChannels.map((pkgChannel) => {
-                    // Match package channel to full channel object
                     const channel = channels.find(c => c.GuideName === pkgChannel.name || c.name === pkgChannel.name);
                     if (!channel) return null;
                     const channelEpg = epgDataMap.get(channel.iptvId || '');
                     const thumbnail = channelEpg?.currentProgram?.thumbnail;
                     const channelLogo = pkgChannel.logo || channel.logo;
-
-                    // Track if user is scrolling to prevent tap on scroll end
-                    let touchStartX = 0;
-                    let touchStartY = 0;
-                    let isScrolling = false;
+                    const progress = getProgramProgress(channelEpg?.currentProgram);
+                    const timeLeft = channelEpg?.currentProgram ? getTimeRemaining(channelEpg.currentProgram.endTime) : null;
 
                     return (
                       <div
                         key={pkgChannel.id}
-                        className="shrink-0 w-56 rounded-xl overflow-hidden bg-white/5 active:bg-white/10"
-                        style={{ scrollSnapAlign: 'start' }}
-                        onTouchStart={(e) => {
-                          touchStartX = e.touches[0].clientX;
-                          touchStartY = e.touches[0].clientY;
-                          isScrolling = false;
-                        }}
-                        onTouchMove={(e) => {
-                          const deltaX = Math.abs(e.touches[0].clientX - touchStartX);
-                          const deltaY = Math.abs(e.touches[0].clientY - touchStartY);
-                          if (deltaX > 10 || deltaY > 10) {
-                            isScrolling = true;
-                          }
-                        }}
-                        onTouchEnd={() => {
-                          if (!isScrolling) {
-                            haptics.light();
-                            playStream(channel);
-                            setViewMode('player');
-                          }
-                        }}
-                        onClick={() => {
-                          haptics.light();
-                          playStream(channel);
-                          setViewMode('player');
-                        }}
+                        className="shrink-0 w-72 active:scale-[0.97] transition-transform duration-200"
+                        onClick={() => { haptics.light(); playStream(channel); setViewMode('player'); }}
                       >
-                        {/* Thumbnail or Channel Logo */}
-                        <div className="w-full aspect-video bg-black/50 relative">
-                          {thumbnail ? (
-                            <img
-                              src={thumbnail}
-                              alt={channelEpg?.currentProgram?.title || ''}
-                              className="w-full h-full object-cover"
-                            />
-                          ) : channelLogo ? (
-                            <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-white/10 to-white/5 p-4">
-                              <img
-                                src={channelLogo}
-                                alt=""
-                                className="max-w-full max-h-full object-contain"
-                              />
-                            </div>
-                          ) : (
-                            <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-white/10 to-white/5">
-                              <span className="text-white/30 text-sm font-medium">{pkgChannel.name}</span>
-                            </div>
-                          )}
-                          {/* Gradient overlay */}
-                          <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent" />
-                          {/* LIVE badge */}
-                          <div className="absolute top-2 left-2 px-1.5 py-0.5 bg-red-600 rounded text-white text-[10px] font-bold">
-                            LIVE
-                          </div>
-                          {/* Play button */}
-                          <div className="absolute inset-0 flex items-center justify-center">
-                            <div className="w-10 h-10 rounded-full bg-white/20 backdrop-blur-sm flex items-center justify-center">
-                              <Play className="w-5 h-5 text-white ml-0.5" />
-                            </div>
-                          </div>
-                        </div>
-                        {/* Channel Info */}
-                        <div className="p-2.5 flex items-center gap-2.5">
-                          {channelLogo && (
-                            <img
-                              src={channelLogo}
-                              alt=""
-                              className="w-8 h-8 object-contain shrink-0"
-                            />
-                          )}
-                          <div className="flex-1 min-w-0">
-                            <p className="text-white font-medium text-sm truncate">{pkgChannel.name}</p>
-                            {channelEpg?.currentProgram ? (
-                              <p className="text-white/50 text-xs truncate mt-0.5">{channelEpg.currentProgram.title}</p>
+                        <div className="relative rounded-xl overflow-hidden mb-3">
+                          <div className="aspect-video">
+                            {thumbnail ? (
+                              <img src={thumbnail} alt="" className="w-full h-full object-cover" />
+                            ) : channelLogo ? (
+                              <div className="w-full h-full flex items-center justify-center bg-zinc-900 p-6">
+                                <img src={channelLogo} alt="" className="max-w-[50%] max-h-[50%] object-contain opacity-70" />
+                              </div>
                             ) : (
-                              <p className="text-white/30 text-xs mt-0.5">No program info</p>
+                              <div className="w-full h-full bg-zinc-900" />
                             )}
                           </div>
+                          {/* Top row badges */}
+                          <div className="absolute top-2 left-2 right-2 flex items-center justify-between">
+                            {/* LIVE badge */}
+                            <div className="flex items-center gap-1 px-2 py-1 bg-red-600 rounded">
+                              <span className="relative flex h-1.5 w-1.5">
+                                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-white opacity-75"></span>
+                                <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-white"></span>
+                              </span>
+                              <span className="text-white text-[10px] font-bold">LIVE</span>
+                            </div>
+                            {/* Network logo */}
+                            {channelLogo && thumbnail && (
+                              <div className="w-8 h-8 rounded bg-black/40 backdrop-blur-sm p-1 flex items-center justify-center">
+                                <img src={channelLogo} alt="" className="max-w-full max-h-full object-contain" />
+                              </div>
+                            )}
+                          </div>
+                          {/* Progress bar at bottom */}
+                          {progress > 0 && (
+                            <div className="absolute bottom-0 left-0 right-0 h-1 bg-black/50">
+                              <div className="h-full bg-white/80" style={{ width: `${progress}%` }} />
+                            </div>
+                          )}
+                        </div>
+                        <p className="text-white font-medium text-sm">{pkgChannel.name}</p>
+                        <div className="flex items-center gap-1.5 mt-0.5">
+                          <p className="text-white/40 text-xs truncate flex-1">
+                            {channelEpg?.currentProgram?.title || 'Live'}
+                          </p>
+                          {timeLeft && progress > 0 && (
+                            <span className="text-white/30 text-[10px] shrink-0">{timeLeft}</span>
+                          )}
                         </div>
                       </div>
                     );
@@ -3965,113 +4304,55 @@ export default function LiveTVTvPage() {
               </div>
             )}
 
-            {/* NBA Section */}
+            {/* NBA Section - Compact Cards for variety */}
             {nbaPackage && nbaChannels.length > 0 && (
-              <div className="mb-6">
-                <div className="px-4 mb-3 flex items-center justify-between">
-                  <h2 className="text-lg font-semibold text-white">🏀 NBA</h2>
-                  <span className="text-white/40 text-sm">{nbaChannels.length} channels</span>
+              <div className="mb-10">
+                <div className="px-5 mb-4 flex items-center gap-3">
+                  <img src="https://a.espncdn.com/combiner/i?img=/i/teamlogos/leagues/500/nba.png&w=100&h=100" alt="NBA" className="h-6 w-6 object-contain" />
+                  <h2 className="text-xl font-semibold text-white/90">NBA</h2>
                 </div>
-
-                <div
-                  className="flex gap-3 overflow-x-auto px-4 pb-2 scrollbar-hide"
-                  style={{ scrollSnapType: 'x mandatory' }}
-                >
+                <div className="flex gap-3 overflow-x-auto px-5 scrollbar-hide">
                   {nbaChannels.map((pkgChannel) => {
-                    // Match package channel to full channel object
                     const channel = channels.find(c => c.GuideName === pkgChannel.name || c.name === pkgChannel.name);
                     if (!channel) return null;
                     const channelEpg = epgDataMap.get(channel.iptvId || '');
-                    const thumbnail = channelEpg?.currentProgram?.thumbnail;
                     const channelLogo = pkgChannel.logo || channel.logo;
-
-                    // Track if user is scrolling to prevent tap on scroll end
-                    let touchStartX = 0;
-                    let touchStartY = 0;
-                    let isScrolling = false;
+                    const progress = getProgramProgress(channelEpg?.currentProgram);
 
                     return (
                       <div
                         key={pkgChannel.id}
-                        className="shrink-0 w-56 rounded-xl overflow-hidden bg-white/5 active:bg-white/10"
-                        style={{ scrollSnapAlign: 'start' }}
-                        onTouchStart={(e) => {
-                          touchStartX = e.touches[0].clientX;
-                          touchStartY = e.touches[0].clientY;
-                          isScrolling = false;
-                        }}
-                        onTouchMove={(e) => {
-                          const deltaX = Math.abs(e.touches[0].clientX - touchStartX);
-                          const deltaY = Math.abs(e.touches[0].clientY - touchStartY);
-                          if (deltaX > 10 || deltaY > 10) {
-                            isScrolling = true;
-                          }
-                        }}
-                        onTouchEnd={() => {
-                          if (!isScrolling) {
-                            haptics.light();
-                            playStream(channel);
-                            setViewMode('player');
-                          }
-                        }}
-                        onClick={() => {
-                          haptics.light();
-                          playStream(channel);
-                          setViewMode('player');
-                        }}
+                        className="shrink-0 w-36 active:scale-[0.97] transition-transform duration-200"
+                        onClick={() => { haptics.light(); playStream(channel); setViewMode('player'); }}
                       >
-                        {/* Thumbnail or Channel Logo */}
-                        <div className="w-full aspect-video bg-black/50 relative">
-                          {thumbnail ? (
-                            <img
-                              src={thumbnail}
-                              alt={channelEpg?.currentProgram?.title || ''}
-                              className="w-full h-full object-cover"
-                            />
-                          ) : channelLogo ? (
-                            <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-white/10 to-white/5 p-4">
-                              <img
-                                src={channelLogo}
-                                alt=""
-                                className="max-w-full max-h-full object-contain"
-                              />
-                            </div>
-                          ) : (
-                            <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-white/10 to-white/5">
-                              <span className="text-white/30 text-sm font-medium">{pkgChannel.name}</span>
-                            </div>
-                          )}
-                          {/* Gradient overlay */}
-                          <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent" />
-                          {/* LIVE badge */}
-                          <div className="absolute top-2 left-2 px-1.5 py-0.5 bg-red-600 rounded text-white text-[10px] font-bold">
-                            LIVE
-                          </div>
-                          {/* Play button */}
-                          <div className="absolute inset-0 flex items-center justify-center">
-                            <div className="w-10 h-10 rounded-full bg-white/20 backdrop-blur-sm flex items-center justify-center">
-                              <Play className="w-5 h-5 text-white ml-0.5" />
-                            </div>
-                          </div>
-                        </div>
-                        {/* Channel Info */}
-                        <div className="p-2.5 flex items-center gap-2.5">
-                          {channelLogo && (
-                            <img
-                              src={channelLogo}
-                              alt=""
-                              className="w-8 h-8 object-contain shrink-0"
-                            />
-                          )}
-                          <div className="flex-1 min-w-0">
-                            <p className="text-white font-medium text-sm truncate">{pkgChannel.name}</p>
-                            {channelEpg?.currentProgram ? (
-                              <p className="text-white/50 text-xs truncate mt-0.5">{channelEpg.currentProgram.title}</p>
+                        <div className="relative rounded-xl overflow-hidden mb-2">
+                          <div className="aspect-square">
+                            {channelLogo ? (
+                              <div className="w-full h-full flex items-center justify-center bg-zinc-900 p-4">
+                                <img src={channelLogo} alt="" className="max-w-full max-h-full object-contain opacity-80" />
+                              </div>
                             ) : (
-                              <p className="text-white/30 text-xs mt-0.5">No program info</p>
+                              <div className="w-full h-full bg-zinc-900 flex items-center justify-center">
+                                <Tv className="w-8 h-8 text-zinc-700" />
+                              </div>
                             )}
                           </div>
+                          {/* LIVE badge - smaller */}
+                          <div className="absolute top-1.5 left-1.5 flex items-center gap-0.5 px-1.5 py-0.5 bg-red-600 rounded">
+                            <span className="relative flex h-1 w-1">
+                              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-white opacity-75"></span>
+                              <span className="relative inline-flex rounded-full h-1 w-1 bg-white"></span>
+                            </span>
+                            <span className="text-white text-[8px] font-bold">LIVE</span>
+                          </div>
+                          {/* Progress bar at bottom */}
+                          {progress > 0 && (
+                            <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-black/50">
+                              <div className="h-full bg-white/80" style={{ width: `${progress}%` }} />
+                            </div>
+                          )}
                         </div>
+                        <p className="text-white font-medium text-xs text-center truncate">{pkgChannel.name}</p>
                       </div>
                     );
                   })}
@@ -4079,112 +4360,80 @@ export default function LiveTVTvPage() {
               </div>
             )}
 
-            {/* MLB Section */}
-            {mlbPackage && mlbChannels.length > 0 && (
-              <div className="mb-6">
-                <div className="px-4 mb-3 flex items-center justify-between">
-                  <h2 className="text-lg font-semibold text-white">⚾ MLB</h2>
-                  <span className="text-white/40 text-sm">{mlbChannels.length} channels</span>
-                </div>
+            {/* Section Divider */}
+            {(nflPackage || nbaPackage) && mlbPackage && (
+              <div className="px-5 mb-8">
+                <div className="h-px bg-white/10" />
+              </div>
+            )}
 
-                <div
-                  className="flex gap-3 overflow-x-auto px-4 pb-2 scrollbar-hide"
-                  style={{ scrollSnapType: 'x mandatory' }}
-                >
+            {/* MLB Section - Large Cards */}
+            {mlbPackage && mlbChannels.length > 0 && (
+              <div className="mb-10">
+                <div className="px-5 mb-4 flex items-center gap-3">
+                  <img src="https://a.espncdn.com/combiner/i?img=/i/teamlogos/leagues/500/mlb.png&w=100&h=100" alt="MLB" className="h-6 w-6 object-contain" />
+                  <h2 className="text-xl font-semibold text-white/90">MLB</h2>
+                </div>
+                <div className="flex gap-4 overflow-x-auto px-5 scrollbar-hide">
                   {mlbChannels.map((pkgChannel) => {
-                    // Match package channel to full channel object
                     const channel = channels.find(c => c.GuideName === pkgChannel.name || c.name === pkgChannel.name);
                     if (!channel) return null;
                     const channelEpg = epgDataMap.get(channel.iptvId || '');
                     const thumbnail = channelEpg?.currentProgram?.thumbnail;
                     const channelLogo = pkgChannel.logo || channel.logo;
-
-                    // Track if user is scrolling to prevent tap on scroll end
-                    let touchStartX = 0;
-                    let touchStartY = 0;
-                    let isScrolling = false;
+                    const progress = getProgramProgress(channelEpg?.currentProgram);
+                    const timeLeft = channelEpg?.currentProgram ? getTimeRemaining(channelEpg.currentProgram.endTime) : null;
 
                     return (
                       <div
                         key={pkgChannel.id}
-                        className="shrink-0 w-56 rounded-xl overflow-hidden bg-white/5 active:bg-white/10"
-                        style={{ scrollSnapAlign: 'start' }}
-                        onTouchStart={(e) => {
-                          touchStartX = e.touches[0].clientX;
-                          touchStartY = e.touches[0].clientY;
-                          isScrolling = false;
-                        }}
-                        onTouchMove={(e) => {
-                          const deltaX = Math.abs(e.touches[0].clientX - touchStartX);
-                          const deltaY = Math.abs(e.touches[0].clientY - touchStartY);
-                          if (deltaX > 10 || deltaY > 10) {
-                            isScrolling = true;
-                          }
-                        }}
-                        onTouchEnd={() => {
-                          if (!isScrolling) {
-                            haptics.light();
-                            playStream(channel);
-                            setViewMode('player');
-                          }
-                        }}
-                        onClick={() => {
-                          haptics.light();
-                          playStream(channel);
-                          setViewMode('player');
-                        }}
+                        className="shrink-0 w-72 active:scale-[0.97] transition-transform duration-200"
+                        onClick={() => { haptics.light(); playStream(channel); setViewMode('player'); }}
                       >
-                        {/* Thumbnail or Channel Logo */}
-                        <div className="w-full aspect-video bg-black/50 relative">
-                          {thumbnail ? (
-                            <img
-                              src={thumbnail}
-                              alt={channelEpg?.currentProgram?.title || ''}
-                              className="w-full h-full object-cover"
-                            />
-                          ) : channelLogo ? (
-                            <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-white/10 to-white/5 p-4">
-                              <img
-                                src={channelLogo}
-                                alt=""
-                                className="max-w-full max-h-full object-contain"
-                              />
-                            </div>
-                          ) : (
-                            <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-white/10 to-white/5">
-                              <span className="text-white/30 text-sm font-medium">{pkgChannel.name}</span>
-                            </div>
-                          )}
-                          {/* Gradient overlay */}
-                          <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent" />
-                          {/* LIVE badge */}
-                          <div className="absolute top-2 left-2 px-1.5 py-0.5 bg-red-600 rounded text-white text-[10px] font-bold">
-                            LIVE
-                          </div>
-                          {/* Play button */}
-                          <div className="absolute inset-0 flex items-center justify-center">
-                            <div className="w-10 h-10 rounded-full bg-white/20 backdrop-blur-sm flex items-center justify-center">
-                              <Play className="w-5 h-5 text-white ml-0.5" />
-                            </div>
-                          </div>
-                        </div>
-                        {/* Channel Info */}
-                        <div className="p-2.5 flex items-center gap-2.5">
-                          {channelLogo && (
-                            <img
-                              src={channelLogo}
-                              alt=""
-                              className="w-8 h-8 object-contain shrink-0"
-                            />
-                          )}
-                          <div className="flex-1 min-w-0">
-                            <p className="text-white font-medium text-sm truncate">{pkgChannel.name}</p>
-                            {channelEpg?.currentProgram ? (
-                              <p className="text-white/50 text-xs truncate mt-0.5">{channelEpg.currentProgram.title}</p>
+                        <div className="relative rounded-xl overflow-hidden mb-3">
+                          <div className="aspect-video">
+                            {thumbnail ? (
+                              <img src={thumbnail} alt="" className="w-full h-full object-cover" />
+                            ) : channelLogo ? (
+                              <div className="w-full h-full flex items-center justify-center bg-zinc-900 p-6">
+                                <img src={channelLogo} alt="" className="max-w-[50%] max-h-[50%] object-contain opacity-70" />
+                              </div>
                             ) : (
-                              <p className="text-white/30 text-xs mt-0.5">No program info</p>
+                              <div className="w-full h-full bg-zinc-900" />
                             )}
                           </div>
+                          {/* Top row badges */}
+                          <div className="absolute top-2 left-2 right-2 flex items-center justify-between">
+                            {/* LIVE badge */}
+                            <div className="flex items-center gap-1 px-2 py-1 bg-red-600 rounded">
+                              <span className="relative flex h-1.5 w-1.5">
+                                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-white opacity-75"></span>
+                                <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-white"></span>
+                              </span>
+                              <span className="text-white text-[10px] font-bold">LIVE</span>
+                            </div>
+                            {/* Network logo */}
+                            {channelLogo && thumbnail && (
+                              <div className="w-8 h-8 rounded bg-black/40 backdrop-blur-sm p-1 flex items-center justify-center">
+                                <img src={channelLogo} alt="" className="max-w-full max-h-full object-contain" />
+                              </div>
+                            )}
+                          </div>
+                          {/* Progress bar at bottom */}
+                          {progress > 0 && (
+                            <div className="absolute bottom-0 left-0 right-0 h-1 bg-black/50">
+                              <div className="h-full bg-white/80" style={{ width: `${progress}%` }} />
+                            </div>
+                          )}
+                        </div>
+                        <p className="text-white font-medium text-sm">{pkgChannel.name}</p>
+                        <div className="flex items-center gap-1.5 mt-0.5">
+                          <p className="text-white/40 text-xs truncate flex-1">
+                            {channelEpg?.currentProgram?.title || 'Live'}
+                          </p>
+                          {timeLeft && progress > 0 && (
+                            <span className="text-white/30 text-[10px] shrink-0">{timeLeft}</span>
+                          )}
                         </div>
                       </div>
                     );
@@ -4195,8 +4444,6 @@ export default function LiveTVTvPage() {
 
           </div>
 
-          {/* Spacer for native tab bar */}
-          {useNativeTabBar && <div className="shrink-0 h-20" />}
         </div>
       )}
 
@@ -4204,7 +4451,7 @@ export default function LiveTVTvPage() {
       {/* On phones: always render (orientation locked). On tablets: only in portrait */}
       {!isRotating && isNativePlatform() && viewMode === 'profile' && (isPhoneDevice || isPortrait) && (
         <div
-          className="absolute inset-0 bg-black flex flex-col animate-in fade-in duration-150"
+          className="absolute inset-0 bg-black flex flex-col animate-viewSlideUp"
           style={{ zIndex: 30 }}
         >
           {/* Header */}
@@ -4415,8 +4662,6 @@ export default function LiveTVTvPage() {
             </button>
           </div>
 
-          {/* Spacer for native tab bar */}
-          {useNativeTabBar && <div className="shrink-0 h-20" />}
         </div>
       )}
 

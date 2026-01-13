@@ -2,7 +2,7 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1, viewport-fit=cover" />
     <meta name="theme-color" content="#000000" />
     <meta name="description" content="Game Server Management Dashboard" />
 
@@ -47,8 +47,21 @@
 
     <title>StylusOne Dashboard</title>
   </head>
-  <body>
+  <body style="background-color: #000000; margin: 0; padding: 0;">
+    <!-- Initial loading screen - shows before React hydrates (just black screen) -->
+    <div id="initial-splash" style="position: fixed; inset: 0; z-index: 9999; background-color: #000000;"></div>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
+    <script>
+      // Hide initial splash once React app is ready
+      window.__hideInitialSplash = function() {
+        var splash = document.getElementById('initial-splash');
+        if (splash) {
+          splash.style.transition = 'opacity 0.3s ease-out';
+          splash.style.opacity = '0';
+          setTimeout(function() { splash.remove(); }, 300);
+        }
+      };
+    </script>
   </body>
 </html>
