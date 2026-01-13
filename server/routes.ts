@@ -2216,7 +2216,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/admin/epg/stats", async (req, res) => {
     if (!req.isAuthenticated()) return res.status(401).json({ error: "Not authenticated" });
     const user = req.user as Express.User;
-    if (!user.isAdmin) return res.status(403).json({ error: "Admin access required" });
+    if (user.role !== 'admin' && user.role !== 'superadmin') return res.status(403).json({ error: "Admin access required" });
 
     try {
       const epgService = await getSharedEPGService();
@@ -2235,7 +2235,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/admin/epg/refresh", async (req, res) => {
     if (!req.isAuthenticated()) return res.status(401).json({ error: "Not authenticated" });
     const user = req.user as Express.User;
-    if (!user.isAdmin) return res.status(403).json({ error: "Admin access required" });
+    if (user.role !== 'admin' && user.role !== 'superadmin') return res.status(403).json({ error: "Admin access required" });
 
     try {
       const epgService = await getSharedEPGService();
