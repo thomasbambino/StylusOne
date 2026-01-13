@@ -8,7 +8,7 @@ import {
   iptvChannels,
   users,
 } from '@shared/schema';
-import { eq, desc, and, sql, gte, lte, asc, count } from 'drizzle-orm';
+import { eq, desc, and, sql, gte, lte, asc, count, max } from 'drizzle-orm';
 import { streamTrackerService } from '../services/stream-tracker-service';
 
 const router = Router();
@@ -249,7 +249,7 @@ router.get('/users', requireAdmin, async (req, res) => {
         totalWatchTime: sql<number>`COALESCE(SUM(duration_seconds), 0)::int`,
         channelsWatched: sql<number>`count(DISTINCT channel_id)::int`,
         totalSessions: sql<number>`count(*)::int`,
-        lastWatched: sql<Date>`MAX(started_at)`,
+        lastWatched: max(viewingHistory.startedAt),
       })
       .from(viewingHistory)
       .innerJoin(users, eq(viewingHistory.userId, users.id))
@@ -283,6 +283,8 @@ router.get('/users', requireAdmin, async (req, res) => {
 
         return {
           ...stat,
+          // Ensure lastWatched is properly formatted as ISO string with timezone
+          lastWatched: stat.lastWatched ? new Date(stat.lastWatched).toISOString() : null,
           isWatching: !!currentStream,
           currentChannel: currentChannelName,
         };
