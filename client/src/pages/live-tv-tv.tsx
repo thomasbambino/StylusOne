@@ -1107,7 +1107,7 @@ export default function LiveTVTvPage() {
     if (viewMode === 'guide') {
       // Start with 30, expand to all after a short delay
       setRenderLimit(30);
-      const timer = setTimeout(() => setRenderLimit(999), 100);
+      const timer = setTimeout(() => setRenderLimit(10000), 100);
       return () => clearTimeout(timer);
     }
   }, [viewMode]);
