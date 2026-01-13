@@ -135,6 +135,16 @@ function getDeviceIcon(deviceType: string | null) {
   }
 }
 
+function formatDeviceType(deviceType: string | null): string {
+  if (!deviceType) return 'Web';
+  switch (deviceType.toLowerCase()) {
+    case 'ios': return 'iOS';
+    case 'android': return 'Android';
+    case 'web': return 'Web';
+    default: return deviceType;
+  }
+}
+
 export default function AnalyticsPage() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -476,9 +486,11 @@ export default function AnalyticsPage() {
                         </TableCell>
                         <TableCell>
                           <div className="flex items-center gap-2">
-                            {stream.channelLogo && (
-                              <img src={stream.channelLogo} alt="" className="h-8 w-auto max-w-[48px] object-contain rounded" />
-                            )}
+                            <div className="w-8 h-8 flex-shrink-0 flex items-center justify-center">
+                              {stream.channelLogo && (
+                                <img src={stream.channelLogo} alt="" className="w-8 h-8 object-contain rounded" />
+                              )}
+                            </div>
                             <span>{stream.channelName}</span>
                           </div>
                         </TableCell>
@@ -488,7 +500,7 @@ export default function AnalyticsPage() {
                         <TableCell>
                           <div className="flex items-center gap-1">
                             {getDeviceIcon(stream.deviceType)}
-                            <span className="text-xs">{stream.deviceType || 'web'}</span>
+                            <span className="text-xs">{formatDeviceType(stream.deviceType)}</span>
                           </div>
                         </TableCell>
                         <TableCell className="text-xs text-muted-foreground">
@@ -570,9 +582,11 @@ export default function AnalyticsPage() {
                       <TableRow key={stat.channelId}>
                         <TableCell>
                           <div className="flex items-center gap-2">
-                            {stat.channelLogo && (
-                              <img src={stat.channelLogo} alt="" className="h-8 w-auto max-w-[48px] object-contain rounded" />
-                            )}
+                            <div className="w-8 h-8 flex-shrink-0 flex items-center justify-center">
+                              {stat.channelLogo && (
+                                <img src={stat.channelLogo} alt="" className="w-8 h-8 object-contain rounded" />
+                              )}
+                            </div>
                             <span>{stat.channelName || stat.channelId}</span>
                           </div>
                         </TableCell>
@@ -711,7 +725,7 @@ export default function AnalyticsPage() {
                           <TableCell>
                             <div className="flex items-center gap-1">
                               {getDeviceIcon(entry.deviceType)}
-                              <span className="text-xs">{entry.deviceType || 'web'}</span>
+                              <span className="text-xs">{formatDeviceType(entry.deviceType)}</span>
                             </div>
                           </TableCell>
                         </TableRow>

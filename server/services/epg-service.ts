@@ -226,6 +226,18 @@ export class EPGService implements IService {
       }
     }
 
+    // If still no programs, try fuzzy matching by channel name
+    if (programs.length === 0) {
+      const normalizedName = channelId.toLowerCase().replace(/[^a-z0-9]/g, '');
+      for (const [epgChannelId, channelPrograms] of this.programCache.entries()) {
+        const normalizedEpgId = epgChannelId.toLowerCase().replace(/[^a-z0-9]/g, '');
+        if (normalizedEpgId.includes(normalizedName) || normalizedName.includes(normalizedEpgId)) {
+          programs = channelPrograms;
+          break;
+        }
+      }
+    }
+
     return programs.find(p =>
       p.startTime <= now && p.endTime > now
     ) || null;
