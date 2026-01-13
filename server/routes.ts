@@ -2252,6 +2252,46 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Get EPG data summary for viewing (admin only)
+  app.get("/api/admin/epg/data", async (req, res) => {
+    if (!req.isAuthenticated()) return res.status(401).json({ error: "Not authenticated" });
+    const user = req.user as Express.User;
+    if (user.role !== 'admin' && user.role !== 'superadmin') return res.status(403).json({ error: "Admin access required" });
+
+    try {
+      const epgService = await getSharedEPGService();
+      const data = epgService.getDataSummary();
+      res.json(data);
+    } catch (error) {
+      console.error('Error fetching EPG data:', error);
+      res.status(500).json({
+        message: "Failed to fetch EPG data",
+        error: error instanceof Error ? error.message : "Unknown error"
+      });
+    }
+  });
+
+  // Get programs for a specific channel (admin only)
+  app.get("/api/admin/epg/channel/:channelId", async (req, res) => {
+    if (!req.isAuthenticated()) return res.status(401).json({ error: "Not authenticated" });
+    const user = req.user as Express.User;
+    if (user.role !== 'admin' && user.role !== 'superadmin') return res.status(403).json({ error: "Admin access required" });
+
+    try {
+      const { channelId } = req.params;
+      const limit = parseInt(req.query.limit as string) || 50;
+      const epgService = await getSharedEPGService();
+      const programs = epgService.getChannelPrograms(decodeURIComponent(channelId), limit);
+      res.json(programs);
+    } catch (error) {
+      console.error('Error fetching channel programs:', error);
+      res.status(500).json({
+        message: "Failed to fetch channel programs",
+        error: error instanceof Error ? error.message : "Unknown error"
+      });
+    }
+  });
+
   app.get("/api/iptv/categories", async (req, res) => {
     if (!req.isAuthenticated()) return res.sendStatus(401);
 

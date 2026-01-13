@@ -43,6 +43,25 @@ interface EPGStats {
   daysToKeep: number;
 }
 
+interface ActiveStream {
+  id: number;
+  credentialId: number;
+  userId: number;
+  streamId: string;
+  sessionToken: string;
+  startedAt: string;
+  lastHeartbeat: string;
+  ipAddress: string | null;
+  credentialName?: string;
+}
+
+interface EPGChannelSummary {
+  channelId: string;
+  programCount: number;
+  currentProgram: string | null;
+  nextProgram: string | null;
+}
+
 interface IptvCredential {
   id: number;
   providerId: number;
@@ -105,6 +124,8 @@ export default function IptvProvidersPage() {
   const [expandedProviders, setExpandedProviders] = useState<Set<number>>(new Set());
   const [syncingProviderId, setSyncingProviderId] = useState<number | null>(null);
   const [testingCredentialId, setTestingCredentialId] = useState<number | null>(null);
+  const [isEpgDataDialogOpen, setIsEpgDataDialogOpen] = useState(false);
+  const [isAllStreamsDialogOpen, setIsAllStreamsDialogOpen] = useState(false);
 
   // Fetch providers
   const { data: providers = [], isLoading } = useQuery<IptvProvider[]>({
@@ -129,6 +150,32 @@ export default function IptvProvidersPage() {
       return res.json();
     },
     refetchInterval: 60000, // Refresh every minute
+  });
+
+  // Fetch all active streams
+  const { data: allActiveStreams = [], isLoading: allStreamsLoading } = useQuery<ActiveStream[]>({
+    queryKey: ['/api/admin/iptv-credentials/all-streams'],
+    queryFn: async () => {
+      const res = await fetch(buildApiUrl('/api/admin/iptv-credentials/all-streams'), {
+        credentials: 'include',
+      });
+      if (!res.ok) throw new Error('Failed to fetch active streams');
+      return res.json();
+    },
+    refetchInterval: 10000, // Refresh every 10 seconds
+  });
+
+  // Fetch EPG data summary (only when dialog is open)
+  const { data: epgData = [], isLoading: epgDataLoading } = useQuery<EPGChannelSummary[]>({
+    queryKey: ['/api/admin/epg/data'],
+    queryFn: async () => {
+      const res = await fetch(buildApiUrl('/api/admin/epg/data'), {
+        credentials: 'include',
+      });
+      if (!res.ok) throw new Error('Failed to fetch EPG data');
+      return res.json();
+    },
+    enabled: isEpgDataDialogOpen,
   });
 
   // Create provider
@@ -517,8 +564,8 @@ export default function IptvProvidersPage() {
   // Computed stats
   const totalCredentials = providers.reduce((sum, p) => sum + p.credentialCount, 0);
   const totalMaxConnections = providers.reduce((sum, p) => sum + p.totalMaxConnections, 0);
-  // Note: We need to track active streams from credentials - for now show max
-  const totalActiveStreams = 0; // Would need to aggregate from all credentials
+  const totalActiveStreams = allActiveStreams.length;
+  const utilizationPercent = totalMaxConnections > 0 ? Math.round((totalActiveStreams / totalMaxConnections) * 100) : 0;
 
   // Format file size
   const formatBytes = (bytes: number): string => {
@@ -559,10 +606,10 @@ export default function IptvProvidersPage() {
       </div>
 
       {/* Stats Cards */}
-      <div className="grid gap-4 md:grid-cols-4">
+      <div className="grid gap-4 md:grid-cols-5">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Total Providers</CardTitle>
+            <CardTitle className="text-sm font-medium">Providers</CardTitle>
             <Server className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
@@ -570,19 +617,29 @@ export default function IptvProvidersPage() {
             <p className="text-xs text-muted-foreground">{totalCredentials} credentials</p>
           </CardContent>
         </Card>
-        <Card>
+        <Card className="cursor-pointer hover:bg-muted/50" onClick={() => setIsAllStreamsDialogOpen(true)}>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Max Connections</CardTitle>
-            <Users className="h-4 w-4 text-muted-foreground" />
+            <CardTitle className="text-sm font-medium">Active Streams</CardTitle>
+            <Wifi className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{totalMaxConnections}</div>
-            <p className="text-xs text-muted-foreground">across all credentials</p>
+            <div className="text-2xl font-bold">{allStreamsLoading ? '...' : totalActiveStreams}</div>
+            <p className="text-xs text-muted-foreground">of {totalMaxConnections} max</p>
           </CardContent>
         </Card>
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Total Channels</CardTitle>
+            <CardTitle className="text-sm font-medium">Utilization</CardTitle>
+            <Users className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{utilizationPercent}%</div>
+            <p className="text-xs text-muted-foreground">{totalMaxConnections - totalActiveStreams} available</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Channels</CardTitle>
             <Tv className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
@@ -604,7 +661,7 @@ export default function IptvProvidersPage() {
               {epgStatsLoading ? '...' : (epgStats?.programs?.toLocaleString() || 0)}
             </div>
             <p className="text-xs text-muted-foreground">
-              {epgStats?.channels || 0} channels cached
+              {epgStats?.channels || 0} channels
             </p>
           </CardContent>
         </Card>
@@ -621,18 +678,27 @@ export default function IptvProvidersPage() {
               </CardTitle>
               <CardDescription>Electronic Program Guide data from your IPTV provider</CardDescription>
             </div>
-            <Button
-              variant="outline"
-              onClick={() => refreshEpgMutation.mutate()}
-              disabled={refreshEpgMutation.isPending}
-            >
-              {refreshEpgMutation.isPending ? (
-                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-              ) : (
-                <RefreshCw className="h-4 w-4 mr-2" />
-              )}
-              Refresh Now
-            </Button>
+            <div className="flex gap-2">
+              <Button
+                variant="outline"
+                onClick={() => setIsEpgDataDialogOpen(true)}
+              >
+                <Eye className="h-4 w-4 mr-2" />
+                View Data
+              </Button>
+              <Button
+                variant="outline"
+                onClick={() => refreshEpgMutation.mutate()}
+                disabled={refreshEpgMutation.isPending}
+              >
+                {refreshEpgMutation.isPending ? (
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                ) : (
+                  <RefreshCw className="h-4 w-4 mr-2" />
+                )}
+                Refresh Now
+              </Button>
+            </div>
           </div>
         </CardHeader>
         <CardContent>
@@ -1048,6 +1114,117 @@ export default function IptvProvidersPage() {
                 Disconnect All
               </Button>
             )}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* All Active Streams Dialog */}
+      <Dialog open={isAllStreamsDialogOpen} onOpenChange={setIsAllStreamsDialogOpen}>
+        <DialogContent className="sm:max-w-[700px]">
+          <DialogHeader>
+            <DialogTitle>All Active Streams</DialogTitle>
+            <DialogDescription>Currently active streams across all credentials</DialogDescription>
+          </DialogHeader>
+          {allStreamsLoading ? (
+            <div className="flex justify-center py-8">
+              <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+            </div>
+          ) : allActiveStreams.length === 0 ? (
+            <div className="text-center py-8 text-muted-foreground">No active streams</div>
+          ) : (
+            <div className="space-y-4 max-h-[400px] overflow-y-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Credential</TableHead>
+                    <TableHead>User ID</TableHead>
+                    <TableHead>Stream ID</TableHead>
+                    <TableHead>Started</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {allActiveStreams.map((stream) => (
+                    <TableRow key={stream.id}>
+                      <TableCell className="font-medium">{stream.credentialName || `ID: ${stream.credentialId}`}</TableCell>
+                      <TableCell>{stream.userId}</TableCell>
+                      <TableCell className="font-mono text-xs">{stream.streamId}</TableCell>
+                      <TableCell>{format(new Date(stream.startedAt), 'PPp')}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsAllStreamsDialogOpen(false)}>Close</Button>
+            {allActiveStreams.length > 0 && (
+              <Button
+                variant="destructive"
+                onClick={() => {
+                  clearAllStreamsMutation.mutate();
+                  setIsAllStreamsDialogOpen(false);
+                }}
+                disabled={clearAllStreamsMutation.isPending}
+              >
+                {clearAllStreamsMutation.isPending ? (
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                ) : (
+                  <WifiOff className="h-4 w-4 mr-2" />
+                )}
+                Clear All Streams
+              </Button>
+            )}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* EPG Data Viewer Dialog */}
+      <Dialog open={isEpgDataDialogOpen} onOpenChange={setIsEpgDataDialogOpen}>
+        <DialogContent className="sm:max-w-[800px] max-h-[80vh]">
+          <DialogHeader>
+            <DialogTitle>EPG Data</DialogTitle>
+            <DialogDescription>
+              {epgStats?.channels || 0} channels with {epgStats?.programs?.toLocaleString() || 0} programs cached
+            </DialogDescription>
+          </DialogHeader>
+          {epgDataLoading ? (
+            <div className="flex justify-center py-8">
+              <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+            </div>
+          ) : epgData.length === 0 ? (
+            <div className="text-center py-8 text-muted-foreground">No EPG data available</div>
+          ) : (
+            <div className="space-y-4 max-h-[500px] overflow-y-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Channel</TableHead>
+                    <TableHead>Programs</TableHead>
+                    <TableHead>Now Playing</TableHead>
+                    <TableHead>Up Next</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {epgData.map((channel) => (
+                    <TableRow key={channel.channelId}>
+                      <TableCell className="font-medium">{channel.channelId}</TableCell>
+                      <TableCell>
+                        <Badge variant="secondary">{channel.programCount}</Badge>
+                      </TableCell>
+                      <TableCell className="text-sm">
+                        {channel.currentProgram || <span className="text-muted-foreground">-</span>}
+                      </TableCell>
+                      <TableCell className="text-sm text-muted-foreground">
+                        {channel.nextProgram || '-'}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsEpgDataDialogOpen(false)}>Close</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
