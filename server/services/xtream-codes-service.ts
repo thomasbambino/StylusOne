@@ -104,7 +104,7 @@ export class XtreamCodesClient {
   private categoriesCache: XtreamCategory[] | null = null;
   private channelsCache: IPTVChannel[] | null = null;
   private cacheTimestamp: number = 0;
-  private cacheExpirationMs: number = 30000; // 30 second cache
+  private cacheExpirationMs: number = 1800000; // 30 minute cache (was 30 seconds - caused rate limiting)
 
   constructor(credentials: { serverUrl: string; username: string; password: string; credentialId?: number }) {
     this.serverUrl = credentials.serverUrl;
@@ -377,7 +377,7 @@ export class XtreamCodesManager implements IService {
 
   // Cache for user channels (merged from all credentials)
   private userChannelCache: Map<number, { channels: IPTVChannel[]; timestamp: number }> = new Map();
-  private userCacheExpiration: number = 30000; // 30 seconds
+  private userCacheExpiration: number = 1800000; // 30 minutes (was 30 seconds - caused rate limiting)
 
   constructor() {
     // Check for environment variable fallback
