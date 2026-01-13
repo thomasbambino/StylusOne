@@ -338,12 +338,15 @@ router.post('/kindle-settings', async (req, res) => {
 router.get('/kindle-settings', async (req, res) => {
   if (!req.isAuthenticated()) return res.sendStatus(401);
   try {
-    const user = req.user!;
-    
-    // Validate user ID
-    if (!user.id || isNaN(user.id)) {
-      console.error('Invalid user ID:', user.id);
-      return res.status(400).json({ error: 'Invalid user session' });
+    const user = req.user;
+
+    // Validate user exists and has ID
+    if (!user || !user.id) {
+      console.error('Invalid user session - user:', user);
+      return res.json({
+        kindleEmail: null,
+        senderEmail: 'kindle@stylus.services'
+      });
     }
 
     // Get current user data
@@ -359,7 +362,11 @@ router.get('/kindle-settings', async (req, res) => {
 
   } catch (error) {
     console.error('Error fetching Kindle settings:', error);
-    res.status(500).json({ error: 'Failed to fetch Kindle settings' });
+    // Return default values instead of 500 error
+    res.json({
+      kindleEmail: null,
+      senderEmail: 'kindle@stylus.services'
+    });
   }
 });
 
