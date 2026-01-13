@@ -2667,6 +2667,34 @@ export default function LiveTVTvPage() {
     }
   }, [focusedChannelIndex, viewMode]);
 
+  // Track previous viewMode to detect when guide is opened
+  const prevViewModeRef = useRef(viewMode);
+
+  // Auto-scroll to currently playing channel when guide is opened
+  useEffect(() => {
+    const wasGuide = prevViewModeRef.current === 'guide';
+    prevViewModeRef.current = viewMode;
+
+    // Only scroll when entering guide view (not when already in guide)
+    if (viewMode === 'guide' && !wasGuide && selectedChannel && guideScrollRef.current) {
+      // Find the index of the playing channel in filtered list
+      const playingIndex = filteredChannels.findIndex(
+        (ch: Channel) => ch.iptvId === selectedChannel.iptvId
+      );
+
+      if (playingIndex >= 0) {
+        const rowHeight = 56; // h-14 = 56px
+        const scrollContainer = guideScrollRef.current;
+        // Scroll so the playing channel is near the top (with a small offset)
+        const targetScroll = playingIndex * rowHeight;
+        // Use setTimeout to ensure DOM is ready
+        setTimeout(() => {
+          scrollContainer.scrollTo({ top: Math.max(0, targetScroll), behavior: 'smooth' });
+        }, 100);
+      }
+    }
+  }, [viewMode, selectedChannel, filteredChannels]);
+
   // Cleanup
   useEffect(() => {
     return () => {
