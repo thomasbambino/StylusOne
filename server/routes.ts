@@ -2212,12 +2212,52 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // EPG Cache Stats endpoint (admin only)
+  app.get("/api/admin/epg/stats", async (req, res) => {
+    if (!req.isAuthenticated()) return res.sendStatus(401);
+    const user = req.user as Express.User;
+    if (!user.isAdmin) return res.sendStatus(403);
+
+    try {
+      const epgService = await getSharedEPGService();
+      const stats = epgService.getCacheStats();
+      res.json(stats);
+    } catch (error) {
+      console.error('Error fetching EPG stats:', error);
+      res.status(500).json({
+        message: "Failed to fetch EPG stats",
+        error: error instanceof Error ? error.message : "Unknown error"
+      });
+    }
+  });
+
+  // Force EPG refresh (admin only)
+  app.post("/api/admin/epg/refresh", async (req, res) => {
+    if (!req.isAuthenticated()) return res.sendStatus(401);
+    const user = req.user as Express.User;
+    if (!user.isAdmin) return res.sendStatus(403);
+
+    try {
+      const epgService = await getSharedEPGService();
+      await epgService.forceRefresh();
+      const stats = epgService.getCacheStats();
+      res.json({ success: true, stats });
+    } catch (error) {
+      console.error('Error refreshing EPG:', error);
+      res.status(500).json({
+        success: false,
+        message: "Failed to refresh EPG",
+        error: error instanceof Error ? error.message : "Unknown error"
+      });
+    }
+  });
+
   app.get("/api/iptv/categories", async (req, res) => {
     if (!req.isAuthenticated()) return res.sendStatus(401);
 
     try {
       const { xtreamCodesService } = await import('./services/xtream-codes-service');
-      
+
 
       if (!xtreamCodesService.isConfigured()) {
         return res.json({ configured: false, categories: [] });

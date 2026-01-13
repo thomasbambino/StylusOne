@@ -8,7 +8,7 @@ import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
 import { useToast } from '@/hooks/use-toast';
-import { Plus, Edit2, Trash2, Server, Users, RefreshCw, Loader2, MoreVertical, CheckCircle2, XCircle, Tv, Download, Key, Eye, Wifi, WifiOff } from 'lucide-react';
+import { Plus, Edit2, Trash2, Server, Users, RefreshCw, Loader2, MoreVertical, CheckCircle2, XCircle, Tv, Download, Key, Eye, Wifi, WifiOff, Database, Clock, HardDrive, Calendar } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator } from '@/components/ui/dropdown-menu';
@@ -29,6 +29,18 @@ interface IptvProvider {
   totalMaxConnections: number;
   createdAt: string;
   updatedAt: string;
+}
+
+interface EPGStats {
+  channels: number;
+  programs: number;
+  lastFetch: string | null;
+  oldestProgram: string | null;
+  newestProgram: string | null;
+  cacheSizeBytes: number;
+  nextRefresh: string | null;
+  refreshIntervalHours: number;
+  daysToKeep: number;
 }
 
 interface IptvCredential {
@@ -104,6 +116,19 @@ export default function IptvProvidersPage() {
       if (!res.ok) throw new Error('Failed to fetch providers');
       return res.json();
     },
+  });
+
+  // Fetch EPG stats
+  const { data: epgStats, isLoading: epgStatsLoading } = useQuery<EPGStats>({
+    queryKey: ['/api/admin/epg/stats'],
+    queryFn: async () => {
+      const res = await fetch(buildApiUrl('/api/admin/epg/stats'), {
+        credentials: 'include',
+      });
+      if (!res.ok) throw new Error('Failed to fetch EPG stats');
+      return res.json();
+    },
+    refetchInterval: 60000, // Refresh every minute
   });
 
   // Create provider
@@ -372,6 +397,56 @@ export default function IptvProvidersPage() {
     },
   });
 
+  // Clear all streams across all credentials
+  const clearAllStreamsMutation = useMutation({
+    mutationFn: async () => {
+      const res = await fetch(buildApiUrl('/api/admin/iptv-credentials/clear-all-streams'), {
+        method: 'POST',
+        credentials: 'include',
+      });
+      if (!res.ok) {
+        const error = await res.json();
+        throw new Error(error.error || 'Failed to clear streams');
+      }
+      return res.json();
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ['/api/admin/iptv-providers'] });
+      toast({
+        title: 'Streams Cleared',
+        description: `${data.cleared} stream(s) removed`,
+      });
+    },
+    onError: (error: Error) => {
+      toast({ title: 'Error', description: error.message, variant: 'destructive' });
+    },
+  });
+
+  // Refresh EPG data
+  const refreshEpgMutation = useMutation({
+    mutationFn: async () => {
+      const res = await fetch(buildApiUrl('/api/admin/epg/refresh'), {
+        method: 'POST',
+        credentials: 'include',
+      });
+      if (!res.ok) {
+        const error = await res.json();
+        throw new Error(error.error || 'Failed to refresh EPG');
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/admin/epg/stats'] });
+      toast({
+        title: 'EPG Refresh Started',
+        description: 'EPG data is being updated from the provider',
+      });
+    },
+    onError: (error: Error) => {
+      toast({ title: 'Error', description: error.message, variant: 'destructive' });
+    },
+  });
+
   // Fetch streams for selected credential
   const { data: streamsData, isLoading: streamsLoading } = useQuery({
     queryKey: ['/api/admin/iptv-credentials', selectedCredential?.id, 'streams'],
@@ -439,6 +514,21 @@ export default function IptvProvidersPage() {
     });
   };
 
+  // Computed stats
+  const totalCredentials = providers.reduce((sum, p) => sum + p.credentialCount, 0);
+  const totalMaxConnections = providers.reduce((sum, p) => sum + p.totalMaxConnections, 0);
+  // Note: We need to track active streams from credentials - for now show max
+  const totalActiveStreams = 0; // Would need to aggregate from all credentials
+
+  // Format file size
+  const formatBytes = (bytes: number): string => {
+    if (bytes === 0) return '0 B';
+    const k = 1024;
+    const sizes = ['B', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return `${parseFloat((bytes / Math.pow(k, i)).toFixed(1))} ${sizes[i]}`;
+  };
+
   return (
     <div className="container mx-auto py-6 space-y-6">
       <div className="flex justify-between items-center">
@@ -446,11 +536,160 @@ export default function IptvProvidersPage() {
           <h1 className="text-3xl font-bold">IPTV Providers</h1>
           <p className="text-muted-foreground">Manage IPTV providers and their credentials</p>
         </div>
-        <Button onClick={() => setIsCreateDialogOpen(true)}>
-          <Plus className="h-4 w-4 mr-2" />
-          Add Provider
-        </Button>
+        <div className="flex gap-2">
+          {totalActiveStreams > 0 && (
+            <Button
+              variant="outline"
+              onClick={() => clearAllStreamsMutation.mutate()}
+              disabled={clearAllStreamsMutation.isPending}
+            >
+              {clearAllStreamsMutation.isPending ? (
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+              ) : (
+                <WifiOff className="h-4 w-4 mr-2" />
+              )}
+              Clear All Streams
+            </Button>
+          )}
+          <Button onClick={() => setIsCreateDialogOpen(true)}>
+            <Plus className="h-4 w-4 mr-2" />
+            Add Provider
+          </Button>
+        </div>
       </div>
+
+      {/* Stats Cards */}
+      <div className="grid gap-4 md:grid-cols-4">
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Total Providers</CardTitle>
+            <Server className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{providers.length}</div>
+            <p className="text-xs text-muted-foreground">{totalCredentials} credentials</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Max Connections</CardTitle>
+            <Users className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{totalMaxConnections}</div>
+            <p className="text-xs text-muted-foreground">across all credentials</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Total Channels</CardTitle>
+            <Tv className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">
+              {providers.reduce((sum, p) => sum + p.enabledChannelCount, 0)}
+            </div>
+            <p className="text-xs text-muted-foreground">
+              of {providers.reduce((sum, p) => sum + p.channelCount, 0)} total
+            </p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">EPG Programs</CardTitle>
+            <Database className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">
+              {epgStatsLoading ? '...' : (epgStats?.programs?.toLocaleString() || 0)}
+            </div>
+            <p className="text-xs text-muted-foreground">
+              {epgStats?.channels || 0} channels cached
+            </p>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* EPG Cache Section */}
+      <Card>
+        <CardHeader className="pb-3">
+          <div className="flex items-center justify-between">
+            <div>
+              <CardTitle className="flex items-center gap-2">
+                <Database className="h-5 w-5" />
+                EPG Data Cache
+              </CardTitle>
+              <CardDescription>Electronic Program Guide data from your IPTV provider</CardDescription>
+            </div>
+            <Button
+              variant="outline"
+              onClick={() => refreshEpgMutation.mutate()}
+              disabled={refreshEpgMutation.isPending}
+            >
+              {refreshEpgMutation.isPending ? (
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+              ) : (
+                <RefreshCw className="h-4 w-4 mr-2" />
+              )}
+              Refresh Now
+            </Button>
+          </div>
+        </CardHeader>
+        <CardContent>
+          {epgStatsLoading ? (
+            <div className="flex justify-center py-4">
+              <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+            </div>
+          ) : epgStats ? (
+            <div className="grid gap-4 md:grid-cols-4">
+              <div className="flex items-center gap-3">
+                <div className="p-2 rounded-lg bg-muted">
+                  <HardDrive className="h-4 w-4 text-muted-foreground" />
+                </div>
+                <div>
+                  <p className="text-sm font-medium">Cache Size</p>
+                  <p className="text-lg font-bold">{formatBytes(epgStats.cacheSizeBytes)}</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-3">
+                <div className="p-2 rounded-lg bg-muted">
+                  <Clock className="h-4 w-4 text-muted-foreground" />
+                </div>
+                <div>
+                  <p className="text-sm font-medium">Last Updated</p>
+                  <p className="text-sm text-muted-foreground">
+                    {epgStats.lastFetch ? format(new Date(epgStats.lastFetch), 'MMM d, h:mm a') : 'Never'}
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-3">
+                <div className="p-2 rounded-lg bg-muted">
+                  <RefreshCw className="h-4 w-4 text-muted-foreground" />
+                </div>
+                <div>
+                  <p className="text-sm font-medium">Next Refresh</p>
+                  <p className="text-sm text-muted-foreground">
+                    {epgStats.nextRefresh ? format(new Date(epgStats.nextRefresh), 'MMM d, h:mm a') : 'N/A'}
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-3">
+                <div className="p-2 rounded-lg bg-muted">
+                  <Calendar className="h-4 w-4 text-muted-foreground" />
+                </div>
+                <div>
+                  <p className="text-sm font-medium">Data Range</p>
+                  <p className="text-sm text-muted-foreground">
+                    {epgStats.daysToKeep} days, refresh every {epgStats.refreshIntervalHours}h
+                  </p>
+                </div>
+              </div>
+            </div>
+          ) : (
+            <p className="text-muted-foreground text-center py-4">No EPG data available</p>
+          )}
+        </CardContent>
+      </Card>
 
       {isLoading ? (
         <div className="flex justify-center py-8">
