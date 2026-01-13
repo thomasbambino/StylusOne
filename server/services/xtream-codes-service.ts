@@ -741,13 +741,16 @@ export class XtreamCodesManager implements IService {
       // Use channel name for deduplication (same channel in multiple packages)
       const key = channel.name.toLowerCase().trim();
       if (!channelMap.has(key)) {
+        // Use epgChannelId if available (new column), fallback to empty string
+        // The column might not exist yet if migration hasn't run
+        const epgChannelId = (channel as any).epgChannelId;
         channelMap.set(key, {
           id: channel.streamId,
           number: String(sortOrder || channel.id),
           name: channel.name,
           streamUrl,
           logo: channel.logo || '',
-          epgId: channel.epgChannelId || '', // Use XMLTV channel ID for EPG lookup
+          epgId: epgChannelId || '', // Use XMLTV channel ID for EPG lookup
           categoryName: channel.categoryName || 'Uncategorized',
           categoryId: channel.categoryId || '',
           hasArchive: false, // Package channels don't track archive status yet
