@@ -32,6 +32,8 @@ import { db, pool } from './db';
 import { eq, and, inArray } from 'drizzle-orm';
 import { getSharedEPGService } from './services/epg-singleton';
 import { tmdbService } from './services/tmdb-service';
+import { channelMappingService } from './services/channel-mapping-service';
+import { providerHealthService } from './services/provider-health-service';
 import { randomBytes } from 'crypto';
 import {
   apiRateLimiter,
@@ -2792,6 +2794,145 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Helper function for stream failover
+  interface StreamFetchResult {
+    response: import('node-fetch').Response;
+    manifestText: string;
+    streamUrl: string;
+    usedBackup: boolean;
+    backupStreamId?: string;
+    backupProviderId?: number;
+  }
+
+  async function fetchStreamWithFailover(
+    userId: number,
+    streamId: string,
+    xtreamCodesService: any
+  ): Promise<StreamFetchResult | null> {
+    const MAX_FAILOVER_ATTEMPTS = 3;
+
+    // Try primary stream first
+    const primaryClient = await xtreamCodesService.getClientForStream(userId, streamId);
+
+    if (primaryClient) {
+      try {
+        let streamUrl = primaryClient.getHLSStreamUrl(streamId);
+        console.log(`[Failover] Trying primary stream ${streamId}`);
+
+        let response = await fetch(streamUrl);
+
+        if (response.ok) {
+          let manifestText = await response.text();
+
+          // Handle HTML redirects
+          if (manifestText.trim().startsWith('<!DOCTYPE') || manifestText.trim().startsWith('<html')) {
+            const metaRefreshMatch = manifestText.match(/url='([^']+)'/);
+            const hrefMatch = manifestText.match(/href="([^"]+)"/);
+            const redirectUrl = metaRefreshMatch?.[1] || hrefMatch?.[1];
+
+            if (redirectUrl) {
+              response = await fetch(redirectUrl);
+              if (response.ok) {
+                manifestText = await response.text();
+                streamUrl = redirectUrl;
+              } else {
+                console.log(`[Failover] Primary stream ${streamId} redirect failed: ${response.status}`);
+              }
+            }
+          }
+
+          if (response.ok && !manifestText.trim().startsWith('<!DOCTYPE') && !manifestText.trim().startsWith('<html')) {
+            console.log(`[Failover] Primary stream ${streamId} succeeded`);
+            return { response, manifestText, streamUrl, usedBackup: false };
+          }
+        } else {
+          console.log(`[Failover] Primary stream ${streamId} failed: ${response.status}`);
+        }
+      } catch (error) {
+        console.log(`[Failover] Primary stream ${streamId} error:`, error);
+      }
+    } else {
+      console.log(`[Failover] No client available for primary stream ${streamId}`);
+    }
+
+    // Primary failed, try backup channels
+    console.log(`[Failover] Looking for backup channels for stream ${streamId}`);
+    const backups = await channelMappingService.getBackupsByStreamId(streamId); // Searches across all providers
+
+    if (backups.length === 0) {
+      console.log(`[Failover] No backup channels configured for stream ${streamId}`);
+      return null;
+    }
+
+    let attempts = 0;
+    for (const backup of backups) {
+      if (attempts >= MAX_FAILOVER_ATTEMPTS) {
+        console.log(`[Failover] Max failover attempts (${MAX_FAILOVER_ATTEMPTS}) reached`);
+        break;
+      }
+
+      // Check provider health
+      const healthStatus = await providerHealthService.getProviderHealthStatus(backup.providerId);
+      if (healthStatus === 'unhealthy') {
+        console.log(`[Failover] Skipping backup ${backup.streamId} - provider ${backup.providerName} is unhealthy`);
+        continue;
+      }
+
+      attempts++;
+      console.log(`[Failover] Trying backup ${attempts}/${MAX_FAILOVER_ATTEMPTS}: ${backup.name} (${backup.providerName})`);
+
+      // Get client for backup stream
+      const backupClient = await xtreamCodesService.getClientForStream(userId, backup.streamId);
+      if (!backupClient) {
+        console.log(`[Failover] No client available for backup ${backup.streamId}`);
+        continue;
+      }
+
+      try {
+        let streamUrl = backupClient.getHLSStreamUrl(backup.streamId);
+        let response = await fetch(streamUrl);
+
+        if (response.ok) {
+          let manifestText = await response.text();
+
+          // Handle HTML redirects
+          if (manifestText.trim().startsWith('<!DOCTYPE') || manifestText.trim().startsWith('<html')) {
+            const metaRefreshMatch = manifestText.match(/url='([^']+)'/);
+            const hrefMatch = manifestText.match(/href="([^"]+)"/);
+            const redirectUrl = metaRefreshMatch?.[1] || hrefMatch?.[1];
+
+            if (redirectUrl) {
+              response = await fetch(redirectUrl);
+              if (response.ok) {
+                manifestText = await response.text();
+                streamUrl = redirectUrl;
+              }
+            }
+          }
+
+          if (response.ok && !manifestText.trim().startsWith('<!DOCTYPE') && !manifestText.trim().startsWith('<html')) {
+            console.log(`[Failover] Backup stream ${backup.streamId} succeeded (was: ${streamId})`);
+            return {
+              response,
+              manifestText,
+              streamUrl,
+              usedBackup: true,
+              backupStreamId: backup.streamId,
+              backupProviderId: backup.providerId
+            };
+          }
+        }
+
+        console.log(`[Failover] Backup ${backup.streamId} failed: ${response.status}`);
+      } catch (error) {
+        console.log(`[Failover] Backup ${backup.streamId} error:`, error);
+      }
+    }
+
+    console.log(`[Failover] All failover attempts exhausted for stream ${streamId}`);
+    return null;
+  }
+
   // IPTV Stream Proxy - bypass CORS restrictions with stream sharing
   app.get("/api/iptv/stream/:streamId.m3u8", async (req, res) => {
     // Check for token-based authentication (for Chromecast) or session authentication
@@ -2957,53 +3098,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.send(tokenizedManifest);
       }
 
-      // No existing stream, fetch from provider
+      // No existing stream, fetch from provider (with failover support)
       console.log(`🆕 Creating new stream ${streamId} for user ${userIdString}`);
 
-      // Get the appropriate client based on user's subscription
-      const client = await xtreamCodesService.getClientForStream(userId, streamId);
-      if (!client) {
-        console.error(`No IPTV credential available for user ${userId} stream ${streamId}`);
-        return res.status(403).send('No IPTV access for this channel');
+      // Try to fetch stream with automatic failover to backup channels
+      const fetchResult = await fetchStreamWithFailover(userId!, streamId, xtreamCodesService);
+
+      if (!fetchResult) {
+        console.error(`No stream available for ${streamId} (primary and all backups failed)`);
+        return res.status(503).send('Stream not available');
       }
 
-      let streamUrl = client.getHLSStreamUrl(streamId);
-      console.log(`Fetching HLS manifest from: ${streamUrl}`);
-      let response = await fetch(streamUrl);
+      const { response, manifestText, streamUrl, usedBackup, backupStreamId } = fetchResult;
 
-      if (!response.ok) {
-        console.error(`Failed to fetch stream ${streamId}: ${response.status}`);
-        console.error(`Stream URL was: ${streamUrl}`);
-        return res.status(response.status).send('Stream not available');
-      }
-
-      // Get the manifest content
-      let manifestText = await response.text();
-
-      // Check if we got an HTML redirect instead of the manifest
-      if (manifestText.trim().startsWith('<!DOCTYPE') || manifestText.trim().startsWith('<html')) {
-        console.log('Received HTML redirect, extracting redirect URL');
-
-        // Extract the redirect URL from HTML meta refresh or href
-        const metaRefreshMatch = manifestText.match(/url='([^']+)'/);
-        const hrefMatch = manifestText.match(/href="([^"]+)"/);
-        const redirectUrl = metaRefreshMatch?.[1] || hrefMatch?.[1];
-
-        if (redirectUrl) {
-          console.log(`Following redirect to: ${redirectUrl}`);
-          response = await fetch(redirectUrl);
-
-          if (!response.ok) {
-            console.error(`Failed to fetch redirected stream: ${response.status}`);
-            return res.status(response.status).send('Stream not available after redirect');
-          }
-
-          manifestText = await response.text();
-          streamUrl = redirectUrl; // Update streamUrl for segment URL construction
-        } else {
-          console.error('Received HTML but could not extract redirect URL');
-          return res.status(500).send('Invalid stream response');
-        }
+      if (usedBackup && backupStreamId) {
+        console.log(`🔄 Using backup stream ${backupStreamId} for requested ${streamId}`);
       }
 
       // Get the base URL for segments (directory of the manifest)
