@@ -657,4 +657,52 @@ export class EPGService implements IService {
     console.log('[EPG] Manual refresh triggered');
     await this.fetchAndMergeEPGData();
   }
+
+  /**
+   * Get EPG data summary for admin viewing
+   */
+  getDataSummary(): Array<{ channelId: string; programCount: number; currentProgram: string | null; nextProgram: string | null }> {
+    const summary: Array<{ channelId: string; programCount: number; currentProgram: string | null; nextProgram: string | null }> = [];
+    const now = new Date();
+
+    for (const [channelId, programs] of this.programCache.entries()) {
+      const currentProgram = programs.find(p => {
+        const start = p.startTime instanceof Date ? p.startTime : new Date(p.startTime);
+        const end = p.endTime instanceof Date ? p.endTime : new Date(p.endTime);
+        return now >= start && now <= end;
+      });
+
+      const futurePrograms = programs.filter(p => {
+        const start = p.startTime instanceof Date ? p.startTime : new Date(p.startTime);
+        return start > now;
+      }).sort((a, b) => {
+        const aStart = a.startTime instanceof Date ? a.startTime : new Date(a.startTime);
+        const bStart = b.startTime instanceof Date ? b.startTime : new Date(b.startTime);
+        return aStart.getTime() - bStart.getTime();
+      });
+
+      summary.push({
+        channelId,
+        programCount: programs.length,
+        currentProgram: currentProgram?.title || null,
+        nextProgram: futurePrograms[0]?.title || null
+      });
+    }
+
+    return summary.sort((a, b) => a.channelId.localeCompare(b.channelId));
+  }
+
+  /**
+   * Get all programs for a specific channel (for admin viewing)
+   */
+  getChannelPrograms(channelId: string, limit: number = 50): EPGProgram[] {
+    const programs = this.programCache.get(channelId) || [];
+    return programs
+      .sort((a, b) => {
+        const aStart = a.startTime instanceof Date ? a.startTime : new Date(a.startTime);
+        const bStart = b.startTime instanceof Date ? b.startTime : new Date(b.startTime);
+        return aStart.getTime() - bStart.getTime();
+      })
+      .slice(0, limit);
+  }
 }
