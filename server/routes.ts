@@ -3157,6 +3157,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
     try {
       const { streamId, deviceType } = req.body;
+      console.log(`[Stream Acquire] Received request - streamId: ${streamId}, deviceType: ${deviceType}, body:`, req.body);
 
       if (!streamId) {
         return res.status(400).json({ error: "Stream ID required" });

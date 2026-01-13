@@ -2129,9 +2129,11 @@ export default function LiveTVPage() {
     await releaseIptvSession();
 
     try {
+      const platform = getPlatform();
+      console.log('[IPTV] Acquiring stream - Platform:', platform, 'isNative:', isNativePlatform());
       const response = await apiRequest('POST', '/api/iptv/stream/acquire', {
         streamId,
-        deviceType: getPlatform() // 'ios', 'android', or 'web'
+        deviceType: platform
       });
       const { sessionToken } = await response.json();
       iptvSessionToken.current = sessionToken;
@@ -2149,7 +2151,7 @@ export default function LiveTVPage() {
         }
       }, 30000);
 
-      console.log('[IPTV] Stream session acquired');
+      console.log('[IPTV] Stream session acquired with platform:', platform);
     } catch (e) {
       console.log('[IPTV] Could not acquire stream session:', e);
       // Continue anyway - stream might still work for users without subscription
