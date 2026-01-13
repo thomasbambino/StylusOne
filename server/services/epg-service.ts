@@ -681,7 +681,9 @@ export class EPGService implements IService {
 
     return programs.filter(p => {
       const start = p.startTime instanceof Date ? p.startTime : new Date(p.startTime);
-      return start >= now && start <= cutoff;
+      const end = p.endTime instanceof Date ? p.endTime : new Date(p.endTime);
+      // Include currently airing programs (end > now) and programs starting within cutoff
+      return end > now && start <= cutoff;
     }).sort((a, b) => {
       const aStart = a.startTime instanceof Date ? a.startTime : new Date(a.startTime);
       const bStart = b.startTime instanceof Date ? b.startTime : new Date(b.startTime);
