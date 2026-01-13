@@ -93,7 +93,7 @@ export class StreamTrackerService {
     // Create new stream entry
     const sessionToken = this.generateSessionToken();
 
-    // Look up channel name and current program for start of stream
+    // Look up channel name and current program (same way as channel guides)
     let startProgramTitle: string | null = null;
     try {
       const [channel] = await db.select({ name: iptvChannels.name })
@@ -103,17 +103,16 @@ export class StreamTrackerService {
 
       if (channel?.name) {
         const epgService = await getSharedEPGService();
-        const currentProgram = epgService.getCurrentProgram(channel.name);
-        if (currentProgram) {
-          startProgramTitle = currentProgram.title;
-          if (currentProgram.episodeTitle) {
-            startProgramTitle += ` - ${currentProgram.episodeTitle}`;
+        const program = epgService.getCurrentProgram(channel.name);
+        if (program) {
+          startProgramTitle = program.title;
+          if (program.episodeTitle) {
+            startProgramTitle += ` - ${program.episodeTitle}`;
           }
-          console.log(`[EPG] Stream start program: ${startProgramTitle}`);
         }
       }
-    } catch (epgError) {
-      console.error('Error looking up start program:', epgError);
+    } catch (e) {
+      // EPG lookup failed, continue without program title
     }
 
     try {
@@ -158,20 +157,20 @@ export class StreamTrackerService {
       // Use startProgramTitle from stream record (captured when stream started)
       const programTitle = stream.startProgramTitle || null;
 
-      // Look up END program from EPG using channel name
+      // Look up END program from EPG (same way as channel guides)
       let endProgramTitle: string | null = null;
       if (channelName) {
         try {
           const epgService = await getSharedEPGService();
-          const currentProgram = epgService.getCurrentProgram(channelName);
-          if (currentProgram) {
-            endProgramTitle = currentProgram.title;
-            if (currentProgram.episodeTitle) {
-              endProgramTitle += ` - ${currentProgram.episodeTitle}`;
+          const program = epgService.getCurrentProgram(channelName);
+          if (program) {
+            endProgramTitle = program.title;
+            if (program.episodeTitle) {
+              endProgramTitle += ` - ${program.episodeTitle}`;
             }
           }
-        } catch (epgError) {
-          console.error('Error looking up end program:', epgError);
+        } catch (e) {
+          // EPG lookup failed, continue without end program
         }
       }
 
