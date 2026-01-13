@@ -4,7 +4,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Play, Pause, Volume2, VolumeX, Info, Plus, MoreHorizontal, Star, X, Check, CreditCard, Calendar, ExternalLink, LogOut, LayoutGrid, Airplay, Search, Volume1, Minus, Settings, PictureInPicture2, Filter, Package, Tv, Clock, Zap, Radio } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { getQueryFn, apiRequest, queryClient } from '@/lib/queryClient';
-import { buildApiUrl, isNativePlatform, getDeviceTypeSync } from '@/lib/capacitor';
+import { buildApiUrl, isNativePlatform, getDeviceTypeSync, getPlatform } from '@/lib/capacitor';
 import { haptics } from '@/lib/haptics';
 import { useAuth } from '@/hooks/use-auth';
 import Hls from 'hls.js';
@@ -1866,7 +1866,8 @@ export default function LiveTVTvPage() {
           try {
             console.log('[TV] Acquiring stream session for:', channel.iptvId);
             const acquireResponse = await apiRequest('POST', '/api/iptv/stream/acquire', {
-              streamId: channel.iptvId
+              streamId: channel.iptvId,
+              deviceType: getPlatform() // 'ios', 'android', or 'web'
             });
             const data = await acquireResponse.json();
             console.log('[TV] Stream acquire response:', data);

@@ -22,7 +22,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { useToast } from "@/hooks/use-toast";
-import { buildApiUrl, isNativePlatform } from "@/lib/capacitor";
+import { buildApiUrl, isNativePlatform, getPlatform } from "@/lib/capacitor";
 import { getQueryFn, apiRequest } from "@/lib/queryClient";
 
 interface HDHomeRunDevice {
@@ -2130,7 +2130,8 @@ export default function LiveTVPage() {
 
     try {
       const response = await apiRequest('POST', '/api/iptv/stream/acquire', {
-        streamId
+        streamId,
+        deviceType: getPlatform() // 'ios', 'android', or 'web'
       });
       const { sessionToken } = await response.json();
       iptvSessionToken.current = sessionToken;

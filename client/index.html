@@ -48,7 +48,30 @@
     <title>StylusOne Dashboard</title>
   </head>
   <body style="margin: 0; padding: 0;">
+    <!-- Initial splash screen for native apps (iOS/Android) - hidden immediately on web -->
+    <div id="initial-splash" style="position: fixed; inset: 0; z-index: 9999; background-color: #000000;"></div>
     <div id="root"></div>
+    <script>
+      // Immediately hide splash on web platforms (non-Capacitor)
+      // Native apps will call __hideInitialSplash when ready
+      (function() {
+        var isNative = typeof window.Capacitor !== 'undefined' && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform();
+        if (!isNative) {
+          var splash = document.getElementById('initial-splash');
+          if (splash) splash.style.display = 'none';
+        }
+      })();
+
+      // Function for native apps to hide splash when ready
+      window.__hideInitialSplash = function() {
+        var splash = document.getElementById('initial-splash');
+        if (splash) {
+          splash.style.transition = 'opacity 0.3s ease-out';
+          splash.style.opacity = '0';
+          setTimeout(function() { splash.remove(); }, 300);
+        }
+      };
+    </script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

@@ -15,7 +15,7 @@ import { FeatureProtectedRoute } from "./lib/feature-protected-route";
 import { ThemeProvider } from "@/components/theme-provider";
 import { FaviconUpdater } from "@/components/favicon-updater";
 import { CacheUpdater } from "@/components/cache-updater";
-import { getDeviceType } from "@/lib/capacitor";
+import { getDeviceType, isNativePlatform } from "@/lib/capacitor";
 import { useEffect, useState, lazy, Suspense } from "react";
 
 // Lazy load larger pages for code splitting
@@ -84,6 +84,17 @@ function App() {
       setIsTVDevice(deviceType === 'tv');
     }
     detectDevice();
+  }, []);
+
+  // Hide splash screen on native platforms once app is ready
+  useEffect(() => {
+    if (isNativePlatform() && typeof window !== 'undefined' && (window as any).__hideInitialSplash) {
+      // Small delay to ensure app has rendered
+      const timer = setTimeout(() => {
+        (window as any).__hideInitialSplash();
+      }, 100);
+      return () => clearTimeout(timer);
+    }
   }, []);
 
   return (

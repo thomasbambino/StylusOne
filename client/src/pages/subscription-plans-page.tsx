@@ -506,16 +506,10 @@ export default function SubscriptionPlansPage() {
           <h1 className="text-3xl font-bold">Subscription Plans</h1>
           <p className="text-muted-foreground mt-1">Manage subscription plans and pricing</p>
         </div>
-        <div className="flex gap-2">
-          <Button variant="outline" onClick={() => window.location.href = '/iptv-credentials'}>
-            <Server className="h-4 w-4 mr-2" />
-            IPTV Sources
-          </Button>
-          <Button onClick={() => setIsCreateDialogOpen(true)}>
-            <Plus className="h-4 w-4 mr-2" />
-            Create Plan
-          </Button>
-        </div>
+        <Button onClick={() => setIsCreateDialogOpen(true)}>
+          <Plus className="h-4 w-4 mr-2" />
+          Create Plan
+        </Button>
       </div>
 
       {/* Analytics */}
