@@ -150,8 +150,11 @@ export class EPGService implements IService {
       // Start background refresh interval (checks if 6 hours have passed)
       this.startBackgroundRefresh();
 
-      // Queue program titles for TMDB thumbnail fetching
-      this.queueTitlesForTMDB();
+      // Start TMDB worker and queue program titles for thumbnail fetching
+      if (tmdbService.isConfigured()) {
+        tmdbService.startAfterEPGReady();
+        this.queueTitlesForTMDB();
+      }
 
       console.log(`[EPG] Service initialized with ${this.programCache.size} channels, ${this.getTotalProgramCount()} programs`);
     } catch (error) {
