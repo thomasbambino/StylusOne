@@ -8,7 +8,7 @@ import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
 import { useToast } from '@/hooks/use-toast';
-import { Plus, Edit2, Trash2, Server, Users, RefreshCw, Loader2, MoreVertical, CheckCircle2, XCircle, Tv, Download, Key, Eye, Wifi, WifiOff, Database, Clock, HardDrive, Calendar, Link2, Activity, Search, ArrowRight, AlertCircle } from 'lucide-react';
+import { Plus, Edit2, Trash2, Server, Users, RefreshCw, Loader2, MoreVertical, CheckCircle2, XCircle, Tv, Download, Key, Eye, Wifi, WifiOff, Database, Clock, HardDrive, Calendar, Link2, Activity, Search, ArrowRight, AlertCircle, Play } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator } from '@/components/ui/dropdown-menu';
@@ -834,10 +834,21 @@ export default function IptvProvidersPage() {
     bulkCreateMappingsMutation.mutate(selectedMappings);
   };
 
+  // Test failover state - store full data for interactive dialog
+  const [failoverTestData, setFailoverTestData] = useState<{
+    primaryChannel: { id: number; name: string; streamId: string; providerName: string; providerHealth: string };
+    backupChannels: Array<{ id: number; name: string; streamId: string; providerName: string; providerHealth: string; priority: number; isUsable: boolean; isHealthy: boolean; issues: string | null }>;
+    failoverReady: boolean;
+    totalMappings: number;
+    usableBackups: number;
+    healthyBackups: number;
+  } | null>(null);
+
   // Test failover function
   const testFailover = async (channel: { id: number; name: string }) => {
     setTestingFailover(true);
     setTestFailoverResult(null);
+    setFailoverTestData(null);
 
     try {
       const res = await fetch(buildApiUrl('/api/admin/channel-mappings/test-failover'), {
@@ -850,38 +861,19 @@ export default function IptvProvidersPage() {
       if (!res.ok) throw new Error('Failed to test failover');
 
       const data = await res.json();
-
-      if (data.failoverReady) {
-        const backupList = data.backupChannels
-          .map((b: any) => {
-            const status = b.isUsable
-              ? (b.isHealthy ? '✓' : '⚠')
-              : '✗';
-            const issueText = b.issues ? ` [${b.issues}]` : '';
-            return `${status} ${b.priority}. ${b.name} (${b.providerName}) - ${b.providerHealth}${issueText}`;
-          })
-          .join('\n');
-        setTestFailoverResult(
-          `✅ Failover Ready!\n\nPrimary: ${data.primaryChannel.name}\nProvider: ${data.primaryChannel.providerName} (${data.primaryChannel.providerHealth})\n\nBackup Channels (${data.usableBackups}/${data.totalMappings} usable, ${data.healthyBackups} healthy):\n${backupList}`
-        );
-      } else if (data.totalMappings > 0) {
-        // Has mappings but none are usable
-        const backupList = data.backupChannels
-          .map((b: any) => `✗ ${b.priority}. ${b.name} (${b.providerName}) [${b.issues}]`)
-          .join('\n');
-        setTestFailoverResult(
-          `⚠️ Failover Not Ready\n\nPrimary: ${data.primaryChannel.name}\nProvider: ${data.primaryChannel.providerName}\n\n${data.totalMappings} mapping(s) found but none are usable:\n${backupList}`
-        );
-      } else {
-        setTestFailoverResult(
-          `⚠️ No Failover Configured\n\nPrimary: ${data.primaryChannel.name}\nProvider: ${data.primaryChannel.providerName}\n\nNo backup channels mapped for this channel.`
-        );
-      }
+      setFailoverTestData(data);
+      setTestFailoverResult('loaded'); // Signal that dialog should open
     } catch (error) {
       setTestFailoverResult('❌ Error testing failover');
     } finally {
       setTestingFailover(false);
     }
+  };
+
+  // Play backup stream for testing
+  const playBackupStream = (streamId: string) => {
+    const url = buildApiUrl(`/api/iptv/stream/${streamId}.m3u8`);
+    window.open(url, '_blank');
   };
 
   // Manual health check
@@ -2173,16 +2165,77 @@ export default function IptvProvidersPage() {
       </Dialog>
 
       {/* Test Failover Result Dialog */}
-      <Dialog open={!!testFailoverResult} onOpenChange={() => setTestFailoverResult(null)}>
-        <DialogContent className="sm:max-w-[500px]">
+      <Dialog open={!!testFailoverResult} onOpenChange={() => { setTestFailoverResult(null); setFailoverTestData(null); }}>
+        <DialogContent className="sm:max-w-[600px]">
           <DialogHeader>
-            <DialogTitle>Failover Test Result</DialogTitle>
+            <DialogTitle>Failover Test</DialogTitle>
           </DialogHeader>
-          <pre className="whitespace-pre-wrap text-sm bg-muted p-4 rounded-lg overflow-auto max-h-[400px]">
-            {testFailoverResult}
-          </pre>
+          {testFailoverResult === 'loaded' && failoverTestData ? (
+            <div className="space-y-4">
+              {/* Primary Channel */}
+              <div className="p-3 bg-muted rounded-lg">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="font-medium">Primary: {failoverTestData.primaryChannel.name}</p>
+                    <p className="text-sm text-muted-foreground">
+                      {failoverTestData.primaryChannel.providerName} ({failoverTestData.primaryChannel.providerHealth})
+                    </p>
+                  </div>
+                  <Button size="sm" onClick={() => playBackupStream(failoverTestData.primaryChannel.streamId)}>
+                    <Play className="h-4 w-4 mr-1" /> Play Primary
+                  </Button>
+                </div>
+              </div>
+
+              {/* Status */}
+              <div className={`p-2 rounded text-center ${failoverTestData.failoverReady ? 'bg-green-500/20 text-green-500' : 'bg-yellow-500/20 text-yellow-600'}`}>
+                {failoverTestData.failoverReady
+                  ? `✅ Failover Ready (${failoverTestData.usableBackups}/${failoverTestData.totalMappings} usable, ${failoverTestData.healthyBackups} healthy)`
+                  : failoverTestData.totalMappings > 0
+                    ? `⚠️ ${failoverTestData.totalMappings} mapping(s) but none usable`
+                    : '⚠️ No backups configured'
+                }
+              </div>
+
+              {/* Backup Channels */}
+              {failoverTestData.backupChannels.length > 0 && (
+                <div className="space-y-2">
+                  <p className="text-sm font-medium">Backup Channels:</p>
+                  {failoverTestData.backupChannels.map((backup, idx) => (
+                    <div key={idx} className={`p-3 border rounded-lg ${backup.isUsable ? 'border-green-500/50' : 'border-red-500/50 opacity-60'}`}>
+                      <div className="flex items-center justify-between">
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2">
+                            <span className={backup.isUsable ? (backup.isHealthy ? 'text-green-500' : 'text-yellow-500') : 'text-red-500'}>
+                              {backup.isUsable ? (backup.isHealthy ? '✓' : '⚠') : '✗'}
+                            </span>
+                            <span className="font-medium">{backup.priority}. {backup.name}</span>
+                          </div>
+                          <p className="text-sm text-muted-foreground ml-5">
+                            {backup.providerName} ({backup.providerHealth})
+                            {backup.issues && <span className="text-red-500"> [{backup.issues}]</span>}
+                          </p>
+                        </div>
+                        <Button
+                          size="sm"
+                          variant={backup.isUsable ? 'default' : 'outline'}
+                          onClick={() => playBackupStream(backup.streamId)}
+                        >
+                          <Play className="h-4 w-4 mr-1" /> Test
+                        </Button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          ) : (
+            <pre className="whitespace-pre-wrap text-sm bg-muted p-4 rounded-lg overflow-auto max-h-[400px]">
+              {testFailoverResult}
+            </pre>
+          )}
           <DialogFooter>
-            <Button variant="outline" onClick={() => setTestFailoverResult(null)}>Close</Button>
+            <Button variant="outline" onClick={() => { setTestFailoverResult(null); setFailoverTestData(null); }}>Close</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

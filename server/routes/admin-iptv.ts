@@ -2315,10 +2315,11 @@ router.post('/channel-mappings/auto-suggest', requireSuperAdmin, async (req, res
 /**
  * POST /api/admin/channel-mappings/test-failover
  * Test failover configuration for a channel
+ * If testBackupIndex is provided, returns a stream URL for that backup to test playback
  */
 router.post('/channel-mappings/test-failover', requireSuperAdmin, async (req, res) => {
   try {
-    const { channelId } = req.body;
+    const { channelId, testBackupIndex } = req.body;
 
     if (!channelId || isNaN(parseInt(channelId))) {
       return res.status(400).json({ error: 'channelId is required' });
@@ -2388,6 +2389,17 @@ router.post('/channel-mappings/test-failover', requireSuperAdmin, async (req, re
     const usableBackups = backupChannels.filter(b => b.isUsable);
     const healthyBackups = backupChannels.filter(b => b.isHealthy);
 
+    // If testBackupIndex is provided, generate a test stream URL for that backup
+    let testStreamUrl: string | null = null;
+    let testedBackup: typeof backupChannels[0] | null = null;
+
+    if (typeof testBackupIndex === 'number' && testBackupIndex >= 0 && testBackupIndex < backupChannels.length) {
+      testedBackup = backupChannels[testBackupIndex];
+      // Generate the stream URL using the backup's streamId directly
+      // This bypasses the primary and uses the backup stream
+      testStreamUrl = `/api/iptv/stream/${testedBackup.streamId}.m3u8`;
+    }
+
     res.json({
       primaryChannel: {
         id: channel.id,
@@ -2402,6 +2414,13 @@ router.post('/channel-mappings/test-failover', requireSuperAdmin, async (req, re
       healthyBackups: healthyBackups.length,
       totalMappings: allMappings.length,
       usableBackups: usableBackups.length,
+      // Test stream info (if testing a specific backup)
+      testStreamUrl,
+      testedBackup: testedBackup ? {
+        name: testedBackup.name,
+        providerName: testedBackup.providerName,
+        streamId: testedBackup.streamId,
+      } : null,
     });
   } catch (error) {
     console.error('Error testing failover:', error);
