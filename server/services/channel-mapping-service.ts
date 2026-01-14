@@ -503,9 +503,10 @@ export class ChannelMappingService {
     let score = 0;
 
     // US prefix bonus - STRONG priority for US channels (50 points)
+    // Match various formats: "US:", "US ", "US|", "US-", "USA:", "USA ", etc.
     const candidateUpper = candidate.toUpperCase();
-    const isUSChannel = candidateUpper.startsWith('US:') || candidateUpper.startsWith('US ') ||
-        candidateUpper.startsWith('USA:') || candidateUpper.startsWith('USA ');
+    const usMatch = candidateUpper.match(/^(US|USA)[\s:\-\|\.]/);
+    const isUSChannel = !!usMatch;
     if (isUSChannel) {
       score += 50;
     }
@@ -596,11 +597,16 @@ export class ChannelMappingService {
       .sort((a, b) => b.confidence - a.confidence)
       .slice(0, limit);
 
-    // Debug: log top 3 suggestions with their extracted elements
-    suggestions.slice(0, 3).forEach((s, i) => {
+    // Debug: log top 5 suggestions with their extracted elements and US detection
+    suggestions.slice(0, 5).forEach((s, i) => {
       const candidateElements = this.extractChannelElements(s.channel.name);
-      console.log(`[Channel Mapping] #${i+1} (${s.confidence}%): "${s.channel.name}" -> callSign: ${candidateElements.callSign}, brand: ${candidateElements.brand}, city: ${candidateElements.city}`);
+      const isUS = /^(US|USA)[\s:\-\|\.]/i.test(s.channel.name);
+      console.log(`[Channel Mapping] #${i+1} (${s.confidence}%): "${s.channel.name}" -> US: ${isUS}, callSign: ${candidateElements.callSign}, brand: ${candidateElements.brand}, city: ${candidateElements.city}`);
     });
+
+    // Also log how many US channels were found in total
+    const usChannelCount = candidates.filter(c => /^(US|USA)[\s:\-\|\.]/i.test(c.name)).length;
+    console.log(`[Channel Mapping] Found ${usChannelCount} US channels out of ${candidates.length} total in target provider`);
 
     return suggestions;
   }
