@@ -566,6 +566,10 @@ export class ChannelMappingService {
       return [];
     }
 
+    // Debug: log what we're extracting from the primary channel
+    const primaryElements = this.extractChannelElements(primaryChannel.name);
+    console.log(`[Channel Mapping] Primary: "${primaryChannel.name}" -> callSign: ${primaryElements.callSign}, brand: ${primaryElements.brand}, city: ${primaryElements.city}`);
+
     // Search for ALL channels from the target provider (not just enabled)
     const candidates = await db.select({
       id: iptvChannels.id,
@@ -591,6 +595,12 @@ export class ChannelMappingService {
       .filter(s => s.confidence >= 5) // Low threshold to always show some options
       .sort((a, b) => b.confidence - a.confidence)
       .slice(0, limit);
+
+    // Debug: log top 3 suggestions with their extracted elements
+    suggestions.slice(0, 3).forEach((s, i) => {
+      const candidateElements = this.extractChannelElements(s.channel.name);
+      console.log(`[Channel Mapping] #${i+1} (${s.confidence}%): "${s.channel.name}" -> callSign: ${candidateElements.callSign}, brand: ${candidateElements.brand}, city: ${candidateElements.city}`);
+    });
 
     return suggestions;
   }
