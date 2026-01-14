@@ -5290,7 +5290,7 @@ export default function LiveTVTvPage() {
               </div>
 
               {/* Schedule List */}
-              <div className="flex-1 overflow-y-auto px-5 py-4 pb-8">
+              <div className="flex-1 overflow-y-auto px-5 py-4 pb-28">
                 {scheduleLoading ? (
                   <div className="flex items-center justify-center py-12">
                     <div className="w-8 h-8 border-2 border-white/20 border-t-white rounded-full animate-spin" />
