@@ -2365,7 +2365,7 @@ router.post('/channel-mappings/test-failover', requireSuperAdmin, async (req, re
     const backupChannels = allMappings.map(m => {
       const issues: string[] = [];
       if (!m.mappingIsActive) issues.push('mapping disabled');
-      if (!m.backupChannelEnabled) issues.push('channel disabled');
+      // Note: disabled channels CAN be used as backups (hidden from users but work for failover)
       if (!m.backupProviderActive) issues.push('provider inactive');
 
       const isUsable = issues.length === 0;

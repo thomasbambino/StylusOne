@@ -65,7 +65,8 @@ export class ChannelMappingService {
       .where(and(
         eq(channelMappings.primaryChannelId, primaryChannelId),
         eq(channelMappings.isActive, true),
-        eq(iptvChannels.isEnabled, true),
+        // Note: We intentionally allow disabled channels as backups
+        // They may be hidden from users but still work for failover
         eq(iptvProviders.isActive, true)
       ))
       .orderBy(asc(channelMappings.priority));
