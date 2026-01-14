@@ -295,6 +295,8 @@ export const iptvProviders = pgTable("iptv_providers", {
   isActive: boolean("is_active").notNull().default(true),
   notes: text("notes"), // Admin notes
   lastChannelSync: timestamp("last_channel_sync"), // When channels were last synced
+  healthStatus: text("health_status", { enum: ['healthy', 'unhealthy', 'degraded', 'unknown'] }).notNull().default('unknown'),
+  lastHealthCheck: timestamp("last_health_check"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
@@ -401,6 +403,27 @@ export const viewingHistory = pgTable("viewing_history", {
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
+// Channel Mappings - Cross-provider channel equivalence for failover
+export const channelMappings = pgTable("channel_mappings", {
+  id: serial("id").primaryKey(),
+  primaryChannelId: integer("primary_channel_id").notNull().references(() => iptvChannels.id, { onDelete: 'cascade' }),
+  backupChannelId: integer("backup_channel_id").notNull().references(() => iptvChannels.id, { onDelete: 'cascade' }),
+  priority: integer("priority").notNull().default(1), // Lower number = higher priority (1 is first backup)
+  isActive: boolean("is_active").notNull().default(true),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+// Provider Health Logs - Historical health tracking for monitoring
+export const providerHealthLogs = pgTable("provider_health_logs", {
+  id: serial("id").primaryKey(),
+  providerId: integer("provider_id").notNull().references(() => iptvProviders.id, { onDelete: 'cascade' }),
+  status: text("status", { enum: ['healthy', 'unhealthy', 'degraded'] }).notNull(),
+  responseTimeMs: integer("response_time_ms"), // NULL if unhealthy (timeout/error)
+  errorMessage: text("error_message"), // Error details if unhealthy
+  checkedAt: timestamp("checked_at").notNull().defaultNow(),
+});
+
 export const insertUserSchema = createInsertSchema(users);
 export const insertServiceSchema = createInsertSchema(services);
 export const insertGameServerSchema = createInsertSchema(gameServers);
@@ -429,6 +452,8 @@ export const insertPlanPackageSchema = createInsertSchema(planPackages);
 export const insertPlanIptvCredentialSchema = createInsertSchema(planIptvCredentials);
 export const insertActiveIptvStreamSchema = createInsertSchema(activeIptvStreams);
 export const insertViewingHistorySchema = createInsertSchema(viewingHistory);
+export const insertChannelMappingSchema = createInsertSchema(channelMappings);
+export const insertProviderHealthLogSchema = createInsertSchema(providerHealthLogs);
 
 // Export the update schemas
 export const updateServiceSchema = insertServiceSchema.extend({

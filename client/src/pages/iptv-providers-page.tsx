@@ -8,13 +8,15 @@ import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
 import { useToast } from '@/hooks/use-toast';
-import { Plus, Edit2, Trash2, Server, Users, RefreshCw, Loader2, MoreVertical, CheckCircle2, XCircle, Tv, Download, Key, Eye, Wifi, WifiOff, Database, Clock, HardDrive, Calendar } from 'lucide-react';
+import { Plus, Edit2, Trash2, Server, Users, RefreshCw, Loader2, MoreVertical, CheckCircle2, XCircle, Tv, Download, Key, Eye, Wifi, WifiOff, Database, Clock, HardDrive, Calendar, Link2, Activity, Search, ArrowRight, AlertCircle } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator } from '@/components/ui/dropdown-menu';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { format } from 'date-fns';
 import { buildApiUrl } from '@/lib/capacitor';
 import { ChevronDown, ChevronRight } from 'lucide-react';
+import { Progress } from '@/components/ui/progress';
 
 interface IptvProvider {
   id: number;
@@ -77,6 +79,52 @@ interface IptvCredential {
   updatedAt: string;
 }
 
+// Channel Mapping interfaces
+interface ChannelMappingWithInfo {
+  id: number;
+  primaryChannelId: number;
+  backupChannelId: number;
+  priority: number;
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
+  primaryChannel: {
+    id: number;
+    name: string;
+    logo: string | null;
+    streamId: string;
+    providerId: number;
+    providerName: string;
+  };
+  backupChannel: {
+    id: number;
+    name: string;
+    logo: string | null;
+    streamId: string;
+    providerId: number;
+    providerName: string;
+  };
+}
+
+interface BackupCandidate {
+  id: number;
+  name: string;
+  logo: string | null;
+  streamId: string;
+  providerId: number;
+  providerName: string;
+  alreadyMapped: boolean;
+}
+
+interface ProviderHealthSummary {
+  providerId: number;
+  name: string;
+  healthStatus: string;
+  lastHealthCheck: string | null;
+  uptime24h: number;
+  lastError: string | null;
+}
+
 interface ProviderFormData {
   name: string;
   serverUrl: string;
@@ -126,6 +174,11 @@ export default function IptvProvidersPage() {
   const [testingCredentialId, setTestingCredentialId] = useState<number | null>(null);
   const [isEpgDataDialogOpen, setIsEpgDataDialogOpen] = useState(false);
   const [isAllStreamsDialogOpen, setIsAllStreamsDialogOpen] = useState(false);
+  const [activeTab, setActiveTab] = useState('providers');
+  // Channel mapping state
+  const [isCreateMappingDialogOpen, setIsCreateMappingDialogOpen] = useState(false);
+  const [mappingSearchQuery, setMappingSearchQuery] = useState('');
+  const [selectedPrimaryChannel, setSelectedPrimaryChannel] = useState<{ id: number; name: string; streamId: string; providerId: number; providerName: string } | null>(null);
 
   // Fetch providers
   const { data: providers = [], isLoading } = useQuery<IptvProvider[]>({
@@ -176,6 +229,48 @@ export default function IptvProvidersPage() {
       return res.json();
     },
     enabled: isEpgDataDialogOpen,
+  });
+
+  // Fetch channel mappings
+  const { data: channelMappings = [], isLoading: mappingsLoading } = useQuery<ChannelMappingWithInfo[]>({
+    queryKey: ['/api/admin/channel-mappings'],
+    queryFn: async () => {
+      const res = await fetch(buildApiUrl('/api/admin/channel-mappings'), {
+        credentials: 'include',
+      });
+      if (!res.ok) throw new Error('Failed to fetch channel mappings');
+      return res.json();
+    },
+    enabled: activeTab === 'mappings',
+  });
+
+  // Fetch provider health summary
+  const { data: healthSummary = [], isLoading: healthLoading } = useQuery<ProviderHealthSummary[]>({
+    queryKey: ['/api/admin/provider-health-summary'],
+    queryFn: async () => {
+      const res = await fetch(buildApiUrl('/api/admin/provider-health-summary'), {
+        credentials: 'include',
+      });
+      if (!res.ok) throw new Error('Failed to fetch health summary');
+      return res.json();
+    },
+    enabled: activeTab === 'health',
+    refetchInterval: 60000, // Refresh every minute
+  });
+
+  // Search backup candidates
+  const { data: backupCandidates = [], isLoading: candidatesLoading } = useQuery<BackupCandidate[]>({
+    queryKey: ['/api/admin/channel-mappings/search', selectedPrimaryChannel?.id, mappingSearchQuery],
+    queryFn: async () => {
+      if (!selectedPrimaryChannel?.id || !mappingSearchQuery) return [];
+      const res = await fetch(
+        buildApiUrl(`/api/admin/channel-mappings/search?primaryChannelId=${selectedPrimaryChannel.id}&q=${encodeURIComponent(mappingSearchQuery)}`),
+        { credentials: 'include' }
+      );
+      if (!res.ok) throw new Error('Failed to search channels');
+      return res.json();
+    },
+    enabled: !!selectedPrimaryChannel?.id && mappingSearchQuery.length >= 2,
   });
 
   // Create provider
@@ -494,6 +589,77 @@ export default function IptvProvidersPage() {
     },
   });
 
+  // Create channel mapping
+  const createMappingMutation = useMutation({
+    mutationFn: async ({ primaryChannelId, backupChannelId, priority }: { primaryChannelId: number; backupChannelId: number; priority?: number }) => {
+      const res = await fetch(buildApiUrl('/api/admin/channel-mappings'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ primaryChannelId, backupChannelId, priority }),
+      });
+      if (!res.ok) {
+        const error = await res.json();
+        throw new Error(error.error || 'Failed to create mapping');
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/admin/channel-mappings'] });
+      toast({ title: 'Success', description: 'Channel mapping created' });
+    },
+    onError: (error: Error) => {
+      toast({ title: 'Error', description: error.message, variant: 'destructive' });
+    },
+  });
+
+  // Delete channel mapping
+  const deleteMappingMutation = useMutation({
+    mutationFn: async (mappingId: number) => {
+      const res = await fetch(buildApiUrl(`/api/admin/channel-mappings/${mappingId}`), {
+        method: 'DELETE',
+        credentials: 'include',
+      });
+      if (!res.ok) {
+        const error = await res.json();
+        throw new Error(error.error || 'Failed to delete mapping');
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/admin/channel-mappings'] });
+      toast({ title: 'Success', description: 'Channel mapping deleted' });
+    },
+    onError: (error: Error) => {
+      toast({ title: 'Error', description: error.message, variant: 'destructive' });
+    },
+  });
+
+  // Manual health check
+  const healthCheckMutation = useMutation({
+    mutationFn: async (providerId: number) => {
+      const res = await fetch(buildApiUrl(`/api/admin/iptv-providers/${providerId}/health-check`), {
+        method: 'POST',
+        credentials: 'include',
+      });
+      if (!res.ok) {
+        const error = await res.json();
+        throw new Error(error.error || 'Health check failed');
+      }
+      return res.json();
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ['/api/admin/provider-health-summary'] });
+      toast({
+        title: 'Health Check Complete',
+        description: `Status: ${data.status}${data.responseTimeMs ? ` (${data.responseTimeMs}ms)` : ''}`,
+      });
+    },
+    onError: (error: Error) => {
+      toast({ title: 'Error', description: error.message, variant: 'destructive' });
+    },
+  });
+
   // Fetch streams for selected credential
   const { data: streamsData, isLoading: streamsLoading } = useQuery({
     queryKey: ['/api/admin/iptv-credentials', selectedCredential?.id, 'streams'],
@@ -667,8 +833,27 @@ export default function IptvProvidersPage() {
         </Card>
       </div>
 
-      {/* EPG Cache Section */}
-      <Card>
+      {/* Tabs */}
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
+        <TabsList>
+          <TabsTrigger value="providers" className="flex items-center gap-2">
+            <Server className="h-4 w-4" />
+            Providers
+          </TabsTrigger>
+          <TabsTrigger value="mappings" className="flex items-center gap-2">
+            <Link2 className="h-4 w-4" />
+            Channel Mappings
+          </TabsTrigger>
+          <TabsTrigger value="health" className="flex items-center gap-2">
+            <Activity className="h-4 w-4" />
+            Health Dashboard
+          </TabsTrigger>
+        </TabsList>
+
+        {/* Providers Tab */}
+        <TabsContent value="providers" className="space-y-4">
+          {/* EPG Cache Section */}
+          <Card>
         <CardHeader className="pb-3">
           <div className="flex items-center justify-between">
             <div>
@@ -800,6 +985,267 @@ export default function IptvProvidersPage() {
           ))}
         </div>
       )}
+        </TabsContent>
+
+        {/* Channel Mappings Tab */}
+        <TabsContent value="mappings" className="space-y-4">
+          <Card>
+            <CardHeader className="pb-3">
+              <div className="flex items-center justify-between">
+                <div>
+                  <CardTitle className="flex items-center gap-2">
+                    <Link2 className="h-5 w-5" />
+                    Channel Mappings
+                  </CardTitle>
+                  <CardDescription>Map equivalent channels across providers for automatic failover</CardDescription>
+                </div>
+                <Button onClick={() => setIsCreateMappingDialogOpen(true)}>
+                  <Plus className="h-4 w-4 mr-2" />
+                  Create Mapping
+                </Button>
+              </div>
+            </CardHeader>
+            <CardContent>
+              {mappingsLoading ? (
+                <div className="flex justify-center py-8">
+                  <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+                </div>
+              ) : channelMappings.length === 0 ? (
+                <div className="text-center py-8 text-muted-foreground">
+                  <Link2 className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                  <p>No channel mappings configured</p>
+                  <p className="text-sm">Create mappings to enable automatic failover between providers</p>
+                </div>
+              ) : (
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Primary Channel</TableHead>
+                      <TableHead>Provider</TableHead>
+                      <TableHead></TableHead>
+                      <TableHead>Backup Channel</TableHead>
+                      <TableHead>Provider</TableHead>
+                      <TableHead>Priority</TableHead>
+                      <TableHead className="text-right">Actions</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {channelMappings.map((mapping) => (
+                      <TableRow key={mapping.id}>
+                        <TableCell className="font-medium">{mapping.primaryChannel.name}</TableCell>
+                        <TableCell>
+                          <Badge variant="outline">{mapping.primaryChannel.providerName}</Badge>
+                        </TableCell>
+                        <TableCell>
+                          <ArrowRight className="h-4 w-4 text-muted-foreground" />
+                        </TableCell>
+                        <TableCell className="font-medium">{mapping.backupChannel.name}</TableCell>
+                        <TableCell>
+                          <Badge variant="outline">{mapping.backupChannel.providerName}</Badge>
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant="secondary">{mapping.priority}</Badge>
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => {
+                              if (confirm('Delete this channel mapping?')) {
+                                deleteMappingMutation.mutate(mapping.id);
+                              }
+                            }}
+                          >
+                            <Trash2 className="h-4 w-4 text-destructive" />
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* Health Dashboard Tab */}
+        <TabsContent value="health" className="space-y-4">
+          <Card>
+            <CardHeader className="pb-3">
+              <div className="flex items-center justify-between">
+                <div>
+                  <CardTitle className="flex items-center gap-2">
+                    <Activity className="h-5 w-5" />
+                    Provider Health Dashboard
+                  </CardTitle>
+                  <CardDescription>Monitor provider health status and uptime</CardDescription>
+                </div>
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    healthSummary.forEach(p => healthCheckMutation.mutate(p.providerId));
+                  }}
+                  disabled={healthCheckMutation.isPending}
+                >
+                  {healthCheckMutation.isPending ? (
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  ) : (
+                    <RefreshCw className="h-4 w-4 mr-2" />
+                  )}
+                  Check All
+                </Button>
+              </div>
+            </CardHeader>
+            <CardContent>
+              {healthLoading ? (
+                <div className="flex justify-center py-8">
+                  <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+                </div>
+              ) : healthSummary.length === 0 ? (
+                <div className="text-center py-8 text-muted-foreground">
+                  <Activity className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                  <p>No providers to monitor</p>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {healthSummary.map((provider) => (
+                    <div key={provider.providerId} className="flex items-center justify-between p-4 border rounded-lg">
+                      <div className="flex items-center gap-4">
+                        <div className={`w-3 h-3 rounded-full ${
+                          provider.healthStatus === 'healthy' ? 'bg-green-500' :
+                          provider.healthStatus === 'degraded' ? 'bg-yellow-500' :
+                          provider.healthStatus === 'unhealthy' ? 'bg-red-500' : 'bg-gray-400'
+                        }`} />
+                        <div>
+                          <p className="font-medium">{provider.name}</p>
+                          <p className="text-sm text-muted-foreground">
+                            Last check: {provider.lastHealthCheck
+                              ? format(new Date(provider.lastHealthCheck), 'MMM d, h:mm a')
+                              : 'Never'
+                            }
+                          </p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-6">
+                        <div className="text-right">
+                          <p className="text-sm text-muted-foreground">24h Uptime</p>
+                          <div className="flex items-center gap-2">
+                            <Progress value={provider.uptime24h} className="w-24 h-2" />
+                            <span className="text-sm font-medium">{provider.uptime24h}%</span>
+                          </div>
+                        </div>
+                        {provider.lastError && (
+                          <div className="flex items-center gap-2 text-destructive">
+                            <AlertCircle className="h-4 w-4" />
+                            <span className="text-sm">{provider.lastError}</span>
+                          </div>
+                        )}
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => healthCheckMutation.mutate(provider.providerId)}
+                          disabled={healthCheckMutation.isPending}
+                        >
+                          {healthCheckMutation.isPending ? (
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                          ) : (
+                            <RefreshCw className="h-4 w-4" />
+                          )}
+                        </Button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+      </Tabs>
+
+      {/* Create Mapping Dialog */}
+      <Dialog open={isCreateMappingDialogOpen} onOpenChange={(open) => {
+        setIsCreateMappingDialogOpen(open);
+        if (!open) {
+          setSelectedPrimaryChannel(null);
+          setMappingSearchQuery('');
+        }
+      }}>
+        <DialogContent className="sm:max-w-[600px]">
+          <DialogHeader>
+            <DialogTitle>Create Channel Mapping</DialogTitle>
+            <DialogDescription>Map a primary channel to a backup channel from another provider</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            {!selectedPrimaryChannel ? (
+              <div className="text-center py-4 text-muted-foreground">
+                <p>Select a primary channel from the Providers tab first</p>
+                <p className="text-sm mt-2">
+                  (Feature coming soon: search for channels here)
+                </p>
+              </div>
+            ) : (
+              <>
+                <div className="p-3 border rounded-lg bg-muted/50">
+                  <p className="text-sm text-muted-foreground">Primary Channel</p>
+                  <p className="font-medium">{selectedPrimaryChannel.name}</p>
+                  <Badge variant="outline" className="mt-1">{selectedPrimaryChannel.providerName}</Badge>
+                </div>
+                <div>
+                  <Label htmlFor="backup-search">Search for backup channel</Label>
+                  <div className="flex gap-2 mt-1">
+                    <div className="relative flex-1">
+                      <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                      <Input
+                        id="backup-search"
+                        placeholder="Search channels from other providers..."
+                        className="pl-9"
+                        value={mappingSearchQuery}
+                        onChange={(e) => setMappingSearchQuery(e.target.value)}
+                      />
+                    </div>
+                  </div>
+                </div>
+                {candidatesLoading ? (
+                  <div className="flex justify-center py-4">
+                    <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                  </div>
+                ) : backupCandidates.length > 0 ? (
+                  <div className="border rounded-lg max-h-60 overflow-y-auto">
+                    {backupCandidates.map((candidate) => (
+                      <div
+                        key={candidate.id}
+                        className="flex items-center justify-between p-3 border-b last:border-b-0 hover:bg-muted/50"
+                      >
+                        <div>
+                          <p className="font-medium">{candidate.name}</p>
+                          <Badge variant="outline" className="mt-1">{candidate.providerName}</Badge>
+                        </div>
+                        <Button
+                          size="sm"
+                          disabled={candidate.alreadyMapped || createMappingMutation.isPending}
+                          onClick={() => {
+                            createMappingMutation.mutate({
+                              primaryChannelId: selectedPrimaryChannel.id,
+                              backupChannelId: candidate.id,
+                            });
+                          }}
+                        >
+                          {candidate.alreadyMapped ? 'Mapped' : 'Add Backup'}
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
+                ) : mappingSearchQuery.length >= 2 ? (
+                  <p className="text-center py-4 text-muted-foreground">No matching channels found</p>
+                ) : null}
+              </>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsCreateMappingDialogOpen(false)}>Close</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Create Provider Dialog */}
       <Dialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen}>

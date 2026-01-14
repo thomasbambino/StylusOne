@@ -957,7 +957,21 @@ export default function LiveTVTvPage() {
   viewModeRef.current = viewMode;
   const [showOverlay, setShowOverlay] = useState(true);
   const [guideSearchQuery, setGuideSearchQuery] = useState('');
-  const [hiddenPackages, setHiddenPackages] = useState<Set<number>>(new Set()); // Package IDs to hide from guide
+  // Package IDs to hide from guide - load from localStorage
+  const [hiddenPackages, setHiddenPackages] = useState<Set<number>>(() => {
+    try {
+      const saved = localStorage.getItem('guideHiddenPackages');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) {
+          return new Set(parsed);
+        }
+      }
+    } catch (e) {
+      console.warn('[Guide] Failed to load hidden packages from localStorage:', e);
+    }
+    return new Set();
+  });
   const [showPackageDropdown, setShowPackageDropdown] = useState(false);
 
   // Home page state
@@ -977,12 +991,36 @@ export default function LiveTVTvPage() {
     hideNativeTabBar();
   }, []);
 
-  // Splash screen timer - show for 4 seconds
+  // Splash screen timer - show for 3 seconds
   useEffect(() => {
     if (!showSplash) return;
-    const timer = setTimeout(() => setShowSplash(false), 4000);
+    const timer = setTimeout(() => setShowSplash(false), 3000);
     return () => clearTimeout(timer);
   }, [showSplash]);
+
+  // Sync viewMode with native tab bar selection
+  useEffect(() => {
+    if (showSplash) return; // Don't update during splash
+    const tabMap: Record<string, string> = {
+      home: 'home',
+      player: 'nowplaying',
+      guide: 'guide',
+      profile: 'profile',
+    };
+    const tabId = tabMap[viewMode];
+    if (tabId) {
+      setNativeTabBarSelected(tabId);
+    }
+  }, [viewMode, showSplash]);
+
+  // Save hidden packages to localStorage when changed
+  useEffect(() => {
+    try {
+      localStorage.setItem('guideHiddenPackages', JSON.stringify(Array.from(hiddenPackages)));
+    } catch (e) {
+      console.warn('[Guide] Failed to save hidden packages to localStorage:', e);
+    }
+  }, [hiddenPackages]);
 
   // Helper: Calculate program progress percentage
   const getProgramProgress = useCallback((program: EPGProgram | null | undefined): number => {
@@ -2629,6 +2667,37 @@ export default function LiveTVTvPage() {
     }
   }, [focusedChannelIndex, viewMode]);
 
+  // Track previous viewMode to detect when guide is opened
+  const prevViewModeRef = useRef(viewMode);
+
+  // Auto-scroll to currently playing channel when guide is opened
+  useEffect(() => {
+    const wasGuide = prevViewModeRef.current === 'guide';
+    prevViewModeRef.current = viewMode;
+
+    // Only scroll when entering guide view (not when already in guide)
+    if (viewMode === 'guide' && !wasGuide && selectedChannel && guideScrollRef.current) {
+      // Find the index of the playing channel in filtered list
+      const playingIndex = filteredChannels.findIndex(
+        (ch: Channel) => ch.iptvId === selectedChannel.iptvId
+      );
+
+      if (playingIndex >= 0) {
+        const scrollContainer = guideScrollRef.current;
+        // Use setTimeout to ensure DOM is ready
+        setTimeout(() => {
+          // Find the actual element in the scroll container
+          const channelElements = scrollContainer.children;
+          if (channelElements[playingIndex]) {
+            const element = channelElements[playingIndex] as HTMLElement;
+            // Scroll so the playing channel is at the top
+            scrollContainer.scrollTo({ top: element.offsetTop, behavior: 'smooth' });
+          }
+        }, 150);
+      }
+    }
+  }, [viewMode, selectedChannel, filteredChannels]);
+
   // Cleanup
   useEffect(() => {
     return () => {
@@ -3488,7 +3557,7 @@ export default function LiveTVTvPage() {
           </div>
 
           {/* Channel List */}
-          <div className="flex-1 overflow-y-auto relative" onScroll={handleGuideScroll}>
+          <div ref={guideScrollRef} className="flex-1 overflow-y-auto relative" onScroll={handleGuideScroll}>
             {filteredChannels.slice(0, renderLimit).map((channel: Channel, index: number) => {
               const channelEpg = epgDataMap.get(channel.iptvId || '');
               const isCurrentChannel = selectedChannel?.iptvId === channel.iptvId;
@@ -4149,7 +4218,7 @@ export default function LiveTVTvPage() {
               const rating = channelEpg?.currentProgram?.rating;
 
               return (
-                <div className="px-5 mb-10 mt-6">
+                <div className="px-5 mb-6 mt-4">
                   <div
                     className="relative rounded-2xl overflow-hidden active:scale-[0.98] transition-transform duration-200"
                     onClick={() => { haptics.medium(); playStream(channel); setViewMode('player'); }}
@@ -4221,9 +4290,9 @@ export default function LiveTVTvPage() {
 
             {/* Favorites - Remaining Favorites */}
             {favorites && favorites.length > 1 && (
-              <div className="mb-10">
+              <div className="mb-6 relative z-10">
                 <h2 className="px-5 text-xl font-semibold text-white/90 mb-4">Favorites</h2>
-                <div className="flex gap-4 overflow-x-auto px-5 scrollbar-hide">
+                <div className="flex gap-4 overflow-x-auto overflow-y-hidden px-5 scrollbar-hide">
                   {favorites.slice(1).map((fav) => {
                     const channel = channels.find(c => c.iptvId === fav.channelId);
                     if (!channel) return null;
@@ -4301,14 +4370,14 @@ export default function LiveTVTvPage() {
 
             {/* Section Divider */}
             {favorites && favorites.length > 0 && (nflPackage || nbaPackage || mlbPackage) && (
-              <div className="px-5 mb-8">
+              <div className="px-5 mb-4">
                 <div className="h-px bg-white/10" />
               </div>
             )}
 
             {/* No Favorites - Clean empty state */}
             {(!favorites || favorites.length === 0) && (
-              <div className="px-5 mb-8 mt-4">
+              <div className="px-5 mb-4 mt-2">
                 <div className="rounded-2xl bg-zinc-900/50 p-8 text-center">
                   <p className="text-white/60 text-lg font-medium">No favorites yet</p>
                   <p className="text-white/30 text-sm mt-2">Add channels from the Guide tab</p>
@@ -4318,95 +4387,121 @@ export default function LiveTVTvPage() {
 
             {/* Trending Section */}
             {trendingChannels.length > 0 && (
-              <div className="mb-10">
+              <div className="mb-6 relative z-10">
                 <div className="px-5 mb-4 flex items-center gap-2">
                   <TrendingUp className="h-5 w-5 text-orange-500" />
                   <h2 className="text-xl font-semibold text-white/90">Trending</h2>
                 </div>
-                <div className="flex gap-4 overflow-x-auto px-5 scrollbar-hide">
-                  {trendingChannels.map((trending) => {
-                    const channel = channels.find(c => c.iptvId === trending.channelId);
-                    if (!channel) return null;
-                    const channelEpg = epgDataMap.get(channel.iptvId || '');
-                    const thumbnail = channelEpg?.currentProgram?.thumbnail;
-                    const channelLogo = trending.logo || channel.logo;
-                    const progress = getProgramProgress(channelEpg?.currentProgram);
-                    const timeLeft = channelEpg?.currentProgram ? getTimeRemaining(channelEpg.currentProgram.endTime) : null;
+                <div className="flex gap-4 overflow-x-auto overflow-y-hidden px-5 scrollbar-hide">
+                  <AnimatePresence mode="popLayout">
+                    {trendingChannels.map((trending) => {
+                      const channel = channels.find(c => c.iptvId === trending.channelId);
+                      if (!channel) return null;
+                      const channelEpg = epgDataMap.get(channel.iptvId || '');
+                      const thumbnail = channelEpg?.currentProgram?.thumbnail;
+                      const channelLogo = trending.logo || channel.logo;
+                      const progress = getProgramProgress(channelEpg?.currentProgram);
+                      const timeLeft = channelEpg?.currentProgram ? getTimeRemaining(channelEpg.currentProgram.endTime) : null;
 
-                    return (
-                      <div
-                        key={trending.channelId}
-                        className="shrink-0 w-72 active:scale-[0.97] transition-transform duration-200"
-                        onClick={() => { haptics.light(); playStream(channel); setViewMode('player'); }}
-                      >
-                        <div className="relative rounded-xl overflow-hidden mb-3">
-                          <div className="aspect-video">
-                            {thumbnail ? (
-                              <img src={thumbnail} alt="" className="w-full h-full object-cover" />
-                            ) : channelLogo ? (
-                              <div className="w-full h-full flex items-center justify-center bg-zinc-900 p-6">
-                                <img src={channelLogo} alt="" className="max-w-[50%] max-h-[50%] object-contain opacity-70" />
-                              </div>
-                            ) : (
-                              <div className="w-full h-full bg-zinc-900" />
-                            )}
-                          </div>
-                          {/* Top row badges */}
-                          <div className="absolute top-2 left-2 right-2 flex items-center justify-between">
-                            {/* Viewer count badge */}
-                            {trending.currentViewers > 0 && (
-                              <div className="flex items-center gap-1 px-2 py-1 bg-black/60 backdrop-blur-sm rounded">
-                                <Users className="w-3 h-3 text-white" />
-                                <span className="text-white text-[10px] font-medium">{trending.currentViewers} watching</span>
-                              </div>
-                            )}
-                            {/* Spacer when no viewers */}
-                            {trending.currentViewers === 0 && <div />}
-                            {/* Network logo */}
-                            {channelLogo && thumbnail && (
-                              <div className="w-8 h-8 rounded bg-black/40 backdrop-blur-sm p-1 flex items-center justify-center">
-                                <img src={channelLogo} alt="" className="max-w-full max-h-full object-contain" />
-                              </div>
-                            )}
-                          </div>
-                          {/* Progress bar at bottom */}
-                          {progress > 0 && (
-                            <div className="absolute bottom-0 left-0 right-0 h-1 bg-black/50">
-                              <div className="h-full bg-white/80" style={{ width: `${progress}%` }} />
+                      return (
+                        <motion.div
+                          key={trending.channelId}
+                          layout
+                          initial={false}
+                          animate={{ opacity: 1, scale: 1, x: 0 }}
+                          exit={{ opacity: 0, scale: 0.9, x: -20 }}
+                          transition={{
+                            duration: 0.25,
+                            layout: { duration: 0.25, ease: 'easeInOut' }
+                          }}
+                          className="shrink-0 w-72 active:scale-[0.97] transition-transform duration-200"
+                          onClick={() => { haptics.light(); playStream(channel); setViewMode('player'); }}
+                        >
+                          <div className="relative rounded-xl overflow-hidden mb-3">
+                            <div className="aspect-video">
+                              {thumbnail ? (
+                                <img src={thumbnail} alt="" className="w-full h-full object-cover" />
+                              ) : channelLogo ? (
+                                <div className="w-full h-full flex items-center justify-center bg-zinc-900 p-6">
+                                  <img src={channelLogo} alt="" className="max-w-[50%] max-h-[50%] object-contain opacity-70" />
+                                </div>
+                              ) : (
+                                <div className="w-full h-full bg-zinc-900" />
+                              )}
                             </div>
-                          )}
-                        </div>
-                        <p className="text-white font-medium text-sm">{trending.channelName}</p>
-                        <div className="flex items-center gap-1.5 mt-0.5">
-                          <p className="text-white/40 text-xs truncate flex-1">
-                            {channelEpg?.currentProgram?.title || 'Live'}
-                          </p>
-                          {timeLeft && progress > 0 && (
-                            <span className="text-white/30 text-[10px] shrink-0">{timeLeft}</span>
-                          )}
-                        </div>
-                      </div>
-                    );
-                  })}
+                            {/* Top row badges */}
+                            <div className="absolute top-2 left-2 right-2 flex items-center justify-between">
+                              {/* Viewer count badge */}
+                              <AnimatePresence mode="wait">
+                                {trending.currentViewers > 0 && (
+                                  <motion.div
+                                    key="viewers"
+                                    initial={{ opacity: 0, scale: 0.8 }}
+                                    animate={{ opacity: 1, scale: 1 }}
+                                    exit={{ opacity: 0, scale: 0.8 }}
+                                    transition={{ duration: 0.2 }}
+                                    className="flex items-center gap-1 px-2 py-1 bg-black/60 backdrop-blur-sm rounded"
+                                  >
+                                    <Users className="w-3 h-3 text-white" />
+                                    <motion.span
+                                      key={trending.currentViewers}
+                                      initial={{ opacity: 0 }}
+                                      animate={{ opacity: 1 }}
+                                      className="text-white text-[10px] font-medium"
+                                    >
+                                      {trending.currentViewers} watching
+                                    </motion.span>
+                                  </motion.div>
+                                )}
+                              </AnimatePresence>
+                              {/* Spacer when no viewers */}
+                              {trending.currentViewers === 0 && <div />}
+                              {/* Network logo */}
+                              {channelLogo && thumbnail && (
+                                <div className="w-8 h-8 rounded bg-black/40 backdrop-blur-sm p-1 flex items-center justify-center">
+                                  <img src={channelLogo} alt="" className="max-w-full max-h-full object-contain" />
+                                </div>
+                              )}
+                            </div>
+                            {/* Progress bar at bottom */}
+                            {progress > 0 && (
+                              <div className="absolute bottom-0 left-0 right-0 h-1 bg-black/50">
+                                <div className="h-full bg-white/80" style={{ width: `${progress}%` }} />
+                              </div>
+                            )}
+                          </div>
+                          <p className="text-white font-medium text-sm">{trending.channelName}</p>
+                          <div className="flex items-center gap-1.5 mt-0.5">
+                            <p className="text-white/40 text-xs truncate flex-1">
+                              {channelEpg?.currentProgram?.title || 'Live'}
+                            </p>
+                            {timeLeft && progress > 0 && (
+                              <span className="text-white/30 text-[10px] shrink-0">{timeLeft}</span>
+                            )}
+                          </div>
+                        </motion.div>
+                      );
+                    })}
+                  </AnimatePresence>
                 </div>
               </div>
             )}
 
             {/* Section Divider - Between Trending and Sports */}
             {trendingChannels.length > 0 && (nflPackage || nbaPackage || mlbPackage) && (
-              <div className="px-5 mb-8">
+              <div className="px-5 mb-4">
                 <div className="h-px bg-white/10" />
               </div>
             )}
 
             {/* NFL Section - Large Cards */}
             {nflPackage && nflChannels.length > 0 && (
-              <div className="mb-10">
+              <div className="mb-6 relative z-10">
                 <div className="px-5 mb-4 flex items-center gap-3">
                   <img src="https://a.espncdn.com/combiner/i?img=/i/teamlogos/leagues/500/nfl.png&w=100&h=100" alt="NFL" className="h-6 w-6 object-contain" />
                   <h2 className="text-xl font-semibold text-white/90">NFL</h2>
                 </div>
-                <div className="flex gap-4 overflow-x-auto px-5 scrollbar-hide">
+                <div className="flex gap-4 overflow-x-auto overflow-y-hidden px-5 scrollbar-hide">
                   {nflChannels.map((pkgChannel) => {
                     const channel = channels.find(c => c.GuideName === pkgChannel.name || c.name === pkgChannel.name);
                     if (!channel) return null;
@@ -4415,6 +4510,8 @@ export default function LiveTVTvPage() {
                     const channelLogo = pkgChannel.logo || channel.logo;
                     const progress = getProgramProgress(channelEpg?.currentProgram);
                     const timeLeft = channelEpg?.currentProgram ? getTimeRemaining(channelEpg.currentProgram.endTime) : null;
+                    const programTitle = channelEpg?.currentProgram?.title || '';
+                    const isNoGame = programTitle.toLowerCase().includes('no game');
 
                     return (
                       <div
@@ -4436,14 +4533,17 @@ export default function LiveTVTvPage() {
                           </div>
                           {/* Top row badges */}
                           <div className="absolute top-2 left-2 right-2 flex items-center justify-between">
-                            {/* LIVE badge */}
-                            <div className="flex items-center gap-1 px-2 py-1 bg-red-600 rounded">
-                              <span className="relative flex h-1.5 w-1.5">
-                                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-white opacity-75"></span>
-                                <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-white"></span>
-                              </span>
-                              <span className="text-white text-[10px] font-bold">LIVE</span>
-                            </div>
+                            {/* LIVE badge - only show if there's an actual game */}
+                            {!isNoGame && (
+                              <div className="flex items-center gap-1 px-2 py-1 bg-red-600 rounded">
+                                <span className="relative flex h-1.5 w-1.5">
+                                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-white opacity-75"></span>
+                                  <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-white"></span>
+                                </span>
+                                <span className="text-white text-[10px] font-bold">LIVE</span>
+                              </div>
+                            )}
+                            {isNoGame && <div />}
                             {/* Network logo */}
                             {channelLogo && thumbnail && (
                               <div className="w-8 h-8 rounded bg-black/40 backdrop-blur-sm p-1 flex items-center justify-center">
@@ -4461,7 +4561,7 @@ export default function LiveTVTvPage() {
                         <p className="text-white font-medium text-sm">{pkgChannel.name}</p>
                         <div className="flex items-center gap-1.5 mt-0.5">
                           <p className="text-white/40 text-xs truncate flex-1">
-                            {channelEpg?.currentProgram?.title || 'Live'}
+                            {programTitle || 'Live'}
                           </p>
                           {timeLeft && progress > 0 && (
                             <span className="text-white/30 text-[10px] shrink-0">{timeLeft}</span>
@@ -4476,18 +4576,20 @@ export default function LiveTVTvPage() {
 
             {/* NBA Section - Compact Cards for variety */}
             {nbaPackage && nbaChannels.length > 0 && (
-              <div className="mb-10">
+              <div className="mb-6 relative z-10">
                 <div className="px-5 mb-4 flex items-center gap-3">
                   <img src="https://a.espncdn.com/combiner/i?img=/i/teamlogos/leagues/500/nba.png&w=100&h=100" alt="NBA" className="h-6 w-6 object-contain" />
                   <h2 className="text-xl font-semibold text-white/90">NBA</h2>
                 </div>
-                <div className="flex gap-3 overflow-x-auto px-5 scrollbar-hide">
+                <div className="flex gap-3 overflow-x-auto overflow-y-hidden px-5 scrollbar-hide">
                   {nbaChannels.map((pkgChannel) => {
                     const channel = channels.find(c => c.GuideName === pkgChannel.name || c.name === pkgChannel.name);
                     if (!channel) return null;
                     const channelEpg = epgDataMap.get(channel.iptvId || '');
                     const channelLogo = pkgChannel.logo || channel.logo;
                     const progress = getProgramProgress(channelEpg?.currentProgram);
+                    const programTitle = channelEpg?.currentProgram?.title || '';
+                    const isNoGame = programTitle.toLowerCase().includes('no game');
 
                     return (
                       <div
@@ -4507,14 +4609,16 @@ export default function LiveTVTvPage() {
                               </div>
                             )}
                           </div>
-                          {/* LIVE badge - smaller */}
-                          <div className="absolute top-1.5 left-1.5 flex items-center gap-0.5 px-1.5 py-0.5 bg-red-600 rounded">
-                            <span className="relative flex h-1 w-1">
-                              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-white opacity-75"></span>
-                              <span className="relative inline-flex rounded-full h-1 w-1 bg-white"></span>
-                            </span>
-                            <span className="text-white text-[8px] font-bold">LIVE</span>
-                          </div>
+                          {/* LIVE badge - smaller (hidden for No Game) */}
+                          {!isNoGame && (
+                            <div className="absolute top-1.5 left-1.5 flex items-center gap-0.5 px-1.5 py-0.5 bg-red-600 rounded">
+                              <span className="relative flex h-1 w-1">
+                                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-white opacity-75"></span>
+                                <span className="relative inline-flex rounded-full h-1 w-1 bg-white"></span>
+                              </span>
+                              <span className="text-white text-[8px] font-bold">LIVE</span>
+                            </div>
+                          )}
                           {/* Progress bar at bottom */}
                           {progress > 0 && (
                             <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-black/50">
@@ -4532,19 +4636,19 @@ export default function LiveTVTvPage() {
 
             {/* Section Divider */}
             {(nflPackage || nbaPackage) && mlbPackage && (
-              <div className="px-5 mb-8">
+              <div className="px-5 mb-4">
                 <div className="h-px bg-white/10" />
               </div>
             )}
 
             {/* MLB Section - Large Cards */}
             {mlbPackage && mlbChannels.length > 0 && (
-              <div className="mb-10">
+              <div className="mb-6 relative z-10">
                 <div className="px-5 mb-4 flex items-center gap-3">
                   <img src="https://a.espncdn.com/combiner/i?img=/i/teamlogos/leagues/500/mlb.png&w=100&h=100" alt="MLB" className="h-6 w-6 object-contain" />
                   <h2 className="text-xl font-semibold text-white/90">MLB</h2>
                 </div>
-                <div className="flex gap-4 overflow-x-auto px-5 scrollbar-hide">
+                <div className="flex gap-4 overflow-x-auto overflow-y-hidden px-5 scrollbar-hide">
                   {mlbChannels.map((pkgChannel) => {
                     const channel = channels.find(c => c.GuideName === pkgChannel.name || c.name === pkgChannel.name);
                     if (!channel) return null;
@@ -4553,6 +4657,8 @@ export default function LiveTVTvPage() {
                     const channelLogo = pkgChannel.logo || channel.logo;
                     const progress = getProgramProgress(channelEpg?.currentProgram);
                     const timeLeft = channelEpg?.currentProgram ? getTimeRemaining(channelEpg.currentProgram.endTime) : null;
+                    const programTitle = channelEpg?.currentProgram?.title || '';
+                    const isNoGame = programTitle.toLowerCase().includes('no game');
 
                     return (
                       <div
@@ -4574,14 +4680,18 @@ export default function LiveTVTvPage() {
                           </div>
                           {/* Top row badges */}
                           <div className="absolute top-2 left-2 right-2 flex items-center justify-between">
-                            {/* LIVE badge */}
-                            <div className="flex items-center gap-1 px-2 py-1 bg-red-600 rounded">
-                              <span className="relative flex h-1.5 w-1.5">
-                                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-white opacity-75"></span>
-                                <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-white"></span>
-                              </span>
-                              <span className="text-white text-[10px] font-bold">LIVE</span>
-                            </div>
+                            {/* LIVE badge (hidden for No Game) */}
+                            {!isNoGame ? (
+                              <div className="flex items-center gap-1 px-2 py-1 bg-red-600 rounded">
+                                <span className="relative flex h-1.5 w-1.5">
+                                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-white opacity-75"></span>
+                                  <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-white"></span>
+                                </span>
+                                <span className="text-white text-[10px] font-bold">LIVE</span>
+                              </div>
+                            ) : (
+                              <div />
+                            )}
                             {/* Network logo */}
                             {channelLogo && thumbnail && (
                               <div className="w-8 h-8 rounded bg-black/40 backdrop-blur-sm p-1 flex items-center justify-center">

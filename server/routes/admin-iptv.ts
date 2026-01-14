@@ -10,12 +10,16 @@ import {
   planPackages,
   planIptvCredentials,
   activeIptvStreams,
-  subscriptionPlans
+  subscriptionPlans,
+  channelMappings,
+  providerHealthLogs
 } from '@shared/schema';
-import { eq, desc, and, sql, inArray, isNull } from 'drizzle-orm';
+import { eq, desc, and, sql, inArray, isNull, asc, gte } from 'drizzle-orm';
 import { encrypt, decrypt, maskCredential } from '../utils/encryption';
 import { xtreamCodesManager, xtreamCodesService, XtreamCodesClient } from '../services/xtream-codes-service';
 import { streamTrackerService } from '../services/stream-tracker-service';
+import { providerHealthService } from '../services/provider-health-service';
+import { channelMappingService } from '../services/channel-mapping-service';
 
 const router = Router();
 
@@ -2003,6 +2007,265 @@ router.post('/iptv-streams/cleanup', requireSuperAdmin, async (req, res) => {
   } catch (error) {
     console.error('Error running stream cleanup:', error);
     res.status(500).json({ error: 'Failed to run stream cleanup' });
+  }
+});
+
+// ============================================================================
+// CHANNEL MAPPING ENDPOINTS
+// ============================================================================
+
+/**
+ * GET /api/admin/channel-mappings
+ * List all channel mappings with full channel info
+ */
+router.get('/channel-mappings', requireSuperAdmin, async (req, res) => {
+  try {
+    const mappings = await channelMappingService.getAllMappings();
+    const stats = await channelMappingService.getMappingStats();
+
+    res.json({
+      mappings,
+      stats
+    });
+  } catch (error) {
+    console.error('Error fetching channel mappings:', error);
+    res.status(500).json({ error: 'Failed to fetch channel mappings' });
+  }
+});
+
+/**
+ * GET /api/admin/channel-mappings/:channelId
+ * Get all mappings for a specific primary channel
+ */
+router.get('/channel-mappings/:channelId', requireSuperAdmin, async (req, res) => {
+  try {
+    const channelId = parseInt(req.params.channelId);
+    if (isNaN(channelId)) {
+      return res.status(400).json({ error: 'Invalid channel ID' });
+    }
+
+    const mappings = await channelMappingService.getMappingsForChannel(channelId);
+
+    // Get the primary channel info
+    const [primaryChannel] = await db.select({
+      id: iptvChannels.id,
+      name: iptvChannels.name,
+      logo: iptvChannels.logo,
+      streamId: iptvChannels.streamId,
+      providerId: iptvChannels.providerId,
+      providerName: iptvProviders.name,
+    })
+      .from(iptvChannels)
+      .innerJoin(iptvProviders, eq(iptvChannels.providerId, iptvProviders.id))
+      .where(eq(iptvChannels.id, channelId));
+
+    res.json({
+      channel: primaryChannel || null,
+      mappings
+    });
+  } catch (error) {
+    console.error('Error fetching channel mappings:', error);
+    res.status(500).json({ error: 'Failed to fetch channel mappings' });
+  }
+});
+
+/**
+ * POST /api/admin/channel-mappings
+ * Create a new channel mapping
+ */
+router.post('/channel-mappings', requireSuperAdmin, async (req, res) => {
+  try {
+    const schema = z.object({
+      primaryChannelId: z.number(),
+      backupChannelId: z.number(),
+      priority: z.number().optional()
+    });
+
+    const data = schema.parse(req.body);
+    const mapping = await channelMappingService.createMapping(
+      data.primaryChannelId,
+      data.backupChannelId,
+      data.priority
+    );
+
+    res.json({ mapping });
+  } catch (error: any) {
+    console.error('Error creating channel mapping:', error);
+    if (error.message?.includes('different providers') || error.message?.includes('not found')) {
+      return res.status(400).json({ error: error.message });
+    }
+    res.status(500).json({ error: 'Failed to create channel mapping' });
+  }
+});
+
+/**
+ * PUT /api/admin/channel-mappings/:id
+ * Update a mapping's priority or active status
+ */
+router.put('/channel-mappings/:id', requireSuperAdmin, async (req, res) => {
+  try {
+    const mappingId = parseInt(req.params.id);
+    if (isNaN(mappingId)) {
+      return res.status(400).json({ error: 'Invalid mapping ID' });
+    }
+
+    const schema = z.object({
+      priority: z.number().optional(),
+      isActive: z.boolean().optional()
+    });
+
+    const data = schema.parse(req.body);
+    await channelMappingService.updateMapping(mappingId, data);
+
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Error updating channel mapping:', error);
+    res.status(500).json({ error: 'Failed to update channel mapping' });
+  }
+});
+
+/**
+ * DELETE /api/admin/channel-mappings/:id
+ * Delete a channel mapping
+ */
+router.delete('/channel-mappings/:id', requireSuperAdmin, async (req, res) => {
+  try {
+    const mappingId = parseInt(req.params.id);
+    if (isNaN(mappingId)) {
+      return res.status(400).json({ error: 'Invalid mapping ID' });
+    }
+
+    await channelMappingService.deleteMapping(mappingId);
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Error deleting channel mapping:', error);
+    res.status(500).json({ error: 'Failed to delete channel mapping' });
+  }
+});
+
+/**
+ * GET /api/admin/channel-mappings/search
+ * Search for potential backup channels from other providers
+ */
+router.get('/channel-mappings/search', requireSuperAdmin, async (req, res) => {
+  try {
+    const primaryChannelId = parseInt(req.query.primaryChannelId as string);
+    const query = (req.query.q as string) || '';
+
+    if (isNaN(primaryChannelId)) {
+      return res.status(400).json({ error: 'primaryChannelId is required' });
+    }
+
+    const candidates = await channelMappingService.searchBackupCandidates(
+      primaryChannelId,
+      query,
+      30
+    );
+
+    res.json({ candidates });
+  } catch (error) {
+    console.error('Error searching backup candidates:', error);
+    res.status(500).json({ error: 'Failed to search backup candidates' });
+  }
+});
+
+/**
+ * POST /api/admin/channel-mappings/suggest
+ * Auto-suggest backup channels based on name similarity
+ */
+router.post('/channel-mappings/suggest', requireSuperAdmin, async (req, res) => {
+  try {
+    const schema = z.object({
+      channelId: z.number()
+    });
+
+    const { channelId } = schema.parse(req.body);
+    const suggestions = await channelMappingService.suggestMappings(channelId, 5);
+
+    res.json({ suggestions });
+  } catch (error) {
+    console.error('Error suggesting mappings:', error);
+    res.status(500).json({ error: 'Failed to suggest mappings' });
+  }
+});
+
+// ============================================================================
+// PROVIDER HEALTH ENDPOINTS
+// ============================================================================
+
+/**
+ * GET /api/admin/iptv-providers/:id/health
+ * Get health status and history for a provider
+ */
+router.get('/iptv-providers/:id/health', requireSuperAdmin, async (req, res) => {
+  try {
+    const providerId = parseInt(req.params.id);
+    if (isNaN(providerId)) {
+      return res.status(400).json({ error: 'Invalid provider ID' });
+    }
+
+    const [provider] = await db.select()
+      .from(iptvProviders)
+      .where(eq(iptvProviders.id, providerId));
+
+    if (!provider) {
+      return res.status(404).json({ error: 'Provider not found' });
+    }
+
+    const history = await providerHealthService.getHealthHistory(providerId, 24);
+    const uptime24h = await providerHealthService.getUptimePercentage(providerId, 1);
+    const uptime7d = await providerHealthService.getUptimePercentage(providerId, 7);
+
+    res.json({
+      providerId,
+      name: provider.name,
+      currentStatus: provider.healthStatus,
+      lastHealthCheck: provider.lastHealthCheck,
+      uptime24h,
+      uptime7d,
+      history
+    });
+  } catch (error) {
+    console.error('Error fetching provider health:', error);
+    res.status(500).json({ error: 'Failed to fetch provider health' });
+  }
+});
+
+/**
+ * POST /api/admin/iptv-providers/:id/health-check
+ * Manually trigger a health check for a provider
+ */
+router.post('/iptv-providers/:id/health-check', requireSuperAdmin, async (req, res) => {
+  try {
+    const providerId = parseInt(req.params.id);
+    if (isNaN(providerId)) {
+      return res.status(400).json({ error: 'Invalid provider ID' });
+    }
+
+    const result = await providerHealthService.checkProviderHealth(providerId);
+
+    res.json({
+      providerId,
+      ...result,
+      checkedAt: new Date()
+    });
+  } catch (error: any) {
+    console.error('Error running health check:', error);
+    res.status(500).json({ error: error.message || 'Failed to run health check' });
+  }
+});
+
+/**
+ * GET /api/admin/provider-health-summary
+ * Get health summary for all active providers
+ */
+router.get('/provider-health-summary', requireSuperAdmin, async (req, res) => {
+  try {
+    const summary = await providerHealthService.getAllProvidersHealthSummary();
+    res.json({ providers: summary });
+  } catch (error) {
+    console.error('Error fetching health summary:', error);
+    res.status(500).json({ error: 'Failed to fetch health summary' });
   }
 });
 

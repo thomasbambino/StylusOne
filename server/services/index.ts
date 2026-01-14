@@ -11,6 +11,8 @@ export * from './email-service';
 export * from './epub-service';
 export * from './xtream-codes-service';
 export * from './stream-tracker-service';
+export * from './provider-health-service';
+export * from './channel-mapping-service';
 
 // Import services and service registry
 import { serviceRegistry } from './service-registry';
@@ -20,6 +22,7 @@ import { emailService } from './email-service';
 import { epubService } from './epub-service';
 import { xtreamCodesService } from './xtream-codes-service';
 import { streamTrackerService } from './stream-tracker-service';
+import { providerHealthService } from './provider-health-service';
 import { getSharedEPGService } from './epg-singleton';
 
 /**
@@ -38,6 +41,9 @@ export async function initializeServices(): Promise<void> {
 
   // Start stream tracker cleanup interval
   streamTrackerService.startCleanupInterval();
+
+  // Start provider health monitoring (checks every 5 minutes)
+  providerHealthService.startHealthChecks();
 
   // Initialize EPG service on startup to build 7-day cache
   console.log('[EPG] Initializing EPG service on startup...');
