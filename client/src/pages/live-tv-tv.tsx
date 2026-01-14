@@ -1531,18 +1531,20 @@ export default function LiveTVTvPage() {
     name: string;
     shortName: string;
     date: string;
-    homeTeam: { name: string; abbreviation: string; logo?: string };
-    awayTeam: { name: string; abbreviation: string; logo?: string };
+    homeTeam: { name: string; abbreviation: string; logo?: string; score?: number };
+    awayTeam: { name: string; abbreviation: string; logo?: string; score?: number };
     broadcast: string[];
     venue?: string;
-    status: string;
+    status: 'scheduled' | 'live' | 'final' | 'postponed';
+    statusDetail?: string;
   }
 
   const { data: sportsSchedule, isLoading: scheduleLoading } = useQuery<{ sport: string; games: SportsGame[] }>({
     queryKey: [`/api/sports/schedule/${scheduleModal}`],
     queryFn: getQueryFn({ on401: "returnNull" }),
     enabled: !!scheduleModal,
-    staleTime: 5 * 60 * 1000, // Cache for 5 minutes
+    staleTime: 60 * 1000, // Cache for 1 minute
+    refetchInterval: scheduleModal ? 60 * 1000 : false, // Refetch every minute for live scores
   });
 
   // Trending channels query
@@ -5348,35 +5350,77 @@ export default function LiveTVTvPage() {
                       <div className="space-y-3">
                         {games.map((game) => {
                           const startTime = new Date(game.date);
+                          const now = new Date();
                           const timeStr = startTime.toLocaleTimeString('en-US', {
                             hour: 'numeric',
                             minute: '2-digit'
                           });
                           const matchedChannel = findChannelForBroadcast(game.broadcast);
                           const isLive = game.status === 'live';
-                          const isFuture = startTime > new Date();
-                          const hasGameReminder = hasReminder(game.id, game.date);
+                          const isFinal = game.status === 'final';
+                          const isPostponed = game.status === 'postponed';
+                          const isFuture = startTime > now;
+                          const isStartingSoon = startTime.getTime() - now.getTime() < 30 * 60 * 1000; // Within 30 min
+                          const showWatchButton = matchedChannel && (isLive || isStartingSoon);
+                          // Use channel ID for reminders so notification opens correct channel
+                          const channelIdForReminder = matchedChannel?.channel.iptvId || game.id;
+                          const hasGameReminder = hasReminder(channelIdForReminder, game.date);
 
                           return (
                             <div
                               key={game.id}
-                              className="bg-white/5 rounded-xl p-4 active:bg-white/10 transition-colors"
+                              className={cn(
+                                "bg-white/5 rounded-xl p-4 transition-colors",
+                                isFinal ? "opacity-70" : ""
+                              )}
                             >
-                              {/* Teams Row */}
+                              {/* Teams Row with Scores */}
                               <div className="flex items-center gap-3 mb-3">
                                 {/* Away Team */}
                                 <div className="flex items-center gap-2 flex-1 min-w-0">
                                   {game.awayTeam.logo && (
                                     <img src={game.awayTeam.logo} alt="" className="w-8 h-8 object-contain" />
                                   )}
-                                  <span className="text-white font-medium truncate">{game.awayTeam.abbreviation}</span>
+                                  <span className={cn(
+                                    "font-medium truncate",
+                                    isFinal && game.awayTeam.score !== undefined && game.homeTeam.score !== undefined
+                                      ? game.awayTeam.score > game.homeTeam.score ? "text-white" : "text-white/50"
+                                      : "text-white"
+                                  )}>
+                                    {game.awayTeam.abbreviation}
+                                  </span>
+                                  {(isLive || isFinal) && game.awayTeam.score !== undefined && (
+                                    <span className={cn(
+                                      "font-bold text-lg",
+                                      isFinal && game.awayTeam.score > (game.homeTeam.score || 0) ? "text-white" : "text-white/70"
+                                    )}>
+                                      {game.awayTeam.score}
+                                    </span>
+                                  )}
                                 </div>
 
-                                <span className="text-white/40 text-sm">@</span>
+                                <span className="text-white/40 text-sm">
+                                  {(isLive || isFinal) ? "-" : "@"}
+                                </span>
 
                                 {/* Home Team */}
                                 <div className="flex items-center gap-2 flex-1 min-w-0 justify-end">
-                                  <span className="text-white font-medium truncate">{game.homeTeam.abbreviation}</span>
+                                  {(isLive || isFinal) && game.homeTeam.score !== undefined && (
+                                    <span className={cn(
+                                      "font-bold text-lg",
+                                      isFinal && game.homeTeam.score > (game.awayTeam.score || 0) ? "text-white" : "text-white/70"
+                                    )}>
+                                      {game.homeTeam.score}
+                                    </span>
+                                  )}
+                                  <span className={cn(
+                                    "font-medium truncate",
+                                    isFinal && game.homeTeam.score !== undefined && game.awayTeam.score !== undefined
+                                      ? game.homeTeam.score > game.awayTeam.score ? "text-white" : "text-white/50"
+                                      : "text-white"
+                                  )}>
+                                    {game.homeTeam.abbreviation}
+                                  </span>
                                   {game.homeTeam.logo && (
                                     <img src={game.homeTeam.logo} alt="" className="w-8 h-8 object-contain" />
                                   )}
@@ -5392,8 +5436,20 @@ export default function LiveTVTvPage() {
                                       LIVE
                                     </span>
                                   )}
-                                  <span className="text-white/70">{timeStr}</span>
-                                  {game.broadcast.length > 0 && (
+                                  {isFinal && (
+                                    <span className="px-2 py-0.5 bg-white/20 rounded text-white/70 text-xs font-medium">
+                                      FINAL
+                                    </span>
+                                  )}
+                                  {isPostponed && (
+                                    <span className="px-2 py-0.5 bg-yellow-600/50 rounded text-yellow-200 text-xs font-medium">
+                                      PPD
+                                    </span>
+                                  )}
+                                  {!isFinal && !isPostponed && (
+                                    <span className="text-white/70">{timeStr}</span>
+                                  )}
+                                  {game.broadcast.length > 0 && !isFinal && (
                                     <span className="text-white/40">• {game.broadcast[0]}</span>
                                   )}
                                 </div>
@@ -5401,14 +5457,14 @@ export default function LiveTVTvPage() {
                                 {/* Action Buttons */}
                                 <div className="flex items-center gap-2">
                                   {/* Reminder button for future games */}
-                                  {isFuture && !isLive && (
+                                  {isFuture && !isLive && !isFinal && !isPostponed && matchedChannel && (
                                     <button
                                       onClick={(e) => {
                                         e.stopPropagation();
                                         haptics.light();
                                         if (hasGameReminder) {
-                                          handleCancelReminder(game.id, game.date);
-                                        } else if (matchedChannel) {
+                                          handleCancelReminder(channelIdForReminder, game.date);
+                                        } else {
                                           handleSetReminder(
                                             {
                                               title: game.shortName,
@@ -5417,11 +5473,6 @@ export default function LiveTVTvPage() {
                                             },
                                             matchedChannel.channel
                                           );
-                                        } else {
-                                          toast({
-                                            title: "No channel found",
-                                            description: `Couldn't find a channel for ${game.broadcast.join(', ') || 'this game'}`,
-                                          });
                                         }
                                       }}
                                       className={cn(
@@ -5433,8 +5484,8 @@ export default function LiveTVTvPage() {
                                     </button>
                                   )}
 
-                                  {/* Watch button */}
-                                  {matchedChannel && (
+                                  {/* Watch button - only show when game is starting soon or live */}
+                                  {showWatchButton && (
                                     <button
                                       onClick={(e) => {
                                         e.stopPropagation();

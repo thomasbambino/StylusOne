@@ -4326,23 +4326,32 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ error: 'Invalid sport. Valid options: nfl, nba, mlb, nhl' });
       }
 
-      // Get games for next 14 days
+      // Get games for past 7 days and next 14 days
       const games: Array<{
         id: string;
         name: string;
         shortName: string;
         date: string;
-        homeTeam: { name: string; abbreviation: string; logo?: string };
-        awayTeam: { name: string; abbreviation: string; logo?: string };
+        homeTeam: { name: string; abbreviation: string; logo?: string; score?: number };
+        awayTeam: { name: string; abbreviation: string; logo?: string; score?: number };
         broadcast: string[];
         venue?: string;
-        status: string;
+        status: 'scheduled' | 'live' | 'final' | 'postponed';
+        statusDetail?: string;
       }> = [];
 
       const today = new Date();
       const dates: string[] = [];
 
-      // Generate dates for next 14 days
+      // Generate dates for past 7 days
+      for (let i = 7; i > 0; i--) {
+        const date = new Date(today);
+        date.setDate(date.getDate() - i);
+        const dateStr = date.toISOString().slice(0, 10).replace(/-/g, '');
+        dates.push(dateStr);
+      }
+
+      // Generate dates for next 14 days (including today)
       for (let i = 0; i < 14; i++) {
         const date = new Date(today);
         date.setDate(date.getDate() + i);
@@ -4398,11 +4407,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
                 }
               }
 
-              // Skip games that have already completed
-              const gameDate = new Date(event.date);
-              const status = event.status?.type?.name || 'scheduled';
-              if (status === 'STATUS_FINAL' || status === 'STATUS_POSTPONED') continue;
-              if (gameDate < today && status !== 'STATUS_IN_PROGRESS') continue;
+              // Parse status
+              const espnStatus = event.status?.type?.name || 'STATUS_SCHEDULED';
+              let status: 'scheduled' | 'live' | 'final' | 'postponed' = 'scheduled';
+              if (espnStatus === 'STATUS_IN_PROGRESS' || espnStatus === 'STATUS_HALFTIME' || espnStatus === 'STATUS_END_PERIOD') {
+                status = 'live';
+              } else if (espnStatus === 'STATUS_FINAL') {
+                status = 'final';
+              } else if (espnStatus === 'STATUS_POSTPONED' || espnStatus === 'STATUS_CANCELED') {
+                status = 'postponed';
+              }
+
+              // Get scores (only for live or final games)
+              const homeScore = (status === 'live' || status === 'final') ? parseInt(homeTeam.score) || 0 : undefined;
+              const awayScore = (status === 'live' || status === 'final') ? parseInt(awayTeam.score) || 0 : undefined;
 
               games.push({
                 id: event.id,
@@ -4412,16 +4430,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
                 homeTeam: {
                   name: homeTeam.team?.displayName || homeTeam.team?.name,
                   abbreviation: homeTeam.team?.abbreviation,
-                  logo: homeTeam.team?.logo
+                  logo: homeTeam.team?.logo,
+                  score: homeScore
                 },
                 awayTeam: {
                   name: awayTeam.team?.displayName || awayTeam.team?.name,
                   abbreviation: awayTeam.team?.abbreviation,
-                  logo: awayTeam.team?.logo
+                  logo: awayTeam.team?.logo,
+                  score: awayScore
                 },
                 broadcast: broadcasts,
                 venue: competition.venue?.fullName,
-                status: status === 'STATUS_IN_PROGRESS' ? 'live' : 'scheduled'
+                status,
+                statusDetail: event.status?.type?.shortDetail
               });
             } catch (err) {
               // Skip malformed events
