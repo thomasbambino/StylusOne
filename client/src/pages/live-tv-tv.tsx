@@ -2275,6 +2275,12 @@ export default function LiveTVTvPage() {
           }
         };
 
+        const handleLoadStart = () => {
+          if (channelVersionRef.current !== thisVersion) return;
+          console.log('[TV] Native HLS: loadstart - video is attempting to load');
+          console.log('[TV] Current src:', video.src);
+        };
+
         const handleLoadedMetadata = () => {
           if (channelVersionRef.current !== thisVersion) return;
           console.log('[TV] Native HLS: metadata loaded');
@@ -2359,6 +2365,7 @@ export default function LiveTVTvPage() {
         };
 
         // Clean up old listeners
+        video.removeEventListener('loadstart', handleLoadStart);
         video.removeEventListener('error', handleError);
         video.removeEventListener('loadedmetadata', handleLoadedMetadata);
         video.removeEventListener('canplay', handleCanPlay);
@@ -2368,6 +2375,7 @@ export default function LiveTVTvPage() {
         video.removeEventListener('timeupdate', handleTimeUpdate);
 
         // Add new listeners
+        video.addEventListener('loadstart', handleLoadStart);
         video.addEventListener('error', handleError);
         video.addEventListener('loadedmetadata', handleLoadedMetadata);
         video.addEventListener('canplay', handleCanPlay);
@@ -2376,8 +2384,11 @@ export default function LiveTVTvPage() {
         video.addEventListener('stalled', handleStalled);
         video.addEventListener('timeupdate', handleTimeUpdate);
 
+        console.log('[TV] Setting video.src to:', streamUrl);
         video.src = streamUrl;
+        console.log('[TV] Calling video.load()');
         video.load(); // Explicitly load - play() will be called in handleCanPlay
+        console.log('[TV] video.load() called, waiting for canplay event...');
       } else if (Hls.isSupported()) {
         console.log('[TV] Using HLS.js');
         const hls = new Hls({
