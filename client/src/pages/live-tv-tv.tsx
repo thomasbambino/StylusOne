@@ -1060,6 +1060,9 @@ export default function LiveTVTvPage() {
   const [homeSearchQuery, setHomeSearchQuery] = useState('');
   const [homeCategory, setHomeCategory] = useState<string | null>(null);
 
+  // Sports schedule modal state
+  const [scheduleModal, setScheduleModal] = useState<'nfl' | 'nba' | 'mlb' | null>(null);
+
   // Splash screen state
   const [showSplash, setShowSplash] = useState(true);
 
@@ -1520,6 +1523,26 @@ export default function LiveTVTvPage() {
     queryFn: getQueryFn({ on401: "returnNull" }),
     enabled: viewMode === 'home' && !!mlbPackage?.packageId,
     select: (data) => data || [],
+  });
+
+  // Sports schedule from ESPN API
+  interface SportsGame {
+    id: string;
+    name: string;
+    shortName: string;
+    date: string;
+    homeTeam: { name: string; abbreviation: string; logo?: string };
+    awayTeam: { name: string; abbreviation: string; logo?: string };
+    broadcast: string[];
+    venue?: string;
+    status: string;
+  }
+
+  const { data: sportsSchedule, isLoading: scheduleLoading } = useQuery<{ sport: string; games: SportsGame[] }>({
+    queryKey: [`/api/sports/schedule/${scheduleModal}`],
+    queryFn: getQueryFn({ on401: "returnNull" }),
+    enabled: !!scheduleModal,
+    staleTime: 5 * 60 * 1000, // Cache for 5 minutes
   });
 
   // Trending channels query
@@ -4717,9 +4740,18 @@ export default function LiveTVTvPage() {
             {/* NFL Section - Large Cards */}
             {nflPackage && nflChannels.length > 0 && (
               <div className="mb-6 relative z-10">
-                <div className="px-5 mb-4 flex items-center gap-3">
-                  <img src="https://a.espncdn.com/combiner/i?img=/i/teamlogos/leagues/500/nfl.png&w=100&h=100" alt="NFL" className="h-6 w-6 object-contain" />
-                  <h2 className="text-xl font-semibold text-white/90">NFL</h2>
+                <div className="px-5 mb-4 flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <img src="https://a.espncdn.com/combiner/i?img=/i/teamlogos/leagues/500/nfl.png&w=100&h=100" alt="NFL" className="h-6 w-6 object-contain" />
+                    <h2 className="text-xl font-semibold text-white/90">NFL</h2>
+                  </div>
+                  <button
+                    onClick={() => { haptics.light(); setScheduleModal('nfl'); }}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white/10 active:bg-white/20 transition-colors"
+                  >
+                    <Calendar className="w-4 h-4 text-white/70" />
+                    <span className="text-sm text-white/70">Schedule</span>
+                  </button>
                 </div>
                 <div className="flex gap-4 overflow-x-auto overflow-y-hidden px-5 scrollbar-hide">
                   {nflChannels.map((pkgChannel) => {
@@ -4797,9 +4829,18 @@ export default function LiveTVTvPage() {
             {/* NBA Section - Compact Cards for variety */}
             {nbaPackage && nbaChannels.length > 0 && (
               <div className="mb-6 relative z-10">
-                <div className="px-5 mb-4 flex items-center gap-3">
-                  <img src="https://a.espncdn.com/combiner/i?img=/i/teamlogos/leagues/500/nba.png&w=100&h=100" alt="NBA" className="h-6 w-6 object-contain" />
-                  <h2 className="text-xl font-semibold text-white/90">NBA</h2>
+                <div className="px-5 mb-4 flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <img src="https://a.espncdn.com/combiner/i?img=/i/teamlogos/leagues/500/nba.png&w=100&h=100" alt="NBA" className="h-6 w-6 object-contain" />
+                    <h2 className="text-xl font-semibold text-white/90">NBA</h2>
+                  </div>
+                  <button
+                    onClick={() => { haptics.light(); setScheduleModal('nba'); }}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white/10 active:bg-white/20 transition-colors"
+                  >
+                    <Calendar className="w-4 h-4 text-white/70" />
+                    <span className="text-sm text-white/70">Schedule</span>
+                  </button>
                 </div>
                 <div className="flex gap-3 overflow-x-auto overflow-y-hidden px-5 scrollbar-hide">
                   {nbaChannels.map((pkgChannel) => {
@@ -4864,9 +4905,18 @@ export default function LiveTVTvPage() {
             {/* MLB Section - Large Cards */}
             {mlbPackage && mlbChannels.length > 0 && (
               <div className="mb-6 relative z-10">
-                <div className="px-5 mb-4 flex items-center gap-3">
-                  <img src="https://a.espncdn.com/combiner/i?img=/i/teamlogos/leagues/500/mlb.png&w=100&h=100" alt="MLB" className="h-6 w-6 object-contain" />
-                  <h2 className="text-xl font-semibold text-white/90">MLB</h2>
+                <div className="px-5 mb-4 flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <img src="https://a.espncdn.com/combiner/i?img=/i/teamlogos/leagues/500/mlb.png&w=100&h=100" alt="MLB" className="h-6 w-6 object-contain" />
+                    <h2 className="text-xl font-semibold text-white/90">MLB</h2>
+                  </div>
+                  <button
+                    onClick={() => { haptics.light(); setScheduleModal('mlb'); }}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white/10 active:bg-white/20 transition-colors"
+                  >
+                    <Calendar className="w-4 h-4 text-white/70" />
+                    <span className="text-sm text-white/70">Schedule</span>
+                  </button>
                 </div>
                 <div className="flex gap-4 overflow-x-auto overflow-y-hidden px-5 scrollbar-hide">
                   {mlbChannels.map((pkgChannel) => {
@@ -5198,6 +5248,219 @@ export default function LiveTVTvPage() {
             onSetReminder={() => handleSetReminder(guideInfoModal.program, guideInfoModal.channel)}
             onCancelReminder={() => handleCancelReminder(guideInfoModal.channel.iptvId || '', guideInfoModal.program.startTime)}
           />
+        )}
+      </AnimatePresence>
+
+      {/* Sports Schedule Modal */}
+      <AnimatePresence>
+        {scheduleModal && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-black/80 z-50 flex items-end justify-center"
+            onClick={() => setScheduleModal(null)}
+          >
+            <motion.div
+              initial={{ y: '100%' }}
+              animate={{ y: 0 }}
+              exit={{ y: '100%' }}
+              transition={{ type: 'spring', damping: 25, stiffness: 300 }}
+              className="bg-zinc-900 rounded-t-3xl w-full max-h-[80vh] flex flex-col"
+              onClick={e => e.stopPropagation()}
+            >
+              {/* Header */}
+              <div className="flex items-center justify-between px-5 py-4 border-b border-white/10">
+                <div className="flex items-center gap-3">
+                  <img
+                    src={`https://a.espncdn.com/combiner/i?img=/i/teamlogos/leagues/500/${scheduleModal}.png&w=100&h=100`}
+                    alt={scheduleModal.toUpperCase()}
+                    className="h-6 w-6 object-contain"
+                  />
+                  <h2 className="text-xl font-semibold text-white">
+                    {scheduleModal.toUpperCase()} Schedule
+                  </h2>
+                </div>
+                <button
+                  onClick={() => setScheduleModal(null)}
+                  className="p-2 rounded-full bg-white/10 active:bg-white/20"
+                >
+                  <X className="w-5 h-5 text-white/70" />
+                </button>
+              </div>
+
+              {/* Schedule List */}
+              <div className="flex-1 overflow-y-auto px-5 py-4 pb-8">
+                {scheduleLoading ? (
+                  <div className="flex items-center justify-center py-12">
+                    <div className="w-8 h-8 border-2 border-white/20 border-t-white rounded-full animate-spin" />
+                  </div>
+                ) : !sportsSchedule?.games?.length ? (
+                  <div className="text-center py-12">
+                    <Calendar className="w-12 h-12 text-white/20 mx-auto mb-4" />
+                    <p className="text-white/50">No upcoming games scheduled</p>
+                  </div>
+                ) : (() => {
+                  // Group games by date
+                  const groupedByDate: Map<string, typeof sportsSchedule.games> = new Map();
+                  sportsSchedule.games.forEach(game => {
+                    const date = new Date(game.date).toLocaleDateString('en-US', {
+                      weekday: 'long',
+                      month: 'short',
+                      day: 'numeric'
+                    });
+                    if (!groupedByDate.has(date)) {
+                      groupedByDate.set(date, []);
+                    }
+                    groupedByDate.get(date)!.push(game);
+                  });
+
+                  // Get sport channels for matching
+                  const sportChannels = scheduleModal === 'nfl' ? nflChannels
+                    : scheduleModal === 'nba' ? nbaChannels
+                    : mlbChannels;
+
+                  // Helper to find matching channel by broadcast network
+                  const findChannelForBroadcast = (broadcasts: string[]) => {
+                    for (const network of broadcasts) {
+                      const networkLower = network.toLowerCase();
+                      // Try to find a matching channel
+                      for (const pkgChannel of sportChannels) {
+                        const channelName = pkgChannel.name.toLowerCase();
+                        if (channelName.includes(networkLower) || networkLower.includes(channelName.replace(/\s+/g, ''))) {
+                          const channel = channels.find(c => c.GuideName === pkgChannel.name || c.name === pkgChannel.name);
+                          if (channel) return { channel, networkName: network };
+                        }
+                      }
+                      // Check all channels for network match
+                      const channel = channels.find(c => {
+                        const name = c.GuideName.toLowerCase();
+                        return name.includes(networkLower) || name === networkLower;
+                      });
+                      if (channel) return { channel, networkName: network };
+                    }
+                    return null;
+                  };
+
+                  return Array.from(groupedByDate.entries()).map(([date, games]) => (
+                    <div key={date} className="mb-6">
+                      <h3 className="text-sm font-medium text-white/50 mb-3">{date}</h3>
+                      <div className="space-y-3">
+                        {games.map((game) => {
+                          const startTime = new Date(game.date);
+                          const timeStr = startTime.toLocaleTimeString('en-US', {
+                            hour: 'numeric',
+                            minute: '2-digit'
+                          });
+                          const matchedChannel = findChannelForBroadcast(game.broadcast);
+                          const isLive = game.status === 'live';
+                          const isFuture = startTime > new Date();
+                          const hasGameReminder = hasReminder(game.id, game.date);
+
+                          return (
+                            <div
+                              key={game.id}
+                              className="bg-white/5 rounded-xl p-4 active:bg-white/10 transition-colors"
+                            >
+                              {/* Teams Row */}
+                              <div className="flex items-center gap-3 mb-3">
+                                {/* Away Team */}
+                                <div className="flex items-center gap-2 flex-1 min-w-0">
+                                  {game.awayTeam.logo && (
+                                    <img src={game.awayTeam.logo} alt="" className="w-8 h-8 object-contain" />
+                                  )}
+                                  <span className="text-white font-medium truncate">{game.awayTeam.abbreviation}</span>
+                                </div>
+
+                                <span className="text-white/40 text-sm">@</span>
+
+                                {/* Home Team */}
+                                <div className="flex items-center gap-2 flex-1 min-w-0 justify-end">
+                                  <span className="text-white font-medium truncate">{game.homeTeam.abbreviation}</span>
+                                  {game.homeTeam.logo && (
+                                    <img src={game.homeTeam.logo} alt="" className="w-8 h-8 object-contain" />
+                                  )}
+                                </div>
+                              </div>
+
+                              {/* Info Row */}
+                              <div className="flex items-center justify-between text-sm">
+                                <div className="flex items-center gap-2">
+                                  {isLive && (
+                                    <span className="flex items-center gap-1 px-2 py-0.5 bg-red-600 rounded text-white text-xs font-medium">
+                                      <span className="w-1.5 h-1.5 bg-white rounded-full animate-pulse" />
+                                      LIVE
+                                    </span>
+                                  )}
+                                  <span className="text-white/70">{timeStr}</span>
+                                  {game.broadcast.length > 0 && (
+                                    <span className="text-white/40">• {game.broadcast[0]}</span>
+                                  )}
+                                </div>
+
+                                {/* Action Buttons */}
+                                <div className="flex items-center gap-2">
+                                  {/* Reminder button for future games */}
+                                  {isFuture && !isLive && (
+                                    <button
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        haptics.light();
+                                        if (hasGameReminder) {
+                                          handleCancelReminder(game.id, game.date);
+                                        } else if (matchedChannel) {
+                                          handleSetReminder(
+                                            {
+                                              title: game.shortName,
+                                              startTime: game.date,
+                                              endTime: new Date(new Date(game.date).getTime() + 3 * 60 * 60 * 1000).toISOString(),
+                                            },
+                                            matchedChannel.channel
+                                          );
+                                        } else {
+                                          toast({
+                                            title: "No channel found",
+                                            description: `Couldn't find a channel for ${game.broadcast.join(', ') || 'this game'}`,
+                                          });
+                                        }
+                                      }}
+                                      className={cn(
+                                        "p-2 rounded-full transition-colors",
+                                        hasGameReminder ? "bg-blue-600 text-white" : "bg-white/10 text-white/70"
+                                      )}
+                                    >
+                                      {hasGameReminder ? <BellOff className="w-4 h-4" /> : <Bell className="w-4 h-4" />}
+                                    </button>
+                                  )}
+
+                                  {/* Watch button */}
+                                  {matchedChannel && (
+                                    <button
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        haptics.light();
+                                        playStream(matchedChannel.channel);
+                                        setViewMode('player');
+                                        setScheduleModal(null);
+                                      }}
+                                      className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 rounded-full text-white text-sm font-medium active:bg-blue-700"
+                                    >
+                                      <Play className="w-3.5 h-3.5" />
+                                      Watch
+                                    </button>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ));
+                })()}
+              </div>
+            </motion.div>
+          </motion.div>
         )}
       </AnimatePresence>
 
