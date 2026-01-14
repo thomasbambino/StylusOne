@@ -2265,8 +2265,7 @@ export default function LiveTVTvPage() {
             retryTimeoutRef.current = setTimeout(() => {
               if (channel && channelVersionRef.current === thisVersion) {
                 video.src = streamUrl;
-                video.load();
-                video.play().catch(() => {});
+                video.load(); // play() will be called in handleCanPlay
               }
             }, delay);
           } else {
@@ -2293,6 +2292,13 @@ export default function LiveTVTvPage() {
           }
           setIsLoading(false);
           setStreamError(null); // Clear any error when stream is ready
+          // Now safe to play - video has enough data
+          video.play().then(() => {
+            console.log('[TV] Native HLS: play() succeeded');
+            setIsPlaying(true);
+          }).catch((err) => {
+            console.error('[TV] Native HLS play() error in canplay:', err);
+          });
         };
 
         const handlePlaying = () => {
@@ -2371,18 +2377,7 @@ export default function LiveTVTvPage() {
         video.addEventListener('timeupdate', handleTimeUpdate);
 
         video.src = streamUrl;
-        video.load(); // Explicitly load
-
-        video.play().then(() => {
-          console.log('[TV] Native HLS: play() succeeded');
-          setIsPlaying(true);
-          setIsLoading(false);
-        }).catch((err) => {
-          console.error('[TV] Native HLS play() error:', err);
-          console.error('[TV] Error name:', err.name);
-          console.error('[TV] Error message:', err.message);
-          setIsLoading(false);
-        });
+        video.load(); // Explicitly load - play() will be called in handleCanPlay
       } else if (Hls.isSupported()) {
         console.log('[TV] Using HLS.js');
         const hls = new Hls({
