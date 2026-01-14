@@ -1,6 +1,6 @@
 import { db } from '../db';
 import { channelMappings, iptvChannels, iptvProviders } from '@shared/schema';
-import { eq, and, ne, asc, like, or, sql } from 'drizzle-orm';
+import { eq, and, ne, asc, like, or, sql, inArray } from 'drizzle-orm';
 
 /**
  * Service for managing cross-provider channel mappings
@@ -557,14 +557,24 @@ export class ChannelMappingService {
     const primaryChannelIds = new Set(allMappings.map(m => m.primaryChannelId));
 
     // Get providers involved
-    const channelIds = new Set([
+    const channelIdsArray = [
       ...allMappings.map(m => m.primaryChannelId),
       ...allMappings.map(m => m.backupChannelId)
-    ]);
+    ];
+
+    // Handle empty array case
+    if (channelIdsArray.length === 0) {
+      return {
+        totalMappings: 0,
+        activeMappings: 0,
+        channelsWithBackups: 0,
+        providersInvolved: 0
+      };
+    }
 
     const channels = await db.select({ providerId: iptvChannels.providerId })
       .from(iptvChannels)
-      .where(sql`${iptvChannels.id} IN (${Array.from(channelIds).join(',')})`);
+      .where(inArray(iptvChannels.id, channelIdsArray));
 
     const providerIds = new Set(channels.map(c => c.providerId));
 
