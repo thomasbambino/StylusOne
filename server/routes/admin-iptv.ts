@@ -2341,8 +2341,52 @@ router.post('/channel-mappings/test-failover', requireSuperAdmin, async (req, re
       return res.status(404).json({ error: 'Channel not found' });
     }
 
-    // Get backup channels
-    const backups = await channelMappingService.getBackupChannels(parseInt(channelId));
+    // Get ALL mappings for this channel (not just active ones) to show full picture
+    const allMappings = await db.select({
+      mappingId: channelMappings.id,
+      mappingIsActive: channelMappings.isActive,
+      priority: channelMappings.priority,
+      backupChannelId: iptvChannels.id,
+      backupChannelName: iptvChannels.name,
+      backupChannelStreamId: iptvChannels.streamId,
+      backupChannelEnabled: iptvChannels.isEnabled,
+      backupProviderId: iptvProviders.id,
+      backupProviderName: iptvProviders.name,
+      backupProviderActive: iptvProviders.isActive,
+      backupProviderHealth: iptvProviders.healthStatus,
+    })
+      .from(channelMappings)
+      .innerJoin(iptvChannels, eq(channelMappings.backupChannelId, iptvChannels.id))
+      .innerJoin(iptvProviders, eq(iptvChannels.providerId, iptvProviders.id))
+      .where(eq(channelMappings.primaryChannelId, parseInt(channelId)))
+      .orderBy(asc(channelMappings.priority));
+
+    // Categorize backups
+    const backupChannels = allMappings.map(m => {
+      const issues: string[] = [];
+      if (!m.mappingIsActive) issues.push('mapping disabled');
+      if (!m.backupChannelEnabled) issues.push('channel disabled');
+      if (!m.backupProviderActive) issues.push('provider inactive');
+
+      const isUsable = issues.length === 0;
+      const isHealthy = isUsable && (m.backupProviderHealth === 'healthy' || m.backupProviderHealth === 'degraded');
+
+      return {
+        id: m.backupChannelId,
+        name: m.backupChannelName,
+        streamId: m.backupChannelStreamId,
+        providerId: m.backupProviderId,
+        providerName: m.backupProviderName,
+        providerHealth: m.backupProviderHealth || 'unknown',
+        priority: m.priority,
+        isUsable,
+        isHealthy,
+        issues: issues.length > 0 ? issues.join(', ') : null,
+      };
+    });
+
+    const usableBackups = backupChannels.filter(b => b.isUsable);
+    const healthyBackups = backupChannels.filter(b => b.isHealthy);
 
     res.json({
       primaryChannel: {
@@ -2353,17 +2397,11 @@ router.post('/channel-mappings/test-failover', requireSuperAdmin, async (req, re
         providerName: channel.providerName,
         providerHealth: channel.providerHealth || 'unknown',
       },
-      backupChannels: backups.map(b => ({
-        id: b.channelId,
-        name: b.name,
-        streamId: b.streamId,
-        providerId: b.providerId,
-        providerName: b.providerName,
-        providerHealth: b.providerHealthStatus || 'unknown',
-        priority: b.priority,
-      })),
-      failoverReady: backups.length > 0,
-      healthyBackups: backups.filter(b => b.providerHealthStatus === 'healthy' || b.providerHealthStatus === 'degraded').length,
+      backupChannels,
+      failoverReady: usableBackups.length > 0,
+      healthyBackups: healthyBackups.length,
+      totalMappings: allMappings.length,
+      usableBackups: usableBackups.length,
     });
   } catch (error) {
     console.error('Error testing failover:', error);

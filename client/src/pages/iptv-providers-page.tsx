@@ -853,10 +853,24 @@ export default function IptvProvidersPage() {
 
       if (data.failoverReady) {
         const backupList = data.backupChannels
-          .map((b: any) => `${b.priority}. ${b.name} (${b.providerName}) - ${b.providerHealth}`)
+          .map((b: any) => {
+            const status = b.isUsable
+              ? (b.isHealthy ? '✓' : '⚠')
+              : '✗';
+            const issueText = b.issues ? ` [${b.issues}]` : '';
+            return `${status} ${b.priority}. ${b.name} (${b.providerName}) - ${b.providerHealth}${issueText}`;
+          })
           .join('\n');
         setTestFailoverResult(
-          `✅ Failover Ready!\n\nPrimary: ${data.primaryChannel.name}\nProvider: ${data.primaryChannel.providerName} (${data.primaryChannel.providerHealth})\n\nBackup Channels (${data.healthyBackups}/${data.backupChannels.length} healthy):\n${backupList}`
+          `✅ Failover Ready!\n\nPrimary: ${data.primaryChannel.name}\nProvider: ${data.primaryChannel.providerName} (${data.primaryChannel.providerHealth})\n\nBackup Channels (${data.usableBackups}/${data.totalMappings} usable, ${data.healthyBackups} healthy):\n${backupList}`
+        );
+      } else if (data.totalMappings > 0) {
+        // Has mappings but none are usable
+        const backupList = data.backupChannels
+          .map((b: any) => `✗ ${b.priority}. ${b.name} (${b.providerName}) [${b.issues}]`)
+          .join('\n');
+        setTestFailoverResult(
+          `⚠️ Failover Not Ready\n\nPrimary: ${data.primaryChannel.name}\nProvider: ${data.primaryChannel.providerName}\n\n${data.totalMappings} mapping(s) found but none are usable:\n${backupList}`
         );
       } else {
         setTestFailoverResult(
