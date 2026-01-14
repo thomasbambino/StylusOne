@@ -246,18 +246,22 @@ export default function IptvProvidersPage() {
   });
 
   // Fetch channel mappings
-  const { data: channelMappingsData, isLoading: mappingsLoading } = useQuery<{ mappings: ChannelMappingWithInfo[], stats: any }>({
+  const { data: channelMappingsData, isLoading: mappingsLoading, refetch: refetchMappings } = useQuery<{ mappings: ChannelMappingWithInfo[], stats: any }>({
     queryKey: ['/api/admin/channel-mappings'],
     queryFn: async () => {
       const res = await fetch(buildApiUrl('/api/admin/channel-mappings'), {
         credentials: 'include',
       });
       if (!res.ok) throw new Error('Failed to fetch channel mappings');
-      return res.json();
+      const data = await res.json();
+      console.log('[DEBUG] Channel mappings response:', data);
+      return data;
     },
     enabled: activeTab === 'mappings',
+    staleTime: 0, // Always refetch
   });
   const channelMappings = channelMappingsData?.mappings || [];
+  console.log('[DEBUG] channelMappings array:', channelMappings);
 
   // Fetch provider health summary
   const { data: healthSummary = [], isLoading: healthLoading } = useQuery<ProviderHealthSummary[]>({
@@ -707,6 +711,7 @@ export default function IptvProvidersPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/admin/channel-mappings'] });
       queryClient.invalidateQueries({ queryKey: ['/api/admin/channel-mappings/suggest-for-provider'] });
+      refetchMappings(); // Force immediate refetch
       toast({ title: 'Success', description: 'Channel mapping created' });
     },
     onError: (error: Error) => {
