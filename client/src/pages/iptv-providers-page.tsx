@@ -286,48 +286,44 @@ export default function IptvProvidersPage() {
   });
 
   // Fetch channels in a specific package (for package filter)
-  const { data: packageChannelIds = [] } = useQuery<number[]>({
+  const { data: packageChannelsData, isLoading: packageChannelsLoading } = useQuery<{
+    channels: Array<{ id: number; name: string; streamId?: string; logo: string | null; categoryName?: string | null; isEnabled?: boolean }>;
+  }>({
     queryKey: ['/api/admin/channel-packages', mappingPackageFilter, 'channels'],
     queryFn: async () => {
-      if (!mappingPackageFilter) return [];
+      if (!mappingPackageFilter) return { channels: [] };
       const res = await fetch(buildApiUrl(`/api/admin/channel-packages/${mappingPackageFilter}`), { credentials: 'include' });
       if (!res.ok) throw new Error('Failed to fetch package channels');
       const pkg = await res.json();
-      return pkg.channels?.map((c: any) => c.id) || [];
+      return { channels: pkg.channels || [] };
     },
     enabled: !!mappingPackageFilter && activeTab === 'mappings',
   });
 
-  // Fetch primary channels (paginated, filtered)
+  // Fetch primary channels (paginated, filtered) - only when no package filter
   const { data: primaryChannelsData, isLoading: primaryChannelsLoading } = useQuery<{
     channels: Array<{ id: number; name: string; streamId: string; logo: string | null; categoryName: string | null; isEnabled: boolean }>;
     pagination: { page: number; limit: number; total: number; totalPages: number };
   }>({
-    queryKey: ['/api/admin/iptv-channels', primaryProviderId, mappingEnabledFilter, mappingPage, mappingPackageFilter, packageChannelIds],
+    queryKey: ['/api/admin/iptv-channels', primaryProviderId, mappingEnabledFilter, mappingPage],
     queryFn: async () => {
       let url = `/api/admin/iptv-channels?providerId=${primaryProviderId}&page=${mappingPage}&limit=25`;
       if (mappingEnabledFilter !== 'all') url += `&enabled=${mappingEnabledFilter === 'enabled'}`;
       const res = await fetch(buildApiUrl(url), { credentials: 'include' });
       if (!res.ok) throw new Error('Failed to fetch channels');
-      const data = await res.json();
-
-      // If package filter is active, filter channels client-side
-      if (mappingPackageFilter && packageChannelIds.length > 0) {
-        const packageIdSet = new Set(packageChannelIds);
-        const filteredChannels = data.channels.filter((c: any) => packageIdSet.has(c.id));
-        return {
-          channels: filteredChannels,
-          pagination: {
-            ...data.pagination,
-            total: filteredChannels.length,
-            totalPages: 1, // Show all on one page when filtering by package
-          }
-        };
-      }
-      return data;
+      return res.json();
     },
-    enabled: !!primaryProviderId && activeTab === 'mappings',
+    enabled: !!primaryProviderId && !mappingPackageFilter && activeTab === 'mappings',
   });
+
+  // Combine data - use package channels when filter is active, otherwise use paginated channels
+  const displayChannelsData = mappingPackageFilter
+    ? {
+        channels: packageChannelsData?.channels || [],
+        pagination: { page: 1, limit: 999, total: packageChannelsData?.channels?.length || 0, totalPages: 1 }
+      }
+    : primaryChannelsData;
+  const displayChannelsLoading = mappingPackageFilter ? packageChannelsLoading : primaryChannelsLoading;
 
   // Fetch suggestions for dropdown (when a dropdown is open)
   const { data: dropdownSuggestionsData, isLoading: dropdownSuggestionsLoading } = useQuery<{
@@ -1219,15 +1215,15 @@ export default function IptvProvidersPage() {
                   <p className="font-medium">No Backup Providers Available</p>
                   <p className="text-sm">Add more active providers to set up failover mappings</p>
                 </div>
-              ) : primaryChannelsLoading ? (
+              ) : displayChannelsLoading ? (
                 <div className="flex justify-center py-12">
                   <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
                 </div>
-              ) : (primaryChannelsData?.channels?.length || 0) === 0 ? (
+              ) : (displayChannelsData?.channels?.length || 0) === 0 ? (
                 <div className="text-center py-12 text-muted-foreground">
                   <Tv className="h-12 w-12 mx-auto mb-4 opacity-50" />
                   <p className="font-medium">No Channels Found</p>
-                  <p className="text-sm">Try changing the status filter or sync channels from the provider</p>
+                  <p className="text-sm">Try changing the filters or sync channels from the provider</p>
                 </div>
               ) : (
                 <>
@@ -1241,14 +1237,14 @@ export default function IptvProvidersPage() {
                             <TableHead key={provider.id} className="min-w-[200px]">
                               <div className="flex items-center gap-2">
                                 <span>{provider.name}</span>
-                                <Badge variant="outline" className="text-xs">{provider.enabledChannelCount}</Badge>
+                                <Badge variant="outline" className="text-xs">{provider.channelCount}</Badge>
                               </div>
                             </TableHead>
                           ))}
                         </TableRow>
                       </TableHeader>
                       <TableBody>
-                        {primaryChannelsData?.channels.map((channel) => (
+                        {displayChannelsData?.channels.map((channel: any) => (
                           <TableRow key={channel.id}>
                             <TableCell className="font-medium">
                               <div className="flex items-center gap-2">
@@ -1388,11 +1384,11 @@ export default function IptvProvidersPage() {
                     </Table>
                   </div>
 
-                  {/* Pagination */}
-                  {primaryChannelsData?.pagination && primaryChannelsData.pagination.totalPages > 1 && (
+                  {/* Pagination - only show when not filtering by package */}
+                  {!mappingPackageFilter && displayChannelsData?.pagination && displayChannelsData.pagination.totalPages > 1 && (
                     <div className="flex items-center justify-between pt-2">
                       <p className="text-sm text-muted-foreground">
-                        Page {primaryChannelsData.pagination.page} of {primaryChannelsData.pagination.totalPages} ({primaryChannelsData.pagination.total} channels)
+                        Page {displayChannelsData.pagination.page} of {displayChannelsData.pagination.totalPages} ({displayChannelsData.pagination.total} channels)
                       </p>
                       <div className="flex gap-2">
                         <Button
@@ -1410,7 +1406,7 @@ export default function IptvProvidersPage() {
                         <Button
                           variant="outline"
                           size="sm"
-                          disabled={mappingPage >= primaryChannelsData.pagination.totalPages}
+                          disabled={mappingPage >= displayChannelsData.pagination.totalPages}
                           onClick={() => {
                             setMappingPage(p => p + 1);
                             setOpenDropdown(null);
@@ -1421,6 +1417,12 @@ export default function IptvProvidersPage() {
                         </Button>
                       </div>
                     </div>
+                  )}
+                  {/* Show count when filtering by package */}
+                  {mappingPackageFilter && displayChannelsData?.channels && (
+                    <p className="text-sm text-muted-foreground pt-2">
+                      {displayChannelsData.channels.length} channels in this package
+                    </p>
                   )}
                 </>
               )}

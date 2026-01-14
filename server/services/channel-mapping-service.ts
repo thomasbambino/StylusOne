@@ -469,7 +469,7 @@ export class ChannelMappingService {
     // Clean the name for matching
     const cleanName = this.cleanChannelName(primaryChannel.name);
 
-    // Search for similar channels from the target provider only
+    // Search for ALL channels from the target provider (not just enabled)
     const candidates = await db.select({
       id: iptvChannels.id,
       name: iptvChannels.name,
@@ -481,10 +481,9 @@ export class ChannelMappingService {
       .innerJoin(iptvProviders, eq(iptvChannels.providerId, iptvProviders.id))
       .where(and(
         eq(iptvChannels.providerId, targetProviderId),
-        eq(iptvChannels.isEnabled, true),
         eq(iptvProviders.isActive, true)
       ))
-      .limit(1000); // Get a larger set to filter
+      .limit(2000); // Get a larger set to filter
 
     // Calculate similarity scores
     const suggestions = candidates
