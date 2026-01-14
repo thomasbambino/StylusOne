@@ -2215,15 +2215,96 @@ router.get('/channel-mappings/search', requireSuperAdmin, async (req, res) => {
 router.post('/channel-mappings/suggest', requireSuperAdmin, async (req, res) => {
   try {
     const schema = z.object({
-      channelId: z.number()
+      channelId: z.number(),
+      targetProviderId: z.number().optional()
     });
 
-    const { channelId } = schema.parse(req.body);
-    const suggestions = await channelMappingService.suggestMappings(channelId, 5);
+    const { channelId, targetProviderId } = schema.parse(req.body);
+
+    let suggestions;
+    if (targetProviderId) {
+      // Get suggestions for a specific provider
+      suggestions = await channelMappingService.suggestMappingsForProvider(channelId, targetProviderId, 10);
+    } else {
+      // Get suggestions from all other providers
+      suggestions = await channelMappingService.suggestMappings(channelId, 10);
+    }
 
     res.json({ suggestions });
   } catch (error) {
     console.error('Error suggesting mappings:', error);
+    res.status(500).json({ error: 'Failed to suggest mappings' });
+  }
+});
+
+/**
+ * GET /api/admin/channel-mappings/suggest-for-provider
+ * Get backup suggestions for a channel from a specific provider (GET version for easier use)
+ */
+router.get('/channel-mappings/suggest-for-provider', requireSuperAdmin, async (req, res) => {
+  try {
+    const channelId = parseInt(req.query.channelId as string);
+    const targetProviderId = parseInt(req.query.targetProviderId as string);
+    const query = (req.query.q as string) || '';
+
+    if (isNaN(channelId) || isNaN(targetProviderId)) {
+      return res.status(400).json({ error: 'channelId and targetProviderId are required' });
+    }
+
+    // If there's a search query, search within the target provider
+    if (query.length >= 2) {
+      const searchPattern = `%${query.toLowerCase()}%`;
+
+      const channels = await db.select({
+        id: iptvChannels.id,
+        name: iptvChannels.name,
+        logo: iptvChannels.logo,
+        providerId: iptvChannels.providerId,
+        providerName: iptvProviders.name,
+      })
+        .from(iptvChannels)
+        .innerJoin(iptvProviders, eq(iptvChannels.providerId, iptvProviders.id))
+        .where(and(
+          eq(iptvChannels.providerId, targetProviderId),
+          eq(iptvChannels.isEnabled, true),
+          eq(iptvProviders.isActive, true),
+          sql`LOWER(${iptvChannels.name}) LIKE ${searchPattern}`
+        ))
+        .orderBy(iptvChannels.name)
+        .limit(20);
+
+      // Check which are already mapped
+      const existingMappings = await db.select({ backupChannelId: channelMappings.backupChannelId })
+        .from(channelMappings)
+        .where(eq(channelMappings.primaryChannelId, channelId));
+      const mappedIds = new Set(existingMappings.map(m => m.backupChannelId));
+
+      return res.json({
+        suggestions: channels.map(c => ({
+          channel: c,
+          confidence: 100,
+          alreadyMapped: mappedIds.has(c.id)
+        }))
+      });
+    }
+
+    // Otherwise, get AI suggestions
+    const suggestions = await channelMappingService.suggestMappingsForProvider(channelId, targetProviderId, 10);
+
+    // Check which are already mapped
+    const existingMappings = await db.select({ backupChannelId: channelMappings.backupChannelId })
+      .from(channelMappings)
+      .where(eq(channelMappings.primaryChannelId, channelId));
+    const mappedIds = new Set(existingMappings.map(m => m.backupChannelId));
+
+    res.json({
+      suggestions: suggestions.map(s => ({
+        ...s,
+        alreadyMapped: mappedIds.has(s.channel.id)
+      }))
+    });
+  } catch (error) {
+    console.error('Error suggesting mappings for provider:', error);
     res.status(500).json({ error: 'Failed to suggest mappings' });
   }
 });
