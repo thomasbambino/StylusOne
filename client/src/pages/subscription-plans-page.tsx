@@ -28,6 +28,7 @@ interface PlanFormData {
     live_tv_access: boolean;
     books_access: boolean;
     game_servers_access: boolean;
+    events_access: boolean;
     max_favorite_channels: string;
   };
   is_active: boolean;
@@ -44,6 +45,7 @@ const defaultFormData: PlanFormData = {
     live_tv_access: false,
     books_access: false,
     game_servers_access: false,
+    events_access: false,
     max_favorite_channels: '0',
   },
   is_active: true,
@@ -495,6 +497,7 @@ export default function SubscriptionPlansPage() {
     if (plan.features.live_tv_access) features.push({ icon: Tv, label: 'Live TV' });
     if (plan.features.books_access) features.push({ icon: Book, label: 'Books' });
     if (plan.features.game_servers_access) features.push({ icon: Gamepad2, label: 'Game Servers' });
+    if (plan.features.events_access) features.push({ icon: Calendar, label: 'Events' });
     return features;
   };
 
@@ -842,6 +845,17 @@ export default function SubscriptionPlansPage() {
                       })}
                     />
                   </div>
+                  <div className="flex items-center justify-between">
+                    <Label htmlFor="events_access" className="font-normal">Events Access</Label>
+                    <Switch
+                      id="events_access"
+                      checked={formData.features.events_access}
+                      onCheckedChange={(checked) => setFormData({
+                        ...formData,
+                        features: { ...formData.features, events_access: checked }
+                      })}
+                    />
+                  </div>
                   <div>
                     <Label htmlFor="max_favorite_channels">Max Favorite Channels</Label>
                     <Input
@@ -1019,6 +1033,17 @@ export default function SubscriptionPlansPage() {
                       onCheckedChange={(checked) => setFormData({
                         ...formData,
                         features: { ...formData.features, game_servers_access: checked }
+                      })}
+                    />
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <Label htmlFor="edit-events_access" className="font-normal">Events Access</Label>
+                    <Switch
+                      id="edit-events_access"
+                      checked={formData.features.events_access}
+                      onCheckedChange={(checked) => setFormData({
+                        ...formData,
+                        features: { ...formData.features, events_access: checked }
                       })}
                     />
                   </div>
