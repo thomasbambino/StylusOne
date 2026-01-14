@@ -1568,14 +1568,11 @@ export default function LiveTVTvPage() {
     enabled: showSubscriptionPopup || viewMode === 'profile', // Fetch when popup or profile view is opened
   });
 
-  // Events query - fetch when on events tab
-  const { data: eventsData, isLoading: eventsLoading } = useQuery<EventsResponse>({
-    queryKey: ['/api/events', eventsCategory],
+  // Events query - fetch ESPN sports data when on events tab
+  const { data: eventsData, isLoading: eventsLoading } = useQuery<any>({
+    queryKey: ['/api/events'],
     queryFn: async () => {
-      const url = eventsCategory !== 'all'
-        ? `/api/events?category=${eventsCategory}`
-        : '/api/events';
-      const response = await apiRequest('GET', url);
+      const response = await apiRequest('GET', '/api/events');
       return response.json();
     },
     enabled: viewMode === 'events',
@@ -5361,43 +5358,11 @@ export default function LiveTVTvPage() {
         >
           {/* Header */}
           <div className="shrink-0 pt-20 px-5 pb-4">
-            <h1 className="text-2xl font-bold text-white">Events</h1>
+            <h1 className="text-2xl font-bold text-white">Sports</h1>
+            <p className="text-white/50 text-sm mt-1">NFL • NBA • MLB • NHL • MMA</p>
           </div>
 
-          {/* Category Pills - Horizontal scroll */}
-          <div className="shrink-0 flex gap-2 overflow-x-auto px-5 pb-4 scrollbar-hide">
-            {([
-              { id: 'all', label: 'All' },
-              { id: 'nfl', label: 'NFL' },
-              { id: 'nba', label: 'NBA' },
-              { id: 'mlb', label: 'MLB' },
-              { id: 'nhl', label: 'NHL' },
-              { id: 'soccer', label: 'Soccer' },
-              { id: 'basketball', label: 'Basketball' },
-              { id: 'wrestling', label: 'Wrestling' },
-              { id: 'winter', label: 'Winter' },
-              { id: 'motorsports', label: 'Motorsports' },
-              { id: 'tennis', label: 'Tennis' },
-              { id: 'golf', label: 'Golf' },
-              { id: 'other', label: 'Other' },
-            ] as const).map(cat => (
-              <button
-                key={cat.id}
-                onClick={() => {
-                  haptics.light();
-                  setEventsCategory(cat.id);
-                }}
-                className={cn(
-                  "shrink-0 px-4 py-2 rounded-full text-sm font-medium transition",
-                  eventsCategory === cat.id ? "bg-white text-black" : "bg-white/10 text-white active:bg-white/20"
-                )}
-              >
-                {cat.label}
-              </button>
-            ))}
-          </div>
-
-          {/* Events Content */}
+          {/* Events Content - ESPN Sports Data */}
           <div className="flex-1 overflow-y-auto pb-24">
             {eventsLoading ? (
               <div className="px-5 space-y-6">
@@ -5415,22 +5380,19 @@ export default function LiveTVTvPage() {
                   </div>
                 </div>
               </div>
-            ) : !eventsData || (eventsData.live.length === 0 && eventsData.upcoming.length === 0 && eventsData.past.length === 0) ? (
+            ) : !eventsData || !eventsData.sports || eventsData.sports.length === 0 ? (
               <div className="flex flex-col items-center justify-center h-full px-5 text-center">
                 <Radio className="w-16 h-16 text-white/20 mb-4" />
-                <h3 className="text-white font-semibold text-lg mb-2">No Events Found</h3>
+                <h3 className="text-white font-semibold text-lg mb-2">No Sports Events</h3>
                 <p className="text-white/50 text-sm max-w-xs">
-                  {eventsCategory !== 'all'
-                    ? `No ${eventsCategory.toUpperCase()} events are currently available. Try a different category.`
-                    : 'No live, upcoming, or recent events are available right now.'
-                  }
+                  No games are currently scheduled. Check back later for upcoming games.
                 </p>
               </div>
             ) : (
-              <>
-                {/* Live Now Section */}
-                {eventsData.live.length > 0 && (
-                  <section className="mb-6">
+              <div className="space-y-8">
+                {/* Live Games Across All Sports */}
+                {eventsData.live && eventsData.live.length > 0 && (
+                  <section>
                     <h2 className="px-5 text-lg font-semibold text-white mb-3 flex items-center gap-2">
                       <span className="relative flex h-2 w-2">
                         <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-500 opacity-75" />
@@ -5438,163 +5400,121 @@ export default function LiveTVTvPage() {
                       </span>
                       Live Now
                     </h2>
-                    <div className="flex gap-4 overflow-x-auto px-5 scrollbar-hide">
-                      {eventsData.live.map((event: ParsedEvent) => (
-                        <div
-                          key={`${event.channelId}-${event.streamId}`}
-                          className="shrink-0 w-72 active:scale-[0.97] transition-transform cursor-pointer"
-                          onClick={() => {
-                            haptics.light();
-                            // Create a channel object to play
-                            // Note: Don't call buildApiUrl here - playStream will do it
-                            const channel: Channel = {
-                              GuideName: event.eventName,
-                              GuideNumber: event.networkNumber,
-                              URL: event.streamUrl,
-                              source: 'iptv',
-                              iptvId: event.streamId,
-                              logo: event.logo,
-                            };
-                            playStream(channel);
-                            setViewMode('player');
-                          }}
-                        >
-                          <div className="relative rounded-xl overflow-hidden">
-                            <div className="aspect-video bg-zinc-900 flex items-center justify-center">
-                              {event.logo ? (
-                                <img src={event.logo} alt="" className="w-16 h-16 object-contain" />
-                              ) : (
-                                <Tv className="w-12 h-12 text-zinc-700" />
+                    <div className="flex gap-3 overflow-x-auto px-5 scrollbar-hide">
+                      {eventsData.live.map((game: any) => (
+                        <div key={game.id} className="shrink-0 w-64 bg-zinc-900 rounded-xl p-3">
+                          <div className="flex items-center justify-between mb-2">
+                            <span className="text-xs font-medium text-red-500 uppercase">{game.sportName}</span>
+                            <span className="text-xs text-white/60">{game.statusDetail}</span>
+                          </div>
+                          <div className="flex items-center gap-3">
+                            <div className="flex-1 flex items-center gap-2">
+                              {game.awayTeam.logo && <img src={game.awayTeam.logo} alt="" className="w-8 h-8" />}
+                              <div className="flex-1 min-w-0">
+                                <p className="text-white text-sm font-medium truncate">{game.awayTeam.abbreviation}</p>
+                              </div>
+                              <span className="text-white font-bold text-lg">{game.awayTeam.score}</span>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-3 mt-1">
+                            <div className="flex-1 flex items-center gap-2">
+                              {game.homeTeam.logo && <img src={game.homeTeam.logo} alt="" className="w-8 h-8" />}
+                              <div className="flex-1 min-w-0">
+                                <p className="text-white text-sm font-medium truncate">{game.homeTeam.abbreviation}</p>
+                              </div>
+                              <span className="text-white font-bold text-lg">{game.homeTeam.score}</span>
+                            </div>
+                          </div>
+                          {game.broadcast.length > 0 && (
+                            <p className="text-white/40 text-xs mt-2">{game.broadcast.join(', ')}</p>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </section>
+                )}
+
+                {/* Per-Sport Sections */}
+                {eventsData.sports.map((sportData: any) => (
+                  <section key={sportData.sport} className="space-y-4">
+                    <h2 className="px-5 text-xl font-bold text-white">{sportData.name}</h2>
+
+                    {/* Upcoming Games */}
+                    {sportData.upcoming.length > 0 && (
+                      <div>
+                        <h3 className="px-5 text-sm font-medium text-white/60 mb-2 flex items-center gap-2">
+                          <Clock className="w-3.5 h-3.5" />
+                          Upcoming
+                        </h3>
+                        <div className="flex gap-3 overflow-x-auto px-5 scrollbar-hide">
+                          {sportData.upcoming.map((game: any) => (
+                            <div key={game.id} className="shrink-0 w-64 bg-zinc-900/50 rounded-xl p-3">
+                              <p className="text-white/50 text-xs mb-2">
+                                {new Date(game.date).toLocaleDateString(undefined, {
+                                  weekday: 'short',
+                                  month: 'short',
+                                  day: 'numeric',
+                                  hour: 'numeric',
+                                  minute: '2-digit'
+                                })}
+                              </p>
+                              <div className="flex items-center gap-2 mb-1">
+                                {game.awayTeam.logo && <img src={game.awayTeam.logo} alt="" className="w-6 h-6" />}
+                                <span className="text-white text-sm flex-1 truncate">{game.awayTeam.name}</span>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                {game.homeTeam.logo && <img src={game.homeTeam.logo} alt="" className="w-6 h-6" />}
+                                <span className="text-white text-sm flex-1 truncate">{game.homeTeam.name}</span>
+                              </div>
+                              {game.broadcast.length > 0 && (
+                                <p className="text-white/40 text-xs mt-2">{game.broadcast.join(', ')}</p>
                               )}
                             </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
 
-                            {/* LIVE Badge */}
-                            <div className="absolute top-2 left-2 flex items-center gap-1 px-2 py-1 bg-red-600 rounded">
-                              <span className="relative flex h-1.5 w-1.5">
-                                <span className="animate-ping absolute h-full w-full rounded-full bg-white opacity-75" />
-                                <span className="relative rounded-full h-1.5 w-1.5 bg-white" />
-                              </span>
-                              <span className="text-white text-[10px] font-bold">LIVE</span>
-                            </div>
-
-                            {/* Time Remaining */}
-                            {event.timeRemaining && (
-                              <div className="absolute top-2 right-2 px-2 py-1 bg-black/60 rounded text-white text-[10px]">
-                                {event.timeRemaining}
-                              </div>
-                            )}
-
-                            {/* Score (if available) */}
-                            {event.score && event.teams && (
-                              <div className="absolute bottom-10 left-0 right-0 text-center">
-                                <span className="text-white text-2xl font-bold">
-                                  {event.score.away} - {event.score.home}
+                    {/* Recent Results */}
+                    {sportData.recent.length > 0 && (
+                      <div>
+                        <h3 className="px-5 text-sm font-medium text-white/60 mb-2 flex items-center gap-2">
+                          <TrendingUp className="w-3.5 h-3.5" />
+                          Recent Results
+                        </h3>
+                        <div className="px-5 space-y-2">
+                          {sportData.recent.map((game: any) => (
+                            <div key={game.id} className="flex items-center gap-3 py-2 border-b border-white/5">
+                              <div className="flex items-center gap-2 flex-1 min-w-0">
+                                {game.awayTeam.logo && <img src={game.awayTeam.logo} alt="" className="w-5 h-5" />}
+                                <span className="text-white/80 text-sm truncate">{game.awayTeam.abbreviation}</span>
+                                <span className={`text-sm font-bold ${game.awayTeam.score > game.homeTeam.score ? 'text-green-400' : 'text-white/60'}`}>
+                                  {game.awayTeam.score}
                                 </span>
                               </div>
-                            )}
-
-                            {/* Progress Bar */}
-                            {event.progress !== undefined && (
-                              <div className="absolute bottom-0 left-0 right-0 h-1 bg-white/20">
-                                <div className="h-full bg-red-500" style={{ width: `${event.progress}%` }} />
+                              <span className="text-white/30 text-xs">@</span>
+                              <div className="flex items-center gap-2 flex-1 min-w-0 justify-end">
+                                <span className={`text-sm font-bold ${game.homeTeam.score > game.awayTeam.score ? 'text-green-400' : 'text-white/60'}`}>
+                                  {game.homeTeam.score}
+                                </span>
+                                <span className="text-white/80 text-sm truncate">{game.homeTeam.abbreviation}</span>
+                                {game.homeTeam.logo && <img src={game.homeTeam.logo} alt="" className="w-5 h-5" />}
                               </div>
-                            )}
-                          </div>
-
-                          <p className="text-white font-medium text-sm mt-2 truncate">{event.eventName}</p>
-                          <p className="text-white/40 text-xs">{event.network}</p>
-                        </div>
-                      ))}
-                    </div>
-                  </section>
-                )}
-
-                {/* Upcoming Section */}
-                {eventsData.upcoming.length > 0 && (
-                  <section className="mb-6">
-                    <h2 className="px-5 text-lg font-semibold text-white mb-3 flex items-center gap-2">
-                      <Clock className="w-4 h-4 text-white/50" />
-                      Upcoming
-                    </h2>
-                    <div className="flex gap-4 overflow-x-auto px-5 scrollbar-hide">
-                      {eventsData.upcoming.slice(0, 20).map((event: ParsedEvent) => (
-                        <div
-                          key={`${event.channelId}-${event.streamId}`}
-                          className="shrink-0 w-56"
-                        >
-                          <div className="relative rounded-xl overflow-hidden bg-zinc-900">
-                            <div className="aspect-video flex items-center justify-center">
-                              {event.logo ? (
-                                <img src={event.logo} alt="" className="w-12 h-12 object-contain opacity-60" />
-                              ) : (
-                                <Tv className="w-10 h-10 text-zinc-700" />
-                              )}
+                              <span className="text-white/40 text-xs w-16 text-right">
+                                {new Date(game.date).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
+                              </span>
                             </div>
-
-                            {/* Start time badge */}
-                            <div className="absolute bottom-2 right-2 px-2 py-1 bg-black/60 rounded text-white text-[10px]">
-                              {new Date(event.startTime).toLocaleString(undefined, {
-                                weekday: 'short',
-                                hour: 'numeric',
-                                minute: '2-digit',
-                              })}
-                            </div>
-                          </div>
-
-                          <p className="text-white/80 font-medium text-sm mt-2 truncate">{event.eventName}</p>
-                          <p className="text-white/40 text-xs">{event.network} • {event.league?.replace(/_/g, ' ') || event.category}</p>
+                          ))}
                         </div>
-                      ))}
-                    </div>
+                      </div>
+                    )}
+
+                    {sportData.upcoming.length === 0 && sportData.recent.length === 0 && sportData.live.length === 0 && (
+                      <p className="px-5 text-white/40 text-sm">No games scheduled</p>
+                    )}
                   </section>
-                )}
-
-                {/* Past Events Section */}
-                {eventsData.past.length > 0 && (
-                  <section>
-                    <h2 className="px-5 text-lg font-semibold text-white mb-3 flex items-center gap-2">
-                      <TrendingUp className="w-4 h-4 text-white/50" />
-                      Recent Results
-                    </h2>
-                    <div className="px-5 space-y-2">
-                      {eventsData.past.slice(0, 20).map((event: ParsedEvent) => (
-                        <div
-                          key={`${event.channelId}-${event.streamId}-past`}
-                          className="flex items-center gap-3 py-3 border-b border-white/10"
-                        >
-                          <div className="flex-1 min-w-0">
-                            <p className="text-white text-sm truncate">{event.eventName}</p>
-                            <p className="text-white/40 text-xs">
-                              {new Date(event.startTime).toLocaleDateString(undefined, {
-                                weekday: 'short',
-                                month: 'short',
-                                day: 'numeric',
-                              })}
-                              {' • '}{event.network}
-                            </p>
-                          </div>
-
-                          {event.finalScore && event.teams && (
-                            <span className="text-white font-medium text-sm">
-                              {event.finalScore.away} - {event.finalScore.home}
-                            </span>
-                          )}
-
-                          {event.espnRecapUrl && (
-                            <button
-                              onClick={() => window.open(event.espnRecapUrl, '_blank')}
-                              className="flex items-center gap-1.5 px-3 py-1.5 bg-white/10 rounded-full active:bg-white/20"
-                            >
-                              <ExternalLink className="w-3.5 h-3.5 text-white" />
-                              <span className="text-white text-xs">Recap</span>
-                            </button>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  </section>
-                )}
-              </>
+                ))}
+              </div>
             )}
           </div>
 
