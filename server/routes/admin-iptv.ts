@@ -879,6 +879,7 @@ router.get('/channel-packages/:id', requireSuperAdmin, async (req, res) => {
         logo: iptvChannels.logo,
         categoryName: iptvChannels.categoryName,
         quality: iptvChannels.quality,
+        isEnabled: iptvChannels.isEnabled,
         sortOrder: packageChannels.sortOrder,
       })
       .from(packageChannels)

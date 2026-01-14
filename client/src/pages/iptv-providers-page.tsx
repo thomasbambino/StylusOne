@@ -246,7 +246,7 @@ export default function IptvProvidersPage() {
   });
 
   // Fetch channel mappings
-  const { data: channelMappings = [], isLoading: mappingsLoading } = useQuery<ChannelMappingWithInfo[]>({
+  const { data: channelMappingsData, isLoading: mappingsLoading } = useQuery<{ mappings: ChannelMappingWithInfo[], stats: any }>({
     queryKey: ['/api/admin/channel-mappings'],
     queryFn: async () => {
       const res = await fetch(buildApiUrl('/api/admin/channel-mappings'), {
@@ -257,6 +257,7 @@ export default function IptvProvidersPage() {
     },
     enabled: activeTab === 'mappings',
   });
+  const channelMappings = channelMappingsData?.mappings || [];
 
   // Fetch provider health summary
   const { data: healthSummary = [], isLoading: healthLoading } = useQuery<ProviderHealthSummary[]>({
@@ -705,6 +706,7 @@ export default function IptvProvidersPage() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/admin/channel-mappings'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/admin/channel-mappings/suggest-for-provider'] });
       toast({ title: 'Success', description: 'Channel mapping created' });
     },
     onError: (error: Error) => {
