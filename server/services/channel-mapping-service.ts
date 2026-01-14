@@ -374,7 +374,7 @@ export class ChannelMappingService {
           confidence: Math.round(similarity * 100)
         };
       })
-      .filter(s => s.confidence >= 70) // Only show high confidence matches
+      .filter(s => s.confidence >= 40) // Show more matches with lower threshold
       .sort((a, b) => b.confidence - a.confidence)
       .slice(0, limit);
 
@@ -420,6 +420,100 @@ export class ChannelMappingService {
     const distance = matrix[str1.length][str2.length];
     const maxLength = Math.max(str1.length, str2.length);
     return 1 - distance / maxLength;
+  }
+
+  /**
+   * Clean channel name for matching - removes common prefixes, suffixes, quality markers
+   */
+  private cleanChannelName(name: string): string {
+    return name
+      .toLowerCase()
+      // Remove country/region prefixes like "US:", "UK:", "USA -", etc.
+      .replace(/^(us|uk|usa|ca|can|au|aus|nz|ie|mx|es|fr|de|it|br|pt)[\s:\-\.]+/gi, '')
+      // Remove quality markers
+      .replace(/\s*(hd|sd|4k|fhd|uhd|hevc|h\.?265|1080p?|720p?|540p?)\s*/gi, '')
+      // Remove parenthetical content like (East), (West), (Pacific), etc.
+      .replace(/\s*\([^)]*\)\s*/g, '')
+      // Remove common suffixes
+      .replace(/\s+(east|west|pacific|mountain|central|atlantic)\s*$/gi, '')
+      // Keep only alphanumeric
+      .replace(/[^a-z0-9]/g, '')
+      .trim();
+  }
+
+  /**
+   * Auto-suggest backup channels from a specific target provider
+   */
+  async suggestMappingsForProvider(
+    primaryChannelId: number,
+    targetProviderId: number,
+    limit: number = 15
+  ): Promise<Array<{
+    channel: {
+      id: number;
+      name: string;
+      logo: string | null;
+      providerId: number;
+      providerName: string;
+    };
+    confidence: number; // 0-100
+  }>> {
+    const [primaryChannel] = await db.select()
+      .from(iptvChannels)
+      .where(eq(iptvChannels.id, primaryChannelId));
+
+    if (!primaryChannel) {
+      return [];
+    }
+
+    // Clean the name for matching
+    const cleanName = this.cleanChannelName(primaryChannel.name);
+
+    // Search for similar channels from the target provider only
+    const candidates = await db.select({
+      id: iptvChannels.id,
+      name: iptvChannels.name,
+      logo: iptvChannels.logo,
+      providerId: iptvChannels.providerId,
+      providerName: iptvProviders.name,
+    })
+      .from(iptvChannels)
+      .innerJoin(iptvProviders, eq(iptvChannels.providerId, iptvProviders.id))
+      .where(and(
+        eq(iptvChannels.providerId, targetProviderId),
+        eq(iptvChannels.isEnabled, true),
+        eq(iptvProviders.isActive, true)
+      ))
+      .limit(1000); // Get a larger set to filter
+
+    // Calculate similarity scores
+    const suggestions = candidates
+      .map(c => {
+        const candidateClean = this.cleanChannelName(c.name);
+
+        // Calculate Levenshtein similarity
+        const levenshteinSim = this.calculateSimilarity(cleanName, candidateClean);
+
+        // Also check if one contains the other (for partial matches)
+        let containsBonus = 0;
+        if (cleanName.length >= 2 && candidateClean.length >= 2) {
+          if (candidateClean.includes(cleanName) || cleanName.includes(candidateClean)) {
+            containsBonus = 0.3; // 30% bonus for substring match
+          }
+        }
+
+        const finalScore = Math.min(1, levenshteinSim + containsBonus);
+
+        return {
+          channel: c,
+          confidence: Math.round(finalScore * 100)
+        };
+      })
+      .filter(s => s.confidence >= 10) // Low threshold - show more options
+      .sort((a, b) => b.confidence - a.confidence)
+      .slice(0, limit);
+
+    return suggestions;
   }
 
   /**
