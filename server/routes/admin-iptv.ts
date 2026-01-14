@@ -2436,6 +2436,7 @@ router.post('/channel-mappings/test-failover', requireSuperAdmin, async (req, re
 router.post('/channel-mappings/test-mode', requireSuperAdmin, async (req, res) => {
   try {
     const { streamId, enabled } = req.body;
+    console.log(`[Test Mode] POST request received: streamId=${streamId}, enabled=${enabled}`);
 
     if (!streamId) {
       return res.status(400).json({ error: 'streamId is required' });
@@ -2446,11 +2447,12 @@ router.post('/channel-mappings/test-mode', requireSuperAdmin, async (req, res) =
     const testFailoverStreams = (global as any).testFailoverStreams as Map<string, boolean>;
 
     if (enabled) {
-      testFailoverStreams.set(streamId, true);
-      console.log(`[Test Mode] Enabled test failover mode for stream ${streamId}`);
+      testFailoverStreams.set(String(streamId), true);
+      console.log(`[Test Mode] ✅ Enabled test failover mode for stream ${streamId}`);
+      console.log(`[Test Mode] Current test modes: ${Array.from(testFailoverStreams.keys()).join(', ')}`);
     } else {
-      testFailoverStreams.delete(streamId);
-      console.log(`[Test Mode] Disabled test failover mode for stream ${streamId}`);
+      testFailoverStreams.delete(String(streamId));
+      console.log(`[Test Mode] ❌ Disabled test failover mode for stream ${streamId}`);
     }
 
     // Clear any cached stream so the change takes effect immediately

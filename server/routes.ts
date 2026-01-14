@@ -2821,9 +2821,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
     const testFailoverStreams = (global as any).testFailoverStreams as Map<string, boolean>;
 
     // Check if this stream is in test failover mode
-    const isTestMode = testFailoverStreams.get(streamId) === true;
+    console.log(`[Failover] Checking test mode for stream "${streamId}" (type: ${typeof streamId})`);
+    console.log(`[Failover] Test mode streams: ${testFailoverStreams ? Array.from(testFailoverStreams.keys()).join(', ') || 'none' : 'map not initialized'}`);
+
+    const isTestMode = testFailoverStreams?.get(String(streamId)) === true;
     if (isTestMode) {
       console.log(`[Failover] ⚠️ TEST MODE ACTIVE for stream ${streamId} - skipping primary`);
+    } else {
+      console.log(`[Failover] Test mode NOT active for stream ${streamId}`);
     }
 
     // Try primary stream first (unless in test mode)
