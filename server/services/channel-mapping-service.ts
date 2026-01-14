@@ -502,12 +502,11 @@ export class ChannelMappingService {
 
     let score = 0;
 
-    // US prefix bonus - STRONG priority for US channels (50 points)
-    // Match various formats: "US:", "US ", "US|", "US-", "USA:", "USA ", etc.
+    // US/Sling prefix bonus - STRONG priority (50 points)
+    // Match various formats: "US:", "US ", "USA:", "Sling:", etc.
     const candidateUpper = candidate.toUpperCase();
-    const usMatch = candidateUpper.match(/^(US|USA)[\s:\-\|\.]/);
-    const isUSChannel = !!usMatch;
-    if (isUSChannel) {
+    const isPriorityChannel = /^(US|USA|SLING)[\s:\-\|\.]/i.test(candidate);
+    if (isPriorityChannel) {
       score += 50;
     }
 
@@ -583,8 +582,8 @@ export class ChannelMappingService {
 
     console.log(`[Channel Mapping] Search terms: ${searchTerms.join(', ')}`);
 
-    // First, explicitly search for US channels matching our search terms
-    let usChannels: Array<{ id: number; name: string; logo: string | null; providerId: number; providerName: string }> = [];
+    // First, explicitly search for US/Sling channels matching our search terms
+    let priorityChannels: Array<{ id: number; name: string; logo: string | null; providerId: number; providerName: string }> = [];
 
     for (const term of searchTerms) {
       if (term.length < 2) continue;
@@ -601,18 +600,18 @@ export class ChannelMappingService {
         .where(and(
           eq(iptvChannels.providerId, targetProviderId),
           eq(iptvProviders.isActive, true),
-          sql`(${iptvChannels.name} ILIKE 'US:%' OR ${iptvChannels.name} ILIKE 'US %' OR ${iptvChannels.name} ILIKE 'USA:%' OR ${iptvChannels.name} ILIKE 'USA %')`,
+          sql`(${iptvChannels.name} ILIKE 'US:%' OR ${iptvChannels.name} ILIKE 'US %' OR ${iptvChannels.name} ILIKE 'USA:%' OR ${iptvChannels.name} ILIKE 'USA %' OR ${iptvChannels.name} ILIKE 'Sling:%' OR ${iptvChannels.name} ILIKE 'Sling %')`,
           sql`${iptvChannels.name} ILIKE ${pattern}`
         ))
         .limit(50);
 
-      usChannels.push(...matches);
+      priorityChannels.push(...matches);
     }
 
-    // Deduplicate US channels
-    const usChannelMap = new Map(usChannels.map(c => [c.id, c]));
-    usChannels = Array.from(usChannelMap.values());
-    console.log(`[Channel Mapping] Found ${usChannels.length} US channels matching search terms`);
+    // Deduplicate priority channels
+    const priorityChannelMap = new Map(priorityChannels.map(c => [c.id, c]));
+    priorityChannels = Array.from(priorityChannelMap.values());
+    console.log(`[Channel Mapping] Found ${priorityChannels.length} US/Sling channels matching search terms`);
 
     // Then get general candidates (any channels from the provider)
     const generalCandidates = await db.select({
@@ -630,10 +629,10 @@ export class ChannelMappingService {
       ))
       .limit(3000);
 
-    // Combine: US channels first (they won't be in general if limit was hit), then general
+    // Combine: Priority channels first (they won't be in general if limit was hit), then general
     const allCandidatesMap = new Map<number, typeof generalCandidates[0]>();
-    // Add US channels first
-    for (const c of usChannels) {
+    // Add priority (US/Sling) channels first
+    for (const c of priorityChannels) {
       allCandidatesMap.set(c.id, c);
     }
     // Add general candidates
@@ -657,11 +656,110 @@ export class ChannelMappingService {
     // Debug: log top 5 suggestions
     suggestions.slice(0, 5).forEach((s, i) => {
       const candidateElements = this.extractChannelElements(s.channel.name);
-      const isUS = /^(US|USA)[\s:\-\|\.]/i.test(s.channel.name);
-      console.log(`[Channel Mapping] #${i+1} (${s.confidence}%): "${s.channel.name}" -> US: ${isUS}, brand: ${candidateElements.brand}`);
+      const isPriority = /^(US|USA|SLING)[\s:\-\|\.]/i.test(s.channel.name);
+      console.log(`[Channel Mapping] #${i+1} (${s.confidence}%): "${s.channel.name}" -> Priority: ${isPriority}, brand: ${candidateElements.brand}`);
     });
 
     return suggestions;
+  }
+
+  /**
+   * Get auto-mapping suggestions for multiple channels
+   * Returns the best US/Sling match for each channel (if confidence >= threshold)
+   */
+  async getAutoMappingSuggestions(
+    primaryChannelIds: number[],
+    targetProviderId: number,
+    minConfidence: number = 60
+  ): Promise<Array<{
+    primaryChannelId: number;
+    primaryChannelName: string;
+    suggestedBackup: {
+      id: number;
+      name: string;
+      confidence: number;
+      isPriority: boolean; // US/Sling channel
+    } | null;
+    existingMapping: boolean;
+  }>> {
+    const results: Array<{
+      primaryChannelId: number;
+      primaryChannelName: string;
+      suggestedBackup: {
+        id: number;
+        name: string;
+        confidence: number;
+        isPriority: boolean;
+      } | null;
+      existingMapping: boolean;
+    }> = [];
+
+    // Get existing mappings for these channels to this provider
+    const existingMappings = await db.select({
+      primaryChannelId: channelMappings.primaryChannelId,
+      backupChannelId: channelMappings.backupChannelId,
+    })
+      .from(channelMappings)
+      .innerJoin(iptvChannels, eq(channelMappings.backupChannelId, iptvChannels.id))
+      .where(and(
+        inArray(channelMappings.primaryChannelId, primaryChannelIds),
+        eq(iptvChannels.providerId, targetProviderId)
+      ));
+
+    const mappedChannelIds = new Set(existingMappings.map(m => m.primaryChannelId));
+
+    // Get primary channel info
+    const primaryChannels = await db.select({
+      id: iptvChannels.id,
+      name: iptvChannels.name,
+    })
+      .from(iptvChannels)
+      .where(inArray(iptvChannels.id, primaryChannelIds));
+
+    const channelMap = new Map(primaryChannels.map(c => [c.id, c.name]));
+
+    for (const channelId of primaryChannelIds) {
+      const channelName = channelMap.get(channelId) || 'Unknown';
+      const hasMapping = mappedChannelIds.has(channelId);
+
+      if (hasMapping) {
+        results.push({
+          primaryChannelId: channelId,
+          primaryChannelName: channelName,
+          suggestedBackup: null,
+          existingMapping: true,
+        });
+        continue;
+      }
+
+      // Get suggestions for this channel
+      const suggestions = await this.suggestMappingsForProvider(channelId, targetProviderId, 1);
+
+      if (suggestions.length > 0 && suggestions[0].confidence >= minConfidence) {
+        const best = suggestions[0];
+        const isPriority = /^(US|USA|SLING)[\s:\-\|\.]/i.test(best.channel.name);
+        results.push({
+          primaryChannelId: channelId,
+          primaryChannelName: channelName,
+          suggestedBackup: {
+            id: best.channel.id,
+            name: best.channel.name,
+            confidence: best.confidence,
+            isPriority,
+          },
+          existingMapping: false,
+        });
+      } else {
+        results.push({
+          primaryChannelId: channelId,
+          primaryChannelName: channelName,
+          suggestedBackup: null,
+          existingMapping: false,
+        });
+      }
+    }
+
+    return results;
   }
 
   /**
