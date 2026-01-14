@@ -8,6 +8,7 @@ export interface NativeTabBarPlugin {
   hide(): Promise<{ visible: boolean }>;
   setSelectedTab(options: { tabId: string }): Promise<void>;
   updateBadge(options: { tabId: string; value?: number }): Promise<void>;
+  setTabs(options: { tabs: string[] }): Promise<{ tabs: string[] }>;
   addListener(
     eventName: 'tabSelected',
     listenerFunc: (event: { tabId: string }) => void
@@ -64,6 +65,17 @@ export const addNativeTabBarListener = async (
   } catch (e) {
     console.warn('[NativeTabBar] Failed to add listener:', e);
     return null;
+  }
+};
+
+export const setNativeTabBarTabs = async (tabs: string[]): Promise<boolean> => {
+  if (!isIOSNative()) return false;
+  try {
+    await NativeTabBar.setTabs({ tabs });
+    return true;
+  } catch (e) {
+    console.warn('[NativeTabBar] Failed to set tabs:', e);
+    return false;
   }
 };
 

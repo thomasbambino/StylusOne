@@ -11,7 +11,8 @@ import Hls from 'hls.js';
 import { ScreenOrientation } from '@capacitor/screen-orientation';
 import { KeepAwake } from '@capacitor-community/keep-awake';
 import { CapacitorHttp, HttpResponse } from '@capacitor/core';
-import { isIOSNative, showNativeTabBar, hideNativeTabBar, addNativeTabBarListener, setNativeTabBarSelected } from '@/lib/nativeTabBar';
+import { isIOSNative, showNativeTabBar, hideNativeTabBar, addNativeTabBarListener, setNativeTabBarSelected, setNativeTabBarTabs } from '@/lib/nativeTabBar';
+import { useFeatureAccess } from '@/lib/feature-gate';
 import { getCachedEPG, cacheEPG, cleanupExpiredCache, prefetchEPG, clearAllCache } from '@/lib/epgCache';
 import { useReminders } from '@/contexts/ReminderContext';
 import { useToast } from '@/hooks/use-toast';
@@ -1047,6 +1048,9 @@ export default function LiveTVTvPage() {
 
   // Toast for feedback
   const { toast } = useToast();
+
+  // Check events access permission
+  const { hasAccess: hasEventsAccess, isLoading: eventsAccessLoading } = useFeatureAccess('events_access');
 
   // Portrait mode detection - check immediately on init
   const [isPortrait, setIsPortrait] = useState(() => {
@@ -2934,6 +2938,21 @@ export default function LiveTVTvPage() {
       }
     };
   }, [handleAirPlay]);
+
+  // Configure native tab bar tabs based on feature access
+  useEffect(() => {
+    if (!isIOSNative() || eventsAccessLoading) return;
+
+    // Build tabs array based on feature access
+    const tabs = ['home', 'nowplaying'];
+    if (hasEventsAccess) {
+      tabs.push('events');
+    }
+    tabs.push('guide', 'profile');
+
+    console.log('[TabBar] Setting tabs based on events access:', hasEventsAccess, tabs);
+    setNativeTabBarTabs(tabs);
+  }, [hasEventsAccess, eventsAccessLoading]);
 
   // Lock orientation to portrait for home/profile pages on phones (not tablets)
   useEffect(() => {
@@ -5421,10 +5440,11 @@ export default function LiveTVTvPage() {
                           onClick={() => {
                             haptics.light();
                             // Create a channel object to play
+                            // Note: Don't call buildApiUrl here - playStream will do it
                             const channel: Channel = {
                               GuideName: event.eventName,
                               GuideNumber: event.networkNumber,
-                              URL: buildApiUrl(event.streamUrl),
+                              URL: event.streamUrl,
                               source: 'iptv',
                               iptvId: event.streamId,
                               logo: event.logo,

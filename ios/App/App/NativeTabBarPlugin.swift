@@ -10,7 +10,8 @@ public class NativeTabBarPlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "show", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "hide", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "setSelectedTab", returnType: CAPPluginReturnPromise),
-        CAPPluginMethod(name: "updateBadge", returnType: CAPPluginReturnPromise)
+        CAPPluginMethod(name: "updateBadge", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "setTabs", returnType: CAPPluginReturnPromise)
     ]
 
     private var tabBar: UITabBar?
@@ -18,14 +19,24 @@ public class NativeTabBarPlugin: CAPPlugin, CAPBridgedPlugin {
     private var targetVisible = false  // Track desired state to avoid race conditions
     private var bottomConstraint: NSLayoutConstraint?
 
-    // Navigation tabs
-    private let tabMapping: [(id: String, icon: String, selectedIcon: String, title: String)] = [
+    // All available tabs with their configuration
+    private let allTabs: [(id: String, icon: String, selectedIcon: String, title: String)] = [
         ("home", "house", "house.fill", "Home"),
         ("nowplaying", "play.rectangle", "play.rectangle.fill", "Now Playing"),
         ("events", "sportscourt", "sportscourt.fill", "Events"),
         ("guide", "square.grid.2x2", "square.grid.2x2.fill", "Guide"),
         ("profile", "person.circle", "person.circle.fill", "My Profile")
     ]
+
+    // Currently visible tabs (can be updated via setTabs)
+    private var visibleTabIds: [String] = ["home", "nowplaying", "events", "guide", "profile"]
+
+    // Computed property to get only the visible tabs in order
+    private var visibleTabs: [(id: String, icon: String, selectedIcon: String, title: String)] {
+        return visibleTabIds.compactMap { tabId in
+            allTabs.first { $0.id == tabId }
+        }
+    }
 
     @objc func show(_ call: CAPPluginCall) {
         DispatchQueue.main.async { [weak self] in
@@ -102,7 +113,7 @@ public class NativeTabBarPlugin: CAPPlugin, CAPBridgedPlugin {
                 return
             }
 
-            if let index = self.tabMapping.firstIndex(where: { $0.id == tabId }),
+            if let index = self.visibleTabs.firstIndex(where: { $0.id == tabId }),
                let items = tabBar.items, index < items.count {
                 tabBar.selectedItem = items[index]
             }
@@ -125,7 +136,7 @@ public class NativeTabBarPlugin: CAPPlugin, CAPBridgedPlugin {
                 return
             }
 
-            if let index = self.tabMapping.firstIndex(where: { $0.id == tabId }),
+            if let index = self.visibleTabs.firstIndex(where: { $0.id == tabId }),
                let items = tabBar.items, index < items.count {
                 if let badgeValue = value, badgeValue > 0 {
                     items[index].badgeValue = "\(badgeValue)"
@@ -135,6 +146,41 @@ public class NativeTabBarPlugin: CAPPlugin, CAPBridgedPlugin {
             }
 
             call.resolve()
+        }
+    }
+
+    @objc func setTabs(_ call: CAPPluginCall) {
+        guard let tabIds = call.getArray("tabs", String.self) else {
+            call.reject("tabs array is required")
+            return
+        }
+
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self else { return }
+
+            // Update visible tabs
+            self.visibleTabIds = tabIds
+
+            // If tab bar exists, rebuild the items
+            if let tabBar = self.tabBar {
+                var items: [UITabBarItem] = []
+                for (index, tab) in self.visibleTabs.enumerated() {
+                    let item = UITabBarItem(
+                        title: tab.title,
+                        image: UIImage(systemName: tab.icon),
+                        selectedImage: UIImage(systemName: tab.selectedIcon)
+                    )
+                    item.tag = index
+                    items.append(item)
+                }
+                tabBar.setItems(items, animated: true)
+                // Select first tab by default if nothing selected
+                if tabBar.selectedItem == nil && !items.isEmpty {
+                    tabBar.selectedItem = items.first
+                }
+            }
+
+            call.resolve(["tabs": tabIds])
         }
     }
 
@@ -184,7 +230,7 @@ public class NativeTabBarPlugin: CAPPlugin, CAPBridgedPlugin {
 
         // Create tab bar items AFTER appearance is configured
         var items: [UITabBarItem] = []
-        for (index, tab) in tabMapping.enumerated() {
+        for (index, tab) in visibleTabs.enumerated() {
             let item = UITabBarItem(
                 title: tab.title,
                 image: UIImage(systemName: tab.icon),
@@ -221,8 +267,8 @@ extension NativeTabBarPlugin: UITabBarDelegate {
 
         // Get the tab id from the tag
         let index = item.tag
-        if index < tabMapping.count {
-            let tabId = tabMapping[index].id
+        if index < visibleTabs.count {
+            let tabId = visibleTabs[index].id
             notifyListeners("tabSelected", data: ["tabId": tabId])
         }
     }
