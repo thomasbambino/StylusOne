@@ -283,7 +283,8 @@ export default function IptvProvidersPage() {
         credentials: 'include',
       });
       if (!res.ok) throw new Error('Failed to fetch health summary');
-      return res.json();
+      const data = await res.json();
+      return data.providers || [];
     },
     enabled: activeTab === 'health',
     refetchInterval: 60000, // Refresh every minute
