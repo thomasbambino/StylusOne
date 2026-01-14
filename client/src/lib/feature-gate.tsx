@@ -12,12 +12,13 @@ interface CurrentSubscription {
     live_tv_access: boolean;
     books_access: boolean;
     game_servers_access: boolean;
+    events_access: boolean;
     max_favorite_channels: number;
   };
   status: string;
 }
 
-type Feature = 'plex_access' | 'live_tv_access' | 'books_access' | 'game_servers_access';
+type Feature = 'plex_access' | 'live_tv_access' | 'books_access' | 'game_servers_access' | 'events_access';
 
 /**
  * Human-readable feature names for display
@@ -27,6 +28,7 @@ const FEATURE_NAMES: Record<Feature, string> = {
   live_tv_access: 'Live TV',
   books_access: 'Books',
   game_servers_access: 'Game Servers',
+  events_access: 'Events',
 };
 
 interface FeatureGateProps {

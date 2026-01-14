@@ -18,6 +18,7 @@ const createPlanSchema = z.object({
     live_tv_access: z.boolean(),
     books_access: z.boolean(),
     game_servers_access: z.boolean(),
+    events_access: z.boolean(),
     max_favorite_channels: z.number().int().min(0),
   }),
   is_active: z.boolean().default(true),

@@ -34,6 +34,7 @@ import { getSharedEPGService } from './services/epg-singleton';
 import { tmdbService } from './services/tmdb-service';
 import { channelMappingService } from './services/channel-mapping-service';
 import { providerHealthService } from './services/provider-health-service';
+import { ppvParserService, ParsedEvent, EventCategory } from './services/ppv-parser-service';
 import { randomBytes } from 'crypto';
 import {
   apiRateLimiter,
@@ -4530,6 +4531,63 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error('[Sports] Error fetching schedule:', error);
       res.status(500).json({ error: 'Failed to fetch sports schedule' });
+    }
+  });
+
+  // ============================================
+  // EVENTS API - PPV/Event channels for iOS app
+  // ============================================
+
+  /**
+   * GET /api/events
+   * Returns parsed PPV/event channels categorized and sorted by live/upcoming/past
+   * Requires events_access feature in subscription plan
+   * BYPASSES channel package and isEnabled restrictions for event channels
+   */
+  app.get("/api/events", requireFeature('events_access'), async (req, res) => {
+    try {
+      const category = req.query.category as EventCategory | 'all' | undefined;
+      const userId = (req.user as User)?.id;
+
+      if (!userId) {
+        return res.status(401).json({ error: 'Authentication required' });
+      }
+
+      // Get all event channels (bypasses package/enabled restrictions)
+      const { xtreamCodesManager } = await import('./services/xtream-codes-service');
+      const eventChannels = await xtreamCodesManager.getEventChannels();
+
+      // Parse each channel to extract event data
+      const parsedEvents: ParsedEvent[] = [];
+      for (const channel of eventChannels) {
+        const parsed = ppvParserService.parseEventChannel(channel);
+        if (parsed) {
+          parsedEvents.push(parsed);
+        }
+      }
+
+      // Filter by category if specified
+      const filteredEvents = category && category !== 'all'
+        ? ppvParserService.filterEventsByCategory(parsedEvents, category)
+        : parsedEvents;
+
+      // Sort into live/upcoming/past
+      const sortedEvents = ppvParserService.sortEvents(filteredEvents);
+
+      // Get unique categories from all parsed events
+      const availableCategories = [...new Set(parsedEvents.map(e => e.category))];
+
+      res.json({
+        live: sortedEvents.live,
+        upcoming: sortedEvents.upcoming,
+        past: sortedEvents.past,
+        categories: availableCategories,
+        totalChannels: eventChannels.length,
+        parsedCount: parsedEvents.length,
+      });
+    } catch (error) {
+      console.error('[Events] Error fetching events:', error);
+      res.status(500).json({ error: 'Failed to fetch events' });
     }
   });
 

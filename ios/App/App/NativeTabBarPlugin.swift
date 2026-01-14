@@ -22,6 +22,7 @@ public class NativeTabBarPlugin: CAPPlugin, CAPBridgedPlugin {
     private let tabMapping: [(id: String, icon: String, selectedIcon: String, title: String)] = [
         ("home", "house", "house.fill", "Home"),
         ("nowplaying", "play.rectangle", "play.rectangle.fill", "Now Playing"),
+        ("events", "sportscourt", "sportscourt.fill", "Events"),
         ("guide", "square.grid.2x2", "square.grid.2x2.fill", "Guide"),
         ("profile", "person.circle", "person.circle.fill", "My Profile")
     ]

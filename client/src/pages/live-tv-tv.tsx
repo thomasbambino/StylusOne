@@ -50,6 +50,39 @@ interface ChannelEPG {
   programs: EPGProgram[]; // All programs for time-shifting
 }
 
+type EventCategory = 'nfl' | 'nba' | 'mlb' | 'nhl' | 'soccer' | 'basketball' | 'wrestling' | 'winter' | 'motorsports' | 'tennis' | 'golf' | 'other';
+
+interface ParsedEvent {
+  channelId: number;
+  streamId: string;
+  channelName: string;
+  network: string;
+  networkNumber: string;
+  league: string | null;
+  eventName: string;
+  category: EventCategory;
+  startTime: string;
+  endTime?: string;
+  teams?: { home: string; away: string };
+  streamUrl: string;
+  logo?: string;
+  providerId: number;
+  progress?: number;
+  timeRemaining?: string;
+  isLive?: boolean;
+  espnGameId?: string;
+  espnRecapUrl?: string;
+  score?: { home: number; away: number };
+  finalScore?: { home: number; away: number };
+}
+
+interface EventsResponse {
+  live: ParsedEvent[];
+  upcoming: ParsedEvent[];
+  past: ParsedEvent[];
+  categories: string[];
+}
+
 interface Category {
   category_id: string;
   category_name: string;
@@ -1032,8 +1065,8 @@ export default function LiveTVTvPage() {
     return getDeviceTypeSync() !== 'tablet';
   }, []);
 
-  // View state: 'player' (fullscreen), 'guide' (with PiP), 'home' (favorites), 'profile' (user profile)
-  const [viewMode, setViewMode] = useState<'player' | 'guide' | 'home' | 'profile'>('home');
+  // View state: 'player' (fullscreen), 'guide' (with PiP), 'home' (favorites), 'events' (sports events), 'profile' (user profile)
+  const [viewMode, setViewMode] = useState<'player' | 'guide' | 'home' | 'events' | 'profile'>('home');
   // Ref to track viewMode for orientation listener (which can't access state directly)
   const viewModeRef = useRef(viewMode);
   viewModeRef.current = viewMode;
@@ -1059,6 +1092,9 @@ export default function LiveTVTvPage() {
   // Home page state
   const [homeSearchQuery, setHomeSearchQuery] = useState('');
   const [homeCategory, setHomeCategory] = useState<string | null>(null);
+
+  // Events page state
+  const [eventsCategory, setEventsCategory] = useState<EventCategory | 'all'>('all');
 
   // Sports schedule modal state
   const [scheduleModal, setScheduleModal] = useState<'nfl' | 'nba' | 'mlb' | null>(null);
@@ -1089,6 +1125,7 @@ export default function LiveTVTvPage() {
     const tabMap: Record<string, string> = {
       home: 'home',
       player: 'nowplaying',
+      events: 'events',
       guide: 'guide',
       profile: 'profile',
     };
@@ -1449,7 +1486,7 @@ export default function LiveTVTvPage() {
   const { data: userPackages = [], isLoading: packagesLoading } = useQuery<ChannelPackage[]>({
     queryKey: ['/api/subscriptions/packages'],
     queryFn: getQueryFn({ on401: "returnNull" }),
-    enabled: viewMode === 'profile' || viewMode === 'home' || viewMode === 'guide',
+    enabled: viewMode === 'profile' || viewMode === 'home' || viewMode === 'guide' || viewMode === 'events',
     select: (data) => data || [],
   });
 
@@ -1525,6 +1562,21 @@ export default function LiveTVTvPage() {
     queryKey: ['/api/subscriptions/current'],
     queryFn: getQueryFn({ on401: "returnNull" }),
     enabled: showSubscriptionPopup || viewMode === 'profile', // Fetch when popup or profile view is opened
+  });
+
+  // Events query - fetch when on events tab
+  const { data: eventsData, isLoading: eventsLoading } = useQuery<EventsResponse>({
+    queryKey: ['/api/events', eventsCategory],
+    queryFn: async () => {
+      const url = eventsCategory !== 'all'
+        ? `/api/events?category=${eventsCategory}`
+        : '/api/events';
+      const response = await apiRequest('GET', url);
+      return response.json();
+    },
+    enabled: viewMode === 'events',
+    refetchInterval: 60000, // Refresh every minute for live updates
+    staleTime: 30000, // Consider fresh for 30 seconds
   });
 
   const [expandedPackageId, setExpandedPackageId] = useState<number | null>(null);
@@ -2861,6 +2913,9 @@ export default function LiveTVTvPage() {
           case 'nowplaying':
             setViewMode('player');
             break;
+          case 'events':
+            setViewMode('events');
+            break;
           case 'guide':
             setViewMode('guide');
             break;
@@ -2888,9 +2943,9 @@ export default function LiveTVTvPage() {
     const isTablet = deviceType === 'tablet';
 
     // On tablets, allow all orientations for all views
-    // On phones, lock to portrait for home and profile pages
+    // On phones, lock to portrait for home, events, and profile pages
     const lockToPortrait = async () => {
-      if (!isTablet && (viewMode === 'home' || viewMode === 'profile')) {
+      if (!isTablet && (viewMode === 'home' || viewMode === 'events' || viewMode === 'profile')) {
         try {
           await ScreenOrientation.lock({ orientation: 'portrait' });
         } catch (e) {
@@ -5267,6 +5322,254 @@ export default function LiveTVTvPage() {
               <LogOut className="w-5 h-5" />
               <span className="font-medium">Log Out</span>
             </button>
+          </div>
+
+        </div>
+      )}
+
+      {/* Portrait Events View - Sports events and PPV channels */}
+      {/* On phones: always render (orientation locked). On tablets: only in portrait */}
+      {!isRotating && isNativePlatform() && viewMode === 'events' && (isPhoneDevice || isPortrait) && (
+        <div
+          className="absolute inset-0 bg-black flex flex-col animate-viewSlideUp"
+          style={{ zIndex: 30 }}
+        >
+          {/* Header */}
+          <div className="shrink-0 pt-20 px-5 pb-4">
+            <h1 className="text-2xl font-bold text-white">Events</h1>
+          </div>
+
+          {/* Category Pills - Horizontal scroll */}
+          <div className="shrink-0 flex gap-2 overflow-x-auto px-5 pb-4 scrollbar-hide">
+            {([
+              { id: 'all', label: 'All' },
+              { id: 'nfl', label: 'NFL' },
+              { id: 'nba', label: 'NBA' },
+              { id: 'mlb', label: 'MLB' },
+              { id: 'nhl', label: 'NHL' },
+              { id: 'soccer', label: 'Soccer' },
+              { id: 'basketball', label: 'Basketball' },
+              { id: 'wrestling', label: 'Wrestling' },
+              { id: 'winter', label: 'Winter' },
+              { id: 'motorsports', label: 'Motorsports' },
+              { id: 'tennis', label: 'Tennis' },
+              { id: 'golf', label: 'Golf' },
+              { id: 'other', label: 'Other' },
+            ] as const).map(cat => (
+              <button
+                key={cat.id}
+                onClick={() => {
+                  haptics.light();
+                  setEventsCategory(cat.id);
+                }}
+                className={cn(
+                  "shrink-0 px-4 py-2 rounded-full text-sm font-medium transition",
+                  eventsCategory === cat.id ? "bg-white text-black" : "bg-white/10 text-white active:bg-white/20"
+                )}
+              >
+                {cat.label}
+              </button>
+            ))}
+          </div>
+
+          {/* Events Content */}
+          <div className="flex-1 overflow-y-auto pb-24">
+            {eventsLoading ? (
+              <div className="px-5 space-y-6">
+                {/* Loading skeleton */}
+                <div>
+                  <div className="h-6 w-24 bg-white/10 rounded mb-3" />
+                  <div className="flex gap-4 overflow-hidden">
+                    {[1, 2].map(i => (
+                      <div key={i} className="shrink-0 w-72">
+                        <div className="aspect-video bg-white/10 rounded-xl" />
+                        <div className="h-4 w-48 bg-white/10 rounded mt-2" />
+                        <div className="h-3 w-24 bg-white/10 rounded mt-1" />
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            ) : !eventsData || (eventsData.live.length === 0 && eventsData.upcoming.length === 0 && eventsData.past.length === 0) ? (
+              <div className="flex flex-col items-center justify-center h-full px-5 text-center">
+                <Radio className="w-16 h-16 text-white/20 mb-4" />
+                <h3 className="text-white font-semibold text-lg mb-2">No Events Found</h3>
+                <p className="text-white/50 text-sm max-w-xs">
+                  {eventsCategory !== 'all'
+                    ? `No ${eventsCategory.toUpperCase()} events are currently available. Try a different category.`
+                    : 'No live, upcoming, or recent events are available right now.'
+                  }
+                </p>
+              </div>
+            ) : (
+              <>
+                {/* Live Now Section */}
+                {eventsData.live.length > 0 && (
+                  <section className="mb-6">
+                    <h2 className="px-5 text-lg font-semibold text-white mb-3 flex items-center gap-2">
+                      <span className="relative flex h-2 w-2">
+                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-500 opacity-75" />
+                        <span className="relative inline-flex rounded-full h-2 w-2 bg-red-500" />
+                      </span>
+                      Live Now
+                    </h2>
+                    <div className="flex gap-4 overflow-x-auto px-5 scrollbar-hide">
+                      {eventsData.live.map((event: ParsedEvent) => (
+                        <div
+                          key={`${event.channelId}-${event.streamId}`}
+                          className="shrink-0 w-72 active:scale-[0.97] transition-transform cursor-pointer"
+                          onClick={() => {
+                            haptics.light();
+                            // Create a channel object to play
+                            const channel: Channel = {
+                              GuideName: event.eventName,
+                              GuideNumber: event.networkNumber,
+                              URL: buildApiUrl(event.streamUrl),
+                              source: 'iptv',
+                              iptvId: event.streamId,
+                              logo: event.logo,
+                            };
+                            setSelectedChannel(channel);
+                            setViewMode('player');
+                          }}
+                        >
+                          <div className="relative rounded-xl overflow-hidden">
+                            <div className="aspect-video bg-zinc-900 flex items-center justify-center">
+                              {event.logo ? (
+                                <img src={event.logo} alt="" className="w-16 h-16 object-contain" />
+                              ) : (
+                                <Tv className="w-12 h-12 text-zinc-700" />
+                              )}
+                            </div>
+
+                            {/* LIVE Badge */}
+                            <div className="absolute top-2 left-2 flex items-center gap-1 px-2 py-1 bg-red-600 rounded">
+                              <span className="relative flex h-1.5 w-1.5">
+                                <span className="animate-ping absolute h-full w-full rounded-full bg-white opacity-75" />
+                                <span className="relative rounded-full h-1.5 w-1.5 bg-white" />
+                              </span>
+                              <span className="text-white text-[10px] font-bold">LIVE</span>
+                            </div>
+
+                            {/* Time Remaining */}
+                            {event.timeRemaining && (
+                              <div className="absolute top-2 right-2 px-2 py-1 bg-black/60 rounded text-white text-[10px]">
+                                {event.timeRemaining}
+                              </div>
+                            )}
+
+                            {/* Score (if available) */}
+                            {event.score && event.teams && (
+                              <div className="absolute bottom-10 left-0 right-0 text-center">
+                                <span className="text-white text-2xl font-bold">
+                                  {event.score.away} - {event.score.home}
+                                </span>
+                              </div>
+                            )}
+
+                            {/* Progress Bar */}
+                            {event.progress !== undefined && (
+                              <div className="absolute bottom-0 left-0 right-0 h-1 bg-white/20">
+                                <div className="h-full bg-red-500" style={{ width: `${event.progress}%` }} />
+                              </div>
+                            )}
+                          </div>
+
+                          <p className="text-white font-medium text-sm mt-2 truncate">{event.eventName}</p>
+                          <p className="text-white/40 text-xs">{event.network}</p>
+                        </div>
+                      ))}
+                    </div>
+                  </section>
+                )}
+
+                {/* Upcoming Section */}
+                {eventsData.upcoming.length > 0 && (
+                  <section className="mb-6">
+                    <h2 className="px-5 text-lg font-semibold text-white mb-3 flex items-center gap-2">
+                      <Clock className="w-4 h-4 text-white/50" />
+                      Upcoming
+                    </h2>
+                    <div className="flex gap-4 overflow-x-auto px-5 scrollbar-hide">
+                      {eventsData.upcoming.slice(0, 20).map((event: ParsedEvent) => (
+                        <div
+                          key={`${event.channelId}-${event.streamId}`}
+                          className="shrink-0 w-56"
+                        >
+                          <div className="relative rounded-xl overflow-hidden bg-zinc-900">
+                            <div className="aspect-video flex items-center justify-center">
+                              {event.logo ? (
+                                <img src={event.logo} alt="" className="w-12 h-12 object-contain opacity-60" />
+                              ) : (
+                                <Tv className="w-10 h-10 text-zinc-700" />
+                              )}
+                            </div>
+
+                            {/* Start time badge */}
+                            <div className="absolute bottom-2 right-2 px-2 py-1 bg-black/60 rounded text-white text-[10px]">
+                              {new Date(event.startTime).toLocaleString(undefined, {
+                                weekday: 'short',
+                                hour: 'numeric',
+                                minute: '2-digit',
+                              })}
+                            </div>
+                          </div>
+
+                          <p className="text-white/80 font-medium text-sm mt-2 truncate">{event.eventName}</p>
+                          <p className="text-white/40 text-xs">{event.network} • {event.league?.replace(/_/g, ' ') || event.category}</p>
+                        </div>
+                      ))}
+                    </div>
+                  </section>
+                )}
+
+                {/* Past Events Section */}
+                {eventsData.past.length > 0 && (
+                  <section>
+                    <h2 className="px-5 text-lg font-semibold text-white mb-3 flex items-center gap-2">
+                      <TrendingUp className="w-4 h-4 text-white/50" />
+                      Recent Results
+                    </h2>
+                    <div className="px-5 space-y-2">
+                      {eventsData.past.slice(0, 20).map((event: ParsedEvent) => (
+                        <div
+                          key={`${event.channelId}-${event.streamId}-past`}
+                          className="flex items-center gap-3 py-3 border-b border-white/10"
+                        >
+                          <div className="flex-1 min-w-0">
+                            <p className="text-white text-sm truncate">{event.eventName}</p>
+                            <p className="text-white/40 text-xs">
+                              {new Date(event.startTime).toLocaleDateString(undefined, {
+                                weekday: 'short',
+                                month: 'short',
+                                day: 'numeric',
+                              })}
+                              {' • '}{event.network}
+                            </p>
+                          </div>
+
+                          {event.finalScore && event.teams && (
+                            <span className="text-white font-medium text-sm">
+                              {event.finalScore.away} - {event.finalScore.home}
+                            </span>
+                          )}
+
+                          {event.espnRecapUrl && (
+                            <button
+                              onClick={() => window.open(event.espnRecapUrl, '_blank')}
+                              className="flex items-center gap-1.5 px-3 py-1.5 bg-white/10 rounded-full active:bg-white/20"
+                            >
+                              <ExternalLink className="w-3.5 h-3.5 text-white" />
+                              <span className="text-white text-xs">Recap</span>
+                            </button>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </section>
+                )}
+              </>
+            )}
           </div>
 
         </div>

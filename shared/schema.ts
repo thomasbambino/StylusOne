@@ -194,6 +194,7 @@ export const subscriptionPlans = pgTable("subscriptionPlans", {
     live_tv_access: boolean;
     books_access: boolean;
     game_servers_access: boolean;
+    events_access: boolean;
     max_favorite_channels: number;
   }>(), // Feature flags
   is_active: boolean("is_active").notNull().default(true), // Whether plan is available

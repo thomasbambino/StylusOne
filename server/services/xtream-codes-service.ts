@@ -1364,6 +1364,35 @@ export class XtreamCodesManager implements IService {
     if (!client) return null;
     return client.getAuthInfo();
   }
+
+  /**
+   * Get all event/PPV channels from the database
+   * BYPASSES: isEnabled flag and channel package restrictions
+   * These are temporary channels that can't be manually managed
+   */
+  async getEventChannels(): Promise<{
+    id: number;
+    streamId: string;
+    name: string;
+    logo: string | null;
+    providerId: number;
+  }[]> {
+    // Query all channels that match the event/PPV naming pattern
+    // Pattern: "XX (Network XXX) | ..." (e.g., "US (Paramount 050) | ...")
+    const channels = await db.select({
+      id: iptvChannels.id,
+      streamId: iptvChannels.streamId,
+      name: iptvChannels.name,
+      logo: iptvChannels.logo,
+      providerId: iptvChannels.providerId,
+    })
+      .from(iptvChannels);
+
+    // Filter in JavaScript since SQL regex varies by database
+    // Pattern must match: XX (Network XXX) | ...
+    const eventPattern = /^[A-Z]{2}\s*\([^)]+\s+\d+\)\s*\|/;
+    return channels.filter(ch => eventPattern.test(ch.name));
+  }
 }
 
 // Export singleton manager instance (replaces old singleton service)
