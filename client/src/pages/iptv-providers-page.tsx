@@ -177,6 +177,7 @@ export default function IptvProvidersPage() {
   const [activeTab, setActiveTab] = useState('providers');
   // Channel mapping state
   const [isCreateMappingDialogOpen, setIsCreateMappingDialogOpen] = useState(false);
+  const [primarySearchQuery, setPrimarySearchQuery] = useState('');
   const [mappingSearchQuery, setMappingSearchQuery] = useState('');
   const [selectedPrimaryChannel, setSelectedPrimaryChannel] = useState<{ id: number; name: string; streamId: string; providerId: number; providerName: string } | null>(null);
 
@@ -258,6 +259,21 @@ export default function IptvProvidersPage() {
     refetchInterval: 60000, // Refresh every minute
   });
 
+  // Search for primary channels
+  const { data: primaryCandidates = [], isLoading: primaryCandidatesLoading } = useQuery<BackupCandidate[]>({
+    queryKey: ['/api/admin/channel-mappings/search-primary', primarySearchQuery],
+    queryFn: async () => {
+      if (primarySearchQuery.length < 2) return [];
+      const res = await fetch(
+        buildApiUrl(`/api/admin/channel-mappings/search-primary?q=${encodeURIComponent(primarySearchQuery)}`),
+        { credentials: 'include' }
+      );
+      if (!res.ok) throw new Error('Failed to search channels');
+      return res.json();
+    },
+    enabled: primarySearchQuery.length >= 2 && !selectedPrimaryChannel,
+  });
+
   // Search backup candidates
   const { data: backupCandidates = [], isLoading: candidatesLoading } = useQuery<BackupCandidate[]>({
     queryKey: ['/api/admin/channel-mappings/search', selectedPrimaryChannel?.id, mappingSearchQuery],
@@ -268,7 +284,8 @@ export default function IptvProvidersPage() {
         { credentials: 'include' }
       );
       if (!res.ok) throw new Error('Failed to search channels');
-      return res.json();
+      const data = await res.json();
+      return data.candidates || data;
     },
     enabled: !!selectedPrimaryChannel?.id && mappingSearchQuery.length >= 2,
   });
@@ -1167,6 +1184,7 @@ export default function IptvProvidersPage() {
         setIsCreateMappingDialogOpen(open);
         if (!open) {
           setSelectedPrimaryChannel(null);
+          setPrimarySearchQuery('');
           setMappingSearchQuery('');
         }
       }}>
@@ -1176,22 +1194,88 @@ export default function IptvProvidersPage() {
             <DialogDescription>Map a primary channel to a backup channel from another provider</DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
+            {/* Step 1: Select Primary Channel */}
             {!selectedPrimaryChannel ? (
-              <div className="text-center py-4 text-muted-foreground">
-                <p>Select a primary channel from the Providers tab first</p>
-                <p className="text-sm mt-2">
-                  (Feature coming soon: search for channels here)
-                </p>
-              </div>
+              <>
+                <div>
+                  <Label htmlFor="primary-search">Step 1: Search for primary channel</Label>
+                  <div className="flex gap-2 mt-1">
+                    <div className="relative flex-1">
+                      <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                      <Input
+                        id="primary-search"
+                        placeholder="Search for a channel..."
+                        className="pl-9"
+                        value={primarySearchQuery}
+                        onChange={(e) => setPrimarySearchQuery(e.target.value)}
+                        autoFocus
+                      />
+                    </div>
+                  </div>
+                </div>
+                {primaryCandidatesLoading ? (
+                  <div className="flex justify-center py-4">
+                    <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                  </div>
+                ) : primaryCandidates.length > 0 ? (
+                  <div className="border rounded-lg max-h-60 overflow-y-auto">
+                    {primaryCandidates.map((channel) => (
+                      <div
+                        key={channel.id}
+                        className="flex items-center justify-between p-3 border-b last:border-b-0 hover:bg-muted/50 cursor-pointer"
+                        onClick={() => {
+                          setSelectedPrimaryChannel({
+                            id: channel.id,
+                            name: channel.name,
+                            streamId: channel.streamId,
+                            providerId: channel.providerId,
+                            providerName: channel.providerName,
+                          });
+                          setPrimarySearchQuery('');
+                        }}
+                      >
+                        <div>
+                          <p className="font-medium">{channel.name}</p>
+                          <Badge variant="outline" className="mt-1">{channel.providerName}</Badge>
+                        </div>
+                        <Button size="sm" variant="ghost">
+                          Select
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
+                ) : primarySearchQuery.length >= 2 ? (
+                  <p className="text-center py-4 text-muted-foreground">No matching channels found</p>
+                ) : (
+                  <p className="text-center py-4 text-muted-foreground text-sm">
+                    Type at least 2 characters to search
+                  </p>
+                )}
+              </>
             ) : (
+              /* Step 2: Select Backup Channel */
               <>
                 <div className="p-3 border rounded-lg bg-muted/50">
-                  <p className="text-sm text-muted-foreground">Primary Channel</p>
-                  <p className="font-medium">{selectedPrimaryChannel.name}</p>
-                  <Badge variant="outline" className="mt-1">{selectedPrimaryChannel.providerName}</Badge>
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-sm text-muted-foreground">Primary Channel</p>
+                      <p className="font-medium">{selectedPrimaryChannel.name}</p>
+                      <Badge variant="outline" className="mt-1">{selectedPrimaryChannel.providerName}</Badge>
+                    </div>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => {
+                        setSelectedPrimaryChannel(null);
+                        setMappingSearchQuery('');
+                      }}
+                    >
+                      Change
+                    </Button>
+                  </div>
                 </div>
                 <div>
-                  <Label htmlFor="backup-search">Search for backup channel</Label>
+                  <Label htmlFor="backup-search">Step 2: Search for backup channel</Label>
                   <div className="flex gap-2 mt-1">
                     <div className="relative flex-1">
                       <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
@@ -1201,6 +1285,7 @@ export default function IptvProvidersPage() {
                         className="pl-9"
                         value={mappingSearchQuery}
                         onChange={(e) => setMappingSearchQuery(e.target.value)}
+                        autoFocus
                       />
                     </div>
                   </div>
@@ -1237,7 +1322,11 @@ export default function IptvProvidersPage() {
                   </div>
                 ) : mappingSearchQuery.length >= 2 ? (
                   <p className="text-center py-4 text-muted-foreground">No matching channels found</p>
-                ) : null}
+                ) : (
+                  <p className="text-center py-4 text-muted-foreground text-sm">
+                    Type at least 2 characters to search
+                  </p>
+                )}
               </>
             )}
           </div>
