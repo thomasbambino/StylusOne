@@ -501,23 +501,23 @@ export class ChannelMappingService {
     const c = this.extractChannelElements(candidate);
 
     let score = 0;
-    let maxScore = 100; // Fixed max score for consistent scaling
 
-    // US prefix bonus - prioritize US channels (15 points)
+    // US prefix bonus - STRONG priority for US channels (50 points)
     const candidateUpper = candidate.toUpperCase();
-    if (candidateUpper.startsWith('US:') || candidateUpper.startsWith('US ') ||
-        candidateUpper.startsWith('USA:') || candidateUpper.startsWith('USA ')) {
-      score += 15;
+    const isUSChannel = candidateUpper.startsWith('US:') || candidateUpper.startsWith('US ') ||
+        candidateUpper.startsWith('USA:') || candidateUpper.startsWith('USA ');
+    if (isUSChannel) {
+      score += 50;
     }
 
-    // Call sign match (very strong signal) - 40 points
+    // Call sign match (very strong signal) - 30 points
     if (p.callSign && c.callSign && p.callSign === c.callSign) {
-      score += 40;
+      score += 30;
     }
 
-    // Brand match (strong signal) - 30 points
+    // Brand match (strong signal) - 25 points
     if (p.brand && c.brand && p.brand === c.brand) {
-      score += 30;
+      score += 25;
     }
 
     // City match (good signal) - 10 points
@@ -525,14 +525,14 @@ export class ChannelMappingService {
       score += 10;
     }
 
-    // Clean name similarity (fallback) - up to 5 points
+    // Clean name similarity - up to 10 points
     const levenshteinSim = this.calculateSimilarity(p.cleanName, c.cleanName);
-    score += levenshteinSim * 5;
+    score += levenshteinSim * 10;
 
     // Substring bonus: if one clean name contains the other
     if (p.cleanName.length >= 3 && c.cleanName.length >= 3) {
       if (c.cleanName.includes(p.cleanName) || p.cleanName.includes(c.cleanName)) {
-        score += 5;
+        score += 10;
       }
     }
 
@@ -566,6 +566,10 @@ export class ChannelMappingService {
       return [];
     }
 
+    // Debug: log what we're extracting from the primary channel
+    const primaryElements = this.extractChannelElements(primaryChannel.name);
+    console.log(`[Channel Mapping] Primary: "${primaryChannel.name}" -> callSign: ${primaryElements.callSign}, brand: ${primaryElements.brand}, city: ${primaryElements.city}`);
+
     // Search for ALL channels from the target provider (not just enabled)
     const candidates = await db.select({
       id: iptvChannels.id,
@@ -591,6 +595,12 @@ export class ChannelMappingService {
       .filter(s => s.confidence >= 5) // Low threshold to always show some options
       .sort((a, b) => b.confidence - a.confidence)
       .slice(0, limit);
+
+    // Debug: log top 3 suggestions with their extracted elements
+    suggestions.slice(0, 3).forEach((s, i) => {
+      const candidateElements = this.extractChannelElements(s.channel.name);
+      console.log(`[Channel Mapping] #${i+1} (${s.confidence}%): "${s.channel.name}" -> callSign: ${candidateElements.callSign}, brand: ${candidateElements.brand}, city: ${candidateElements.city}`);
+    });
 
     return suggestions;
   }
