@@ -13,9 +13,10 @@ import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator } from '@/components/ui/dropdown-menu';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { format } from 'date-fns';
 import { buildApiUrl } from '@/lib/capacitor';
-import { ChevronDown, ChevronRight } from 'lucide-react';
+import { ChevronDown, ChevronRight, ChevronLeft } from 'lucide-react';
 import { Progress } from '@/components/ui/progress';
 
 interface IptvProvider {
@@ -176,10 +177,11 @@ export default function IptvProvidersPage() {
   const [isAllStreamsDialogOpen, setIsAllStreamsDialogOpen] = useState(false);
   const [activeTab, setActiveTab] = useState('providers');
   // Channel mapping state
-  const [isCreateMappingDialogOpen, setIsCreateMappingDialogOpen] = useState(false);
-  const [primarySearchQuery, setPrimarySearchQuery] = useState('');
-  const [mappingSearchQuery, setMappingSearchQuery] = useState('');
-  const [selectedPrimaryChannel, setSelectedPrimaryChannel] = useState<{ id: number; name: string; streamId: string; providerId: number; providerName: string } | null>(null);
+  const [mappingProviderId, setMappingProviderId] = useState<number | null>(null);
+  const [mappingCategory, setMappingCategory] = useState<string>('');
+  const [mappingPage, setMappingPage] = useState(1);
+  const [selectedChannelForMapping, setSelectedChannelForMapping] = useState<{ id: number; name: string; streamId: string; providerId: number } | null>(null);
+  const [suggestions, setSuggestions] = useState<Array<{ channel: { id: number; name: string; providerId: number; providerName: string }; confidence: number }>>([]);
 
   // Fetch providers
   const { data: providers = [], isLoading } = useQuery<IptvProvider[]>({
@@ -259,35 +261,34 @@ export default function IptvProvidersPage() {
     refetchInterval: 60000, // Refresh every minute
   });
 
-  // Search for primary channels
-  const { data: primaryCandidates = [], isLoading: primaryCandidatesLoading } = useQuery<BackupCandidate[]>({
-    queryKey: ['/api/admin/channel-mappings/search-primary', primarySearchQuery],
+  // Fetch categories for selected provider (for mapping tab)
+  const { data: mappingCategories = [] } = useQuery<string[]>({
+    queryKey: ['/api/admin/iptv-channels/categories', mappingProviderId],
     queryFn: async () => {
-      if (primarySearchQuery.length < 2) return [];
-      const res = await fetch(
-        buildApiUrl(`/api/admin/channel-mappings/search-primary?q=${encodeURIComponent(primarySearchQuery)}`),
-        { credentials: 'include' }
-      );
-      if (!res.ok) throw new Error('Failed to search channels');
-      return res.json();
+      const res = await fetch(buildApiUrl(`/api/admin/iptv-channels/categories?providerId=${mappingProviderId}`), {
+        credentials: 'include',
+      });
+      if (!res.ok) throw new Error('Failed to fetch categories');
+      const data = await res.json();
+      return data.categories || [];
     },
-    enabled: primarySearchQuery.length >= 2 && !selectedPrimaryChannel,
+    enabled: !!mappingProviderId && activeTab === 'mappings',
   });
 
-  // Search backup candidates
-  const { data: backupCandidates = [], isLoading: candidatesLoading } = useQuery<BackupCandidate[]>({
-    queryKey: ['/api/admin/channel-mappings/search', selectedPrimaryChannel?.id, mappingSearchQuery],
+  // Fetch channels for mapping (paginated, filtered by provider + category)
+  const { data: mappingChannelsData, isLoading: mappingChannelsLoading } = useQuery<{
+    channels: Array<{ id: number; name: string; streamId: string; logo: string | null; categoryName: string | null }>;
+    pagination: { page: number; limit: number; total: number; totalPages: number };
+  }>({
+    queryKey: ['/api/admin/iptv-channels', mappingProviderId, mappingCategory, mappingPage],
     queryFn: async () => {
-      if (!selectedPrimaryChannel?.id || !mappingSearchQuery) return [];
-      const res = await fetch(
-        buildApiUrl(`/api/admin/channel-mappings/search?primaryChannelId=${selectedPrimaryChannel.id}&q=${encodeURIComponent(mappingSearchQuery)}`),
-        { credentials: 'include' }
-      );
-      if (!res.ok) throw new Error('Failed to search channels');
-      const data = await res.json();
-      return data.candidates || data;
+      let url = `/api/admin/iptv-channels?providerId=${mappingProviderId}&page=${mappingPage}&limit=20&enabled=true`;
+      if (mappingCategory) url += `&category=${encodeURIComponent(mappingCategory)}`;
+      const res = await fetch(buildApiUrl(url), { credentials: 'include' });
+      if (!res.ok) throw new Error('Failed to fetch channels');
+      return res.json();
     },
-    enabled: !!selectedPrimaryChannel?.id && mappingSearchQuery.length >= 2,
+    enabled: !!mappingProviderId && activeTab === 'mappings',
   });
 
   // Create provider
@@ -677,6 +678,29 @@ export default function IptvProvidersPage() {
     },
   });
 
+  // Get backup suggestions for a channel
+  const getSuggestionsMutation = useMutation({
+    mutationFn: async (channelId: number) => {
+      const res = await fetch(buildApiUrl('/api/admin/channel-mappings/suggest'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ channelId }),
+      });
+      if (!res.ok) {
+        const error = await res.json();
+        throw new Error(error.error || 'Failed to get suggestions');
+      }
+      return res.json();
+    },
+    onSuccess: (data) => {
+      setSuggestions(data.suggestions || []);
+    },
+    onError: (error: Error) => {
+      toast({ title: 'Error', description: error.message, variant: 'destructive' });
+    },
+  });
+
   // Fetch streams for selected credential
   const { data: streamsData, isLoading: streamsLoading } = useQuery({
     queryKey: ['/api/admin/iptv-credentials', selectedCredential?.id, 'streams'],
@@ -1006,21 +1030,166 @@ export default function IptvProvidersPage() {
 
         {/* Channel Mappings Tab */}
         <TabsContent value="mappings" className="space-y-4">
+          {/* Create Mappings Section */}
           <Card>
             <CardHeader className="pb-3">
-              <div className="flex items-center justify-between">
-                <div>
-                  <CardTitle className="flex items-center gap-2">
-                    <Link2 className="h-5 w-5" />
-                    Channel Mappings
-                  </CardTitle>
-                  <CardDescription>Map equivalent channels across providers for automatic failover</CardDescription>
+              <CardTitle className="flex items-center gap-2">
+                <Plus className="h-5 w-5" />
+                Create Channel Mappings
+              </CardTitle>
+              <CardDescription>Select a provider and category, then click "Map Backup" to find matching channels from other providers</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {/* Filters */}
+              <div className="flex gap-4">
+                <div className="w-64">
+                  <Label className="text-sm font-medium mb-2 block">Provider</Label>
+                  <Select
+                    value={mappingProviderId?.toString() || ''}
+                    onValueChange={(value) => {
+                      setMappingProviderId(parseInt(value));
+                      setMappingCategory('');
+                      setMappingPage(1);
+                    }}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select provider..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {providers.filter(p => p.isActive).map((provider) => (
+                        <SelectItem key={provider.id} value={provider.id.toString()}>
+                          {provider.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
-                <Button onClick={() => setIsCreateMappingDialogOpen(true)}>
-                  <Plus className="h-4 w-4 mr-2" />
-                  Create Mapping
-                </Button>
+                {mappingProviderId && (
+                  <div className="w-64">
+                    <Label className="text-sm font-medium mb-2 block">Category</Label>
+                    <Select
+                      value={mappingCategory}
+                      onValueChange={(value) => {
+                        setMappingCategory(value === 'all' ? '' : value);
+                        setMappingPage(1);
+                      }}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="All categories" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">All categories</SelectItem>
+                        {mappingCategories.map((cat) => (
+                          <SelectItem key={cat} value={cat}>{cat}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
               </div>
+
+              {/* Channels Table */}
+              {!mappingProviderId ? (
+                <div className="text-center py-8 text-muted-foreground">
+                  <Server className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                  <p>Select a provider to view channels</p>
+                </div>
+              ) : mappingChannelsLoading ? (
+                <div className="flex justify-center py-8">
+                  <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+                </div>
+              ) : (mappingChannelsData?.channels?.length || 0) === 0 ? (
+                <div className="text-center py-8 text-muted-foreground">
+                  <Tv className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                  <p>No enabled channels found</p>
+                </div>
+              ) : (
+                <>
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Channel</TableHead>
+                        <TableHead>Category</TableHead>
+                        <TableHead className="text-right">Action</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {mappingChannelsData?.channels.map((channel) => (
+                        <TableRow key={channel.id}>
+                          <TableCell className="font-medium">{channel.name}</TableCell>
+                          <TableCell className="text-muted-foreground">{channel.categoryName || '-'}</TableCell>
+                          <TableCell className="text-right">
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              disabled={getSuggestionsMutation.isPending}
+                              onClick={() => {
+                                setSelectedChannelForMapping({
+                                  id: channel.id,
+                                  name: channel.name,
+                                  streamId: channel.streamId,
+                                  providerId: mappingProviderId!,
+                                });
+                                setSuggestions([]);
+                                getSuggestionsMutation.mutate(channel.id);
+                              }}
+                            >
+                              {getSuggestionsMutation.isPending && selectedChannelForMapping?.id === channel.id ? (
+                                <Loader2 className="h-4 w-4 animate-spin" />
+                              ) : (
+                                <>
+                                  <Link2 className="h-4 w-4 mr-1" />
+                                  Map Backup
+                                </>
+                              )}
+                            </Button>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+
+                  {/* Pagination */}
+                  {mappingChannelsData?.pagination && mappingChannelsData.pagination.totalPages > 1 && (
+                    <div className="flex items-center justify-between pt-4">
+                      <p className="text-sm text-muted-foreground">
+                        Page {mappingChannelsData.pagination.page} of {mappingChannelsData.pagination.totalPages} ({mappingChannelsData.pagination.total} channels)
+                      </p>
+                      <div className="flex gap-2">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          disabled={mappingPage <= 1}
+                          onClick={() => setMappingPage(p => p - 1)}
+                        >
+                          <ChevronLeft className="h-4 w-4" />
+                          Previous
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          disabled={mappingPage >= mappingChannelsData.pagination.totalPages}
+                          onClick={() => setMappingPage(p => p + 1)}
+                        >
+                          Next
+                          <ChevronRight className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+                </>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Existing Mappings Section */}
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="flex items-center gap-2">
+                <Link2 className="h-5 w-5" />
+                Existing Mappings
+              </CardTitle>
+              <CardDescription>{channelMappings.length} channel mapping{channelMappings.length !== 1 ? 's' : ''} configured</CardDescription>
             </CardHeader>
             <CardContent>
               {mappingsLoading ? (
@@ -1030,8 +1199,8 @@ export default function IptvProvidersPage() {
               ) : channelMappings.length === 0 ? (
                 <div className="text-center py-8 text-muted-foreground">
                   <Link2 className="h-12 w-12 mx-auto mb-4 opacity-50" />
-                  <p>No channel mappings configured</p>
-                  <p className="text-sm">Create mappings to enable automatic failover between providers</p>
+                  <p>No channel mappings yet</p>
+                  <p className="text-sm">Use the section above to create mappings</p>
                 </div>
               ) : (
                 <Table>
@@ -1179,159 +1348,79 @@ export default function IptvProvidersPage() {
         </TabsContent>
       </Tabs>
 
-      {/* Create Mapping Dialog */}
-      <Dialog open={isCreateMappingDialogOpen} onOpenChange={(open) => {
-        setIsCreateMappingDialogOpen(open);
+      {/* Backup Suggestions Dialog */}
+      <Dialog open={!!selectedChannelForMapping} onOpenChange={(open) => {
         if (!open) {
-          setSelectedPrimaryChannel(null);
-          setPrimarySearchQuery('');
-          setMappingSearchQuery('');
+          setSelectedChannelForMapping(null);
+          setSuggestions([]);
         }
       }}>
-        <DialogContent className="sm:max-w-[600px]">
+        <DialogContent className="sm:max-w-[500px]">
           <DialogHeader>
-            <DialogTitle>Create Channel Mapping</DialogTitle>
-            <DialogDescription>Map a primary channel to a backup channel from another provider</DialogDescription>
+            <DialogTitle>Select Backup Channel</DialogTitle>
+            <DialogDescription>
+              Choose a backup for "{selectedChannelForMapping?.name}" from another provider
+            </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
-            {/* Step 1: Select Primary Channel */}
-            {!selectedPrimaryChannel ? (
-              <>
-                <div>
-                  <Label htmlFor="primary-search">Step 1: Search for primary channel</Label>
-                  <div className="flex gap-2 mt-1">
-                    <div className="relative flex-1">
-                      <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                      <Input
-                        id="primary-search"
-                        placeholder="Search for a channel..."
-                        className="pl-9"
-                        value={primarySearchQuery}
-                        onChange={(e) => setPrimarySearchQuery(e.target.value)}
-                        autoFocus
-                      />
-                    </div>
-                  </div>
-                </div>
-                {primaryCandidatesLoading ? (
-                  <div className="flex justify-center py-4">
-                    <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-                  </div>
-                ) : primaryCandidates.length > 0 ? (
-                  <div className="border rounded-lg max-h-60 overflow-y-auto">
-                    {primaryCandidates.map((channel) => (
-                      <div
-                        key={channel.id}
-                        className="flex items-center justify-between p-3 border-b last:border-b-0 hover:bg-muted/50 cursor-pointer"
-                        onClick={() => {
-                          setSelectedPrimaryChannel({
-                            id: channel.id,
-                            name: channel.name,
-                            streamId: channel.streamId,
-                            providerId: channel.providerId,
-                            providerName: channel.providerName,
-                          });
-                          setPrimarySearchQuery('');
-                        }}
-                      >
-                        <div>
-                          <p className="font-medium">{channel.name}</p>
-                          <Badge variant="outline" className="mt-1">{channel.providerName}</Badge>
-                        </div>
-                        <Button size="sm" variant="ghost">
-                          Select
-                        </Button>
-                      </div>
-                    ))}
-                  </div>
-                ) : primarySearchQuery.length >= 2 ? (
-                  <p className="text-center py-4 text-muted-foreground">No matching channels found</p>
-                ) : (
-                  <p className="text-center py-4 text-muted-foreground text-sm">
-                    Type at least 2 characters to search
-                  </p>
-                )}
-              </>
+            {getSuggestionsMutation.isPending ? (
+              <div className="flex flex-col items-center justify-center py-8">
+                <Loader2 className="h-8 w-8 animate-spin text-muted-foreground mb-2" />
+                <p className="text-sm text-muted-foreground">Finding matching channels...</p>
+              </div>
+            ) : suggestions.length === 0 ? (
+              <div className="text-center py-8 text-muted-foreground">
+                <AlertCircle className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                <p>No matching channels found</p>
+                <p className="text-sm mt-1">No channels with similar names exist in other providers</p>
+              </div>
             ) : (
-              /* Step 2: Select Backup Channel */
-              <>
-                <div className="p-3 border rounded-lg bg-muted/50">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-sm text-muted-foreground">Primary Channel</p>
-                      <p className="font-medium">{selectedPrimaryChannel.name}</p>
-                      <Badge variant="outline" className="mt-1">{selectedPrimaryChannel.providerName}</Badge>
+              <div className="border rounded-lg max-h-80 overflow-y-auto">
+                {suggestions.map((suggestion) => (
+                  <div
+                    key={suggestion.channel.id}
+                    className="flex items-center justify-between p-3 border-b last:border-b-0 hover:bg-muted/50"
+                  >
+                    <div className="flex-1">
+                      <p className="font-medium">{suggestion.channel.name}</p>
+                      <div className="flex items-center gap-2 mt-1">
+                        <Badge variant="outline">{suggestion.channel.providerName}</Badge>
+                        <Badge variant="secondary" className="text-xs">
+                          {suggestion.confidence}% match
+                        </Badge>
+                      </div>
                     </div>
                     <Button
-                      variant="ghost"
                       size="sm"
+                      disabled={createMappingMutation.isPending}
                       onClick={() => {
-                        setSelectedPrimaryChannel(null);
-                        setMappingSearchQuery('');
+                        createMappingMutation.mutate({
+                          primaryChannelId: selectedChannelForMapping!.id,
+                          backupChannelId: suggestion.channel.id,
+                        }, {
+                          onSuccess: () => {
+                            setSelectedChannelForMapping(null);
+                            setSuggestions([]);
+                          }
+                        });
                       }}
                     >
-                      Change
+                      {createMappingMutation.isPending ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        'Add Backup'
+                      )}
                     </Button>
                   </div>
-                </div>
-                <div>
-                  <Label htmlFor="backup-search">Step 2: Search for backup channel</Label>
-                  <div className="flex gap-2 mt-1">
-                    <div className="relative flex-1">
-                      <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                      <Input
-                        id="backup-search"
-                        placeholder="Search channels from other providers..."
-                        className="pl-9"
-                        value={mappingSearchQuery}
-                        onChange={(e) => setMappingSearchQuery(e.target.value)}
-                        autoFocus
-                      />
-                    </div>
-                  </div>
-                </div>
-                {candidatesLoading ? (
-                  <div className="flex justify-center py-4">
-                    <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-                  </div>
-                ) : backupCandidates.length > 0 ? (
-                  <div className="border rounded-lg max-h-60 overflow-y-auto">
-                    {backupCandidates.map((candidate) => (
-                      <div
-                        key={candidate.id}
-                        className="flex items-center justify-between p-3 border-b last:border-b-0 hover:bg-muted/50"
-                      >
-                        <div>
-                          <p className="font-medium">{candidate.name}</p>
-                          <Badge variant="outline" className="mt-1">{candidate.providerName}</Badge>
-                        </div>
-                        <Button
-                          size="sm"
-                          disabled={candidate.alreadyMapped || createMappingMutation.isPending}
-                          onClick={() => {
-                            createMappingMutation.mutate({
-                              primaryChannelId: selectedPrimaryChannel.id,
-                              backupChannelId: candidate.id,
-                            });
-                          }}
-                        >
-                          {candidate.alreadyMapped ? 'Mapped' : 'Add Backup'}
-                        </Button>
-                      </div>
-                    ))}
-                  </div>
-                ) : mappingSearchQuery.length >= 2 ? (
-                  <p className="text-center py-4 text-muted-foreground">No matching channels found</p>
-                ) : (
-                  <p className="text-center py-4 text-muted-foreground text-sm">
-                    Type at least 2 characters to search
-                  </p>
-                )}
-              </>
+                ))}
+              </div>
             )}
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setIsCreateMappingDialogOpen(false)}>Close</Button>
+            <Button variant="outline" onClick={() => {
+              setSelectedChannelForMapping(null);
+              setSuggestions([]);
+            }}>Close</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
