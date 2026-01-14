@@ -179,6 +179,7 @@ export default function IptvProvidersPage() {
   // Channel mapping state
   const [mappingProviderId, setMappingProviderId] = useState<number | null>(null);
   const [mappingCategory, setMappingCategory] = useState<string>('');
+  const [mappingEnabledFilter, setMappingEnabledFilter] = useState<'all' | 'enabled' | 'disabled'>('all');
   const [mappingPage, setMappingPage] = useState(1);
   const [selectedChannelForMapping, setSelectedChannelForMapping] = useState<{ id: number; name: string; streamId: string; providerId: number } | null>(null);
   const [suggestions, setSuggestions] = useState<Array<{ channel: { id: number; name: string; providerId: number; providerName: string }; confidence: number }>>([]);
@@ -275,15 +276,16 @@ export default function IptvProvidersPage() {
     enabled: !!mappingProviderId && activeTab === 'mappings',
   });
 
-  // Fetch channels for mapping (paginated, filtered by provider + category)
+  // Fetch channels for mapping (paginated, filtered by provider + category + enabled)
   const { data: mappingChannelsData, isLoading: mappingChannelsLoading } = useQuery<{
-    channels: Array<{ id: number; name: string; streamId: string; logo: string | null; categoryName: string | null }>;
+    channels: Array<{ id: number; name: string; streamId: string; logo: string | null; categoryName: string | null; isEnabled: boolean }>;
     pagination: { page: number; limit: number; total: number; totalPages: number };
   }>({
-    queryKey: ['/api/admin/iptv-channels', mappingProviderId, mappingCategory, mappingPage],
+    queryKey: ['/api/admin/iptv-channels', mappingProviderId, mappingCategory, mappingEnabledFilter, mappingPage],
     queryFn: async () => {
-      let url = `/api/admin/iptv-channels?providerId=${mappingProviderId}&page=${mappingPage}&limit=20&enabled=true`;
+      let url = `/api/admin/iptv-channels?providerId=${mappingProviderId}&page=${mappingPage}&limit=20`;
       if (mappingCategory) url += `&category=${encodeURIComponent(mappingCategory)}`;
+      if (mappingEnabledFilter !== 'all') url += `&enabled=${mappingEnabledFilter === 'enabled'}`;
       const res = await fetch(buildApiUrl(url), { credentials: 'include' });
       if (!res.ok) throw new Error('Failed to fetch channels');
       return res.json();
@@ -1065,26 +1067,47 @@ export default function IptvProvidersPage() {
                   </Select>
                 </div>
                 {mappingProviderId && (
-                  <div className="w-64">
-                    <Label className="text-sm font-medium mb-2 block">Category</Label>
-                    <Select
-                      value={mappingCategory}
-                      onValueChange={(value) => {
-                        setMappingCategory(value === 'all' ? '' : value);
-                        setMappingPage(1);
-                      }}
-                    >
-                      <SelectTrigger>
-                        <SelectValue placeholder="All categories" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="all">All categories</SelectItem>
-                        {mappingCategories.map((cat) => (
-                          <SelectItem key={cat} value={cat}>{cat}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
+                  <>
+                    <div className="w-64">
+                      <Label className="text-sm font-medium mb-2 block">Category</Label>
+                      <Select
+                        value={mappingCategory || 'all'}
+                        onValueChange={(value) => {
+                          setMappingCategory(value === 'all' ? '' : value);
+                          setMappingPage(1);
+                        }}
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="All categories" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="all">All categories</SelectItem>
+                          {mappingCategories.map((cat) => (
+                            <SelectItem key={cat} value={cat}>{cat}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="w-40">
+                      <Label className="text-sm font-medium mb-2 block">Status</Label>
+                      <Select
+                        value={mappingEnabledFilter}
+                        onValueChange={(value: 'all' | 'enabled' | 'disabled') => {
+                          setMappingEnabledFilter(value);
+                          setMappingPage(1);
+                        }}
+                      >
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="all">All channels</SelectItem>
+                          <SelectItem value="enabled">Enabled only</SelectItem>
+                          <SelectItem value="disabled">Disabled only</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </>
                 )}
               </div>
 
@@ -1101,7 +1124,8 @@ export default function IptvProvidersPage() {
               ) : (mappingChannelsData?.channels?.length || 0) === 0 ? (
                 <div className="text-center py-8 text-muted-foreground">
                   <Tv className="h-12 w-12 mx-auto mb-4 opacity-50" />
-                  <p>No enabled channels found</p>
+                  <p>No channels found</p>
+                  <p className="text-sm">Try adjusting your filters</p>
                 </div>
               ) : (
                 <>
@@ -1110,6 +1134,7 @@ export default function IptvProvidersPage() {
                       <TableRow>
                         <TableHead>Channel</TableHead>
                         <TableHead>Category</TableHead>
+                        <TableHead>Status</TableHead>
                         <TableHead className="text-right">Action</TableHead>
                       </TableRow>
                     </TableHeader>
@@ -1118,6 +1143,11 @@ export default function IptvProvidersPage() {
                         <TableRow key={channel.id}>
                           <TableCell className="font-medium">{channel.name}</TableCell>
                           <TableCell className="text-muted-foreground">{channel.categoryName || '-'}</TableCell>
+                          <TableCell>
+                            <Badge variant={channel.isEnabled ? 'default' : 'secondary'} className={channel.isEnabled ? 'bg-green-600' : ''}>
+                              {channel.isEnabled ? 'Enabled' : 'Disabled'}
+                            </Badge>
+                          </TableCell>
                           <TableCell className="text-right">
                             <Button
                               size="sm"
