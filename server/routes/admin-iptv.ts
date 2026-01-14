@@ -2251,7 +2251,7 @@ router.get('/channel-mappings/suggest-for-provider', requireSuperAdmin, async (r
       return res.status(400).json({ error: 'channelId and targetProviderId are required' });
     }
 
-    // If there's a search query, search within the target provider
+    // If there's a search query, search within the target provider (ALL channels, not just enabled)
     if (query.length >= 2) {
       const searchPattern = `%${query.toLowerCase()}%`;
 
@@ -2266,12 +2266,11 @@ router.get('/channel-mappings/suggest-for-provider', requireSuperAdmin, async (r
         .innerJoin(iptvProviders, eq(iptvChannels.providerId, iptvProviders.id))
         .where(and(
           eq(iptvChannels.providerId, targetProviderId),
-          eq(iptvChannels.isEnabled, true),
           eq(iptvProviders.isActive, true),
           sql`LOWER(${iptvChannels.name}) LIKE ${searchPattern}`
         ))
         .orderBy(iptvChannels.name)
-        .limit(20);
+        .limit(30);
 
       // Check which are already mapped
       const existingMappings = await db.select({ backupChannelId: channelMappings.backupChannelId })
