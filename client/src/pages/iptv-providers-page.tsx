@@ -253,15 +253,12 @@ export default function IptvProvidersPage() {
         credentials: 'include',
       });
       if (!res.ok) throw new Error('Failed to fetch channel mappings');
-      const data = await res.json();
-      console.log('[DEBUG] Channel mappings response:', data);
-      return data;
+      return res.json();
     },
     enabled: activeTab === 'mappings',
     staleTime: 0, // Always refetch
   });
   const channelMappings = channelMappingsData?.mappings || [];
-  console.log('[DEBUG] channelMappings array:', channelMappings);
 
   // Fetch provider health summary
   const { data: healthSummary = [], isLoading: healthLoading } = useQuery<ProviderHealthSummary[]>({
