@@ -5303,19 +5303,17 @@ export default function LiveTVTvPage() {
                     <p className="text-white/50">No upcoming games scheduled</p>
                   </div>
                 ) : (() => {
-                  // Group games by date
-                  const groupedByDate: Map<string, typeof sportsSchedule.games> = new Map();
-                  sportsSchedule.games.forEach(game => {
-                    const date = new Date(game.date).toLocaleDateString('en-US', {
-                      weekday: 'long',
-                      month: 'short',
-                      day: 'numeric'
-                    });
-                    if (!groupedByDate.has(date)) {
-                      groupedByDate.set(date, []);
-                    }
-                    groupedByDate.get(date)!.push(game);
-                  });
+                  // Separate games into upcoming and past
+                  const now = new Date();
+                  const upcomingGames = sportsSchedule.games
+                    .filter(g => g.status === 'scheduled' || g.status === 'live')
+                    .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
+                    .slice(0, 5);
+
+                  const pastGames = sportsSchedule.games
+                    .filter(g => g.status === 'final' || g.status === 'postponed')
+                    .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()) // Most recent first
+                    .slice(0, 5);
 
                   // Get sport channels for matching
                   const sportChannels = scheduleModal === 'nfl' ? nflChannels
@@ -5344,170 +5342,185 @@ export default function LiveTVTvPage() {
                     return null;
                   };
 
-                  return Array.from(groupedByDate.entries()).map(([date, games]) => (
-                    <div key={date} className="mb-6">
-                      <h3 className="text-sm font-medium text-white/50 mb-3">{date}</h3>
-                      <div className="space-y-3">
-                        {games.map((game) => {
-                          const startTime = new Date(game.date);
-                          const now = new Date();
-                          const timeStr = startTime.toLocaleTimeString('en-US', {
-                            hour: 'numeric',
-                            minute: '2-digit'
-                          });
-                          const matchedChannel = findChannelForBroadcast(game.broadcast);
-                          const isLive = game.status === 'live';
-                          const isFinal = game.status === 'final';
-                          const isPostponed = game.status === 'postponed';
-                          const isFuture = startTime > now;
-                          const isStartingSoon = startTime.getTime() - now.getTime() < 30 * 60 * 1000; // Within 30 min
-                          const showWatchButton = matchedChannel && (isLive || isStartingSoon);
-                          // Use channel ID for reminders so notification opens correct channel
-                          const channelIdForReminder = matchedChannel?.channel.iptvId || game.id;
-                          const hasGameReminder = hasReminder(channelIdForReminder, game.date);
+                  // Render a game card
+                  const renderGameCard = (game: typeof sportsSchedule.games[0]) => {
+                    const startTime = new Date(game.date);
+                    const timeStr = startTime.toLocaleDateString('en-US', {
+                      weekday: 'short',
+                      month: 'short',
+                      day: 'numeric',
+                      hour: 'numeric',
+                      minute: '2-digit'
+                    });
+                    const matchedChannel = findChannelForBroadcast(game.broadcast);
+                    const isLive = game.status === 'live';
+                    const isFinal = game.status === 'final';
+                    const isPostponed = game.status === 'postponed';
+                    const isFuture = startTime > now;
+                    const isStartingSoon = startTime.getTime() - now.getTime() < 30 * 60 * 1000;
+                    const showWatchButton = matchedChannel && (isLive || isStartingSoon);
+                    const channelIdForReminder = matchedChannel?.channel.iptvId || game.id;
+                    const hasGameReminder = hasReminder(channelIdForReminder, game.date);
 
-                          return (
-                            <div
-                              key={game.id}
-                              className={cn(
-                                "bg-white/5 rounded-xl p-4 transition-colors",
-                                isFinal ? "opacity-70" : ""
-                              )}
-                            >
-                              {/* Teams Row with Scores */}
-                              <div className="flex items-center gap-3 mb-3">
-                                {/* Away Team */}
-                                <div className="flex items-center gap-2 flex-1 min-w-0">
-                                  {game.awayTeam.logo && (
-                                    <img src={game.awayTeam.logo} alt="" className="w-8 h-8 object-contain" />
-                                  )}
-                                  <span className={cn(
-                                    "font-medium truncate",
-                                    isFinal && game.awayTeam.score !== undefined && game.homeTeam.score !== undefined
-                                      ? game.awayTeam.score > game.homeTeam.score ? "text-white" : "text-white/50"
-                                      : "text-white"
-                                  )}>
-                                    {game.awayTeam.abbreviation}
-                                  </span>
-                                  {(isLive || isFinal) && game.awayTeam.score !== undefined && (
-                                    <span className={cn(
-                                      "font-bold text-lg",
-                                      isFinal && game.awayTeam.score > (game.homeTeam.score || 0) ? "text-white" : "text-white/70"
-                                    )}>
-                                      {game.awayTeam.score}
-                                    </span>
-                                  )}
-                                </div>
+                    return (
+                      <div
+                        key={game.id}
+                        className={cn(
+                          "bg-white/5 rounded-xl p-4 transition-colors",
+                          isFinal ? "opacity-70" : ""
+                        )}
+                      >
+                        {/* Teams Row with Scores */}
+                        <div className="flex items-center gap-3 mb-2">
+                          {/* Away Team */}
+                          <div className="flex items-center gap-2 flex-1 min-w-0">
+                            {game.awayTeam.logo && (
+                              <img src={game.awayTeam.logo} alt="" className="w-8 h-8 object-contain" />
+                            )}
+                            <span className={cn(
+                              "font-medium truncate",
+                              isFinal && game.awayTeam.score !== undefined && game.homeTeam.score !== undefined
+                                ? game.awayTeam.score > game.homeTeam.score ? "text-white" : "text-white/50"
+                                : "text-white"
+                            )}>
+                              {game.awayTeam.abbreviation}
+                            </span>
+                            {(isLive || isFinal) && game.awayTeam.score !== undefined && (
+                              <span className={cn(
+                                "font-bold text-lg",
+                                isFinal && game.awayTeam.score > (game.homeTeam.score || 0) ? "text-white" : "text-white/70"
+                              )}>
+                                {game.awayTeam.score}
+                              </span>
+                            )}
+                          </div>
 
-                                <span className="text-white/40 text-sm">
-                                  {(isLive || isFinal) ? "-" : "@"}
-                                </span>
+                          <span className="text-white/40 text-sm">
+                            {(isLive || isFinal) ? "-" : "@"}
+                          </span>
 
-                                {/* Home Team */}
-                                <div className="flex items-center gap-2 flex-1 min-w-0 justify-end">
-                                  {(isLive || isFinal) && game.homeTeam.score !== undefined && (
-                                    <span className={cn(
-                                      "font-bold text-lg",
-                                      isFinal && game.homeTeam.score > (game.awayTeam.score || 0) ? "text-white" : "text-white/70"
-                                    )}>
-                                      {game.homeTeam.score}
-                                    </span>
-                                  )}
-                                  <span className={cn(
-                                    "font-medium truncate",
-                                    isFinal && game.homeTeam.score !== undefined && game.awayTeam.score !== undefined
-                                      ? game.homeTeam.score > game.awayTeam.score ? "text-white" : "text-white/50"
-                                      : "text-white"
-                                  )}>
-                                    {game.homeTeam.abbreviation}
-                                  </span>
-                                  {game.homeTeam.logo && (
-                                    <img src={game.homeTeam.logo} alt="" className="w-8 h-8 object-contain" />
-                                  )}
-                                </div>
-                              </div>
+                          {/* Home Team */}
+                          <div className="flex items-center gap-2 flex-1 min-w-0 justify-end">
+                            {(isLive || isFinal) && game.homeTeam.score !== undefined && (
+                              <span className={cn(
+                                "font-bold text-lg",
+                                isFinal && game.homeTeam.score > (game.awayTeam.score || 0) ? "text-white" : "text-white/70"
+                              )}>
+                                {game.homeTeam.score}
+                              </span>
+                            )}
+                            <span className={cn(
+                              "font-medium truncate",
+                              isFinal && game.homeTeam.score !== undefined && game.awayTeam.score !== undefined
+                                ? game.homeTeam.score > game.awayTeam.score ? "text-white" : "text-white/50"
+                                : "text-white"
+                            )}>
+                              {game.homeTeam.abbreviation}
+                            </span>
+                            {game.homeTeam.logo && (
+                              <img src={game.homeTeam.logo} alt="" className="w-8 h-8 object-contain" />
+                            )}
+                          </div>
+                        </div>
 
-                              {/* Info Row */}
-                              <div className="flex items-center justify-between text-sm">
-                                <div className="flex items-center gap-2">
-                                  {isLive && (
-                                    <span className="flex items-center gap-1 px-2 py-0.5 bg-red-600 rounded text-white text-xs font-medium">
-                                      <span className="w-1.5 h-1.5 bg-white rounded-full animate-pulse" />
-                                      LIVE
-                                    </span>
-                                  )}
-                                  {isFinal && (
-                                    <span className="px-2 py-0.5 bg-white/20 rounded text-white/70 text-xs font-medium">
-                                      FINAL
-                                    </span>
-                                  )}
-                                  {isPostponed && (
-                                    <span className="px-2 py-0.5 bg-yellow-600/50 rounded text-yellow-200 text-xs font-medium">
-                                      PPD
-                                    </span>
-                                  )}
-                                  {!isFinal && !isPostponed && (
-                                    <span className="text-white/70">{timeStr}</span>
-                                  )}
-                                  {game.broadcast.length > 0 && !isFinal && (
-                                    <span className="text-white/40">• {game.broadcast[0]}</span>
-                                  )}
-                                </div>
+                        {/* Info Row */}
+                        <div className="flex items-center justify-between text-sm">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            {isLive && (
+                              <span className="flex items-center gap-1 px-2 py-0.5 bg-red-600 rounded text-white text-xs font-medium">
+                                <span className="w-1.5 h-1.5 bg-white rounded-full animate-pulse" />
+                                LIVE
+                              </span>
+                            )}
+                            {isFinal && (
+                              <span className="px-2 py-0.5 bg-white/20 rounded text-white/70 text-xs font-medium">
+                                FINAL
+                              </span>
+                            )}
+                            {isPostponed && (
+                              <span className="px-2 py-0.5 bg-yellow-600/50 rounded text-yellow-200 text-xs font-medium">
+                                PPD
+                              </span>
+                            )}
+                            <span className="text-white/50 text-xs">{timeStr}</span>
+                            {game.broadcast.length > 0 && !isFinal && (
+                              <span className="text-white/30 text-xs">• {game.broadcast[0]}</span>
+                            )}
+                          </div>
 
-                                {/* Action Buttons */}
-                                <div className="flex items-center gap-2">
-                                  {/* Reminder button for future games */}
-                                  {isFuture && !isLive && !isFinal && !isPostponed && matchedChannel && (
-                                    <button
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        haptics.light();
-                                        if (hasGameReminder) {
-                                          handleCancelReminder(channelIdForReminder, game.date);
-                                        } else {
-                                          handleSetReminder(
-                                            {
-                                              title: game.shortName,
-                                              startTime: game.date,
-                                              endTime: new Date(new Date(game.date).getTime() + 3 * 60 * 60 * 1000).toISOString(),
-                                            },
-                                            matchedChannel.channel
-                                          );
-                                        }
-                                      }}
-                                      className={cn(
-                                        "p-2 rounded-full transition-colors",
-                                        hasGameReminder ? "bg-blue-600 text-white" : "bg-white/10 text-white/70"
-                                      )}
-                                    >
-                                      {hasGameReminder ? <BellOff className="w-4 h-4" /> : <Bell className="w-4 h-4" />}
-                                    </button>
-                                  )}
+                          {/* Action Buttons */}
+                          <div className="flex items-center gap-2 shrink-0">
+                            {isFuture && !isLive && !isFinal && !isPostponed && matchedChannel && (
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  haptics.light();
+                                  if (hasGameReminder) {
+                                    handleCancelReminder(channelIdForReminder, game.date);
+                                  } else {
+                                    handleSetReminder(
+                                      {
+                                        title: game.shortName,
+                                        startTime: game.date,
+                                        endTime: new Date(new Date(game.date).getTime() + 3 * 60 * 60 * 1000).toISOString(),
+                                      },
+                                      matchedChannel.channel
+                                    );
+                                  }
+                                }}
+                                className={cn(
+                                  "p-2 rounded-full transition-colors",
+                                  hasGameReminder ? "bg-blue-600 text-white" : "bg-white/10 text-white/70"
+                                )}
+                              >
+                                {hasGameReminder ? <BellOff className="w-4 h-4" /> : <Bell className="w-4 h-4" />}
+                              </button>
+                            )}
 
-                                  {/* Watch button - only show when game is starting soon or live */}
-                                  {showWatchButton && (
-                                    <button
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        haptics.light();
-                                        playStream(matchedChannel.channel);
-                                        setViewMode('player');
-                                        setScheduleModal(null);
-                                      }}
-                                      className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 rounded-full text-white text-sm font-medium active:bg-blue-700"
-                                    >
-                                      <Play className="w-3.5 h-3.5" />
-                                      Watch
-                                    </button>
-                                  )}
-                                </div>
-                              </div>
-                            </div>
-                          );
-                        })}
+                            {showWatchButton && (
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  haptics.light();
+                                  playStream(matchedChannel.channel);
+                                  setViewMode('player');
+                                  setScheduleModal(null);
+                                }}
+                                className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 rounded-full text-white text-sm font-medium active:bg-blue-700"
+                              >
+                                <Play className="w-3.5 h-3.5" />
+                                Watch
+                              </button>
+                            )}
+                          </div>
+                        </div>
                       </div>
-                    </div>
-                  ));
+                    );
+                  };
+
+                  return (
+                    <>
+                      {/* Upcoming Games */}
+                      {upcomingGames.length > 0 && (
+                        <div className="mb-6">
+                          <h3 className="text-sm font-medium text-white/50 mb-3">Upcoming</h3>
+                          <div className="space-y-3">
+                            {upcomingGames.map(renderGameCard)}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Past Games */}
+                      {pastGames.length > 0 && (
+                        <div className="mb-6">
+                          <h3 className="text-sm font-medium text-white/50 mb-3">Recent Results</h3>
+                          <div className="space-y-3">
+                            {pastGames.map(renderGameCard)}
+                          </div>
+                        </div>
+                      )}
+                    </>
+                  );
                 })()}
               </div>
             </motion.div>
