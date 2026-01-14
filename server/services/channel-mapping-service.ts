@@ -501,48 +501,43 @@ export class ChannelMappingService {
     const c = this.extractChannelElements(candidate);
 
     let score = 0;
-    let maxScore = 0;
+    let maxScore = 100; // Fixed max score for consistent scaling
+
+    // US prefix bonus - prioritize US channels (15 points)
+    const candidateUpper = candidate.toUpperCase();
+    if (candidateUpper.startsWith('US:') || candidateUpper.startsWith('US ') ||
+        candidateUpper.startsWith('USA:') || candidateUpper.startsWith('USA ')) {
+      score += 15;
+    }
 
     // Call sign match (very strong signal) - 40 points
-    if (p.callSign || c.callSign) {
-      maxScore += 40;
-      if (p.callSign && c.callSign && p.callSign === c.callSign) {
-        score += 40;
-      }
+    if (p.callSign && c.callSign && p.callSign === c.callSign) {
+      score += 40;
     }
 
-    // Brand match (strong signal) - 35 points
-    if (p.brand || c.brand) {
-      maxScore += 35;
-      if (p.brand && c.brand && p.brand === c.brand) {
-        score += 35;
-      }
+    // Brand match (strong signal) - 30 points
+    if (p.brand && c.brand && p.brand === c.brand) {
+      score += 30;
     }
 
-    // City match (good signal) - 15 points
-    if (p.city || c.city) {
-      maxScore += 15;
-      if (p.city && c.city && p.city === c.city) {
-        score += 15;
-      }
+    // City match (good signal) - 10 points
+    if (p.city && c.city && p.city === c.city) {
+      score += 10;
     }
 
-    // Clean name similarity (fallback) - 10 points
-    maxScore += 10;
+    // Clean name similarity (fallback) - up to 5 points
     const levenshteinSim = this.calculateSimilarity(p.cleanName, c.cleanName);
-    score += levenshteinSim * 10;
+    score += levenshteinSim * 5;
 
     // Substring bonus: if one clean name contains the other
     if (p.cleanName.length >= 3 && c.cleanName.length >= 3) {
       if (c.cleanName.includes(p.cleanName) || p.cleanName.includes(c.cleanName)) {
         score += 5;
-        maxScore += 5;
       }
     }
 
     // Normalize to 0-100
-    if (maxScore === 0) return 0;
-    return Math.min(100, Math.round((score / maxScore) * 100));
+    return Math.min(100, Math.round(score));
   }
 
   /**
@@ -593,7 +588,7 @@ export class ChannelMappingService {
         channel: c,
         confidence: this.calculateSmartScore(primaryChannel.name, c.name)
       }))
-      .filter(s => s.confidence >= 15) // Show matches with at least some relevance
+      .filter(s => s.confidence >= 5) // Low threshold to always show some options
       .sort((a, b) => b.confidence - a.confidence)
       .slice(0, limit);
 
