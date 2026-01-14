@@ -2034,42 +2034,6 @@ router.get('/channel-mappings', requireSuperAdmin, async (req, res) => {
 });
 
 /**
- * GET /api/admin/channel-mappings/:channelId
- * Get all mappings for a specific primary channel
- */
-router.get('/channel-mappings/:channelId', requireSuperAdmin, async (req, res) => {
-  try {
-    const channelId = parseInt(req.params.channelId);
-    if (isNaN(channelId)) {
-      return res.status(400).json({ error: 'Invalid channel ID' });
-    }
-
-    const mappings = await channelMappingService.getMappingsForChannel(channelId);
-
-    // Get the primary channel info
-    const [primaryChannel] = await db.select({
-      id: iptvChannels.id,
-      name: iptvChannels.name,
-      logo: iptvChannels.logo,
-      streamId: iptvChannels.streamId,
-      providerId: iptvChannels.providerId,
-      providerName: iptvProviders.name,
-    })
-      .from(iptvChannels)
-      .innerJoin(iptvProviders, eq(iptvChannels.providerId, iptvProviders.id))
-      .where(eq(iptvChannels.id, channelId));
-
-    res.json({
-      channel: primaryChannel || null,
-      mappings
-    });
-  } catch (error) {
-    console.error('Error fetching channel mappings:', error);
-    res.status(500).json({ error: 'Failed to fetch channel mappings' });
-  }
-});
-
-/**
  * POST /api/admin/channel-mappings
  * Create a new channel mapping
  */
@@ -2305,6 +2269,43 @@ router.get('/channel-mappings/suggest-for-provider', requireSuperAdmin, async (r
   } catch (error) {
     console.error('Error suggesting mappings for provider:', error);
     res.status(500).json({ error: 'Failed to suggest mappings' });
+  }
+});
+
+/**
+ * GET /api/admin/channel-mappings/:channelId
+ * Get all mappings for a specific primary channel
+ * NOTE: This route MUST be after all specific /channel-mappings/* routes
+ */
+router.get('/channel-mappings/:channelId', requireSuperAdmin, async (req, res) => {
+  try {
+    const channelId = parseInt(req.params.channelId);
+    if (isNaN(channelId)) {
+      return res.status(400).json({ error: 'Invalid channel ID' });
+    }
+
+    const mappings = await channelMappingService.getMappingsForChannel(channelId);
+
+    // Get the primary channel info
+    const [primaryChannel] = await db.select({
+      id: iptvChannels.id,
+      name: iptvChannels.name,
+      logo: iptvChannels.logo,
+      streamId: iptvChannels.streamId,
+      providerId: iptvChannels.providerId,
+      providerName: iptvProviders.name,
+    })
+      .from(iptvChannels)
+      .innerJoin(iptvProviders, eq(iptvChannels.providerId, iptvProviders.id))
+      .where(eq(iptvChannels.id, channelId));
+
+    res.json({
+      channel: primaryChannel || null,
+      mappings
+    });
+  } catch (error) {
+    console.error('Error fetching channel mappings:', error);
+    res.status(500).json({ error: 'Failed to fetch channel mappings' });
   }
 });
 
