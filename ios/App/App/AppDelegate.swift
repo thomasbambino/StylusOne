@@ -1,8 +1,14 @@
 import UIKit
 import Capacitor
+import UserNotifications
+
+// Extension for local notification forwarding to Capacitor plugin
+extension Notification.Name {
+    static let capacitorDidReceiveLocalNotification = Notification.Name("capacitorDidReceiveLocalNotification")
+}
 
 @UIApplicationMain
-class AppDelegate: UIResponder, UIApplicationDelegate {
+class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationCenterDelegate {
 
     var window: UIWindow?
 
@@ -18,7 +24,28 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
         // Set window background to black to prevent white flash
         window?.backgroundColor = .black
         window?.rootViewController?.view.backgroundColor = .black
+
+        // Set up notification center delegate to handle notifications when app is in foreground
+        UNUserNotificationCenter.current().delegate = self
+
         return true
+    }
+
+    // Handle notification when app is in foreground - show banner and play sound
+    func userNotificationCenter(_ center: UNUserNotificationCenter,
+                                willPresent notification: UNNotification,
+                                withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void) {
+        // Show the notification banner and sound even when app is in foreground
+        completionHandler([.banner, .sound])
+    }
+
+    // Handle notification tap - forward to Capacitor's LocalNotifications plugin
+    func userNotificationCenter(_ center: UNUserNotificationCenter,
+                                didReceive response: UNNotificationResponse,
+                                withCompletionHandler completionHandler: @escaping () -> Void) {
+        // Post notification for Capacitor LocalNotifications plugin to handle
+        NotificationCenter.default.post(name: .capacitorDidReceiveLocalNotification, object: response)
+        completionHandler()
     }
 
     func applicationWillResignActive(_ application: UIApplication) {

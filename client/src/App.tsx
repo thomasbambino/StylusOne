@@ -16,6 +16,7 @@ import { ThemeProvider } from "@/components/theme-provider";
 import { FaviconUpdater } from "@/components/favicon-updater";
 import { CacheUpdater } from "@/components/cache-updater";
 import { getDeviceType, isNativePlatform } from "@/lib/capacitor";
+import { ReminderProvider } from "@/contexts/ReminderContext";
 import { useEffect, useState, lazy, Suspense } from "react";
 
 // Lazy load larger pages for code splitting
@@ -102,10 +103,12 @@ function App() {
       <div className="min-h-screen bg-background text-foreground">
         <QueryClientProvider client={queryClient}>
           <AuthProvider>
-            <FaviconUpdater />
-            <CacheUpdater />
-            <Router />
-            <Toaster />
+            <ReminderProvider>
+              <FaviconUpdater />
+              <CacheUpdater />
+              <Router />
+              <Toaster />
+            </ReminderProvider>
           </AuthProvider>
         </QueryClientProvider>
       </div>

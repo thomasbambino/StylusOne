@@ -1,24 +1,30 @@
 import fetch from 'node-fetch';
 
 /**
- * TMDB (The Movie Database) service for fetching TV show artwork
+ * TMDB (The Movie Database) service for fetching TV show and movie artwork
  * Uses a background worker with queue to avoid blocking requests
+ * Searches both TV shows and movies using the multi-search endpoint
  */
 
-interface TMDBSearchResult {
+interface TMDBMultiSearchResult {
   id: number;
-  name: string;
+  media_type: 'tv' | 'movie' | 'person';
+  // TV shows use 'name', movies use 'title'
+  name?: string;
+  title?: string;
   poster_path: string | null;
   backdrop_path: string | null;
+  // TV shows use 'first_air_date', movies use 'release_date'
   first_air_date?: string;
+  release_date?: string;
 }
 
-interface TMDBShowImages {
+interface TMDBImages {
   backdrops: Array<{ file_path: string; width: number; height: number }>;
   posters: Array<{ file_path: string; width: number; height: number }>;
 }
 
-// In-memory cache for show lookups (title -> image URL)
+// In-memory cache for TV show and movie lookups (title -> image URL)
 const imageCache = new Map<string, string | null>();
 const CACHE_TTL = 24 * 60 * 60 * 1000; // 24 hours
 const cacheTimestamps = new Map<string, number>();
@@ -276,6 +282,7 @@ export class TMDBService {
 
   /**
    * Fetch image from TMDB and cache it (used by background worker)
+   * Searches both TV shows and movies using the multi-search endpoint
    */
   private async fetchAndCacheImage(title: string): Promise<string | null> {
     const cacheKey = this.getCacheKey(title);
@@ -288,8 +295,8 @@ export class TMDBService {
     }
 
     try {
-      // Search for the TV show
-      const searchUrl = `${this.baseUrl}/search/tv?api_key=${this.apiKey}&query=${encodeURIComponent(cleanedTitle)}&page=1`;
+      // Search for both TV shows and movies using multi-search
+      const searchUrl = `${this.baseUrl}/search/multi?api_key=${this.apiKey}&query=${encodeURIComponent(cleanedTitle)}&page=1`;
       const searchData = await this.rateLimitedFetch(searchUrl);
 
       if (!searchData.results || searchData.results.length === 0) {
@@ -298,17 +305,30 @@ export class TMDBService {
         return null;
       }
 
+      // Filter to only TV and movie results (exclude person results)
+      const mediaResults = searchData.results.filter(
+        (r: TMDBMultiSearchResult) => r.media_type === 'tv' || r.media_type === 'movie'
+      );
+
+      if (mediaResults.length === 0) {
+        imageCache.set(cacheKey, null);
+        cacheTimestamps.set(cacheKey, Date.now());
+        return null;
+      }
+
       // Get the first (best) match
-      const show: TMDBSearchResult = searchData.results[0];
+      const result: TMDBMultiSearchResult = mediaResults[0];
+      const mediaType = result.media_type;
+      const displayName = result.name || result.title || cleanedTitle;
 
       // Prefer backdrop (16:9 landscape) over poster (2:3 portrait)
-      let imagePath = show.backdrop_path || show.poster_path;
+      let imagePath = result.backdrop_path || result.poster_path;
 
       if (!imagePath) {
-        // Try to get images from the show's details
-        const imagesUrl = `${this.baseUrl}/tv/${show.id}/images?api_key=${this.apiKey}`;
+        // Try to get images from the media's details
+        const imagesUrl = `${this.baseUrl}/${mediaType}/${result.id}/images?api_key=${this.apiKey}`;
         try {
-          const imagesData: TMDBShowImages = await this.rateLimitedFetch(imagesUrl);
+          const imagesData: TMDBImages = await this.rateLimitedFetch(imagesUrl);
 
           if (imagesData.backdrops && imagesData.backdrops.length > 0) {
             imagePath = imagesData.backdrops[0].file_path;
@@ -333,7 +353,7 @@ export class TMDBService {
       imageCache.set(cacheKey, imageUrl);
       cacheTimestamps.set(cacheKey, Date.now());
 
-      console.log(`[TMDB] Found thumbnail for "${cleanedTitle}" -> ${show.name}`);
+      console.log(`[TMDB] Found ${mediaType} thumbnail for "${cleanedTitle}" -> ${displayName}`);
 
       return imageUrl;
     } catch (error) {
@@ -345,7 +365,7 @@ export class TMDBService {
   }
 
   /**
-   * Search for a TV show and get its backdrop/poster image
+   * Search for a TV show or movie and get its backdrop/poster image
    * Returns cached result or null (use queueTitle for background fetch)
    */
   async getShowImage(title: string): Promise<string | null> {

@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef, useMemo, memo } from 'react';
 import { useQuery, useQueries, useMutation, useQueryClient } from '@tanstack/react-query';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Play, Pause, Volume2, VolumeX, Info, Plus, MoreHorizontal, Star, X, Check, CreditCard, Calendar, ExternalLink, LogOut, LayoutGrid, Airplay, Search, Volume1, Minus, Settings, PictureInPicture2, Filter, Package, Tv, Clock, Zap, Radio, TrendingUp, Users } from 'lucide-react';
+import { ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Play, Pause, Volume2, VolumeX, Info, Plus, MoreHorizontal, Star, X, Check, CreditCard, Calendar, ExternalLink, LogOut, LayoutGrid, Airplay, Search, Volume1, Minus, Settings, PictureInPicture2, Filter, Package, Tv, Clock, Zap, Radio, TrendingUp, Users, Bell, BellOff } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { getQueryFn, apiRequest, queryClient } from '@/lib/queryClient';
 import { buildApiUrl, isNativePlatform, getDeviceTypeSync, getPlatform } from '@/lib/capacitor';
@@ -13,6 +13,8 @@ import { KeepAwake } from '@capacitor-community/keep-awake';
 import { CapacitorHttp, HttpResponse } from '@capacitor/core';
 import { isIOSNative, showNativeTabBar, hideNativeTabBar, addNativeTabBarListener, setNativeTabBarSelected } from '@/lib/nativeTabBar';
 import { getCachedEPG, cacheEPG, cleanupExpiredCache } from '@/lib/epgCache';
+import { useReminders } from '@/contexts/ReminderContext';
+import { useToast } from '@/hooks/use-toast';
 
 // ============================================================================
 // TYPES & INTERFACES
@@ -224,66 +226,102 @@ ActionButtons.displayName = 'ActionButtons';
 const InfoModal = memo(({
   program,
   channel,
-  onClose
+  onClose,
+  hasReminder,
+  onSetReminder,
+  onCancelReminder
 }: {
   program: EPGProgram | null;
   channel: Channel | null;
   onClose: () => void;
-}) => (
-  <motion.div
-    initial={{ opacity: 0 }}
-    animate={{ opacity: 1 }}
-    exit={{ opacity: 0 }}
-    className="absolute inset-0 bg-black/90 z-50 flex items-center justify-center"
-    onClick={onClose}
-    onTouchEnd={(e) => { if (e.target === e.currentTarget) { e.preventDefault(); onClose(); } }}
-  >
+  hasReminder?: boolean;
+  onSetReminder?: () => void;
+  onCancelReminder?: () => void;
+}) => {
+  // Check if program is in the future (can set reminder)
+  const isFutureProgram = program && new Date(program.startTime) > new Date();
+
+  return (
     <motion.div
-      initial={{ scale: 0.9, opacity: 0 }}
-      animate={{ scale: 1, opacity: 1 }}
-      exit={{ scale: 0.9, opacity: 0 }}
-      className="bg-zinc-900 rounded-xl p-8 max-w-2xl w-full mx-8"
-      onClick={e => e.stopPropagation()}
-      onTouchEnd={e => e.stopPropagation()}
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      className="absolute inset-0 bg-black/90 z-50 flex items-center justify-center"
+      onClick={onClose}
+      onTouchEnd={(e) => { if (e.target === e.currentTarget) { e.preventDefault(); onClose(); } }}
     >
-      <div className="flex justify-between items-start mb-4">
-        <div>
-          <h2 className="text-3xl font-bold text-white mb-2">
-            {program?.title || channel?.GuideName || 'No Program Info'}
-          </h2>
-          {program && (
-            <div className="text-white/60 text-lg">
-              {formatTimeRange(program.startTime, program.endTime)}
-              {program.episodeTitle && ` • ${program.episodeTitle}`}
-            </div>
-          )}
+      <motion.div
+        initial={{ scale: 0.9, opacity: 0 }}
+        animate={{ scale: 1, opacity: 1 }}
+        exit={{ scale: 0.9, opacity: 0 }}
+        className="bg-zinc-900 rounded-xl p-8 max-w-2xl w-full mx-8"
+        onClick={e => e.stopPropagation()}
+        onTouchEnd={e => e.stopPropagation()}
+      >
+        <div className="flex justify-between items-start mb-4">
+          <div>
+            <h2 className="text-3xl font-bold text-white mb-2">
+              {program?.title || channel?.GuideName || 'No Program Info'}
+            </h2>
+            {program && (
+              <div className="text-white/60 text-lg">
+                {formatTimeRange(program.startTime, program.endTime)}
+                {program.episodeTitle && ` • ${program.episodeTitle}`}
+              </div>
+            )}
+          </div>
+          <button
+            onClick={onClose}
+            onTouchEnd={(e) => { e.preventDefault(); e.stopPropagation(); onClose(); }}
+            className="p-2 hover:bg-white/10 active:bg-white/20 rounded-full"
+          >
+            <X className="w-6 h-6 text-white/60" />
+          </button>
         </div>
-        <button
-          onClick={onClose}
-          onTouchEnd={(e) => { e.preventDefault(); e.stopPropagation(); onClose(); }}
-          className="p-2 hover:bg-white/10 active:bg-white/20 rounded-full"
-        >
-          <X className="w-6 h-6 text-white/60" />
-        </button>
-      </div>
 
-      {program?.description ? (
-        <p className="text-white/80 text-lg leading-relaxed">{program.description}</p>
-      ) : (
-        <p className="text-white/50 text-lg">No description available for this program.</p>
-      )}
+        {program?.description ? (
+          <p className="text-white/80 text-lg leading-relaxed">{program.description}</p>
+        ) : (
+          <p className="text-white/50 text-lg">No description available for this program.</p>
+        )}
 
-      {channel && (
-        <div className="mt-6 pt-6 border-t border-white/10 flex items-center gap-3">
-          {channel.logo && (
-            <img src={channel.logo} alt="" className="h-8 w-auto object-contain" />
-          )}
-          <span className="text-white/70">{channel.GuideName}</span>
-        </div>
-      )}
+        {/* Reminder Button - only show for future programs on native platforms */}
+        {isFutureProgram && isNativePlatform() && onSetReminder && onCancelReminder && (
+          <div className="mt-6">
+            {hasReminder ? (
+              <button
+                onClick={(e) => { e.stopPropagation(); onCancelReminder(); }}
+                onTouchEnd={(e) => { e.preventDefault(); e.stopPropagation(); onCancelReminder(); }}
+                className="flex items-center gap-2 px-4 py-3 bg-red-600 hover:bg-red-700 active:bg-red-800 rounded-lg text-white font-medium transition-colors"
+              >
+                <BellOff className="w-5 h-5" />
+                Cancel Reminder
+              </button>
+            ) : (
+              <button
+                onClick={(e) => { e.stopPropagation(); onSetReminder(); }}
+                onTouchEnd={(e) => { e.preventDefault(); e.stopPropagation(); onSetReminder(); }}
+                className="flex items-center gap-2 px-4 py-3 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 rounded-lg text-white font-medium transition-colors"
+              >
+                <Bell className="w-5 h-5" />
+                Remind Me
+              </button>
+            )}
+          </div>
+        )}
+
+        {channel && (
+          <div className="mt-6 pt-6 border-t border-white/10 flex items-center gap-3">
+            {channel.logo && (
+              <img src={channel.logo} alt="" className="h-8 w-auto object-contain" />
+            )}
+            <span className="text-white/70">{channel.GuideName}</span>
+          </div>
+        )}
+      </motion.div>
     </motion.div>
-  </motion.div>
-));
+  );
+});
 InfoModal.displayName = 'InfoModal';
 
 // Menu Popup
@@ -755,7 +793,9 @@ const GuideChannelRow = memo(({
   isPlaying,
   isFavorite,
   onSelect,
-  onToggleFavorite
+  onToggleFavorite,
+  onProgramClick,
+  wasScrolling
 }: {
   channel: Channel;
   epgData: ChannelEPG | undefined;
@@ -766,23 +806,38 @@ const GuideChannelRow = memo(({
   isFavorite: boolean;
   onSelect: () => void;
   onToggleFavorite: () => void;
+  onProgramClick?: (program: EPGProgram) => void;
+  wasScrolling?: () => boolean;
 }) => {
   const now = new Date();
   const totalMs = timelineEnd.getTime() - timelineStart.getTime();
 
   const renderProgram = (program: EPGProgram | null, isNow: boolean, fallbackTitle?: string) => {
-    // If no program data, show fallback for current program
+    // If no program data, show fallback for current program - clicking plays channel
     if (!program) {
       if (isNow && fallbackTitle) {
+        const handleFallbackTap = (e: React.MouseEvent | React.TouchEvent) => {
+          e.stopPropagation();
+          e.preventDefault();
+          // Don't trigger if user was scrolling
+          if (wasScrolling?.()) {
+            console.log('[Guide] Ignoring fallback tap - was scrolling');
+            return;
+          }
+          console.log('[Guide] FALLBACK TAP - no EPG data, playing channel');
+          onSelect(); // Play channel when no program info available
+        };
         return (
           <div
+            onClick={handleFallbackTap}
+            onTouchEnd={handleFallbackTap}
             className={cn(
-              "absolute top-1 bottom-1 left-0 right-0 px-3 py-1 rounded border overflow-hidden",
+              "absolute top-1 bottom-1 left-0 right-0 px-3 py-1 rounded border overflow-hidden cursor-pointer",
               isFocused ? "bg-white border-white" : "bg-white/10 border-white/20"
             )}
           >
             <div className={cn(
-              "text-sm font-medium truncate",
+              "text-sm font-medium truncate pointer-events-none",
               isFocused ? "text-black" : "text-white/70"
             )}>{fallbackTitle}</div>
           </div>
@@ -805,18 +860,38 @@ const GuideChannelRow = memo(({
 
     const title = program.title || fallbackTitle || 'No Program Info';
 
+    const handleProgramTap = (e: React.MouseEvent | React.TouchEvent) => {
+      e.stopPropagation();
+      e.preventDefault();
+      // Don't trigger if user was scrolling
+      if (wasScrolling?.()) {
+        console.log('[Guide] Ignoring program tap - was scrolling');
+        return;
+      }
+      console.log('[Guide] PROGRAM TAP - program:', program.title, 'onProgramClick exists:', !!onProgramClick);
+      if (onProgramClick) {
+        console.log('[Guide] Calling onProgramClick for:', program.title);
+        onProgramClick(program);
+      } else {
+        console.log('[Guide] NO onProgramClick, falling back to onSelect');
+        onSelect();
+      }
+    };
+
     return (
       <div
         key={program.startTime}
+        onClick={handleProgramTap}
+        onTouchEnd={handleProgramTap}
         className={cn(
-          "absolute top-1 bottom-1 px-3 py-1 rounded border overflow-hidden transition-all flex items-center",
+          "absolute top-1 bottom-1 px-3 py-1 rounded border overflow-hidden transition-all flex items-center cursor-pointer hover:ring-2 hover:ring-white/30",
           isFocused && isNow ? "bg-white border-white" : "bg-white/10 border-white/20",
           isNow && !isFocused && "border-l-2 border-l-red-500"
         )}
         style={{ left: `${left}%`, width: `${Math.max(width, 10)}%`, minWidth: '100px' }}
       >
         <div className={cn(
-          "text-sm font-medium truncate",
+          "text-sm font-medium truncate pointer-events-none",
           isFocused && isNow ? "text-black" : "text-white"
         )}>{title}</div>
       </div>
@@ -825,9 +900,8 @@ const GuideChannelRow = memo(({
 
   return (
     <div
-      onClick={onSelect}
       className={cn(
-        "flex h-14 cursor-pointer transition-all border-b border-white/5 select-none",
+        "flex h-14 transition-all border-b border-white/5 select-none",
         isFocused && "bg-white/10 ring-2 ring-white/50"
       )}
     >
@@ -838,34 +912,36 @@ const GuideChannelRow = memo(({
       )}>
         {/* Favorite Button */}
         <button
-          onClick={(e) => {
-            e.stopPropagation();
-            onToggleFavorite();
-          }}
+          onClick={onToggleFavorite}
+          onTouchEnd={(e) => { e.preventDefault(); onToggleFavorite(); }}
           className="w-10 shrink-0 flex items-center justify-center hover:bg-white/10 active:bg-white/20"
         >
           <Star className={cn("w-4 h-4", isFavorite ? "text-yellow-400 fill-yellow-400" : "text-white/30")} />
         </button>
 
-        {/* Channel Info */}
-        <div className={cn(
-          "w-40 shrink-0 flex items-center gap-2 px-2 border-r border-white/10",
-          isPlaying && "bg-red-600/20"
-        )}>
-          <div className="w-8 h-8 rounded bg-white/10 flex items-center justify-center overflow-hidden shrink-0">
+        {/* Channel Info - clicking this plays the channel */}
+        <div
+          onClick={() => { console.log('[Guide] CHANNEL INFO CLICK'); onSelect(); }}
+          onTouchEnd={(e) => { e.preventDefault(); console.log('[Guide] CHANNEL INFO TOUCH'); onSelect(); }}
+          className={cn(
+            "w-40 shrink-0 flex items-center gap-2 px-2 border-r border-white/10 cursor-pointer",
+            isPlaying && "bg-red-600/20"
+          )}
+        >
+          <div className="w-8 h-8 rounded bg-white/10 flex items-center justify-center overflow-hidden shrink-0 pointer-events-none">
             {channel.logo ? (
               <img src={channel.logo} alt="" className="w-full h-full object-contain p-0.5" loading="lazy" />
             ) : (
               <span className="text-xs font-bold text-white/60">{channel.GuideNumber}</span>
             )}
           </div>
-          <div className="min-w-0 flex-1">
+          <div className="min-w-0 flex-1 pointer-events-none">
             <div className="text-sm font-medium text-white truncate">{channel.GuideName}</div>
           </div>
         </div>
       </div>
 
-      {/* Programs - scrolls horizontally */}
+      {/* Programs - scrolls horizontally, clicking opens info modal */}
       <div className="flex-1 relative">
         {renderProgram(epgData?.currentProgram || null, true, channel.GuideName)}
         {renderProgram(epgData?.nextProgram || null, false)}
@@ -932,6 +1008,12 @@ FocusedProgramPanel.displayName = 'FocusedProgramPanel';
 export default function LiveTVTvPage() {
   // Auth
   const { user, logoutMutation } = useAuth();
+
+  // Reminders context
+  const { hasReminder, setReminder, cancelReminder, pendingChannel, clearPendingChannel } = useReminders();
+
+  // Toast for feedback
+  const { toast } = useToast();
 
   // Portrait mode detection - check immediately on init
   const [isPortrait, setIsPortrait] = useState(() => {
@@ -1098,6 +1180,12 @@ export default function LiveTVTvPage() {
   const [favoriteOrderVersion, setFavoriteOrderVersion] = useState(0); // Trigger re-render on reorder
   const [showSubscriptionPopup, setShowSubscriptionPopup] = useState(false);
 
+  // Guide program info modal state - for showing program details when tapping in guide
+  const [guideInfoModal, setGuideInfoModal] = useState<{ program: EPGProgram; channel: Channel } | null>(null);
+
+  // Ref to prevent multiple concurrent reminder calls (not state to avoid re-render issues)
+  const isSettingReminderRef = useRef(false);
+
   // Refs
   const videoRef = useRef<HTMLVideoElement>(null);
   const hlsRef = useRef<Hls | null>(null);
@@ -1125,6 +1213,10 @@ export default function LiveTVTvPage() {
   // Dropdown scroll tracking - prevent selection when scrolling
   const dropdownTouchStartY = useRef<number | null>(null);
   const dropdownDidScroll = useRef(false);
+
+  // Guide scroll tracking - prevent selection when scrolling
+  const guideTouchStart = useRef<{ x: number; y: number } | null>(null);
+  const guideDidScroll = useRef(false);
 
   // Stream tracking
   const streamSessionToken = useRef<string | null>(null);
@@ -2277,6 +2369,85 @@ export default function LiveTVTvPage() {
     playStream(channel);
     setViewMode('player');
   }, [playStream]);
+
+  // Handle pending channel from notification tap - auto-play the channel
+  useEffect(() => {
+    if (pendingChannel && channels.length > 0) {
+      console.log('[LiveTV] Handling pending channel from notification:', pendingChannel);
+      const channel = channels.find((ch: Channel) => ch.iptvId === pendingChannel);
+      if (channel) {
+        console.log('[LiveTV] Found channel, starting playback:', channel.GuideName);
+        selectChannelFromGuide(channel);
+      } else {
+        console.warn('[LiveTV] Channel not found for pending ID:', pendingChannel);
+      }
+      clearPendingChannel();
+    }
+  }, [pendingChannel, channels, selectChannelFromGuide, clearPendingChannel]);
+
+  // Reminder handlers for InfoModal
+  const handleSetReminder = useCallback(async (program: EPGProgram, channel: Channel) => {
+    // Prevent concurrent calls using ref
+    if (isSettingReminderRef.current) {
+      console.log('[Reminder] Already setting reminder, ignoring duplicate call');
+      return;
+    }
+
+    console.log('[Reminder] Setting reminder for:', program.title, 'on', channel.GuideName);
+    isSettingReminderRef.current = true;
+
+    try {
+      const success = await setReminder({
+        channelId: channel.iptvId || '',
+        channelName: channel.GuideName,
+        programTitle: program.title,
+        programStart: program.startTime
+      });
+      console.log('[Reminder] Set reminder result:', success);
+      if (success) {
+        haptics.notification('success');
+        toast({
+          title: 'Reminder Set',
+          description: `You'll be notified before "${program.title}" starts`,
+        });
+        // Close the modal after setting reminder
+        setGuideInfoModal(null);
+      } else {
+        haptics.notification('error');
+        toast({
+          title: 'Could not set reminder',
+          description: 'Check notification permissions in Settings',
+          variant: 'destructive',
+        });
+      }
+    } catch (error) {
+      console.error('[Reminder] Error setting reminder:', error);
+      haptics.notification('error');
+      toast({
+        title: 'Error',
+        description: 'Failed to set reminder',
+        variant: 'destructive',
+      });
+    } finally {
+      isSettingReminderRef.current = false;
+    }
+  }, [setReminder, toast]);
+
+  const handleCancelReminder = useCallback(async (channelId: string, programStart: string) => {
+    console.log('[Reminder] Cancelling reminder for channel:', channelId);
+    try {
+      await cancelReminder(channelId, programStart);
+      haptics.notification('warning');
+      toast({
+        title: 'Reminder Cancelled',
+        description: 'You will no longer be notified',
+      });
+      // Close the modal after cancelling
+      setGuideInfoModal(null);
+    } catch (error) {
+      console.error('[Reminder] Error cancelling reminder:', error);
+    }
+  }, [cancelReminder, toast]);
 
   // ============================================================================
   // KEYBOARD NAVIGATION
@@ -3557,7 +3728,21 @@ export default function LiveTVTvPage() {
           </div>
 
           {/* Channel List */}
-          <div ref={guideScrollRef} className="flex-1 overflow-y-auto relative" onScroll={handleGuideScroll}>
+          <div
+            ref={guideScrollRef}
+            className="flex-1 overflow-y-auto relative"
+            onScroll={(e) => {
+              handleGuideScroll(e);
+              guideDidScroll.current = true;
+            }}
+            onTouchStart={(e) => {
+              guideTouchStart.current = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+              guideDidScroll.current = false;
+            }}
+            onTouchMove={() => {
+              guideDidScroll.current = true;
+            }}
+          >
             {filteredChannels.slice(0, renderLimit).map((channel: Channel, index: number) => {
               const channelEpg = epgDataMap.get(channel.iptvId || '');
               const isCurrentChannel = selectedChannel?.iptvId === channel.iptvId;
@@ -3586,64 +3771,8 @@ export default function LiveTVTvPage() {
               const timeRemaining = shiftedCurrentProgram ? getTimeRemaining(shiftedCurrentProgram.endTime) : '';
 
               return (
-                <button
+                <div
                   key={channel.iptvId || index}
-                  onTouchStart={(e) => {
-                    e.preventDefault();
-                    touchStartY.current = e.touches[0].clientY;
-                    longPressChannel.current = channel;
-                    // Start long press timer
-                    longPressTimer.current = setTimeout(() => {
-                      // Long press - toggle favorite
-                      if (longPressChannel.current) {
-                        const channelId = longPressChannel.current.iptvId || '';
-                        const isAlreadyFavorite = favorites.some(f => f.channelId === channelId);
-                        if (isAlreadyFavorite) {
-                          removeFavoriteMutation.mutate(channelId);
-                        } else {
-                          addFavoriteMutation.mutate(longPressChannel.current);
-                        }
-                        // Haptic feedback for long press
-                        haptics.heavy();
-                      }
-                      longPressChannel.current = null;
-                    }, 500);
-                  }}
-                  onTouchMove={(e) => {
-                    // Cancel long press if user scrolls
-                    if (touchStartY.current !== null) {
-                      const distance = Math.abs(e.touches[0].clientY - touchStartY.current);
-                      if (distance > 10 && longPressTimer.current) {
-                        clearTimeout(longPressTimer.current);
-                        longPressTimer.current = null;
-                        longPressChannel.current = null;
-                      }
-                    }
-                  }}
-                  onTouchEnd={(e) => {
-                    // Clear long press timer
-                    if (longPressTimer.current) {
-                      clearTimeout(longPressTimer.current);
-                      longPressTimer.current = null;
-                    }
-                    // Only select if it was a tap (not scroll, not long press)
-                    if (touchStartY.current !== null && longPressChannel.current) {
-                      const touchEndY = e.changedTouches[0].clientY;
-                      const distance = Math.abs(touchEndY - touchStartY.current);
-                      if (distance < 10) {
-                        playStream(channel);
-                        setViewMode('player');
-                        setGuideSearchQuery('');
-                      }
-                    }
-                    touchStartY.current = null;
-                    longPressChannel.current = null;
-                  }}
-                  onClick={() => {
-                    playStream(channel);
-                    setViewMode('player');
-                    setGuideSearchQuery('');
-                  }}
                   className={cn(
                     "w-full flex items-stretch select-none",
                     isCurrentChannel && "bg-white/5"
@@ -3684,8 +3813,31 @@ export default function LiveTVTvPage() {
                       )} />
                     </button>
 
-                    {/* Channel Logo */}
-                    <div className="shrink-0 w-11 h-8 flex items-center justify-center bg-white/10 rounded">
+                    {/* Channel Logo - tap to play channel */}
+                    <div
+                      onClick={() => {
+                        // Ignore clicks on mobile - handled by onTouchEnd
+                        if ('ontouchstart' in window) return;
+                        console.log('[Portrait Guide] LOGO TAP - playing channel:', channel.GuideName);
+                        playStream(channel);
+                        setViewMode('player');
+                        setGuideSearchQuery('');
+                      }}
+                      onTouchEnd={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        // Don't trigger if user was scrolling
+                        if (guideDidScroll.current) {
+                          console.log('[Portrait Guide] Ignoring logo touch - was scrolling');
+                          return;
+                        }
+                        console.log('[Portrait Guide] LOGO TOUCH - playing channel:', channel.GuideName);
+                        playStream(channel);
+                        setViewMode('player');
+                        setGuideSearchQuery('');
+                      }}
+                      className="shrink-0 w-11 h-8 flex items-center justify-center bg-white/10 rounded cursor-pointer active:bg-white/20"
+                    >
                       {channel.logo ? (
                         <img
                           src={channel.logo}
@@ -3696,7 +3848,7 @@ export default function LiveTVTvPage() {
                           onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
                         />
                       ) : (
-                        <span className="text-white/40 text-xs font-medium">{channel.GuideNumber}</span>
+                        <span className="text-white/40 text-xs font-medium pointer-events-none">{channel.GuideNumber}</span>
                       )}
                     </div>
                   </div>
@@ -3704,36 +3856,88 @@ export default function LiveTVTvPage() {
                   {/* Scrollable Programs Section */}
                   <div className="flex-1 overflow-x-auto scrollbar-hide py-2 pr-2">
                     <div className="flex gap-2 min-w-max">
-                      {/* Current Program (at offset time) */}
-                      <div className={cn(
-                        "w-40 shrink-0 text-left py-1.5 px-2.5 rounded-lg border",
-                        isCurrentChannel ? "border-white/30 bg-white/10" : "border-white/10"
-                      )}>
+                      {/* Current Program (at offset time) - tap to show info modal */}
+                      <div
+                        onClick={() => {
+                          // Ignore clicks on mobile - handled by onTouchEnd
+                          if ('ontouchstart' in window) return;
+                          if (shiftedCurrentProgram) {
+                            console.log('[Portrait Guide] PROGRAM TAP - opening info for:', shiftedCurrentProgram.title);
+                            setGuideInfoModal({ program: shiftedCurrentProgram, channel });
+                          } else {
+                            console.log('[Portrait Guide] NO PROGRAM - playing channel:', channel.GuideName);
+                            playStream(channel);
+                            setViewMode('player');
+                            setGuideSearchQuery('');
+                          }
+                        }}
+                        onTouchEnd={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          // Don't trigger if user was scrolling
+                          if (guideDidScroll.current) {
+                            console.log('[Portrait Guide] Ignoring touch - was scrolling');
+                            return;
+                          }
+                          if (shiftedCurrentProgram) {
+                            console.log('[Portrait Guide] PROGRAM TOUCH - opening info for:', shiftedCurrentProgram.title);
+                            setGuideInfoModal({ program: shiftedCurrentProgram, channel });
+                          } else {
+                            console.log('[Portrait Guide] NO PROGRAM TOUCH - playing channel:', channel.GuideName);
+                            playStream(channel);
+                            setViewMode('player');
+                            setGuideSearchQuery('');
+                          }
+                        }}
+                        className={cn(
+                          "w-40 shrink-0 text-left py-1.5 px-2.5 rounded-lg border cursor-pointer active:ring-2 active:ring-white/30",
+                          isCurrentChannel ? "border-white/30 bg-white/10" : "border-white/10"
+                        )}
+                      >
                         <p
                           key={shiftedCurrentProgram?.title || 'no-program'}
                           className={cn(
-                            "text-sm truncate font-medium",
+                            "text-sm truncate font-medium pointer-events-none",
                             isCurrentChannel ? "text-white" : "text-white/90",
                             shiftedCurrentProgram && "animate-fadeSlideIn"
                           )}
                         >
                           {shiftedCurrentProgram?.title || channel.GuideName}
                         </p>
-                        <p className="text-white/50 text-xs">{timeRemaining ? `${timeRemaining} left` : 'Live'}</p>
+                        <p className="text-white/50 text-xs pointer-events-none">{timeRemaining ? `${timeRemaining} left` : 'Live'}</p>
                       </div>
 
-                      {/* Next Program (at offset time) */}
+                      {/* Next Program (at offset time) - tap to show info modal */}
                       {shiftedNextProgram && (
-                        <div className="w-36 shrink-0 text-left py-1.5 px-2.5 rounded-lg border border-white/5 bg-white/5">
-                          <p key={shiftedNextProgram.title} className="text-white/70 text-sm truncate animate-fadeSlideIn">{shiftedNextProgram.title}</p>
-                          <p className="text-white/40 text-xs">
+                        <div
+                          onClick={() => {
+                            // Ignore clicks on mobile - handled by onTouchEnd
+                            if ('ontouchstart' in window) return;
+                            console.log('[Portrait Guide] NEXT PROGRAM TAP - opening info for:', shiftedNextProgram.title);
+                            setGuideInfoModal({ program: shiftedNextProgram, channel });
+                          }}
+                          onTouchEnd={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            // Don't trigger if user was scrolling
+                            if (guideDidScroll.current) {
+                              console.log('[Portrait Guide] Ignoring touch - was scrolling');
+                              return;
+                            }
+                            console.log('[Portrait Guide] NEXT PROGRAM TOUCH - opening info for:', shiftedNextProgram.title);
+                            setGuideInfoModal({ program: shiftedNextProgram, channel });
+                          }}
+                          className="w-36 shrink-0 text-left py-1.5 px-2.5 rounded-lg border border-white/5 bg-white/5 cursor-pointer active:ring-2 active:ring-white/30"
+                        >
+                          <p key={shiftedNextProgram.title} className="text-white/70 text-sm truncate animate-fadeSlideIn pointer-events-none">{shiftedNextProgram.title}</p>
+                          <p className="text-white/40 text-xs pointer-events-none">
                             {new Date(shiftedNextProgram.startTime).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}
                           </p>
                         </div>
                       )}
                     </div>
                   </div>
-                </button>
+                </div>
               );
             })}
             {filteredChannels.length === 0 && guideSearchQuery && (
@@ -4164,7 +4368,21 @@ export default function LiveTVTvPage() {
             </div>
 
             {/* Channel Grid - takes remaining space, supports horizontal scrolling, pb-24 for tab bar */}
-            <div ref={guideScrollRef} className="flex-1 overflow-auto pb-24" onScroll={handleGuideScroll}>
+            <div
+              ref={guideScrollRef}
+              className="flex-1 overflow-auto pb-24"
+              onScroll={(e) => {
+                handleGuideScroll(e);
+                guideDidScroll.current = true;
+              }}
+              onTouchStart={(e) => {
+                guideTouchStart.current = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+                guideDidScroll.current = false;
+              }}
+              onTouchMove={() => {
+                guideDidScroll.current = true;
+              }}
+            >
               {filteredChannels.slice(0, renderLimit).map((channel: Channel, index: number) => (
                 <GuideChannelRow
                   key={channel.iptvId || channel.GuideNumber}
@@ -4177,6 +4395,8 @@ export default function LiveTVTvPage() {
                   isFavorite={favorites.some(f => f.channelId === (channel.iptvId || ''))}
                   onSelect={() => selectChannelFromGuide(channel)}
                   onToggleFavorite={() => toggleChannelFavorite(channel)}
+                  onProgramClick={(program) => setGuideInfoModal({ program, channel })}
+                  wasScrolling={() => guideDidScroll.current}
                 />
               ))}
               {filteredChannels.length === 0 && guideSearchQuery && (
@@ -4945,13 +5165,38 @@ export default function LiveTVTvPage() {
         </div>
       )}
 
-      {/* Info Modal */}
+      {/* Info Modal - for current playing channel */}
       <AnimatePresence>
-        {showInfoModal && (
+        {showInfoModal && currentChannel && (
           <InfoModal
             program={currentEPG?.currentProgram || null}
             channel={currentChannel}
             onClose={() => setShowInfoModal(false)}
+            hasReminder={currentEPG?.currentProgram ? hasReminder(currentChannel.iptvId || '', currentEPG.currentProgram.startTime) : false}
+            onSetReminder={() => {
+              if (currentEPG?.currentProgram && currentChannel) {
+                handleSetReminder(currentEPG.currentProgram, currentChannel);
+              }
+            }}
+            onCancelReminder={() => {
+              if (currentEPG?.currentProgram && currentChannel) {
+                handleCancelReminder(currentChannel.iptvId || '', currentEPG.currentProgram.startTime);
+              }
+            }}
+          />
+        )}
+      </AnimatePresence>
+
+      {/* Info Modal - for guide program clicks */}
+      <AnimatePresence>
+        {guideInfoModal && (
+          <InfoModal
+            program={guideInfoModal.program}
+            channel={guideInfoModal.channel}
+            onClose={() => setGuideInfoModal(null)}
+            hasReminder={hasReminder(guideInfoModal.channel.iptvId || '', guideInfoModal.program.startTime)}
+            onSetReminder={() => handleSetReminder(guideInfoModal.program, guideInfoModal.channel)}
+            onCancelReminder={() => handleCancelReminder(guideInfoModal.channel.iptvId || '', guideInfoModal.program.startTime)}
           />
         )}
       </AnimatePresence>
