@@ -12,7 +12,7 @@ import { ScreenOrientation } from '@capacitor/screen-orientation';
 import { KeepAwake } from '@capacitor-community/keep-awake';
 import { CapacitorHttp, HttpResponse } from '@capacitor/core';
 import { isIOSNative, showNativeTabBar, hideNativeTabBar, addNativeTabBarListener, setNativeTabBarSelected } from '@/lib/nativeTabBar';
-import { getCachedEPG, cacheEPG, cleanupExpiredCache } from '@/lib/epgCache';
+import { getCachedEPG, cacheEPG, cleanupExpiredCache, prefetchEPG } from '@/lib/epgCache';
 import { useReminders } from '@/contexts/ReminderContext';
 import { useToast } from '@/hooks/use-toast';
 
@@ -1364,6 +1364,49 @@ export default function LiveTVTvPage() {
     return [];
   }, [channelsData]);
 
+  // Background prefetch ALL EPG data when channels load (native only)
+  // This ensures thumbnails show on homepage without needing to scroll through guide
+  const prefetchStartedRef = useRef(false);
+  useEffect(() => {
+    if (!isNativePlatform() || channels.length === 0 || prefetchStartedRef.current) return;
+
+    prefetchStartedRef.current = true;
+    console.log(`[TV] Starting background EPG prefetch for ${channels.length} channels...`);
+
+    // Get all unique epgIds
+    const epgIds = [...new Set(channels.map((ch: Channel) => ch.epgId).filter(Boolean))] as string[];
+
+    // Prefetch in background - don't await
+    prefetchEPG(epgIds, async (epgId: string) => {
+      const channel = channels.find((ch: Channel) => ch.epgId === epgId);
+      const channelName = channel?.GuideName || '';
+      const url = `/api/epg/upcoming/${encodeURIComponent(epgId)}?hours=168&name=${encodeURIComponent(channelName)}`;
+      const fullUrl = buildApiUrl(url);
+
+      try {
+        const response: HttpResponse = await CapacitorHttp.get({
+          url: fullUrl,
+          responseType: 'json',
+        });
+        if (response.status === 200 && response.data?.programs) {
+          return response.data.programs;
+        }
+      } catch (e) {
+        // Silently fail - this is background prefetch
+      }
+      return [];
+    }).then(() => {
+      console.log('[TV] Background EPG prefetch complete - invalidating EPG queries');
+      // Invalidate all EPG queries so they re-fetch from IndexedDB cache
+      queryClient.invalidateQueries({
+        predicate: (query) => {
+          const key = query.queryKey[0];
+          return typeof key === 'string' && key.includes('/api/epg/upcoming/');
+        }
+      });
+    });
+  }, [channels, queryClient]);
+
   // Extract unique categories from channels
   const categories = useMemo(() => {
     const categoryMap = new Map<string, string>();
@@ -1724,6 +1767,12 @@ export default function LiveTVTvPage() {
         const channel = channels.find((ch: Channel) => ch.GuideName === pkgChannel.name || ch.name === pkgChannel.name);
         if (channel?.epgId) idsSet.add(channel.epgId);
       });
+
+      // Include trending channels (for Home view Trending section)
+      trendingChannels.forEach((trending) => {
+        const channel = channels.find((ch: Channel) => ch.iptvId === trending.channelId);
+        if (channel?.epgId) idsSet.add(channel.epgId);
+      });
     }
 
     // Pre-load first 50 channels' EPG data even before guide opens (for faster initial load)
@@ -1758,7 +1807,7 @@ export default function LiveTVTvPage() {
 
     // Return ALL IDs we've ever loaded - this ensures data never disappears
     return Array.from(loadedEpgIdsRef.current);
-  }, [channels, favorites, focusedChannelIndex, guideScrollIndex, viewMode, selectedChannel, nflChannels, nbaChannels, mlbChannels]);
+  }, [channels, favorites, focusedChannelIndex, guideScrollIndex, viewMode, selectedChannel, nflChannels, nbaChannels, mlbChannels, trendingChannels]);
 
   const epgQueries = useQueries({
     queries: visibleEpgIds.map(epgId => {
@@ -5357,8 +5406,8 @@ export default function LiveTVTvPage() {
                     const isFinal = game.status === 'final';
                     const isPostponed = game.status === 'postponed';
                     const isFuture = startTime > now;
-                    const isStartingSoon = startTime.getTime() - now.getTime() < 30 * 60 * 1000;
-                    const showWatchButton = matchedChannel && (isLive || isStartingSoon);
+                    const isStartingSoon = isFuture && startTime.getTime() - now.getTime() < 30 * 60 * 1000;
+                    const showWatchButton = matchedChannel && !isFinal && (isLive || isStartingSoon);
                     const channelIdForReminder = matchedChannel?.channel.iptvId || game.id;
                     const hasGameReminder = hasReminder(channelIdForReminder, game.date);
 
@@ -5473,7 +5522,7 @@ export default function LiveTVTvPage() {
                                   hasGameReminder ? "bg-blue-600 text-white" : "bg-white/10 text-white/70"
                                 )}
                               >
-                                {hasGameReminder ? <BellOff className="w-4 h-4" /> : <Bell className="w-4 h-4" />}
+                                {hasGameReminder ? <Bell className="w-4 h-4 fill-current" /> : <Bell className="w-4 h-4" />}
                               </button>
                             )}
 
@@ -5490,6 +5539,21 @@ export default function LiveTVTvPage() {
                               >
                                 <Play className="w-3.5 h-3.5" />
                                 Watch
+                              </button>
+                            )}
+
+                            {isFinal && (
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  haptics.light();
+                                  const sport = scheduleModal || 'nfl';
+                                  window.open(`https://www.espn.com/${sport}/game/_/gameId/${game.id}`, '_blank');
+                                }}
+                                className="flex items-center gap-1.5 px-3 py-1.5 bg-white/10 rounded-full text-white text-sm font-medium active:bg-white/20"
+                              >
+                                <ExternalLink className="w-3.5 h-3.5" />
+                                Recap
                               </button>
                             )}
                           </div>

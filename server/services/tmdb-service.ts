@@ -288,7 +288,13 @@ export class TMDBService {
     const cacheKey = this.getCacheKey(title);
     const cleanedTitle = this.cleanTitle(title);
 
+    // Debug: log title cleaning
+    if (title !== cleanedTitle) {
+      console.log(`[TMDB] Title cleaned: "${title}" -> "${cleanedTitle}"`);
+    }
+
     if (!cleanedTitle || cleanedTitle.length < 2) {
+      console.log(`[TMDB] Skipping empty/short title: "${title}"`);
       imageCache.set(cacheKey, null);
       cacheTimestamps.set(cacheKey, Date.now());
       return null;
@@ -300,6 +306,7 @@ export class TMDBService {
       const searchData = await this.rateLimitedFetch(searchUrl);
 
       if (!searchData.results || searchData.results.length === 0) {
+        console.log(`[TMDB] No results found for "${cleanedTitle}"`);
         imageCache.set(cacheKey, null);
         cacheTimestamps.set(cacheKey, Date.now());
         return null;
@@ -311,6 +318,7 @@ export class TMDBService {
       );
 
       if (mediaResults.length === 0) {
+        console.log(`[TMDB] No TV/movie results for "${cleanedTitle}" (got ${searchData.results.length} person results)`);
         imageCache.set(cacheKey, null);
         cacheTimestamps.set(cacheKey, Date.now());
         return null;
@@ -341,6 +349,7 @@ export class TMDBService {
       }
 
       if (!imagePath) {
+        console.log(`[TMDB] No image found for "${cleanedTitle}" (matched: ${displayName})`);
         imageCache.set(cacheKey, null);
         cacheTimestamps.set(cacheKey, Date.now());
         return null;
@@ -400,6 +409,79 @@ export class TMDBService {
   clearCache(): void {
     imageCache.clear();
     cacheTimestamps.clear();
+  }
+
+  /**
+   * Debug: Search TMDB directly and return full results (for testing)
+   */
+  async debugSearch(title: string): Promise<{
+    originalTitle: string;
+    cleanedTitle: string;
+    cacheKey: string;
+    cachedResult: string | null | undefined;
+    searchResults: any[];
+    finalImage: string | null;
+    error?: string;
+  }> {
+    const cacheKey = this.getCacheKey(title);
+    const cleanedTitle = this.cleanTitle(title);
+    const cachedResult = imageCache.has(cacheKey) ? imageCache.get(cacheKey) : undefined;
+
+    if (!this.apiKey) {
+      return {
+        originalTitle: title,
+        cleanedTitle,
+        cacheKey,
+        cachedResult,
+        searchResults: [],
+        finalImage: null,
+        error: "No TMDB API key configured"
+      };
+    }
+
+    try {
+      const searchUrl = `${this.baseUrl}/search/multi?api_key=${this.apiKey}&query=${encodeURIComponent(cleanedTitle)}&page=1`;
+      const searchData = await this.rateLimitedFetch(searchUrl);
+
+      const results = (searchData.results || []).map((r: any) => ({
+        id: r.id,
+        media_type: r.media_type,
+        name: r.name || r.title,
+        backdrop_path: r.backdrop_path,
+        poster_path: r.poster_path
+      }));
+
+      // Get final image using normal logic
+      const mediaResults = results.filter((r: any) => r.media_type === 'tv' || r.media_type === 'movie');
+      let finalImage: string | null = null;
+
+      if (mediaResults.length > 0) {
+        const best = mediaResults[0];
+        const imagePath = best.backdrop_path || best.poster_path;
+        if (imagePath) {
+          finalImage = `${this.imageBaseUrl}/w780${imagePath}`;
+        }
+      }
+
+      return {
+        originalTitle: title,
+        cleanedTitle,
+        cacheKey,
+        cachedResult,
+        searchResults: results,
+        finalImage
+      };
+    } catch (error) {
+      return {
+        originalTitle: title,
+        cleanedTitle,
+        cacheKey,
+        cachedResult,
+        searchResults: [],
+        finalImage: null,
+        error: error instanceof Error ? error.message : String(error)
+      };
+    }
   }
 }
 

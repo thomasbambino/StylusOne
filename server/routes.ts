@@ -2294,6 +2294,70 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // TMDB Cache Stats endpoint (admin only)
+  app.get("/api/admin/tmdb/stats", async (req, res) => {
+    if (!req.isAuthenticated()) return res.status(401).json({ error: "Not authenticated" });
+    const user = req.user as Express.User;
+    if (user.role !== 'admin' && user.role !== 'superadmin') return res.status(403).json({ error: "Admin access required" });
+
+    try {
+      const stats = tmdbService.getCacheStats();
+      res.json({
+        configured: tmdbService.isConfigured(),
+        ...stats
+      });
+    } catch (error) {
+      console.error('Error fetching TMDB stats:', error);
+      res.status(500).json({
+        message: "Failed to fetch TMDB stats",
+        error: error instanceof Error ? error.message : "Unknown error"
+      });
+    }
+  });
+
+  // Clear TMDB cache and force refresh (admin only)
+  app.post("/api/admin/tmdb/refresh", async (req, res) => {
+    if (!req.isAuthenticated()) return res.status(401).json({ error: "Not authenticated" });
+    const user = req.user as Express.User;
+    if (user.role !== 'admin' && user.role !== 'superadmin') return res.status(403).json({ error: "Admin access required" });
+
+    try {
+      tmdbService.clearCache();
+      const stats = tmdbService.getCacheStats();
+      res.json({ success: true, message: "TMDB cache cleared", stats });
+    } catch (error) {
+      console.error('Error clearing TMDB cache:', error);
+      res.status(500).json({
+        success: false,
+        message: "Failed to clear TMDB cache",
+        error: error instanceof Error ? error.message : "Unknown error"
+      });
+    }
+  });
+
+  // Test TMDB search for a specific title (admin only) - returns full debug info
+  app.get("/api/admin/tmdb/test/:title", async (req, res) => {
+    if (!req.isAuthenticated()) return res.status(401).json({ error: "Not authenticated" });
+    const user = req.user as Express.User;
+    if (user.role !== 'admin' && user.role !== 'superadmin') return res.status(403).json({ error: "Admin access required" });
+
+    try {
+      const { title } = req.params;
+      const decodedTitle = decodeURIComponent(title);
+
+      // Use debug search to get full results
+      const debugResults = await tmdbService.debugSearch(decodedTitle);
+
+      res.json(debugResults);
+    } catch (error) {
+      console.error('Error testing TMDB:', error);
+      res.status(500).json({
+        message: "Failed to test TMDB",
+        error: error instanceof Error ? error.message : "Unknown error"
+      });
+    }
+  });
+
   app.get("/api/iptv/categories", async (req, res) => {
     if (!req.isAuthenticated()) return res.sendStatus(401);
 
