@@ -711,6 +711,7 @@ export default function IptvProvidersPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/admin/channel-mappings'] });
       queryClient.invalidateQueries({ queryKey: ['/api/admin/channel-mappings/suggest-for-provider'] });
+      refetchMappings(); // Force immediate refetch
       toast({ title: 'Success', description: 'Channel mapping created' });
     },
     onError: (error: Error) => {
