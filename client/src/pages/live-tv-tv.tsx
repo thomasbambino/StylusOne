@@ -5449,7 +5449,7 @@ export default function LiveTVTvPage() {
                               iptvId: event.streamId,
                               logo: event.logo,
                             };
-                            setSelectedChannel(channel);
+                            playStream(channel);
                             setViewMode('player');
                           }}
                         >
