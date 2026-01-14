@@ -312,7 +312,8 @@ export class ChannelMappingService {
   }
 
   /**
-   * Auto-suggest backup channels based on name similarity
+   * Auto-suggest backup channels based on smart matching
+   * Uses call signs, brand names, cities, and string similarity
    */
   async suggestMappings(
     primaryChannelId: number,
@@ -335,12 +336,6 @@ export class ChannelMappingService {
       return [];
     }
 
-    // Clean the name for matching
-    const cleanName = primaryChannel.name
-      .toLowerCase()
-      .replace(/\s*(hd|sd|4k|fhd|uhd)\s*/gi, '')
-      .replace(/[^a-z0-9]/g, '');
-
     // Search for similar channels from other providers
     const candidates = await db.select({
       id: iptvChannels.id,
@@ -356,25 +351,15 @@ export class ChannelMappingService {
         eq(iptvChannels.isEnabled, true),
         eq(iptvProviders.isActive, true)
       ))
-      .limit(500); // Get a larger set to filter
+      .limit(1000); // Get a larger set to filter
 
-    // Calculate similarity scores
+    // Calculate smart match scores
     const suggestions = candidates
-      .map(c => {
-        const candidateClean = c.name
-          .toLowerCase()
-          .replace(/\s*(hd|sd|4k|fhd|uhd)\s*/gi, '')
-          .replace(/[^a-z0-9]/g, '');
-
-        // Simple similarity: percentage of matching characters
-        const similarity = this.calculateSimilarity(cleanName, candidateClean);
-
-        return {
-          channel: c,
-          confidence: Math.round(similarity * 100)
-        };
-      })
-      .filter(s => s.confidence >= 40) // Show more matches with lower threshold
+      .map(c => ({
+        channel: c,
+        confidence: this.calculateSmartScore(primaryChannel.name, c.name)
+      }))
+      .filter(s => s.confidence >= 30) // Show matches with good relevance
       .sort((a, b) => b.confidence - a.confidence)
       .slice(0, limit);
 
@@ -423,26 +408,146 @@ export class ChannelMappingService {
   }
 
   /**
-   * Clean channel name for matching - removes common prefixes, suffixes, quality markers
+   * Extract key elements from channel name for smart matching
    */
-  private cleanChannelName(name: string): string {
-    return name
-      .toLowerCase()
-      // Remove country/region prefixes like "US:", "UK:", "USA -", etc.
-      .replace(/^(us|uk|usa|ca|can|au|aus|nz|ie|mx|es|fr|de|it|br|pt)[\s:\-\.]+/gi, '')
-      // Remove quality markers
-      .replace(/\s*(hd|sd|4k|fhd|uhd|hevc|h\.?265|1080p?|720p?|540p?)\s*/gi, '')
-      // Remove parenthetical content like (East), (West), (Pacific), etc.
-      .replace(/\s*\([^)]*\)\s*/g, '')
-      // Remove common suffixes
-      .replace(/\s+(east|west|pacific|mountain|central|atlantic)\s*$/gi, '')
-      // Keep only alphanumeric
-      .replace(/[^a-z0-9]/g, '')
+  private extractChannelElements(name: string): {
+    callSign: string | null;      // e.g., KGTV, KSWB, KNSD
+    brand: string | null;         // e.g., ABC, FOX, ESPN, CNN
+    city: string | null;          // e.g., San Diego, Los Angeles
+    cleanName: string;            // Cleaned full name
+  } {
+    const upperName = name.toUpperCase();
+    const lowerName = name.toLowerCase();
+
+    // Extract US TV call signs (4 letters starting with K or W)
+    const callSignMatch = upperName.match(/\b([KW][A-Z]{2,3})\b/);
+    const callSign = callSignMatch ? callSignMatch[1] : null;
+
+    // Common channel brands
+    const brands = [
+      'ABC', 'NBC', 'CBS', 'FOX', 'PBS', 'CW', 'ESPN', 'CNN', 'MSNBC', 'CNBC',
+      'AMC', 'TNT', 'TBS', 'USA', 'FX', 'SYFY', 'BRAVO', 'HGTV', 'FOOD', 'TLC',
+      'DISCOVERY', 'HISTORY', 'LIFETIME', 'HALLMARK', 'BET', 'CMT', 'VH1', 'MTV',
+      'NICKELODEON', 'NICK', 'CARTOON', 'DISNEY', 'FREEFORM', 'ANIMAL PLANET',
+      'NATGEO', 'NATIONAL GEOGRAPHIC', 'TRAVEL', 'COMEDY CENTRAL', 'PARAMOUNT',
+      'SHOWTIME', 'HBO', 'STARZ', 'CINEMAX', 'ENCORE', 'TMC', 'EPIX', 'MGM',
+      'OXYGEN', 'WE', 'OWN', 'REELZ', 'SUNDANCE', 'IFC', 'TCM', 'FXX', 'FXM',
+      'TELEMUNDO', 'UNIVISION', 'GALAVISION', 'BOOMERANG', 'TOON', 'ALTITUDE',
+      'ROOT SPORTS', 'BALLY', 'MSG', 'NESN', 'YES', 'SNY', 'MASN', 'NBCSN',
+      'FS1', 'FS2', 'NFL', 'NBA', 'MLB', 'NHL', 'BIG TEN', 'SEC', 'ACC', 'PAC',
+      'AMERICAN HEROES', 'AHC', 'COOKING', 'DIY', 'DESTINATION', 'INVESTIGATION',
+      'ID', 'SCIENCE', 'WEATHER', 'NEWSMAX', 'OAN', 'NEWSNATION', 'CSPAN', 'C-SPAN'
+    ];
+
+    let brand: string | null = null;
+    for (const b of brands) {
+      if (upperName.includes(b)) {
+        brand = b;
+        break;
+      }
+    }
+
+    // Common cities
+    const cities = [
+      'SAN DIEGO', 'LOS ANGELES', 'NEW YORK', 'CHICAGO', 'HOUSTON', 'PHOENIX',
+      'PHILADELPHIA', 'SAN ANTONIO', 'DALLAS', 'SAN JOSE', 'AUSTIN', 'JACKSONVILLE',
+      'FORT WORTH', 'COLUMBUS', 'CHARLOTTE', 'SAN FRANCISCO', 'INDIANAPOLIS',
+      'SEATTLE', 'DENVER', 'WASHINGTON', 'BOSTON', 'NASHVILLE', 'BALTIMORE',
+      'OKLAHOMA', 'PORTLAND', 'LAS VEGAS', 'MILWAUKEE', 'ALBUQUERQUE', 'TUCSON',
+      'FRESNO', 'SACRAMENTO', 'MESA', 'ATLANTA', 'KANSAS CITY', 'COLORADO SPRINGS',
+      'MIAMI', 'RALEIGH', 'OMAHA', 'LONG BEACH', 'VIRGINIA BEACH', 'OAKLAND',
+      'MINNEAPOLIS', 'TULSA', 'ARLINGTON', 'TAMPA', 'NEW ORLEANS', 'WICHITA',
+      'CLEVELAND', 'BAKERSFIELD', 'AURORA', 'ANAHEIM', 'HONOLULU', 'SANTA ANA',
+      'RIVERSIDE', 'CORPUS CHRISTI', 'LEXINGTON', 'STOCKTON', 'ST LOUIS', 'PITTSBURGH',
+      'CINCINNATI', 'ANCHORAGE', 'HENDERSON', 'GREENSBORO', 'PLANO', 'NEWARK',
+      'LINCOLN', 'BUFFALO', 'JERSEY CITY', 'CHULA VISTA', 'FORT WAYNE', 'ORLANDO',
+      'ST PAUL', 'CHANDLER', 'LAREDO', 'NORFOLK', 'DURHAM', 'MADISON', 'LUBBOCK',
+      'IRVINE', 'WINSTON SALEM', 'GLENDALE', 'GARLAND', 'HIALEAH', 'RENO',
+      'CHESAPEAKE', 'GILBERT', 'BATON ROUGE', 'IRVING', 'SCOTTSDALE', 'NORTH LAS VEGAS',
+      'FREMONT', 'BOISE', 'RICHMOND', 'SAN BERNARDINO', 'BIRMINGHAM', 'SPOKANE',
+      'ROCHESTER', 'DES MOINES', 'MODESTO', 'FAYETTEVILLE', 'TACOMA', 'OXNARD',
+      'FONTANA', 'MORENO VALLEY', 'HUNTINGTON BEACH', 'GLENDALE', 'YONKERS',
+      'AKRON', 'MONTGOMERY', 'LITTLE ROCK', 'AMARILLO', 'AUGUSTA', 'SALT LAKE',
+      'DETROIT', 'LA', 'NYC', 'NY', 'SF', 'DC', 'PHILLY', 'SANDIEGO', 'LOSANGELES'
+    ];
+
+    let city: string | null = null;
+    for (const c of cities) {
+      if (upperName.includes(c)) {
+        city = c;
+        break;
+      }
+    }
+
+    // Clean name: remove prefixes, quality markers, special chars
+    const cleanName = lowerName
+      .replace(/^(us|uk|usa|ca|can|au|aus|prime|sling)[\s:\-\|\.]+/gi, '')
+      .replace(/\s*(hd|sd|4k|fhd|uhd|hevc|h\.?265|1080p?|720p?|540p?|raw|ʳᵃʷ|⁶⁰ᶠᵖˢ)\s*/gi, '')
+      .replace(/\s*\[[^\]]*\]\s*/g, '') // Remove [brackets]
+      .replace(/\s*\([^)]*\)\s*/g, '')  // Remove (parens)
+      .replace(/\s+(east|west|pacific|mountain|central|atlantic|backup)\s*$/gi, '')
+      .replace(/[^a-z0-9\s]/g, '')
+      .replace(/\s+/g, ' ')
       .trim();
+
+    return { callSign, brand, city, cleanName };
+  }
+
+  /**
+   * Calculate smart match score between two channel names
+   */
+  private calculateSmartScore(primary: string, candidate: string): number {
+    const p = this.extractChannelElements(primary);
+    const c = this.extractChannelElements(candidate);
+
+    let score = 0;
+    let maxScore = 0;
+
+    // Call sign match (very strong signal) - 40 points
+    if (p.callSign || c.callSign) {
+      maxScore += 40;
+      if (p.callSign && c.callSign && p.callSign === c.callSign) {
+        score += 40;
+      }
+    }
+
+    // Brand match (strong signal) - 35 points
+    if (p.brand || c.brand) {
+      maxScore += 35;
+      if (p.brand && c.brand && p.brand === c.brand) {
+        score += 35;
+      }
+    }
+
+    // City match (good signal) - 15 points
+    if (p.city || c.city) {
+      maxScore += 15;
+      if (p.city && c.city && p.city === c.city) {
+        score += 15;
+      }
+    }
+
+    // Clean name similarity (fallback) - 10 points
+    maxScore += 10;
+    const levenshteinSim = this.calculateSimilarity(p.cleanName, c.cleanName);
+    score += levenshteinSim * 10;
+
+    // Substring bonus: if one clean name contains the other
+    if (p.cleanName.length >= 3 && c.cleanName.length >= 3) {
+      if (c.cleanName.includes(p.cleanName) || p.cleanName.includes(c.cleanName)) {
+        score += 5;
+        maxScore += 5;
+      }
+    }
+
+    // Normalize to 0-100
+    if (maxScore === 0) return 0;
+    return Math.min(100, Math.round((score / maxScore) * 100));
   }
 
   /**
    * Auto-suggest backup channels from a specific target provider
+   * Uses smart matching: call signs, brand names, cities, and string similarity
    */
   async suggestMappingsForProvider(
     primaryChannelId: number,
@@ -466,9 +571,6 @@ export class ChannelMappingService {
       return [];
     }
 
-    // Clean the name for matching
-    const cleanName = this.cleanChannelName(primaryChannel.name);
-
     // Search for ALL channels from the target provider (not just enabled)
     const candidates = await db.select({
       id: iptvChannels.id,
@@ -483,32 +585,15 @@ export class ChannelMappingService {
         eq(iptvChannels.providerId, targetProviderId),
         eq(iptvProviders.isActive, true)
       ))
-      .limit(2000); // Get a larger set to filter
+      .limit(3000); // Get a larger set to filter
 
-    // Calculate similarity scores
+    // Calculate smart match scores using call signs, brands, cities
     const suggestions = candidates
-      .map(c => {
-        const candidateClean = this.cleanChannelName(c.name);
-
-        // Calculate Levenshtein similarity
-        const levenshteinSim = this.calculateSimilarity(cleanName, candidateClean);
-
-        // Also check if one contains the other (for partial matches)
-        let containsBonus = 0;
-        if (cleanName.length >= 2 && candidateClean.length >= 2) {
-          if (candidateClean.includes(cleanName) || cleanName.includes(candidateClean)) {
-            containsBonus = 0.3; // 30% bonus for substring match
-          }
-        }
-
-        const finalScore = Math.min(1, levenshteinSim + containsBonus);
-
-        return {
-          channel: c,
-          confidence: Math.round(finalScore * 100)
-        };
-      })
-      .filter(s => s.confidence >= 10) // Low threshold - show more options
+      .map(c => ({
+        channel: c,
+        confidence: this.calculateSmartScore(primaryChannel.name, c.name)
+      }))
+      .filter(s => s.confidence >= 15) // Show matches with at least some relevance
       .sort((a, b) => b.confidence - a.confidence)
       .slice(0, limit);
 
