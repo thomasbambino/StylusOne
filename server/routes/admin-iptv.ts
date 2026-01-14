@@ -2144,6 +2144,45 @@ router.delete('/channel-mappings/:id', requireSuperAdmin, async (req, res) => {
 });
 
 /**
+ * GET /api/admin/channel-mappings/search-primary
+ * Search for channels to use as primary channel in mapping
+ */
+router.get('/channel-mappings/search-primary', requireSuperAdmin, async (req, res) => {
+  try {
+    const query = (req.query.q as string) || '';
+
+    if (query.length < 2) {
+      return res.json([]);
+    }
+
+    const searchPattern = `%${query.toLowerCase()}%`;
+
+    const channels = await db.select({
+      id: iptvChannels.id,
+      name: iptvChannels.name,
+      logo: iptvChannels.logo,
+      streamId: iptvChannels.streamId,
+      providerId: iptvChannels.providerId,
+      providerName: iptvProviders.name,
+    })
+      .from(iptvChannels)
+      .innerJoin(iptvProviders, eq(iptvChannels.providerId, iptvProviders.id))
+      .where(and(
+        eq(iptvChannels.isEnabled, true),
+        eq(iptvProviders.isActive, true),
+        sql`LOWER(${iptvChannels.name}) LIKE ${searchPattern}`
+      ))
+      .orderBy(iptvChannels.name)
+      .limit(30);
+
+    res.json(channels);
+  } catch (error) {
+    console.error('Error searching primary channels:', error);
+    res.status(500).json({ error: 'Failed to search channels' });
+  }
+});
+
+/**
  * GET /api/admin/channel-mappings/search
  * Search for potential backup channels from other providers
  */
