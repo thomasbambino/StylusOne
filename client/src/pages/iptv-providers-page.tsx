@@ -876,6 +876,48 @@ export default function IptvProvidersPage() {
     window.open(url, '_blank');
   };
 
+  // Test mode state
+  const [testModeStreamId, setTestModeStreamId] = useState<string | null>(null);
+  const [testModeEnabled, setTestModeEnabled] = useState(false);
+  const [togglingTestMode, setTogglingTestMode] = useState(false);
+
+  // Toggle test failover mode
+  const toggleTestMode = async (streamId: string, enable: boolean) => {
+    setTogglingTestMode(true);
+    try {
+      const res = await fetch(buildApiUrl('/api/admin/channel-mappings/test-mode'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ streamId, enabled: enable }),
+      });
+      if (!res.ok) throw new Error('Failed to toggle test mode');
+      const data = await res.json();
+      setTestModeEnabled(data.testModeEnabled);
+      toast({
+        title: enable ? 'Test Mode Enabled' : 'Test Mode Disabled',
+        description: data.message,
+      });
+    } catch (error) {
+      toast({ title: 'Error', description: 'Failed to toggle test mode', variant: 'destructive' });
+    } finally {
+      setTogglingTestMode(false);
+    }
+  };
+
+  // Check test mode status when failover data loads
+  useEffect(() => {
+    if (failoverTestData?.primaryChannel?.streamId) {
+      const streamId = failoverTestData.primaryChannel.streamId;
+      setTestModeStreamId(streamId);
+      // Check current test mode status
+      fetch(buildApiUrl(`/api/admin/channel-mappings/test-mode/${streamId}`), { credentials: 'include' })
+        .then(res => res.json())
+        .then(data => setTestModeEnabled(data.testModeEnabled))
+        .catch(() => setTestModeEnabled(false));
+    }
+  }, [failoverTestData]);
+
   // Manual health check
   const healthCheckMutation = useMutation({
     mutationFn: async (providerId: number) => {
@@ -2196,6 +2238,39 @@ export default function IptvProvidersPage() {
                     : '⚠️ No backups configured'
                 }
               </div>
+
+              {/* Test Mode Toggle */}
+              {failoverTestData.failoverReady && (
+                <div className={`p-3 rounded-lg border-2 ${testModeEnabled ? 'border-orange-500 bg-orange-500/10' : 'border-muted'}`}>
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="font-medium">
+                        {testModeEnabled ? '🔴 Test Mode ACTIVE' : 'Test Failover Mode'}
+                      </p>
+                      <p className="text-sm text-muted-foreground">
+                        {testModeEnabled
+                          ? 'All users are receiving the backup stream'
+                          : 'Enable to force all users to use backup stream'
+                        }
+                      </p>
+                    </div>
+                    <Button
+                      variant={testModeEnabled ? 'destructive' : 'default'}
+                      size="sm"
+                      disabled={togglingTestMode}
+                      onClick={() => toggleTestMode(failoverTestData.primaryChannel.streamId, !testModeEnabled)}
+                    >
+                      {togglingTestMode ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : testModeEnabled ? (
+                        'Disable Test Mode'
+                      ) : (
+                        'Enable Test Mode'
+                      )}
+                    </Button>
+                  </div>
+                </div>
+              )}
 
               {/* Backup Channels */}
               {failoverTestData.backupChannels.length > 0 && (

@@ -2429,6 +2429,98 @@ router.post('/channel-mappings/test-failover', requireSuperAdmin, async (req, re
 });
 
 /**
+ * POST /api/admin/channel-mappings/test-mode
+ * Enable or disable test failover mode for a stream
+ * When enabled, all users watching this channel will get the backup stream
+ */
+router.post('/channel-mappings/test-mode', requireSuperAdmin, async (req, res) => {
+  try {
+    const { streamId, enabled } = req.body;
+
+    if (!streamId) {
+      return res.status(400).json({ error: 'streamId is required' });
+    }
+
+    // Initialize global map if not exists
+    (global as any).testFailoverStreams = (global as any).testFailoverStreams || new Map<string, boolean>();
+    const testFailoverStreams = (global as any).testFailoverStreams as Map<string, boolean>;
+
+    if (enabled) {
+      testFailoverStreams.set(streamId, true);
+      console.log(`[Test Mode] Enabled test failover mode for stream ${streamId}`);
+    } else {
+      testFailoverStreams.delete(streamId);
+      console.log(`[Test Mode] Disabled test failover mode for stream ${streamId}`);
+    }
+
+    // Clear any cached stream so the change takes effect immediately
+    (global as any).iptvSegmentBaseUrls = (global as any).iptvSegmentBaseUrls || new Map();
+    (global as any).iptvSegmentBaseUrls.delete(streamId);
+
+    // Also clear shared streams cache so manifest gets re-fetched
+    (global as any).sharedStreams = (global as any).sharedStreams || new Map();
+    (global as any).sharedStreams.delete(streamId);
+
+    res.json({
+      success: true,
+      streamId,
+      testModeEnabled: enabled,
+      message: enabled
+        ? 'Test mode enabled - all users will now receive the backup stream'
+        : 'Test mode disabled - users will receive the primary stream',
+    });
+  } catch (error) {
+    console.error('Error toggling test mode:', error);
+    res.status(500).json({ error: 'Failed to toggle test mode' });
+  }
+});
+
+/**
+ * GET /api/admin/channel-mappings/test-mode/:streamId
+ * Check if test mode is enabled for a stream
+ */
+router.get('/channel-mappings/test-mode/:streamId', requireSuperAdmin, async (req, res) => {
+  try {
+    const { streamId } = req.params;
+
+    (global as any).testFailoverStreams = (global as any).testFailoverStreams || new Map<string, boolean>();
+    const testFailoverStreams = (global as any).testFailoverStreams as Map<string, boolean>;
+
+    res.json({
+      streamId,
+      testModeEnabled: testFailoverStreams.get(streamId) === true,
+    });
+  } catch (error) {
+    console.error('Error checking test mode:', error);
+    res.status(500).json({ error: 'Failed to check test mode' });
+  }
+});
+
+/**
+ * GET /api/admin/channel-mappings/test-mode-all
+ * Get all streams currently in test mode
+ */
+router.get('/channel-mappings/test-mode-all', requireSuperAdmin, async (req, res) => {
+  try {
+    (global as any).testFailoverStreams = (global as any).testFailoverStreams || new Map<string, boolean>();
+    const testFailoverStreams = (global as any).testFailoverStreams as Map<string, boolean>;
+
+    const activeTestModes: string[] = [];
+    testFailoverStreams.forEach((enabled, streamId) => {
+      if (enabled) activeTestModes.push(streamId);
+    });
+
+    res.json({
+      activeTestModes,
+      count: activeTestModes.length,
+    });
+  } catch (error) {
+    console.error('Error getting test modes:', error);
+    res.status(500).json({ error: 'Failed to get test modes' });
+  }
+});
+
+/**
  * POST /api/admin/channel-mappings/bulk-create
  * Create multiple mappings at once
  */

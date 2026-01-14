@@ -2653,7 +2653,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
     manifestFetchedAt: Date; // Track when manifest was last fetched
   }
 
-  const sharedStreams = new Map<string, SharedStream>();
+  // Use global so admin routes can clear cache when needed (e.g., test failover mode)
+  (global as any).sharedStreams = (global as any).sharedStreams || new Map<string, SharedStream>();
+  const sharedStreams = (global as any).sharedStreams as Map<string, SharedStream>;
 
   // Stream Token Manager - for Chromecast and other stateless devices
   interface StreamToken {
@@ -2806,15 +2808,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
     backupProviderId?: number;
   }
 
+  // Global map to track streams in "test failover mode"
+  // When a stream is in test mode, we skip the primary and use the backup directly
+  (global as any).testFailoverStreams = (global as any).testFailoverStreams || new Map<string, boolean>();
+
   async function fetchStreamWithFailover(
     userId: number,
     streamId: string,
     xtreamCodesService: any
   ): Promise<StreamFetchResult | null> {
     const MAX_FAILOVER_ATTEMPTS = 3;
+    const testFailoverStreams = (global as any).testFailoverStreams as Map<string, boolean>;
 
-    // Try primary stream first
-    const primaryClient = await xtreamCodesService.getClientForStream(userId, streamId);
+    // Check if this stream is in test failover mode
+    const isTestMode = testFailoverStreams.get(streamId) === true;
+    if (isTestMode) {
+      console.log(`[Failover] ⚠️ TEST MODE ACTIVE for stream ${streamId} - skipping primary`);
+    }
+
+    // Try primary stream first (unless in test mode)
+    const primaryClient = !isTestMode ? await xtreamCodesService.getClientForStream(userId, streamId) : null;
 
     if (primaryClient) {
       try {
