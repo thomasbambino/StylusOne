@@ -544,6 +544,7 @@ export class ChannelMappingService {
   /**
    * Auto-suggest backup channels from a specific target provider
    * Uses smart matching: call signs, brand names, cities, and string similarity
+   * Explicitly searches for US channels first to ensure they appear at the top
    */
   async suggestMappingsForProvider(
     primaryChannelId: number,
@@ -567,12 +568,54 @@ export class ChannelMappingService {
       return [];
     }
 
-    // Debug: log what we're extracting from the primary channel
+    // Extract elements from primary channel for matching
     const primaryElements = this.extractChannelElements(primaryChannel.name);
     console.log(`[Channel Mapping] Primary: "${primaryChannel.name}" -> callSign: ${primaryElements.callSign}, brand: ${primaryElements.brand}, city: ${primaryElements.city}`);
 
-    // Search for ALL channels from the target provider (not just enabled)
-    const candidates = await db.select({
+    // Build search terms from the primary channel
+    const searchTerms: string[] = [];
+    if (primaryElements.brand) searchTerms.push(primaryElements.brand);
+    if (primaryElements.callSign) searchTerms.push(primaryElements.callSign);
+    if (primaryElements.city) searchTerms.push(primaryElements.city);
+    // Also add the cleaned name words
+    const nameWords = primaryElements.cleanName.split(' ').filter(w => w.length >= 3);
+    searchTerms.push(...nameWords.slice(0, 3));
+
+    console.log(`[Channel Mapping] Search terms: ${searchTerms.join(', ')}`);
+
+    // First, explicitly search for US channels matching our search terms
+    let usChannels: Array<{ id: number; name: string; logo: string | null; providerId: number; providerName: string }> = [];
+
+    for (const term of searchTerms) {
+      if (term.length < 2) continue;
+      const pattern = `%${term}%`;
+      const matches = await db.select({
+        id: iptvChannels.id,
+        name: iptvChannels.name,
+        logo: iptvChannels.logo,
+        providerId: iptvChannels.providerId,
+        providerName: iptvProviders.name,
+      })
+        .from(iptvChannels)
+        .innerJoin(iptvProviders, eq(iptvChannels.providerId, iptvProviders.id))
+        .where(and(
+          eq(iptvChannels.providerId, targetProviderId),
+          eq(iptvProviders.isActive, true),
+          sql`(${iptvChannels.name} ILIKE 'US:%' OR ${iptvChannels.name} ILIKE 'US %' OR ${iptvChannels.name} ILIKE 'USA:%' OR ${iptvChannels.name} ILIKE 'USA %')`,
+          sql`${iptvChannels.name} ILIKE ${pattern}`
+        ))
+        .limit(50);
+
+      usChannels.push(...matches);
+    }
+
+    // Deduplicate US channels
+    const usChannelMap = new Map(usChannels.map(c => [c.id, c]));
+    usChannels = Array.from(usChannelMap.values());
+    console.log(`[Channel Mapping] Found ${usChannels.length} US channels matching search terms`);
+
+    // Then get general candidates (any channels from the provider)
+    const generalCandidates = await db.select({
       id: iptvChannels.id,
       name: iptvChannels.name,
       logo: iptvChannels.logo,
@@ -585,28 +628,38 @@ export class ChannelMappingService {
         eq(iptvChannels.providerId, targetProviderId),
         eq(iptvProviders.isActive, true)
       ))
-      .limit(3000); // Get a larger set to filter
+      .limit(3000);
 
-    // Calculate smart match scores using call signs, brands, cities
-    const suggestions = candidates
+    // Combine: US channels first (they won't be in general if limit was hit), then general
+    const allCandidatesMap = new Map<number, typeof generalCandidates[0]>();
+    // Add US channels first
+    for (const c of usChannels) {
+      allCandidatesMap.set(c.id, c);
+    }
+    // Add general candidates
+    for (const c of generalCandidates) {
+      if (!allCandidatesMap.has(c.id)) {
+        allCandidatesMap.set(c.id, c);
+      }
+    }
+    const allCandidates = Array.from(allCandidatesMap.values());
+
+    // Calculate smart match scores
+    const suggestions = allCandidates
       .map(c => ({
         channel: c,
         confidence: this.calculateSmartScore(primaryChannel.name, c.name)
       }))
-      .filter(s => s.confidence >= 5) // Low threshold to always show some options
+      .filter(s => s.confidence >= 5)
       .sort((a, b) => b.confidence - a.confidence)
       .slice(0, limit);
 
-    // Debug: log top 5 suggestions with their extracted elements and US detection
+    // Debug: log top 5 suggestions
     suggestions.slice(0, 5).forEach((s, i) => {
       const candidateElements = this.extractChannelElements(s.channel.name);
       const isUS = /^(US|USA)[\s:\-\|\.]/i.test(s.channel.name);
-      console.log(`[Channel Mapping] #${i+1} (${s.confidence}%): "${s.channel.name}" -> US: ${isUS}, callSign: ${candidateElements.callSign}, brand: ${candidateElements.brand}, city: ${candidateElements.city}`);
+      console.log(`[Channel Mapping] #${i+1} (${s.confidence}%): "${s.channel.name}" -> US: ${isUS}, brand: ${candidateElements.brand}`);
     });
-
-    // Also log how many US channels were found in total
-    const usChannelCount = candidates.filter(c => /^(US|USA)[\s:\-\|\.]/i.test(c.name)).length;
-    console.log(`[Channel Mapping] Found ${usChannelCount} US channels out of ${candidates.length} total in target provider`);
 
     return suggestions;
   }
