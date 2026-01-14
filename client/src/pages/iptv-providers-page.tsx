@@ -1330,7 +1330,7 @@ export default function IptvProvidersPage() {
                                               </div>
                                             ) : (dropdownSuggestionsData?.suggestions?.length || 0) === 0 ? (
                                               <p className="text-center py-4 text-muted-foreground text-xs">
-                                                {dropdownSearchQuery.length >= 2 ? 'No matches found' : 'Type to search or see suggestions'}
+                                                {dropdownSearchQuery.length >= 2 ? 'No matches found' : 'No suggestions available'}
                                               </p>
                                             ) : (
                                               dropdownSuggestionsData?.suggestions.map((suggestion) => (
