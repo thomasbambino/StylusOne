@@ -184,6 +184,21 @@ export default function IptvProvidersPage() {
   // For the inline dropdown per provider
   const [openDropdown, setOpenDropdown] = useState<{ channelId: number; providerId: number } | null>(null);
   const [dropdownSearchQuery, setDropdownSearchQuery] = useState('');
+  // Auto-mapping state
+  const [isAutoMapDialogOpen, setIsAutoMapDialogOpen] = useState(false);
+  const [autoMapTargetProvider, setAutoMapTargetProvider] = useState<number | null>(null);
+  const [autoMapSuggestions, setAutoMapSuggestions] = useState<Array<{
+    primaryChannelId: number;
+    primaryChannelName: string;
+    suggestedBackup: { id: number; name: string; confidence: number; isPriority: boolean } | null;
+    existingMapping: boolean;
+    selected: boolean;
+  }>>([]);
+  const [autoMapLoading, setAutoMapLoading] = useState(false);
+  // Test failover state
+  const [testFailoverChannel, setTestFailoverChannel] = useState<{ id: number; name: string; streamId: string } | null>(null);
+  const [testFailoverResult, setTestFailoverResult] = useState<string | null>(null);
+  const [testingFailover, setTestingFailover] = useState(false);
   // Selected channel for backup dialog (fallback UI)
   const [selectedChannelForMapping, setSelectedChannelForMapping] = useState<{
     id: number;
@@ -738,6 +753,122 @@ export default function IptvProvidersPage() {
     },
   });
 
+  // Bulk create channel mappings
+  const bulkCreateMappingsMutation = useMutation({
+    mutationFn: async (mappings: Array<{ primaryChannelId: number; backupChannelId: number }>) => {
+      const res = await fetch(buildApiUrl('/api/admin/channel-mappings/bulk-create'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ mappings }),
+      });
+      if (!res.ok) {
+        const error = await res.json();
+        throw new Error(error.error || 'Failed to create mappings');
+      }
+      return res.json();
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ['/api/admin/channel-mappings'] });
+      setIsAutoMapDialogOpen(false);
+      setAutoMapSuggestions([]);
+      toast({ title: 'Success', description: `Created ${data.created} channel mappings` });
+    },
+    onError: (error: Error) => {
+      toast({ title: 'Error', description: error.message, variant: 'destructive' });
+    },
+  });
+
+  // Function to load auto-map suggestions
+  const loadAutoMapSuggestions = async (targetProviderId: number) => {
+    if (!primaryProviderId || !displayChannelsData?.channels) return;
+
+    setAutoMapLoading(true);
+    setAutoMapTargetProvider(targetProviderId);
+
+    try {
+      const channelIds = displayChannelsData.channels.map((c: any) => c.id);
+      const res = await fetch(buildApiUrl('/api/admin/channel-mappings/auto-suggest'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          primaryChannelIds: channelIds,
+          targetProviderId,
+          minConfidence: 50, // Show matches with 50%+ confidence
+        }),
+      });
+
+      if (!res.ok) throw new Error('Failed to get suggestions');
+
+      const data = await res.json();
+      setAutoMapSuggestions(
+        data.suggestions.map((s: any) => ({
+          ...s,
+          selected: s.suggestedBackup?.isPriority || false, // Auto-select US/Sling matches
+        }))
+      );
+      setIsAutoMapDialogOpen(true);
+    } catch (error) {
+      toast({ title: 'Error', description: 'Failed to load auto-mapping suggestions', variant: 'destructive' });
+    } finally {
+      setAutoMapLoading(false);
+    }
+  };
+
+  // Function to apply selected auto-mappings
+  const applyAutoMappings = () => {
+    const selectedMappings = autoMapSuggestions
+      .filter(s => s.selected && s.suggestedBackup)
+      .map(s => ({
+        primaryChannelId: s.primaryChannelId,
+        backupChannelId: s.suggestedBackup!.id,
+      }));
+
+    if (selectedMappings.length === 0) {
+      toast({ title: 'No mappings selected', description: 'Select at least one mapping to apply', variant: 'destructive' });
+      return;
+    }
+
+    bulkCreateMappingsMutation.mutate(selectedMappings);
+  };
+
+  // Test failover function
+  const testFailover = async (channel: { id: number; name: string }) => {
+    setTestingFailover(true);
+    setTestFailoverResult(null);
+
+    try {
+      const res = await fetch(buildApiUrl('/api/admin/channel-mappings/test-failover'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ channelId: channel.id }),
+      });
+
+      if (!res.ok) throw new Error('Failed to test failover');
+
+      const data = await res.json();
+
+      if (data.failoverReady) {
+        const backupList = data.backupChannels
+          .map((b: any) => `${b.priority}. ${b.name} (${b.providerName}) - ${b.providerHealth}`)
+          .join('\n');
+        setTestFailoverResult(
+          `✅ Failover Ready!\n\nPrimary: ${data.primaryChannel.name}\nProvider: ${data.primaryChannel.providerName} (${data.primaryChannel.providerHealth})\n\nBackup Channels (${data.healthyBackups}/${data.backupChannels.length} healthy):\n${backupList}`
+        );
+      } else {
+        setTestFailoverResult(
+          `⚠️ No Failover Configured\n\nPrimary: ${data.primaryChannel.name}\nProvider: ${data.primaryChannel.providerName}\n\nNo backup channels mapped for this channel.`
+        );
+      }
+    } catch (error) {
+      setTestFailoverResult('❌ Error testing failover');
+    } finally {
+      setTestingFailover(false);
+    }
+  };
+
   // Manual health check
   const healthCheckMutation = useMutation({
     mutationFn: async (providerId: number) => {
@@ -1201,8 +1332,28 @@ export default function IptvProvidersPage() {
                 )}
               </div>
               {primaryProviderId && otherProviders.length > 0 && (
-                <div className="text-sm text-muted-foreground">
-                  Failover providers: {otherProviders.map(p => p.name).join(', ')}
+                <div className="flex items-center justify-between">
+                  <div className="text-sm text-muted-foreground">
+                    Failover providers: {otherProviders.map(p => p.name).join(', ')}
+                  </div>
+                  <div className="flex gap-2">
+                    {otherProviders.map(provider => (
+                      <Button
+                        key={provider.id}
+                        variant="outline"
+                        size="sm"
+                        onClick={() => loadAutoMapSuggestions(provider.id)}
+                        disabled={autoMapLoading}
+                      >
+                        {autoMapLoading && autoMapTargetProvider === provider.id ? (
+                          <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+                        ) : (
+                          <RefreshCw className="h-4 w-4 mr-1" />
+                        )}
+                        Auto-Map to {provider.name}
+                      </Button>
+                    ))}
+                  </div>
                 </div>
               )}
 
@@ -1259,9 +1410,21 @@ export default function IptvProvidersPage() {
                               </div>
                             </TableCell>
                             <TableCell>
-                              <Badge variant={channel.isEnabled ? 'default' : 'secondary'} className={channel.isEnabled ? 'bg-green-600 text-xs' : 'text-xs'}>
-                                {channel.isEnabled ? 'On' : 'Off'}
-                              </Badge>
+                              <div className="flex items-center gap-2">
+                                <Badge variant={channel.isEnabled ? 'default' : 'secondary'} className={channel.isEnabled ? 'bg-green-600 text-xs' : 'text-xs'}>
+                                  {channel.isEnabled ? 'On' : 'Off'}
+                                </Badge>
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-6 w-6"
+                                  onClick={() => testFailover({ id: channel.id, name: channel.name })}
+                                  disabled={testingFailover}
+                                  title="Test Failover"
+                                >
+                                  <Activity className="h-3 w-3" />
+                                </Button>
+                              </div>
                             </TableCell>
                             {otherProviders.map((provider) => {
                               const existingMapping = getExistingMapping(channel.id, provider.id);
@@ -1990,6 +2153,153 @@ export default function IptvProvidersPage() {
           )}
           <DialogFooter>
             <Button variant="outline" onClick={() => setIsEpgDataDialogOpen(false)}>Close</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Test Failover Result Dialog */}
+      <Dialog open={!!testFailoverResult} onOpenChange={() => setTestFailoverResult(null)}>
+        <DialogContent className="sm:max-w-[500px]">
+          <DialogHeader>
+            <DialogTitle>Failover Test Result</DialogTitle>
+          </DialogHeader>
+          <pre className="whitespace-pre-wrap text-sm bg-muted p-4 rounded-lg overflow-auto max-h-[400px]">
+            {testFailoverResult}
+          </pre>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setTestFailoverResult(null)}>Close</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Auto-Map Review Dialog */}
+      <Dialog open={isAutoMapDialogOpen} onOpenChange={setIsAutoMapDialogOpen}>
+        <DialogContent className="sm:max-w-[900px] max-h-[80vh]">
+          <DialogHeader>
+            <DialogTitle>Auto-Map Review</DialogTitle>
+            <DialogDescription>
+              Review suggested channel mappings. US/Sling channels are auto-selected.
+              {autoMapSuggestions.length > 0 && (
+                <span className="ml-2 font-medium">
+                  ({autoMapSuggestions.filter(s => s.selected).length} selected of {autoMapSuggestions.length} suggestions)
+                </span>
+              )}
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 max-h-[50vh] overflow-y-auto">
+            {autoMapSuggestions.length === 0 ? (
+              <div className="text-center py-8 text-muted-foreground">
+                No high-confidence matches found for the displayed channels.
+              </div>
+            ) : (
+              <>
+                {/* Quick actions */}
+                <div className="flex gap-2 pb-2 border-b">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setAutoMapSuggestions(prev =>
+                      prev.map(s => ({ ...s, selected: s.suggestedBackup?.isPriority || false }))
+                    )}
+                  >
+                    Select US/Sling Only
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setAutoMapSuggestions(prev =>
+                      prev.map(s => ({ ...s, selected: true }))
+                    )}
+                  >
+                    Select All
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setAutoMapSuggestions(prev =>
+                      prev.map(s => ({ ...s, selected: false }))
+                    )}
+                  >
+                    Deselect All
+                  </Button>
+                </div>
+
+                {/* Suggestions table */}
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="w-10">
+                        <input
+                          type="checkbox"
+                          checked={autoMapSuggestions.every(s => s.selected)}
+                          onChange={(e) => setAutoMapSuggestions(prev =>
+                            prev.map(s => ({ ...s, selected: e.target.checked }))
+                          )}
+                          className="rounded"
+                        />
+                      </TableHead>
+                      <TableHead>Primary Channel</TableHead>
+                      <TableHead>Suggested Backup</TableHead>
+                      <TableHead className="w-24">Confidence</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {autoMapSuggestions.map((suggestion) => (
+                      <TableRow key={suggestion.primaryChannelId}>
+                        <TableCell>
+                          <input
+                            type="checkbox"
+                            checked={suggestion.selected}
+                            onChange={(e) => setAutoMapSuggestions(prev =>
+                              prev.map(s =>
+                                s.primaryChannelId === suggestion.primaryChannelId
+                                  ? { ...s, selected: e.target.checked }
+                                  : s
+                              )
+                            )}
+                            className="rounded"
+                          />
+                        </TableCell>
+                        <TableCell className="font-medium">{suggestion.primaryChannelName}</TableCell>
+                        <TableCell>
+                          {suggestion.suggestedBackup ? (
+                            <div className="flex items-center gap-2">
+                              <span>{suggestion.suggestedBackup.name}</span>
+                              {suggestion.suggestedBackup.isPriority && (
+                                <Badge variant="default" className="text-xs">US/Sling</Badge>
+                              )}
+                            </div>
+                          ) : (
+                            <span className="text-muted-foreground">No match</span>
+                          )}
+                        </TableCell>
+                        <TableCell>
+                          {suggestion.suggestedBackup && (
+                            <Badge
+                              variant={suggestion.suggestedBackup.confidence >= 70 ? 'default' : 'secondary'}
+                            >
+                              {suggestion.suggestedBackup.confidence}%
+                            </Badge>
+                          )}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </>
+            )}
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsAutoMapDialogOpen(false)}>Cancel</Button>
+            <Button
+              onClick={applyAutoMappings}
+              disabled={bulkCreateMappingsMutation.isPending || autoMapSuggestions.filter(s => s.selected).length === 0}
+            >
+              {bulkCreateMappingsMutation.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+              Apply {autoMapSuggestions.filter(s => s.selected).length} Mappings
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

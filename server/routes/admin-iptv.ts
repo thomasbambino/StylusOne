@@ -2274,6 +2274,129 @@ router.get('/channel-mappings/suggest-for-provider', requireSuperAdmin, async (r
 });
 
 /**
+ * POST /api/admin/channel-mappings/auto-suggest
+ * Get auto-mapping suggestions for multiple channels
+ */
+router.post('/channel-mappings/auto-suggest', requireSuperAdmin, async (req, res) => {
+  try {
+    const { primaryChannelIds, targetProviderId, minConfidence = 60 } = req.body;
+
+    if (!Array.isArray(primaryChannelIds) || primaryChannelIds.length === 0) {
+      return res.status(400).json({ error: 'primaryChannelIds array is required' });
+    }
+
+    if (!targetProviderId || isNaN(parseInt(targetProviderId))) {
+      return res.status(400).json({ error: 'targetProviderId is required' });
+    }
+
+    const suggestions = await channelMappingService.getAutoMappingSuggestions(
+      primaryChannelIds.map((id: any) => parseInt(id)),
+      parseInt(targetProviderId),
+      parseInt(minConfidence)
+    );
+
+    // Filter to only show suggestions that have a match
+    const withSuggestions = suggestions.filter(s => s.suggestedBackup !== null);
+    const alreadyMapped = suggestions.filter(s => s.existingMapping);
+    const noMatch = suggestions.filter(s => s.suggestedBackup === null && !s.existingMapping);
+
+    res.json({
+      suggestions: withSuggestions,
+      alreadyMapped: alreadyMapped.length,
+      noMatch: noMatch.length,
+      total: suggestions.length,
+    });
+  } catch (error) {
+    console.error('Error getting auto-mapping suggestions:', error);
+    res.status(500).json({ error: 'Failed to get auto-mapping suggestions' });
+  }
+});
+
+/**
+ * POST /api/admin/channel-mappings/test-failover
+ * Test failover configuration for a channel
+ */
+router.post('/channel-mappings/test-failover', requireSuperAdmin, async (req, res) => {
+  try {
+    const { channelId } = req.body;
+
+    if (!channelId || isNaN(parseInt(channelId))) {
+      return res.status(400).json({ error: 'channelId is required' });
+    }
+
+    // Get the channel info
+    const [channel] = await db.select({
+      id: iptvChannels.id,
+      name: iptvChannels.name,
+      streamId: iptvChannels.streamId,
+      providerId: iptvChannels.providerId,
+      providerName: iptvProviders.name,
+      providerHealth: iptvProviders.healthStatus,
+    })
+      .from(iptvChannels)
+      .innerJoin(iptvProviders, eq(iptvChannels.providerId, iptvProviders.id))
+      .where(eq(iptvChannels.id, parseInt(channelId)));
+
+    if (!channel) {
+      return res.status(404).json({ error: 'Channel not found' });
+    }
+
+    // Get backup channels
+    const backups = await channelMappingService.getBackupChannels(parseInt(channelId));
+
+    res.json({
+      primaryChannel: {
+        id: channel.id,
+        name: channel.name,
+        streamId: channel.streamId,
+        providerId: channel.providerId,
+        providerName: channel.providerName,
+        providerHealth: channel.providerHealth || 'unknown',
+      },
+      backupChannels: backups.map(b => ({
+        id: b.channelId,
+        name: b.name,
+        streamId: b.streamId,
+        providerId: b.providerId,
+        providerName: b.providerName,
+        providerHealth: b.providerHealthStatus || 'unknown',
+        priority: b.priority,
+      })),
+      failoverReady: backups.length > 0,
+      healthyBackups: backups.filter(b => b.providerHealthStatus === 'healthy' || b.providerHealthStatus === 'degraded').length,
+    });
+  } catch (error) {
+    console.error('Error testing failover:', error);
+    res.status(500).json({ error: 'Failed to test failover' });
+  }
+});
+
+/**
+ * POST /api/admin/channel-mappings/bulk-create
+ * Create multiple mappings at once
+ */
+router.post('/channel-mappings/bulk-create', requireSuperAdmin, async (req, res) => {
+  try {
+    const { mappings } = req.body;
+
+    if (!Array.isArray(mappings) || mappings.length === 0) {
+      return res.status(400).json({ error: 'mappings array is required' });
+    }
+
+    const created = await channelMappingService.bulkCreateMappings(mappings);
+
+    res.json({
+      success: true,
+      created,
+      total: mappings.length,
+    });
+  } catch (error) {
+    console.error('Error bulk creating mappings:', error);
+    res.status(500).json({ error: 'Failed to create mappings' });
+  }
+});
+
+/**
  * GET /api/admin/channel-mappings/:channelId
  * Get all mappings for a specific primary channel
  * NOTE: This route MUST be after all specific /channel-mappings/* routes
