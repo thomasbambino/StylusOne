@@ -1,20 +1,25 @@
 import fetch from 'node-fetch';
+import * as fs from 'fs';
+import * as path from 'path';
 
 /**
  * TMDB (The Movie Database) service for fetching TV show and movie artwork
  * Uses a background worker with queue to avoid blocking requests
  * Searches both TV shows and movies using the multi-search endpoint
+ *
+ * Features:
+ * - Similarity scoring to prevent false positive matches
+ * - Disk persistence with 30-day expiry for unused entries
+ * - Background worker for non-blocking thumbnail fetching
  */
 
 interface TMDBMultiSearchResult {
   id: number;
   media_type: 'tv' | 'movie' | 'person';
-  // TV shows use 'name', movies use 'title'
   name?: string;
   title?: string;
   poster_path: string | null;
   backdrop_path: string | null;
-  // TV shows use 'first_air_date', movies use 'release_date'
   first_air_date?: string;
   release_date?: string;
 }
@@ -24,10 +29,27 @@ interface TMDBImages {
   posters: Array<{ file_path: string; width: number; height: number }>;
 }
 
-// In-memory cache for TV show and movie lookups (title -> image URL)
-const imageCache = new Map<string, string | null>();
-const CACHE_TTL = 24 * 60 * 60 * 1000; // 24 hours
-const cacheTimestamps = new Map<string, number>();
+interface CacheEntry {
+  imageUrl: string | null;
+  matchedTitle: string | null;
+  lastUsed: number;  // Timestamp of last access
+  createdAt: number; // Timestamp when cached
+}
+
+interface CacheData {
+  version: number;
+  entries: Record<string, CacheEntry>;
+}
+
+// Cache settings
+const CACHE_DIR = path.join(process.cwd(), 'data');
+const CACHE_FILE = path.join(CACHE_DIR, 'tmdb-cache.json');
+const CACHE_VERSION = 1;
+const UNUSED_EXPIRY = 30 * 24 * 60 * 60 * 1000; // 30 days
+const SAVE_DEBOUNCE = 30 * 1000; // Save to disk every 30 seconds max
+
+// Similarity settings
+const MIN_SIMILARITY_SCORE = 0.6; // Minimum 60% similarity required
 
 // Rate limiting - TMDB allows ~50 req/sec, we use 20 req/sec to be safe
 let lastRequestTime = 0;
@@ -46,10 +68,15 @@ export class TMDBService {
   private apiKey: string;
   private baseUrl = 'https://api.themoviedb.org/3';
   private imageBaseUrl = 'https://image.tmdb.org/t/p';
-  private queue: Set<string> = new Set(); // Unique titles to process
+  private queue: Set<string> = new Set();
   private workerTimer: NodeJS.Timeout | null = null;
   private isProcessing = false;
   private getFavoriteTitles: GetFavoriteTitlesCallback | null = null;
+
+  // Disk-persisted cache
+  private cache: Map<string, CacheEntry> = new Map();
+  private saveTimer: NodeJS.Timeout | null = null;
+  private isDirty = false;
 
   constructor() {
     this.apiKey = process.env.TMDB_API_KEY || '';
@@ -58,11 +85,158 @@ export class TMDBService {
     } else {
       console.log('[TMDB] No API key configured - thumbnails disabled');
     }
+
+    // Load cache from disk
+    this.loadCache();
+  }
+
+  /**
+   * Load cache from disk
+   */
+  private loadCache(): void {
+    try {
+      if (fs.existsSync(CACHE_FILE)) {
+        const data = JSON.parse(fs.readFileSync(CACHE_FILE, 'utf-8')) as CacheData;
+
+        if (data.version === CACHE_VERSION) {
+          const now = Date.now();
+          let loaded = 0;
+          let expired = 0;
+
+          for (const [key, entry] of Object.entries(data.entries)) {
+            // Skip entries not used in the last 30 days
+            if (now - entry.lastUsed > UNUSED_EXPIRY) {
+              expired++;
+              continue;
+            }
+            this.cache.set(key, entry);
+            loaded++;
+          }
+
+          console.log(`[TMDB] Loaded ${loaded} cached entries from disk (${expired} expired entries removed)`);
+        } else {
+          console.log('[TMDB] Cache version mismatch, starting fresh');
+        }
+      } else {
+        console.log('[TMDB] No cache file found, starting fresh');
+      }
+    } catch (error) {
+      console.error('[TMDB] Error loading cache:', error);
+    }
+  }
+
+  /**
+   * Save cache to disk (debounced)
+   */
+  private scheduleSave(): void {
+    this.isDirty = true;
+
+    if (this.saveTimer) return;
+
+    this.saveTimer = setTimeout(() => {
+      this.saveCache();
+      this.saveTimer = null;
+    }, SAVE_DEBOUNCE);
+  }
+
+  /**
+   * Actually save cache to disk
+   */
+  private saveCache(): void {
+    if (!this.isDirty) return;
+
+    try {
+      // Ensure directory exists
+      if (!fs.existsSync(CACHE_DIR)) {
+        fs.mkdirSync(CACHE_DIR, { recursive: true });
+      }
+
+      const data: CacheData = {
+        version: CACHE_VERSION,
+        entries: Object.fromEntries(this.cache)
+      };
+
+      fs.writeFileSync(CACHE_FILE, JSON.stringify(data, null, 2));
+      this.isDirty = false;
+      console.log(`[TMDB] Saved ${this.cache.size} entries to disk`);
+    } catch (error) {
+      console.error('[TMDB] Error saving cache:', error);
+    }
+  }
+
+  /**
+   * Calculate similarity between two strings (0-1)
+   * Uses a combination of techniques for better matching
+   */
+  private calculateSimilarity(search: string, result: string): number {
+    const s1 = search.toLowerCase().trim();
+    const s2 = result.toLowerCase().trim();
+
+    // Exact match
+    if (s1 === s2) return 1.0;
+
+    // Check if one contains the other (common for subtitle variations)
+    if (s2.startsWith(s1) || s1.startsWith(s2)) {
+      const shorter = s1.length < s2.length ? s1 : s2;
+      const longer = s1.length < s2.length ? s2 : s1;
+      // Give high score if the shorter is most of the longer
+      return shorter.length / longer.length;
+    }
+
+    // Levenshtein distance-based similarity
+    const distance = this.levenshteinDistance(s1, s2);
+    const maxLength = Math.max(s1.length, s2.length);
+    const levenshteinSimilarity = 1 - (distance / maxLength);
+
+    // Word overlap similarity
+    const words1 = new Set(s1.split(/\s+/).filter(w => w.length > 2));
+    const words2 = new Set(s2.split(/\s+/).filter(w => w.length > 2));
+    const intersection = new Set([...words1].filter(w => words2.has(w)));
+    const union = new Set([...words1, ...words2]);
+    const jaccardSimilarity = union.size > 0 ? intersection.size / union.size : 0;
+
+    // Weighted average (Levenshtein is more important for short titles)
+    const avgLength = (s1.length + s2.length) / 2;
+    const levenshteinWeight = avgLength < 15 ? 0.7 : 0.5;
+    const jaccardWeight = 1 - levenshteinWeight;
+
+    return (levenshteinSimilarity * levenshteinWeight) + (jaccardSimilarity * jaccardWeight);
+  }
+
+  /**
+   * Calculate Levenshtein distance between two strings
+   */
+  private levenshteinDistance(s1: string, s2: string): number {
+    const m = s1.length;
+    const n = s2.length;
+
+    // Create matrix
+    const dp: number[][] = Array(m + 1).fill(null).map(() => Array(n + 1).fill(0));
+
+    // Initialize first row and column
+    for (let i = 0; i <= m; i++) dp[i][0] = i;
+    for (let j = 0; j <= n; j++) dp[0][j] = j;
+
+    // Fill matrix
+    for (let i = 1; i <= m; i++) {
+      for (let j = 1; j <= n; j++) {
+        if (s1[i - 1] === s2[j - 1]) {
+          dp[i][j] = dp[i - 1][j - 1];
+        } else {
+          dp[i][j] = 1 + Math.min(
+            dp[i - 1][j],     // deletion
+            dp[i][j - 1],     // insertion
+            dp[i - 1][j - 1]  // substitution
+          );
+        }
+      }
+    }
+
+    return dp[m][n];
   }
 
   /**
    * Start worker after EPG is initialized
-   * @param getFavoriteTitles - Callback to get program titles for all favorites
    */
   startAfterEPGReady(getFavoriteTitles?: GetFavoriteTitlesCallback): void {
     if (!this.apiKey) {
@@ -78,7 +252,6 @@ export class TMDBService {
     }
     console.log('[TMDB] Starting background worker...');
     this.startWorker();
-    // Run immediately on startup to preload cache
     setTimeout(() => this.refreshFavorites(), 5000);
   }
 
@@ -108,11 +281,13 @@ export class TMDBService {
     let cycleCount = 0;
     this.workerTimer = setInterval(() => {
       cycleCount++;
-      // Process queue every cycle
       this.processQueue();
-      // Refresh favorites every 10 cycles (5 minutes)
       if (cycleCount % 10 === 0) {
         this.refreshFavorites();
+      }
+      // Save cache periodically
+      if (cycleCount % 30 === 0) {
+        this.saveCache();
       }
     }, WORKER_INTERVAL);
 
@@ -126,6 +301,7 @@ export class TMDBService {
     if (this.workerTimer) {
       clearInterval(this.workerTimer);
       this.workerTimer = null;
+      this.saveCache(); // Save on shutdown
       console.log('TMDB background worker stopped');
     }
   }
@@ -143,20 +319,20 @@ export class TMDBService {
 
     for (const title of titlesToProcess) {
       try {
-        // Remove from queue before processing
         this.queue.delete(title);
 
-        // Skip if already cached
         const cacheKey = this.getCacheKey(title);
-        if (imageCache.has(cacheKey) && this.isCacheValid(cacheKey)) {
+        if (this.cache.has(cacheKey)) {
+          // Update last used time
+          const entry = this.cache.get(cacheKey)!;
+          entry.lastUsed = Date.now();
+          this.scheduleSave();
           continue;
         }
 
-        // Fetch from TMDB
         await this.fetchAndCacheImage(title);
 
       } catch (error) {
-        // Log but don't stop processing
         console.error(`[TMDB Worker] Error processing "${title}":`, error instanceof Error ? error.message : error);
       }
     }
@@ -172,12 +348,14 @@ export class TMDBService {
 
     const cacheKey = this.getCacheKey(title);
 
-    // Skip if already cached
-    if (imageCache.has(cacheKey) && this.isCacheValid(cacheKey)) {
+    if (this.cache.has(cacheKey)) {
+      // Update last used time
+      const entry = this.cache.get(cacheKey)!;
+      entry.lastUsed = Date.now();
+      this.scheduleSave();
       return;
     }
 
-    // Skip if queue is full
     if (this.queue.size >= MAX_QUEUE_SIZE) {
       return;
     }
@@ -206,9 +384,15 @@ export class TMDBService {
    */
   getCachedImage(title: string): string | null {
     const cacheKey = this.getCacheKey(title);
-    if (imageCache.has(cacheKey) && this.isCacheValid(cacheKey)) {
-      return imageCache.get(cacheKey) || null;
+    const entry = this.cache.get(cacheKey);
+
+    if (entry) {
+      // Update last used time
+      entry.lastUsed = Date.now();
+      this.scheduleSave();
+      return entry.imageUrl;
     }
+
     return null;
   }
 
@@ -225,7 +409,6 @@ export class TMDBService {
 
     lastRequestTime = Date.now();
 
-    // Create abort controller for timeout
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT);
 
@@ -250,16 +433,12 @@ export class TMDBService {
    */
   private cleanTitle(title: string): string {
     return title
-      // Remove common suffixes
       .replace(/\s*\((?:New|Repeat|Live|HD|4K)\)\s*$/i, '')
-      // Remove episode info like "S01E01" or "Season 1"
       .replace(/\s*S\d+E\d+.*$/i, '')
       .replace(/\s*Season\s+\d+.*$/i, '')
-      // Remove year suffixes like "(2024)"
       .replace(/\s*\(\d{4}\)\s*$/, '')
-      // Remove special characters that might interfere
+      .replace(/\s*:\s*\d{2}-\d{2}-\d{4}.*$/i, '') // Remove date suffixes like ": 01-14-2026"
       .replace(/[^\w\s'-]/g, ' ')
-      // Normalize whitespace
       .replace(/\s+/g, ' ')
       .trim();
   }
@@ -272,69 +451,75 @@ export class TMDBService {
   }
 
   /**
-   * Check if cached value is still valid
-   */
-  private isCacheValid(key: string): boolean {
-    const timestamp = cacheTimestamps.get(key);
-    if (!timestamp) return false;
-    return Date.now() - timestamp < CACHE_TTL;
-  }
-
-  /**
    * Fetch image from TMDB and cache it (used by background worker)
-   * Searches both TV shows and movies using the multi-search endpoint
    */
   private async fetchAndCacheImage(title: string): Promise<string | null> {
     const cacheKey = this.getCacheKey(title);
     const cleanedTitle = this.cleanTitle(title);
 
-    // Debug: log title cleaning
     if (title !== cleanedTitle) {
       console.log(`[TMDB] Title cleaned: "${title}" -> "${cleanedTitle}"`);
     }
 
     if (!cleanedTitle || cleanedTitle.length < 2) {
       console.log(`[TMDB] Skipping empty/short title: "${title}"`);
-      imageCache.set(cacheKey, null);
-      cacheTimestamps.set(cacheKey, Date.now());
+      this.cacheResult(cacheKey, null, null);
       return null;
     }
 
     try {
-      // Search for both TV shows and movies using multi-search
       const searchUrl = `${this.baseUrl}/search/multi?api_key=${this.apiKey}&query=${encodeURIComponent(cleanedTitle)}&page=1`;
       const searchData = await this.rateLimitedFetch(searchUrl);
 
       if (!searchData.results || searchData.results.length === 0) {
         console.log(`[TMDB] No results found for "${cleanedTitle}"`);
-        imageCache.set(cacheKey, null);
-        cacheTimestamps.set(cacheKey, Date.now());
+        this.cacheResult(cacheKey, null, null);
         return null;
       }
 
-      // Filter to only TV and movie results (exclude person results)
+      // Filter to only TV and movie results
       const mediaResults = searchData.results.filter(
         (r: TMDBMultiSearchResult) => r.media_type === 'tv' || r.media_type === 'movie'
       );
 
       if (mediaResults.length === 0) {
         console.log(`[TMDB] No TV/movie results for "${cleanedTitle}" (got ${searchData.results.length} person results)`);
-        imageCache.set(cacheKey, null);
-        cacheTimestamps.set(cacheKey, Date.now());
+        this.cacheResult(cacheKey, null, null);
         return null;
       }
 
-      // Get the first (best) match
-      const result: TMDBMultiSearchResult = mediaResults[0];
-      const mediaType = result.media_type;
-      const displayName = result.name || result.title || cleanedTitle;
+      // Find best match using similarity scoring
+      let bestMatch: TMDBMultiSearchResult | null = null;
+      let bestScore = 0;
+      let bestName = '';
 
-      // Prefer backdrop (16:9 landscape) over poster (2:3 portrait)
-      let imagePath = result.backdrop_path || result.poster_path;
+      for (const result of mediaResults) {
+        const resultName = result.name || result.title || '';
+        const similarity = this.calculateSimilarity(cleanedTitle, resultName);
+
+        if (similarity > bestScore) {
+          bestScore = similarity;
+          bestMatch = result;
+          bestName = resultName;
+        }
+      }
+
+      // Check if best match meets minimum similarity threshold
+      if (!bestMatch || bestScore < MIN_SIMILARITY_SCORE) {
+        const topResult = mediaResults[0];
+        const topName = topResult.name || topResult.title || '';
+        console.log(`[TMDB] Rejected match for "${cleanedTitle}" -> "${topName}" (similarity: ${(bestScore * 100).toFixed(0)}% < ${MIN_SIMILARITY_SCORE * 100}% required)`);
+        this.cacheResult(cacheKey, null, null);
+        return null;
+      }
+
+      const mediaType = bestMatch.media_type;
+
+      // Prefer backdrop over poster
+      let imagePath = bestMatch.backdrop_path || bestMatch.poster_path;
 
       if (!imagePath) {
-        // Try to get images from the media's details
-        const imagesUrl = `${this.baseUrl}/${mediaType}/${result.id}/images?api_key=${this.apiKey}`;
+        const imagesUrl = `${this.baseUrl}/${mediaType}/${bestMatch.id}/images?api_key=${this.apiKey}`;
         try {
           const imagesData: TMDBImages = await this.rateLimitedFetch(imagesUrl);
 
@@ -349,45 +534,52 @@ export class TMDBService {
       }
 
       if (!imagePath) {
-        console.log(`[TMDB] No image found for "${cleanedTitle}" (matched: ${displayName})`);
-        imageCache.set(cacheKey, null);
-        cacheTimestamps.set(cacheKey, Date.now());
+        console.log(`[TMDB] No image found for "${cleanedTitle}" (matched: ${bestName})`);
+        this.cacheResult(cacheKey, null, bestName);
         return null;
       }
 
-      // Build the full image URL (w780 is a good size for thumbnails)
       const imageUrl = `${this.imageBaseUrl}/w780${imagePath}`;
 
-      // Cache the result
-      imageCache.set(cacheKey, imageUrl);
-      cacheTimestamps.set(cacheKey, Date.now());
-
-      console.log(`[TMDB] Found ${mediaType} thumbnail for "${cleanedTitle}" -> ${displayName}`);
+      this.cacheResult(cacheKey, imageUrl, bestName);
+      console.log(`[TMDB] Found ${mediaType} thumbnail for "${cleanedTitle}" -> ${bestName} (${(bestScore * 100).toFixed(0)}% match)`);
 
       return imageUrl;
     } catch (error) {
-      // Cache negative result on error
-      imageCache.set(cacheKey, null);
-      cacheTimestamps.set(cacheKey, Date.now());
+      this.cacheResult(cacheKey, null, null);
       throw error;
     }
   }
 
   /**
+   * Store result in cache
+   */
+  private cacheResult(key: string, imageUrl: string | null, matchedTitle: string | null): void {
+    const now = Date.now();
+    this.cache.set(key, {
+      imageUrl,
+      matchedTitle,
+      lastUsed: now,
+      createdAt: now
+    });
+    this.scheduleSave();
+  }
+
+  /**
    * Search for a TV show or movie and get its backdrop/poster image
-   * Returns cached result or null (use queueTitle for background fetch)
    */
   async getShowImage(title: string): Promise<string | null> {
     if (!this.apiKey) return null;
 
     const cacheKey = this.getCacheKey(title);
+    const entry = this.cache.get(cacheKey);
 
-    // Check cache first
-    if (imageCache.has(cacheKey) && this.isCacheValid(cacheKey)) {
-      return imageCache.get(cacheKey) || null;
+    if (entry) {
+      entry.lastUsed = Date.now();
+      this.scheduleSave();
+      return entry.imageUrl;
     }
 
-    // Queue for background processing and return null for now
     this.queueTitle(title);
     return null;
   }
@@ -395,11 +587,12 @@ export class TMDBService {
   /**
    * Get cache stats for debugging
    */
-  getCacheStats(): { size: number; hits: number; queueSize: number } {
+  getCacheStats(): { size: number; hits: number; queueSize: number; cacheFile: string } {
     return {
-      size: imageCache.size,
-      hits: Array.from(imageCache.values()).filter(v => v !== null).length,
-      queueSize: this.queue.size
+      size: this.cache.size,
+      hits: Array.from(this.cache.values()).filter(v => v.imageUrl !== null).length,
+      queueSize: this.queue.size,
+      cacheFile: CACHE_FILE
     };
   }
 
@@ -407,8 +600,9 @@ export class TMDBService {
    * Clear the cache
    */
   clearCache(): void {
-    imageCache.clear();
-    cacheTimestamps.clear();
+    this.cache.clear();
+    this.isDirty = true;
+    this.saveCache();
   }
 
   /**
@@ -418,14 +612,15 @@ export class TMDBService {
     originalTitle: string;
     cleanedTitle: string;
     cacheKey: string;
-    cachedResult: string | null | undefined;
+    cachedResult: CacheEntry | undefined;
     searchResults: any[];
+    bestMatch: { name: string; similarity: number } | null;
     finalImage: string | null;
     error?: string;
   }> {
     const cacheKey = this.getCacheKey(title);
     const cleanedTitle = this.cleanTitle(title);
-    const cachedResult = imageCache.has(cacheKey) ? imageCache.get(cacheKey) : undefined;
+    const cachedResult = this.cache.get(cacheKey);
 
     if (!this.apiKey) {
       return {
@@ -434,6 +629,7 @@ export class TMDBService {
         cacheKey,
         cachedResult,
         searchResults: [],
+        bestMatch: null,
         finalImage: null,
         error: "No TMDB API key configured"
       };
@@ -448,18 +644,26 @@ export class TMDBService {
         media_type: r.media_type,
         name: r.name || r.title,
         backdrop_path: r.backdrop_path,
-        poster_path: r.poster_path
+        poster_path: r.poster_path,
+        similarity: this.calculateSimilarity(cleanedTitle, r.name || r.title || '')
       }));
 
-      // Get final image using normal logic
+      // Find best match
       const mediaResults = results.filter((r: any) => r.media_type === 'tv' || r.media_type === 'movie');
+      let bestMatch: { name: string; similarity: number } | null = null;
       let finalImage: string | null = null;
 
       if (mediaResults.length > 0) {
+        // Sort by similarity
+        mediaResults.sort((a: any, b: any) => b.similarity - a.similarity);
         const best = mediaResults[0];
-        const imagePath = best.backdrop_path || best.poster_path;
-        if (imagePath) {
-          finalImage = `${this.imageBaseUrl}/w780${imagePath}`;
+        bestMatch = { name: best.name, similarity: best.similarity };
+
+        if (best.similarity >= MIN_SIMILARITY_SCORE) {
+          const imagePath = best.backdrop_path || best.poster_path;
+          if (imagePath) {
+            finalImage = `${this.imageBaseUrl}/w780${imagePath}`;
+          }
         }
       }
 
@@ -469,6 +673,7 @@ export class TMDBService {
         cacheKey,
         cachedResult,
         searchResults: results,
+        bestMatch,
         finalImage
       };
     } catch (error) {
@@ -478,6 +683,7 @@ export class TMDBService {
         cacheKey,
         cachedResult,
         searchResults: [],
+        bestMatch: null,
         finalImage: null,
         error: error instanceof Error ? error.message : String(error)
       };
