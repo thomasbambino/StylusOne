@@ -183,6 +183,7 @@ export default function IptvProvidersPage() {
   const [mappingPage, setMappingPage] = useState(1);
   const [selectedChannelForMapping, setSelectedChannelForMapping] = useState<{ id: number; name: string; streamId: string; providerId: number } | null>(null);
   const [suggestions, setSuggestions] = useState<Array<{ channel: { id: number; name: string; providerId: number; providerName: string }; confidence: number }>>([]);
+  const [backupSearchQuery, setBackupSearchQuery] = useState('');
 
   // Fetch providers
   const { data: providers = [], isLoading } = useQuery<IptvProvider[]>({
@@ -291,6 +292,22 @@ export default function IptvProvidersPage() {
       return res.json();
     },
     enabled: !!mappingProviderId && activeTab === 'mappings',
+  });
+
+  // Search for backup channels manually
+  const { data: backupSearchResults = [], isLoading: backupSearchLoading } = useQuery<Array<{ id: number; name: string; providerId: number; providerName: string; alreadyMapped: boolean }>>({
+    queryKey: ['/api/admin/channel-mappings/search', selectedChannelForMapping?.id, backupSearchQuery],
+    queryFn: async () => {
+      if (!selectedChannelForMapping?.id || backupSearchQuery.length < 2) return [];
+      const res = await fetch(
+        buildApiUrl(`/api/admin/channel-mappings/search?primaryChannelId=${selectedChannelForMapping.id}&q=${encodeURIComponent(backupSearchQuery)}`),
+        { credentials: 'include' }
+      );
+      if (!res.ok) throw new Error('Failed to search channels');
+      const data = await res.json();
+      return data.candidates || data || [];
+    },
+    enabled: !!selectedChannelForMapping?.id && backupSearchQuery.length >= 2,
   });
 
   // Create provider
@@ -1383,9 +1400,10 @@ export default function IptvProvidersPage() {
         if (!open) {
           setSelectedChannelForMapping(null);
           setSuggestions([]);
+          setBackupSearchQuery('');
         }
       }}>
-        <DialogContent className="sm:max-w-[500px]">
+        <DialogContent className="sm:max-w-[550px]">
           <DialogHeader>
             <DialogTitle>Select Backup Channel</DialogTitle>
             <DialogDescription>
@@ -1393,63 +1411,133 @@ export default function IptvProvidersPage() {
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
-            {getSuggestionsMutation.isPending ? (
-              <div className="flex flex-col items-center justify-center py-8">
-                <Loader2 className="h-8 w-8 animate-spin text-muted-foreground mb-2" />
-                <p className="text-sm text-muted-foreground">Finding matching channels...</p>
-              </div>
-            ) : suggestions.length === 0 ? (
-              <div className="text-center py-8 text-muted-foreground">
-                <AlertCircle className="h-12 w-12 mx-auto mb-4 opacity-50" />
-                <p>No matching channels found</p>
-                <p className="text-sm mt-1">No channels with similar names exist in other providers</p>
-              </div>
-            ) : (
-              <div className="border rounded-lg max-h-80 overflow-y-auto">
-                {suggestions.map((suggestion) => (
-                  <div
-                    key={suggestion.channel.id}
-                    className="flex items-center justify-between p-3 border-b last:border-b-0 hover:bg-muted/50"
-                  >
-                    <div className="flex-1">
-                      <p className="font-medium">{suggestion.channel.name}</p>
-                      <div className="flex items-center gap-2 mt-1">
-                        <Badge variant="outline">{suggestion.channel.providerName}</Badge>
-                        <Badge variant="secondary" className="text-xs">
-                          {suggestion.confidence}% match
-                        </Badge>
-                      </div>
-                    </div>
-                    <Button
-                      size="sm"
-                      disabled={createMappingMutation.isPending}
-                      onClick={() => {
-                        createMappingMutation.mutate({
-                          primaryChannelId: selectedChannelForMapping!.id,
-                          backupChannelId: suggestion.channel.id,
-                        }, {
-                          onSuccess: () => {
-                            setSelectedChannelForMapping(null);
-                            setSuggestions([]);
-                          }
-                        });
-                      }}
-                    >
-                      {createMappingMutation.isPending ? (
-                        <Loader2 className="h-4 w-4 animate-spin" />
-                      ) : (
-                        'Add Backup'
-                      )}
-                    </Button>
+            {/* Search Bar */}
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <Input
+                placeholder="Search for a channel..."
+                className="pl-9"
+                value={backupSearchQuery}
+                onChange={(e) => setBackupSearchQuery(e.target.value)}
+              />
+            </div>
+
+            {/* Search Results */}
+            {backupSearchQuery.length >= 2 && (
+              <div>
+                <p className="text-sm font-medium mb-2">Search Results</p>
+                {backupSearchLoading ? (
+                  <div className="flex justify-center py-4">
+                    <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
                   </div>
-                ))}
+                ) : backupSearchResults.length === 0 ? (
+                  <p className="text-center py-4 text-muted-foreground text-sm">No channels found matching "{backupSearchQuery}"</p>
+                ) : (
+                  <div className="border rounded-lg max-h-48 overflow-y-auto">
+                    {backupSearchResults.map((channel) => (
+                      <div
+                        key={channel.id}
+                        className="flex items-center justify-between p-3 border-b last:border-b-0 hover:bg-muted/50"
+                      >
+                        <div className="flex-1">
+                          <p className="font-medium">{channel.name}</p>
+                          <Badge variant="outline" className="mt-1">{channel.providerName}</Badge>
+                        </div>
+                        <Button
+                          size="sm"
+                          disabled={channel.alreadyMapped || createMappingMutation.isPending}
+                          onClick={() => {
+                            createMappingMutation.mutate({
+                              primaryChannelId: selectedChannelForMapping!.id,
+                              backupChannelId: channel.id,
+                            }, {
+                              onSuccess: () => {
+                                setSelectedChannelForMapping(null);
+                                setSuggestions([]);
+                                setBackupSearchQuery('');
+                              }
+                            });
+                          }}
+                        >
+                          {channel.alreadyMapped ? 'Already Mapped' : createMappingMutation.isPending ? (
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                          ) : (
+                            'Add Backup'
+                          )}
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
+            )}
+
+            {/* Auto-Suggestions */}
+            {backupSearchQuery.length < 2 && (
+              <>
+                {getSuggestionsMutation.isPending ? (
+                  <div className="flex flex-col items-center justify-center py-6">
+                    <Loader2 className="h-6 w-6 animate-spin text-muted-foreground mb-2" />
+                    <p className="text-sm text-muted-foreground">Finding matching channels...</p>
+                  </div>
+                ) : suggestions.length > 0 ? (
+                  <div>
+                    <p className="text-sm font-medium mb-2">Suggested Matches</p>
+                    <div className="border rounded-lg max-h-60 overflow-y-auto">
+                      {suggestions.map((suggestion) => (
+                        <div
+                          key={suggestion.channel.id}
+                          className="flex items-center justify-between p-3 border-b last:border-b-0 hover:bg-muted/50"
+                        >
+                          <div className="flex-1">
+                            <p className="font-medium">{suggestion.channel.name}</p>
+                            <div className="flex items-center gap-2 mt-1">
+                              <Badge variant="outline">{suggestion.channel.providerName}</Badge>
+                              <Badge variant="secondary" className="text-xs">
+                                {suggestion.confidence}% match
+                              </Badge>
+                            </div>
+                          </div>
+                          <Button
+                            size="sm"
+                            disabled={createMappingMutation.isPending}
+                            onClick={() => {
+                              createMappingMutation.mutate({
+                                primaryChannelId: selectedChannelForMapping!.id,
+                                backupChannelId: suggestion.channel.id,
+                              }, {
+                                onSuccess: () => {
+                                  setSelectedChannelForMapping(null);
+                                  setSuggestions([]);
+                                  setBackupSearchQuery('');
+                                }
+                              });
+                            }}
+                          >
+                            {createMappingMutation.isPending ? (
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                            ) : (
+                              'Add Backup'
+                            )}
+                          </Button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="text-center py-4 text-muted-foreground">
+                    <p className="text-sm">No auto-suggestions found</p>
+                    <p className="text-xs mt-1">Use the search bar above to find channels manually</p>
+                  </div>
+                )}
+              </>
             )}
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => {
               setSelectedChannelForMapping(null);
               setSuggestions([]);
+              setBackupSearchQuery('');
             }}>Close</Button>
           </DialogFooter>
         </DialogContent>
