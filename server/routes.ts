@@ -2901,8 +2901,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       attempts++;
       console.log(`[Failover] Trying backup ${attempts}/${MAX_FAILOVER_ATTEMPTS}: ${backup.name} (${backup.providerName})`);
 
-      // Get client for backup stream
-      const backupClient = await xtreamCodesService.getClientForStream(userId, backup.streamId);
+      // Get client for backup stream - use getClientForBackupStream which doesn't require user access
+      // This allows failover to use ANY available credential for the backup provider
+      const backupClient = await xtreamCodesService.getClientForBackupStream(backup.streamId);
       if (!backupClient) {
         console.log(`[Failover] No client available for backup ${backup.streamId}`);
         continue;

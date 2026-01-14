@@ -1117,6 +1117,60 @@ export class XtreamCodesManager implements IService {
   }
 
   /**
+   * Get a client for a backup stream (for failover - doesn't check user access)
+   * This method finds ANY available credential for the channel's provider
+   * Used when failing over to a backup channel from a different provider
+   */
+  async getClientForBackupStream(streamId: string): Promise<XtreamCodesClient | null> {
+    console.log(`[IPTV-Backup] Looking for credential for backup stream ${streamId}`);
+
+    // Look up the channel in the database to find its provider
+    const [channel] = await db.select()
+      .from(iptvChannels)
+      .where(eq(iptvChannels.streamId, streamId))
+      .limit(1);
+
+    if (!channel) {
+      console.log(`[IPTV-Backup] Channel ${streamId} not found in database`);
+      return null;
+    }
+
+    const providerId = channel.providerId;
+    console.log(`[IPTV-Backup] Channel ${streamId} belongs to provider ${providerId}`);
+
+    // Get any active credential for this provider
+    const providerCredentials = await db.select()
+      .from(iptvCredentials)
+      .where(and(
+        eq(iptvCredentials.providerId, providerId),
+        eq(iptvCredentials.isActive, true)
+      ));
+
+    if (providerCredentials.length === 0) {
+      console.log(`[IPTV-Backup] No active credentials for provider ${providerId}`);
+      return null;
+    }
+
+    // Find a credential with available capacity
+    for (const cred of providerCredentials) {
+      const activeStreams = await db.select()
+        .from(activeIptvStreams)
+        .where(eq(activeIptvStreams.credentialId, cred.id));
+
+      console.log(`[IPTV-Backup] Credential ${cred.id} (${cred.name}): ${activeStreams.length}/${cred.maxConnections} streams`);
+
+      if (activeStreams.length < cred.maxConnections) {
+        console.log(`[IPTV-Backup] Using credential ${cred.id} (${cred.name}) for backup stream ${streamId}`);
+        return this.getClient(cred.id);
+      }
+    }
+
+    // If all credentials are at capacity, use the first one anyway for backup (best effort)
+    console.log(`[IPTV-Backup] All credentials at capacity, using first available for backup`);
+    return this.getClient(providerCredentials[0].id);
+  }
+
+  /**
    * Clear user channel cache
    */
   clearUserCache(userId: number): void {
