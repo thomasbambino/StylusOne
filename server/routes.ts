@@ -4566,16 +4566,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
       }
 
+      // Only show US sports and soccer (limit categories)
+      const allowedCategories = ['nfl', 'nba', 'mlb', 'nhl', 'soccer'];
+      const sportsEvents = parsedEvents.filter(e => allowedCategories.includes(e.category));
+
       // Filter by category if specified
       const filteredEvents = category && category !== 'all'
-        ? ppvParserService.filterEventsByCategory(parsedEvents, category)
-        : parsedEvents;
+        ? ppvParserService.filterEventsByCategory(sportsEvents, category)
+        : sportsEvents;
 
       // Sort into live/upcoming/past
       const sortedEvents = ppvParserService.sortEvents(filteredEvents);
 
-      // Get unique categories from all parsed events
-      const availableCategories = [...new Set(parsedEvents.map(e => e.category))];
+      // Get unique categories from filtered events (only allowed categories)
+      const availableCategories = [...new Set(sportsEvents.map(e => e.category))];
 
       res.json({
         live: sortedEvents.live,
