@@ -77,7 +77,7 @@ async function checkCacheVersion(): Promise<void> {
 /**
  * Clear all cached EPG data
  */
-async function clearAllCache(): Promise<void> {
+export async function clearAllCache(): Promise<void> {
   try {
     const db = await openDB();
     return new Promise((resolve, reject) => {

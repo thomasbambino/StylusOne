@@ -12,7 +12,7 @@ import { ScreenOrientation } from '@capacitor/screen-orientation';
 import { KeepAwake } from '@capacitor-community/keep-awake';
 import { CapacitorHttp, HttpResponse } from '@capacitor/core';
 import { isIOSNative, showNativeTabBar, hideNativeTabBar, addNativeTabBarListener, setNativeTabBarSelected } from '@/lib/nativeTabBar';
-import { getCachedEPG, cacheEPG, cleanupExpiredCache, prefetchEPG } from '@/lib/epgCache';
+import { getCachedEPG, cacheEPG, cleanupExpiredCache, prefetchEPG, clearAllCache } from '@/lib/epgCache';
 import { useReminders } from '@/contexts/ReminderContext';
 import { useToast } from '@/hooks/use-toast';
 
@@ -1376,25 +1376,31 @@ export default function LiveTVTvPage() {
     // Get all unique epgIds
     const epgIds = [...new Set(channels.map((ch: Channel) => ch.epgId).filter(Boolean))] as string[];
 
-    // Prefetch in background - don't await
-    prefetchEPG(epgIds, async (epgId: string) => {
-      const channel = channels.find((ch: Channel) => ch.epgId === epgId);
-      const channelName = channel?.GuideName || '';
-      const url = `/api/epg/upcoming/${encodeURIComponent(epgId)}?hours=168&name=${encodeURIComponent(channelName)}`;
-      const fullUrl = buildApiUrl(url);
+    // Clear old IndexedDB cache first to ensure we get fresh data with TMDB thumbnails
+    // Server's TMDB cache is now persisted to disk, so thumbnails won't be lost
+    clearAllCache().then(() => {
+      console.log('[TV] Cleared old EPG cache, fetching fresh data...');
 
-      try {
-        const response: HttpResponse = await CapacitorHttp.get({
-          url: fullUrl,
-          responseType: 'json',
-        });
-        if (response.status === 200 && response.data?.programs) {
-          return response.data.programs;
+      // Prefetch in background - don't await
+      return prefetchEPG(epgIds, async (epgId: string) => {
+        const channel = channels.find((ch: Channel) => ch.epgId === epgId);
+        const channelName = channel?.GuideName || '';
+        const url = `/api/epg/upcoming/${encodeURIComponent(epgId)}?hours=168&name=${encodeURIComponent(channelName)}`;
+        const fullUrl = buildApiUrl(url);
+
+        try {
+          const response: HttpResponse = await CapacitorHttp.get({
+            url: fullUrl,
+            responseType: 'json',
+          });
+          if (response.status === 200 && response.data?.programs) {
+            return response.data.programs;
+          }
+        } catch (e) {
+          // Silently fail - this is background prefetch
         }
-      } catch (e) {
-        // Silently fail - this is background prefetch
-      }
-      return [];
+        return [];
+      });
     }).then(() => {
       console.log('[TV] Background EPG prefetch complete - invalidating EPG queries');
       // Invalidate all EPG queries so they re-fetch from IndexedDB cache
