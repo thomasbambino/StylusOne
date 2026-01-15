@@ -81,6 +81,56 @@ function detectDeviceType(userAgent?: string): string {
 // Track if we've started the TMDB worker
 let tmdbWorkerStarted = false;
 
+// Server-side logo cache for native apps (data URIs)
+// Key: original logo URL, Value: { dataUri: string, timestamp: number }
+const logoDataUriCache = new Map<string, { dataUri: string; timestamp: number }>();
+const LOGO_CACHE_TTL = 24 * 60 * 60 * 1000; // 24 hours
+
+/**
+ * Fetch a logo and convert it to a data URI for embedding
+ * Used for native iOS apps where WKWebView has restrictions on external images
+ */
+async function fetchLogoAsDataUri(logoUrl: string): Promise<string | null> {
+  // Check cache first
+  const cached = logoDataUriCache.get(logoUrl);
+  if (cached && Date.now() - cached.timestamp < LOGO_CACHE_TTL) {
+    return cached.dataUri;
+  }
+
+  try {
+    // Extract the original URL if it's a proxy URL
+    let fetchUrl = logoUrl;
+    if (logoUrl.includes('/api/iptv/logo-proxy?url=')) {
+      const urlMatch = logoUrl.match(/[?&]url=([^&]+)/);
+      if (urlMatch) {
+        fetchUrl = decodeURIComponent(urlMatch[1]);
+      }
+    }
+
+    const response = await fetch(fetchUrl, {
+      headers: { 'User-Agent': 'Mozilla/5.0 (compatible; IPTV/1.0)' },
+      signal: AbortSignal.timeout(5000), // 5 second timeout per logo
+    });
+
+    if (!response.ok) {
+      return null;
+    }
+
+    const contentType = response.headers.get('content-type') || 'image/png';
+    const buffer = await response.arrayBuffer();
+    const base64 = Buffer.from(buffer).toString('base64');
+    const dataUri = `data:${contentType};base64,${base64}`;
+
+    // Cache it
+    logoDataUriCache.set(logoUrl, { dataUri, timestamp: Date.now() });
+
+    return dataUri;
+  } catch (error) {
+    console.warn(`[Logo DataURI] Failed to fetch ${logoUrl}:`, error);
+    return null;
+  }
+}
+
 // Get EPG service using shared singleton
 async function getEPGService() {
   const epgService = await getSharedEPGService();
@@ -2409,7 +2459,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Get channels based on user's subscription plan IPTV credentials
       const channels = await xtreamCodesService.getMergedChannels(userId, categoryId);
 
-      // Detect native app requests and convert relative logo URLs to absolute
+      // Detect native app requests - need to embed logos as data URIs
+      // iOS WKWebView has restrictions loading external images from <img> tags
       // CapacitorHttp on iOS sends "CFNetwork/Darwin" User-Agent, not Safari's "iPhone/iPad"
       const userAgent = req.headers['user-agent'] || '';
       const isNativeApp = userAgent.includes('iPhone') || userAgent.includes('iPad') ||
@@ -2419,23 +2470,45 @@ export async function registerRoutes(app: Express): Promise<Server> {
       console.log(`[IPTV Channels] User-Agent: ${userAgent.substring(0, 50)}..., isNativeApp: ${isNativeApp}`);
 
       if (isNativeApp) {
-        // Get the base URL from environment or request
+        // Get the base URL for resolving relative proxy URLs
         const baseUrl = process.env.VITE_API_URL || `https://${req.headers.host}`;
-        console.log(`[IPTV Channels] Converting logos for native app, baseUrl: ${baseUrl}`);
+        console.log(`[IPTV Channels] Converting logos to data URIs for native app (${channels.length} channels)`);
 
-        // Convert relative logo URLs to absolute
+        // Convert logos to data URIs in parallel batches
+        // This embeds the actual image data so WKWebView can render it directly
+        const batchSize = 20;
         let convertedCount = 0;
-        channels.forEach((ch: any) => {
-          if (ch.logo && ch.logo.startsWith('/')) {
-            const oldLogo = ch.logo;
-            ch.logo = `${baseUrl}${ch.logo}`;
-            convertedCount++;
-            if (convertedCount <= 3) {
-              console.log(`[IPTV Channels] Converted logo: ${oldLogo.substring(0, 50)}... -> ${ch.logo.substring(0, 80)}...`);
+        let cachedCount = 0;
+
+        for (let i = 0; i < channels.length; i += batchSize) {
+          const batch = channels.slice(i, i + batchSize);
+          await Promise.all(batch.map(async (ch: any) => {
+            if (ch.logo) {
+              // Resolve relative URLs to full proxy URLs first
+              let logoUrl = ch.logo;
+              if (logoUrl.startsWith('/')) {
+                logoUrl = `${baseUrl}${logoUrl}`;
+              }
+
+              // Check if already cached
+              const cached = logoDataUriCache.get(logoUrl);
+              if (cached && Date.now() - cached.timestamp < LOGO_CACHE_TTL) {
+                ch.logo = cached.dataUri;
+                cachedCount++;
+                return;
+              }
+
+              // Fetch and convert to data URI
+              const dataUri = await fetchLogoAsDataUri(logoUrl);
+              if (dataUri) {
+                ch.logo = dataUri;
+                convertedCount++;
+              }
+              // If fetch fails, keep the original URL as fallback
             }
-          }
-        });
-        console.log(`[IPTV Channels] Converted ${convertedCount} logo URLs to absolute`);
+          }));
+        }
+        console.log(`[IPTV Channels] Converted ${convertedCount} logos to data URIs, ${cachedCount} from cache`);
       }
 
       res.json({ configured: true, channels });
