@@ -3316,12 +3316,28 @@ live.ts
           }
         );
 
+        // Fix invalid TARGETDURATION for iOS compatibility
+        const freshExtinfMatches = freshBaseManifest.match(/#EXTINF:([\d.]+)/g);
+        let freshFixedManifest = freshBaseManifest;
+        if (freshExtinfMatches) {
+          const freshMaxDuration = Math.ceil(Math.max(...freshExtinfMatches.map(m => parseFloat(m.replace('#EXTINF:', '')))));
+          const freshCurrentTargetMatch = freshBaseManifest.match(/#EXT-X-TARGETDURATION:(\d+)/);
+          const freshCurrentTarget = freshCurrentTargetMatch ? parseInt(freshCurrentTargetMatch[1]) : 0;
+          if (freshMaxDuration > freshCurrentTarget) {
+            console.log(`⚠️ Fixing invalid TARGETDURATION: ${freshCurrentTarget} -> ${freshMaxDuration} for iOS compatibility`);
+            freshFixedManifest = freshBaseManifest.replace(
+              /#EXT-X-TARGETDURATION:\d+/,
+              `#EXT-X-TARGETDURATION:${freshMaxDuration}`
+            );
+          }
+        }
+
         // Update cache with fresh manifest
-        existingStream.manifest = freshBaseManifest;
+        existingStream.manifest = freshFixedManifest;
         existingStream.manifestFetchedAt = new Date();
 
         // Add tokens to segment URLs
-        const tokenizedManifest = freshBaseManifest.replace(
+        const tokenizedManifest = freshFixedManifest.replace(
           /\/api\/iptv\/segment\/([^/]+)\/([^\s\n]+)/g,
           (match, sid, path) => {
             const separator = path.includes('?') ? '&' : '?';
@@ -3400,10 +3416,27 @@ live.ts
         }
       );
 
+      // Fix invalid TARGETDURATION for iOS compatibility
+      // Find maximum EXTINF duration and ensure TARGETDURATION >= max duration
+      const extinfMatches = baseManifest.match(/#EXTINF:([\d.]+)/g);
+      let fixedManifest = baseManifest;
+      if (extinfMatches) {
+        const maxDuration = Math.ceil(Math.max(...extinfMatches.map(m => parseFloat(m.replace('#EXTINF:', '')))));
+        const currentTargetMatch = baseManifest.match(/#EXT-X-TARGETDURATION:(\d+)/);
+        const currentTarget = currentTargetMatch ? parseInt(currentTargetMatch[1]) : 0;
+        if (maxDuration > currentTarget) {
+          console.log(`⚠️ Fixing invalid TARGETDURATION: ${currentTarget} -> ${maxDuration} for iOS compatibility`);
+          fixedManifest = baseManifest.replace(
+            /#EXT-X-TARGETDURATION:\d+/,
+            `#EXT-X-TARGETDURATION:${maxDuration}`
+          );
+        }
+      }
+
       // Cache this stream for sharing (WITHOUT tokens)
       sharedStreams.set(streamId, {
         streamId,
-        manifest: baseManifest,  // Cached without tokens
+        manifest: fixedManifest,  // Cached without tokens
         baseSegmentUrl,
         users: new Set([userIdString]),
         lastAccessed: new Date(),
@@ -3414,14 +3447,14 @@ live.ts
       console.log(`💾 Cached stream ${streamId} for sharing (1 user)`);
 
       // Debug: Show first few segment URLs from manifest
-      const segmentLines = baseManifest.split('\n').filter(line => line.includes('/api/iptv/segment/')).slice(0, 3);
+      const segmentLines = fixedManifest.split('\n').filter(line => line.includes('/api/iptv/segment/')).slice(0, 3);
       console.log(`📋 Sample segment URLs for ${streamId}:`, segmentLines);
 
       // If token authentication, add token to segment URLs dynamically
-      let finalManifest = baseManifest;
+      let finalManifest = fixedManifest;
       if (token) {
         console.log(`🔧 Adding token to manifest for Chromecast`);
-        finalManifest = baseManifest.replace(
+        finalManifest = fixedManifest.replace(
           /\/api\/iptv\/segment\/([^/]+)\/([^\s\n]+)/g,
           (match, sid, path) => {
             const separator = path.includes('?') ? '&' : '?';
