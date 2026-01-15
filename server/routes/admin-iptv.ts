@@ -192,7 +192,10 @@ router.get('/iptv-providers', requireSuperAdmin, async (req, res) => {
         return {
           id: provider.id,
           name: provider.name,
-          serverUrl: maskCredential(decrypt(provider.serverUrl)),
+          providerType: provider.providerType || 'xtream',
+          serverUrl: provider.serverUrl ? maskCredential(decrypt(provider.serverUrl)) : null,
+          m3uUrl: provider.m3uUrl || null,
+          xmltvUrl: provider.xmltvUrl || null,
           isActive: provider.isActive,
           notes: provider.notes,
           lastChannelSync: provider.lastChannelSync,
@@ -1716,6 +1719,9 @@ router.post('/iptv-credentials/:id/test', requireSuperAdmin, async (req, res) =>
         .where(eq(iptvProviders.id, credential.providerId));
       if (!provider) {
         return res.status(400).json({ error: 'Provider not found for credential' });
+      }
+      if (!provider.serverUrl) {
+        return res.status(400).json({ error: 'M3U providers do not support credential testing' });
       }
       serverUrl = decrypt(provider.serverUrl);
     } else {
