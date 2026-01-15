@@ -3287,9 +3287,10 @@ live.ts
           /^([^#\n].+\.ts(?:\?[^\s\n]*)?)$/gm,
           (match) => {
             const trimmed = match.trim();
-            // For absolute URLs, encode and prefix with 'abs:' marker
+            // For absolute URLs, encode and prefix with '_abs_' marker
+            // Note: Using '_abs_' instead of 'abs:' to avoid iOS AVPlayer treating it as a URL scheme
             if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
-              return `/api/iptv/segment/${streamId}/abs:${encodeURIComponent(trimmed)}`;
+              return `/api/iptv/segment/${streamId}/_abs_${encodeURIComponent(trimmed)}`;
             }
             // For relative paths, strip leading slashes
             return `/api/iptv/segment/${streamId}/${trimmed.replace(/^\/+/, '')}`;
@@ -3517,12 +3518,12 @@ live.ts
       }
 
       // The fullPath is the segment filename/path
-      // Check for absolute URL marker (abs:) from M3U providers with absolute segment URLs
+      // Check for absolute URL marker (_abs_) from M3U providers with absolute segment URLs
       let segmentUrl: string;
 
-      if (fullPath.startsWith('abs:')) {
+      if (fullPath.startsWith('_abs_')) {
         // Absolute URL was encoded - decode and use directly (no baseUrl needed)
-        segmentUrl = decodeURIComponent(fullPath.substring(4));
+        segmentUrl = decodeURIComponent(fullPath.substring(5));
         console.log(`Using absolute URL from manifest: ${segmentUrl}`);
       } else {
         // For relative paths, we need the base URL from the cache
