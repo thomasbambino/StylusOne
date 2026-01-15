@@ -3292,9 +3292,17 @@ live.ts
           /^([^#\n].+\.ts(?:\?[^\s\n]*)?)$/gm,
           (match) => {
             const trimmed = match.trim();
-            // For absolute URLs, pass as query parameter (keeps path as normal .ts file)
+            // For absolute URLs, pass as query parameter with original filename preserved
             if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
-              return `/api/iptv/segment/${streamId}/stream.ts?url=${encodeURIComponent(trimmed)}`;
+              // Extract original segment filename from URL (e.g., "42.ts" from "http://.../42.ts?index=1")
+              try {
+                const urlObj = new URL(trimmed);
+                const pathParts = urlObj.pathname.split('/');
+                const originalFilename = pathParts[pathParts.length - 1] || 'stream.ts';
+                return `/api/iptv/segment/${streamId}/${originalFilename}?url=${encodeURIComponent(trimmed)}`;
+              } catch {
+                return `/api/iptv/segment/${streamId}/stream.ts?url=${encodeURIComponent(trimmed)}`;
+              }
             }
             // For relative paths, strip leading slashes
             return `/api/iptv/segment/${streamId}/${trimmed.replace(/^\/+/, '')}`;
@@ -3356,6 +3364,10 @@ live.ts
       (global as any).iptvSegmentBaseUrls.set(streamId, baseSegmentUrl);
       console.log(`Stored base URL for stream ${streamId} (type: ${typeof streamId}) in cache`);
 
+      // Debug: Show original manifest segment URLs
+      const originalSegments = manifestText.split('\n').filter(line => line.includes('.ts')).slice(0, 3);
+      console.log(`📥 Original manifest segments for ${streamId}:`, originalSegments);
+
       // Rewrite segment URLs to go through our proxy
       // Always cache manifest WITHOUT tokens for security and sharing
       // Match .ts files with optional query parameters (e.g., file.ts?index=1)
@@ -3364,9 +3376,17 @@ live.ts
         /^([^#\n].+\.ts(?:\?[^\s\n]*)?)$/gm,
         (match) => {
           const trimmed = match.trim();
-          // For absolute URLs, pass as query parameter (keeps path as normal .ts file)
+          // For absolute URLs, pass as query parameter with original filename preserved
           if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
-            return `/api/iptv/segment/${streamId}/stream.ts?url=${encodeURIComponent(trimmed)}`;
+            // Extract original segment filename from URL (e.g., "42.ts" from "http://.../42.ts?index=1")
+            try {
+              const urlObj = new URL(trimmed);
+              const pathParts = urlObj.pathname.split('/');
+              const originalFilename = pathParts[pathParts.length - 1] || 'stream.ts';
+              return `/api/iptv/segment/${streamId}/${originalFilename}?url=${encodeURIComponent(trimmed)}`;
+            } catch {
+              return `/api/iptv/segment/${streamId}/stream.ts?url=${encodeURIComponent(trimmed)}`;
+            }
           }
           // For relative paths, strip leading slashes
           return `/api/iptv/segment/${streamId}/${trimmed.replace(/^\/+/, '')}`;
@@ -3385,6 +3405,10 @@ live.ts
       });
 
       console.log(`💾 Cached stream ${streamId} for sharing (1 user)`);
+
+      // Debug: Show first few segment URLs from manifest
+      const segmentLines = baseManifest.split('\n').filter(line => line.includes('/api/iptv/segment/')).slice(0, 3);
+      console.log(`📋 Sample segment URLs for ${streamId}:`, segmentLines);
 
       // If token authentication, add token to segment URLs dynamically
       let finalManifest = baseManifest;
