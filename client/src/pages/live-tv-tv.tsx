@@ -1583,6 +1583,37 @@ export default function LiveTVTvPage() {
     staleTime: 30000, // Consider fresh for 30 seconds
   });
 
+  // Memoized filtered events data based on selected sport category
+  const filteredEventsData = useMemo(() => {
+    if (!eventsData?.sports) return { live: [], sports: [], featuredGame: null };
+
+    const filteredLive = selectedSportCategory === 'all'
+      ? (eventsData.live || [])
+      : (eventsData.live || []).filter((g: any) => g.sport === selectedSportCategory);
+
+    const filteredSports = selectedSportCategory === 'all'
+      ? eventsData.sports
+      : eventsData.sports.filter((s: any) => s.sport === selectedSportCategory);
+
+    // Get featured game (first live game or first upcoming game)
+    const featuredGame = filteredLive[0] ||
+      filteredSports[0]?.upcoming?.[0] ||
+      filteredSports[0]?.live?.[0] ||
+      null;
+
+    // Get all upcoming games sorted by date
+    const allUpcoming = filteredSports.flatMap((s: any) =>
+      (s.upcoming || []).map((g: any) => ({ ...g, sportName: s.name, sport: s.sport }))
+    ).sort((a: any, b: any) => new Date(a.date).getTime() - new Date(b.date).getTime());
+
+    // Get all recent games sorted by date (most recent first)
+    const allRecent = filteredSports.flatMap((s: any) =>
+      (s.recent || []).map((g: any) => ({ ...g, sportName: s.name, sport: s.sport }))
+    ).sort((a: any, b: any) => new Date(b.date).getTime() - new Date(a.date).getTime());
+
+    return { live: filteredLive, sports: filteredSports, featuredGame, allUpcoming, allRecent };
+  }, [eventsData, selectedSportCategory]);
+
   const [expandedPackageId, setExpandedPackageId] = useState<number | null>(null);
 
   // Fetch channels for expanded package (profile view)
@@ -5363,7 +5394,7 @@ export default function LiveTVTvPage() {
           <div className="shrink-0 pt-20 px-5 pb-2">
             <h1 className="text-2xl font-bold text-white mb-4">Sports</h1>
 
-            {/* Sport Category Tabs - Horizontal scroll with underline indicator */}
+            {/* Sport Category Tabs - Horizontal scroll with pill buttons */}
             <div className="flex gap-1 overflow-x-auto scrollbar-hide -mx-1 px-1">
               {[
                 { id: 'all', label: 'All Sports' },
@@ -5412,323 +5443,293 @@ export default function LiveTVTvPage() {
                   No games are currently scheduled. Check back later for upcoming games.
                 </p>
               </div>
-            ) : (() => {
-              // Filter data based on selected category
-              const filteredLive = selectedSportCategory === 'all'
-                ? eventsData.live
-                : eventsData.live?.filter((g: any) => g.sport === selectedSportCategory) || [];
+            ) : (
+              <div className="space-y-6 pt-4">
+                {/* Featured Hero Card */}
+                {filteredEventsData.featuredGame && (
+                  <section className="px-5">
+                    <div className="relative aspect-[16/10] bg-gradient-to-br from-zinc-800 via-zinc-900 to-black rounded-2xl overflow-hidden">
+                      {/* Background gradient based on sport */}
+                      <div className={`absolute inset-0 opacity-30 ${
+                        filteredEventsData.featuredGame.sport === 'nfl' ? 'bg-gradient-to-br from-green-900 to-zinc-900' :
+                        filteredEventsData.featuredGame.sport === 'nba' ? 'bg-gradient-to-br from-orange-900 to-zinc-900' :
+                        filteredEventsData.featuredGame.sport === 'mlb' ? 'bg-gradient-to-br from-red-900 to-zinc-900' :
+                        filteredEventsData.featuredGame.sport === 'nhl' ? 'bg-gradient-to-br from-blue-900 to-zinc-900' :
+                        filteredEventsData.featuredGame.sport === 'mma' ? 'bg-gradient-to-br from-red-900 to-zinc-900' :
+                        'bg-gradient-to-br from-zinc-800 to-zinc-900'
+                      }`} />
 
-              const filteredSports = selectedSportCategory === 'all'
-                ? eventsData.sports
-                : eventsData.sports.filter((s: any) => s.sport === selectedSportCategory);
-
-              // Get featured game (first live game or first upcoming game)
-              const featuredGame = filteredLive?.[0] ||
-                filteredSports?.[0]?.upcoming?.[0] ||
-                filteredSports?.[0]?.live?.[0];
-
-              return (
-                <div className="space-y-6 pt-4">
-                  {/* Featured Hero Card */}
-                  {featuredGame && (
-                    <section className="px-5">
-                      <div className="relative aspect-[16/10] bg-gradient-to-br from-zinc-800 via-zinc-900 to-black rounded-2xl overflow-hidden">
-                        {/* Background gradient based on sport */}
-                        <div className={`absolute inset-0 opacity-30 ${
-                          featuredGame.sport === 'nfl' ? 'bg-gradient-to-br from-green-900 to-zinc-900' :
-                          featuredGame.sport === 'nba' ? 'bg-gradient-to-br from-orange-900 to-zinc-900' :
-                          featuredGame.sport === 'mlb' ? 'bg-gradient-to-br from-red-900 to-zinc-900' :
-                          featuredGame.sport === 'nhl' ? 'bg-gradient-to-br from-blue-900 to-zinc-900' :
-                          featuredGame.sport === 'mma' ? 'bg-gradient-to-br from-red-900 to-zinc-900' :
-                          'bg-gradient-to-br from-zinc-800 to-zinc-900'
-                        }`} />
-
-                        {/* Live Badge */}
-                        {featuredGame.status === 'in' && (
-                          <div className="absolute top-4 left-4">
-                            <span className="bg-red-500 text-white text-xs font-bold px-2.5 py-1 rounded">
-                              LIVE
-                            </span>
-                          </div>
-                        )}
-
-                        {/* Sport Badge */}
-                        <div className="absolute top-4 right-4">
-                          <span className="bg-black/50 backdrop-blur-sm text-white/80 text-xs font-medium px-2.5 py-1 rounded">
-                            {featuredGame.sportName}
+                      {/* Live Badge */}
+                      {filteredEventsData.featuredGame.status === 'in' && (
+                        <div className="absolute top-4 left-4">
+                          <span className="bg-red-500 text-white text-xs font-bold px-2.5 py-1 rounded">
+                            LIVE
                           </span>
                         </div>
+                      )}
 
-                        {/* Teams Display */}
-                        <div className="absolute inset-0 flex items-center justify-center gap-6 px-6">
-                          {/* Away Team */}
-                          <div className="flex flex-col items-center flex-1">
-                            {featuredGame.awayTeam.logo ? (
-                              <img src={featuredGame.awayTeam.logo} alt="" className="w-16 h-16 object-contain" />
-                            ) : (
-                              <div className="w-16 h-16 rounded-full bg-white/10 flex items-center justify-center">
-                                <span className="text-white text-lg font-bold">{featuredGame.awayTeam.abbreviation?.[0]}</span>
-                              </div>
-                            )}
-                            <span className="text-white font-bold text-lg mt-2">{featuredGame.awayTeam.abbreviation}</span>
-                            {featuredGame.status !== 'pre' && (
-                              <span className="text-white text-3xl font-bold mt-1">{featuredGame.awayTeam.score}</span>
-                            )}
-                          </div>
+                      {/* Sport Badge */}
+                      <div className="absolute top-4 right-4">
+                        <span className="bg-black/50 backdrop-blur-sm text-white/80 text-xs font-medium px-2.5 py-1 rounded">
+                          {filteredEventsData.featuredGame.sportName}
+                        </span>
+                      </div>
 
-                          {/* VS / Score Divider */}
-                          <div className="flex flex-col items-center">
-                            {featuredGame.status === 'pre' ? (
-                              <span className="text-white/40 text-lg font-medium">VS</span>
-                            ) : (
-                              <span className="text-white/40 text-sm">-</span>
-                            )}
-                          </div>
-
-                          {/* Home Team */}
-                          <div className="flex flex-col items-center flex-1">
-                            {featuredGame.homeTeam.logo ? (
-                              <img src={featuredGame.homeTeam.logo} alt="" className="w-16 h-16 object-contain" />
-                            ) : (
-                              <div className="w-16 h-16 rounded-full bg-white/10 flex items-center justify-center">
-                                <span className="text-white text-lg font-bold">{featuredGame.homeTeam.abbreviation?.[0]}</span>
-                              </div>
-                            )}
-                            <span className="text-white font-bold text-lg mt-2">{featuredGame.homeTeam.abbreviation}</span>
-                            {featuredGame.status !== 'pre' && (
-                              <span className="text-white text-3xl font-bold mt-1">{featuredGame.homeTeam.score}</span>
-                            )}
-                          </div>
+                      {/* Teams Display */}
+                      <div className="absolute inset-0 flex items-center justify-center gap-6 px-6">
+                        {/* Away Team */}
+                        <div className="flex flex-col items-center flex-1">
+                          {filteredEventsData.featuredGame.awayTeam.logo ? (
+                            <img src={filteredEventsData.featuredGame.awayTeam.logo} alt="" className="w-16 h-16 object-contain" />
+                          ) : (
+                            <div className="w-16 h-16 rounded-full bg-white/10 flex items-center justify-center">
+                              <span className="text-white text-lg font-bold">{filteredEventsData.featuredGame.awayTeam.abbreviation?.[0]}</span>
+                            </div>
+                          )}
+                          <span className="text-white font-bold text-lg mt-2">{filteredEventsData.featuredGame.awayTeam.abbreviation}</span>
+                          {filteredEventsData.featuredGame.status !== 'pre' && (
+                            <span className="text-white text-3xl font-bold mt-1">{filteredEventsData.featuredGame.awayTeam.score}</span>
+                          )}
                         </div>
 
-                        {/* Bottom Info Bar */}
-                        <div className="absolute bottom-0 left-0 right-0 p-4 bg-gradient-to-t from-black/80 to-transparent">
-                          <div className="flex items-center justify-between">
-                            <div>
-                              <p className="text-white/60 text-xs">
-                                {featuredGame.status === 'in' ? featuredGame.statusDetail :
-                                 featuredGame.status === 'post' ? 'Final' :
-                                 new Date(featuredGame.date).toLocaleDateString(undefined, {
-                                   weekday: 'short',
-                                   month: 'short',
-                                   day: 'numeric',
-                                   hour: 'numeric',
-                                   minute: '2-digit'
-                                 })}
-                              </p>
+                        {/* VS / Score Divider */}
+                        <div className="flex flex-col items-center">
+                          {filteredEventsData.featuredGame.status === 'pre' ? (
+                            <span className="text-white/40 text-lg font-medium">VS</span>
+                          ) : (
+                            <span className="text-white/40 text-sm">-</span>
+                          )}
+                        </div>
+
+                        {/* Home Team */}
+                        <div className="flex flex-col items-center flex-1">
+                          {filteredEventsData.featuredGame.homeTeam.logo ? (
+                            <img src={filteredEventsData.featuredGame.homeTeam.logo} alt="" className="w-16 h-16 object-contain" />
+                          ) : (
+                            <div className="w-16 h-16 rounded-full bg-white/10 flex items-center justify-center">
+                              <span className="text-white text-lg font-bold">{filteredEventsData.featuredGame.homeTeam.abbreviation?.[0]}</span>
                             </div>
-                            {featuredGame.broadcast?.length > 0 && (
-                              <span className="text-white/50 text-xs bg-white/10 px-2 py-1 rounded">
-                                {featuredGame.broadcast[0]}
-                              </span>
-                            )}
-                          </div>
-                          {/* Progress bar for live games */}
-                          {featuredGame.status === 'in' && (
-                            <div className="mt-2 h-1 bg-white/20 rounded-full overflow-hidden">
-                              <div className="h-full bg-orange-500 rounded-full" style={{ width: '45%' }} />
-                            </div>
+                          )}
+                          <span className="text-white font-bold text-lg mt-2">{filteredEventsData.featuredGame.homeTeam.abbreviation}</span>
+                          {filteredEventsData.featuredGame.status !== 'pre' && (
+                            <span className="text-white text-3xl font-bold mt-1">{filteredEventsData.featuredGame.homeTeam.score}</span>
                           )}
                         </div>
                       </div>
-                    </section>
-                  )}
 
-                  {/* Live Now Section */}
-                  {filteredLive && filteredLive.length > 0 && (
-                    <section>
-                      <div className="px-5 flex items-center justify-between mb-3">
-                        <h2 className="text-lg font-semibold text-white flex items-center gap-2">
-                          <span className="relative flex h-2 w-2">
-                            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-500 opacity-75" />
-                            <span className="relative inline-flex rounded-full h-2 w-2 bg-red-500" />
-                          </span>
-                          Live Now
-                        </h2>
-                        <span className="text-white/40 text-sm">{filteredLive.length} games</span>
+                      {/* Bottom Info Bar */}
+                      <div className="absolute bottom-0 left-0 right-0 p-4 bg-gradient-to-t from-black/80 to-transparent">
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <p className="text-white/60 text-xs">
+                              {filteredEventsData.featuredGame.status === 'in' ? filteredEventsData.featuredGame.statusDetail :
+                               filteredEventsData.featuredGame.status === 'post' ? 'Final' :
+                               new Date(filteredEventsData.featuredGame.date).toLocaleDateString(undefined, {
+                                 weekday: 'short',
+                                 month: 'short',
+                                 day: 'numeric',
+                                 hour: 'numeric',
+                                 minute: '2-digit'
+                               })}
+                            </p>
+                          </div>
+                          {filteredEventsData.featuredGame.broadcast?.length > 0 && (
+                            <span className="text-white/50 text-xs bg-white/10 px-2 py-1 rounded">
+                              {filteredEventsData.featuredGame.broadcast[0]}
+                            </span>
+                          )}
+                        </div>
+                        {/* Progress bar for live games */}
+                        {filteredEventsData.featuredGame.status === 'in' && (
+                          <div className="mt-2 h-1 bg-white/20 rounded-full overflow-hidden">
+                            <div className="h-full bg-orange-500 rounded-full" style={{ width: '45%' }} />
+                          </div>
+                        )}
                       </div>
-                      <div className="flex gap-3 overflow-x-auto px-5 scrollbar-hide pb-1">
-                        {filteredLive.slice(featuredGame?.status === 'in' ? 1 : 0).map((game: any) => (
-                          <div key={game.id} className="shrink-0 w-44 bg-zinc-900/80 rounded-xl overflow-hidden border border-white/5">
-                            {/* Header with LIVE badge and game clock */}
-                            <div className="flex items-center justify-between px-3 py-2 bg-zinc-800/50">
-                              <span className="bg-red-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded">
-                                LIVE
-                              </span>
-                              <span className="text-orange-400 text-xs font-medium">{game.statusDetail}</span>
-                            </div>
+                    </div>
+                  </section>
+                )}
 
-                            {/* Teams and Scores */}
-                            <div className="p-3 space-y-2">
-                              {/* Away Team */}
-                              <div className="flex items-center gap-2">
-                                {game.awayTeam.logo ? (
-                                  <img src={game.awayTeam.logo} alt="" className="w-6 h-6 object-contain" />
-                                ) : (
-                                  <div className="w-6 h-6 rounded-full bg-white/10" />
-                                )}
-                                <span className="text-white text-sm font-medium flex-1 truncate">{game.awayTeam.abbreviation}</span>
-                                <span className="text-white font-bold text-base">{game.awayTeam.score}</span>
-                              </div>
-                              {/* Home Team */}
-                              <div className="flex items-center gap-2">
-                                {game.homeTeam.logo ? (
-                                  <img src={game.homeTeam.logo} alt="" className="w-6 h-6 object-contain" />
-                                ) : (
-                                  <div className="w-6 h-6 rounded-full bg-white/10" />
-                                )}
-                                <span className="text-white text-sm font-medium flex-1 truncate">{game.homeTeam.abbreviation}</span>
-                                <span className="text-white font-bold text-base">{game.homeTeam.score}</span>
-                              </div>
-                            </div>
+                {/* Live Now Section */}
+                {filteredEventsData.live.length > 0 && (
+                  <section>
+                    <div className="px-5 flex items-center justify-between mb-3">
+                      <h2 className="text-lg font-semibold text-white flex items-center gap-2">
+                        <span className="relative flex h-2 w-2">
+                          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-500 opacity-75" />
+                          <span className="relative inline-flex rounded-full h-2 w-2 bg-red-500" />
+                        </span>
+                        Live Now
+                      </h2>
+                      <span className="text-white/40 text-sm">{filteredEventsData.live.length} games</span>
+                    </div>
+                    <div className="flex gap-3 overflow-x-auto px-5 scrollbar-hide pb-1">
+                      {filteredEventsData.live.slice(filteredEventsData.featuredGame?.status === 'in' ? 1 : 0).map((game: any) => (
+                        <div key={game.id} className="shrink-0 w-44 bg-zinc-900/80 rounded-xl overflow-hidden border border-white/5">
+                          {/* Header with LIVE badge and game clock */}
+                          <div className="flex items-center justify-between px-3 py-2 bg-zinc-800/50">
+                            <span className="bg-red-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded">
+                              LIVE
+                            </span>
+                            <span className="text-orange-400 text-xs font-medium">{game.statusDetail}</span>
+                          </div>
 
-                            {/* Footer with sport/broadcast */}
-                            <div className="px-3 py-2 bg-zinc-800/30 border-t border-white/5">
-                              <p className="text-white/40 text-[10px] truncate">
-                                {game.sportName}{game.broadcast?.length > 0 ? ` • ${game.broadcast[0]}` : ''}
-                              </p>
+                          {/* Teams and Scores */}
+                          <div className="p-3 space-y-2">
+                            {/* Away Team */}
+                            <div className="flex items-center gap-2">
+                              {game.awayTeam.logo ? (
+                                <img src={game.awayTeam.logo} alt="" className="w-6 h-6 object-contain" />
+                              ) : (
+                                <div className="w-6 h-6 rounded-full bg-white/10" />
+                              )}
+                              <span className="text-white text-sm font-medium flex-1 truncate">{game.awayTeam.abbreviation}</span>
+                              <span className="text-white font-bold text-base">{game.awayTeam.score}</span>
+                            </div>
+                            {/* Home Team */}
+                            <div className="flex items-center gap-2">
+                              {game.homeTeam.logo ? (
+                                <img src={game.homeTeam.logo} alt="" className="w-6 h-6 object-contain" />
+                              ) : (
+                                <div className="w-6 h-6 rounded-full bg-white/10" />
+                              )}
+                              <span className="text-white text-sm font-medium flex-1 truncate">{game.homeTeam.abbreviation}</span>
+                              <span className="text-white font-bold text-base">{game.homeTeam.score}</span>
                             </div>
                           </div>
-                        ))}
-                      </div>
-                    </section>
-                  )}
 
-                  {/* Upcoming Games Section */}
-                  {(() => {
-                    const allUpcoming = filteredSports.flatMap((s: any) =>
-                      s.upcoming.map((g: any) => ({ ...g, sportName: s.name, sport: s.sport }))
-                    ).sort((a: any, b: any) => new Date(a.date).getTime() - new Date(b.date).getTime());
-
-                    if (allUpcoming.length === 0) return null;
-
-                    return (
-                      <section>
-                        <div className="px-5 flex items-center justify-between mb-3">
-                          <h2 className="text-lg font-semibold text-white flex items-center gap-2">
-                            <Clock className="w-4 h-4 text-white/60" />
-                            Upcoming
-                          </h2>
+                          {/* Footer with sport/broadcast */}
+                          <div className="px-3 py-2 bg-zinc-800/30 border-t border-white/5">
+                            <p className="text-white/40 text-[10px] truncate">
+                              {game.sportName}{game.broadcast?.length > 0 ? ` • ${game.broadcast[0]}` : ''}
+                            </p>
+                          </div>
                         </div>
-                        <div className="flex gap-3 overflow-x-auto px-5 scrollbar-hide pb-1">
-                          {allUpcoming.slice(0, 10).map((game: any) => (
-                            <div key={game.id} className="shrink-0 w-48 bg-zinc-900/50 rounded-xl overflow-hidden border border-white/5">
-                              {/* Header with sport and date */}
-                              <div className="flex items-center justify-between px-3 py-2 bg-zinc-800/30">
-                                <span className="text-white/60 text-[10px] font-medium uppercase">{game.sportName}</span>
-                                <span className="text-white/40 text-[10px]">
-                                  {new Date(game.date).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })}
-                                </span>
-                              </div>
-
-                              {/* Teams */}
-                              <div className="p-3 space-y-2">
-                                {/* Away Team */}
-                                <div className="flex items-center gap-2">
-                                  {game.awayTeam.logo ? (
-                                    <img src={game.awayTeam.logo} alt="" className="w-5 h-5 object-contain" />
-                                  ) : (
-                                    <div className="w-5 h-5 rounded-full bg-white/10" />
-                                  )}
-                                  <span className="text-white/80 text-sm truncate">{game.awayTeam.name}</span>
-                                </div>
-                                {/* Home Team */}
-                                <div className="flex items-center gap-2">
-                                  {game.homeTeam.logo ? (
-                                    <img src={game.homeTeam.logo} alt="" className="w-5 h-5 object-contain" />
-                                  ) : (
-                                    <div className="w-5 h-5 rounded-full bg-white/10" />
-                                  )}
-                                  <span className="text-white/80 text-sm truncate">{game.homeTeam.name}</span>
-                                </div>
-                              </div>
-
-                              {/* Footer with time and broadcast */}
-                              <div className="px-3 py-2 bg-zinc-800/20 border-t border-white/5 flex items-center justify-between">
-                                <span className="text-orange-400 text-xs font-medium">
-                                  {new Date(game.date).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })}
-                                </span>
-                                {game.broadcast?.length > 0 && (
-                                  <span className="text-white/30 text-[10px]">{game.broadcast[0]}</span>
-                                )}
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      </section>
-                    );
-                  })()}
-
-                  {/* Recent Results Section */}
-                  {(() => {
-                    const allRecent = filteredSports.flatMap((s: any) =>
-                      s.recent.map((g: any) => ({ ...g, sportName: s.name, sport: s.sport }))
-                    ).sort((a: any, b: any) => new Date(b.date).getTime() - new Date(a.date).getTime());
-
-                    if (allRecent.length === 0) return null;
-
-                    return (
-                      <section>
-                        <div className="px-5 flex items-center justify-between mb-3">
-                          <h2 className="text-lg font-semibold text-white flex items-center gap-2">
-                            <TrendingUp className="w-4 h-4 text-white/60" />
-                            Recent Results
-                          </h2>
-                        </div>
-                        <div className="px-5 space-y-2">
-                          {allRecent.slice(0, 10).map((game: any) => (
-                            <div key={game.id} className="bg-zinc-900/30 rounded-xl p-3 border border-white/5">
-                              <div className="flex items-center gap-3">
-                                {/* Sport badge */}
-                                <span className="text-[10px] font-medium text-white/40 uppercase w-8 shrink-0">{game.sport}</span>
-
-                                {/* Away Team */}
-                                <div className="flex items-center gap-2 flex-1 min-w-0">
-                                  {game.awayTeam.logo && <img src={game.awayTeam.logo} alt="" className="w-5 h-5 object-contain" />}
-                                  <span className="text-white/80 text-sm truncate">{game.awayTeam.abbreviation}</span>
-                                  <span className={`text-sm font-bold ml-auto ${
-                                    game.awayTeam.score > game.homeTeam.score ? 'text-green-400' : 'text-white/50'
-                                  }`}>
-                                    {game.awayTeam.score}
-                                  </span>
-                                </div>
-
-                                <span className="text-white/20 text-xs">@</span>
-
-                                {/* Home Team */}
-                                <div className="flex items-center gap-2 flex-1 min-w-0">
-                                  <span className={`text-sm font-bold ${
-                                    game.homeTeam.score > game.awayTeam.score ? 'text-green-400' : 'text-white/50'
-                                  }`}>
-                                    {game.homeTeam.score}
-                                  </span>
-                                  <span className="text-white/80 text-sm truncate">{game.homeTeam.abbreviation}</span>
-                                  {game.homeTeam.logo && <img src={game.homeTeam.logo} alt="" className="w-5 h-5 object-contain" />}
-                                </div>
-
-                                {/* Date */}
-                                <span className="text-white/30 text-[10px] w-12 text-right shrink-0">
-                                  {new Date(game.date).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
-                                </span>
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      </section>
-                    );
-                  })()}
-
-                  {/* No games message when filtered category is empty */}
-                  {filteredLive?.length === 0 && filteredSports.every((s: any) => s.upcoming.length === 0 && s.recent.length === 0) && (
-                    <div className="flex flex-col items-center justify-center py-12 px-5 text-center">
-                      <Radio className="w-12 h-12 text-white/20 mb-3" />
-                      <h3 className="text-white/70 font-medium mb-1">No {selectedSportCategory.toUpperCase()} Games</h3>
-                      <p className="text-white/40 text-sm">Check back later for upcoming games</p>
+                      ))}
                     </div>
-                  )}
-                </div>
-              );
-            })()}
+                  </section>
+                )}
+
+                {/* Upcoming Games Section */}
+                {filteredEventsData.allUpcoming && filteredEventsData.allUpcoming.length > 0 && (
+                  <section>
+                    <div className="px-5 flex items-center justify-between mb-3">
+                      <h2 className="text-lg font-semibold text-white flex items-center gap-2">
+                        <Clock className="w-4 h-4 text-white/60" />
+                        Upcoming
+                      </h2>
+                    </div>
+                    <div className="flex gap-3 overflow-x-auto px-5 scrollbar-hide pb-1">
+                      {filteredEventsData.allUpcoming.slice(0, 10).map((game: any) => (
+                        <div key={game.id} className="shrink-0 w-48 bg-zinc-900/50 rounded-xl overflow-hidden border border-white/5">
+                          {/* Header with sport and date */}
+                          <div className="flex items-center justify-between px-3 py-2 bg-zinc-800/30">
+                            <span className="text-white/60 text-[10px] font-medium uppercase">{game.sportName}</span>
+                            <span className="text-white/40 text-[10px]">
+                              {new Date(game.date).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })}
+                            </span>
+                          </div>
+
+                          {/* Teams */}
+                          <div className="p-3 space-y-2">
+                            {/* Away Team */}
+                            <div className="flex items-center gap-2">
+                              {game.awayTeam.logo ? (
+                                <img src={game.awayTeam.logo} alt="" className="w-5 h-5 object-contain" />
+                              ) : (
+                                <div className="w-5 h-5 rounded-full bg-white/10" />
+                              )}
+                              <span className="text-white/80 text-sm truncate">{game.awayTeam.name}</span>
+                            </div>
+                            {/* Home Team */}
+                            <div className="flex items-center gap-2">
+                              {game.homeTeam.logo ? (
+                                <img src={game.homeTeam.logo} alt="" className="w-5 h-5 object-contain" />
+                              ) : (
+                                <div className="w-5 h-5 rounded-full bg-white/10" />
+                              )}
+                              <span className="text-white/80 text-sm truncate">{game.homeTeam.name}</span>
+                            </div>
+                          </div>
+
+                          {/* Footer with time and broadcast */}
+                          <div className="px-3 py-2 bg-zinc-800/20 border-t border-white/5 flex items-center justify-between">
+                            <span className="text-orange-400 text-xs font-medium">
+                              {new Date(game.date).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })}
+                            </span>
+                            {game.broadcast?.length > 0 && (
+                              <span className="text-white/30 text-[10px]">{game.broadcast[0]}</span>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </section>
+                )}
+
+                {/* Recent Results Section */}
+                {filteredEventsData.allRecent && filteredEventsData.allRecent.length > 0 && (
+                  <section>
+                    <div className="px-5 flex items-center justify-between mb-3">
+                      <h2 className="text-lg font-semibold text-white flex items-center gap-2">
+                        <TrendingUp className="w-4 h-4 text-white/60" />
+                        Recent Results
+                      </h2>
+                    </div>
+                    <div className="px-5 space-y-2">
+                      {filteredEventsData.allRecent.slice(0, 10).map((game: any) => (
+                        <div key={game.id} className="bg-zinc-900/30 rounded-xl p-3 border border-white/5">
+                          <div className="flex items-center gap-3">
+                            {/* Sport badge */}
+                            <span className="text-[10px] font-medium text-white/40 uppercase w-8 shrink-0">{game.sport}</span>
+
+                            {/* Away Team */}
+                            <div className="flex items-center gap-2 flex-1 min-w-0">
+                              {game.awayTeam.logo && <img src={game.awayTeam.logo} alt="" className="w-5 h-5 object-contain" />}
+                              <span className="text-white/80 text-sm truncate">{game.awayTeam.abbreviation}</span>
+                              <span className={`text-sm font-bold ml-auto ${
+                                game.awayTeam.score > game.homeTeam.score ? 'text-green-400' : 'text-white/50'
+                              }`}>
+                                {game.awayTeam.score}
+                              </span>
+                            </div>
+
+                            <span className="text-white/20 text-xs">@</span>
+
+                            {/* Home Team */}
+                            <div className="flex items-center gap-2 flex-1 min-w-0">
+                              <span className={`text-sm font-bold ${
+                                game.homeTeam.score > game.awayTeam.score ? 'text-green-400' : 'text-white/50'
+                              }`}>
+                                {game.homeTeam.score}
+                              </span>
+                              <span className="text-white/80 text-sm truncate">{game.homeTeam.abbreviation}</span>
+                              {game.homeTeam.logo && <img src={game.homeTeam.logo} alt="" className="w-5 h-5 object-contain" />}
+                            </div>
+
+                            {/* Date */}
+                            <span className="text-white/30 text-[10px] w-12 text-right shrink-0">
+                              {new Date(game.date).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
+                            </span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </section>
+                )}
+
+                {/* No games message when filtered category is empty */}
+                {filteredEventsData.live.length === 0 &&
+                 (!filteredEventsData.allUpcoming || filteredEventsData.allUpcoming.length === 0) &&
+                 (!filteredEventsData.allRecent || filteredEventsData.allRecent.length === 0) && (
+                  <div className="flex flex-col items-center justify-center py-12 px-5 text-center">
+                    <Radio className="w-12 h-12 text-white/20 mb-3" />
+                    <h3 className="text-white/70 font-medium mb-1">No {selectedSportCategory.toUpperCase()} Games</h3>
+                    <p className="text-white/40 text-sm">Check back later for upcoming games</p>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
 
         </div>
