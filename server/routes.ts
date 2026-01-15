@@ -2414,16 +2414,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const isNativeApp = userAgent.includes('iPhone') || userAgent.includes('iPad') ||
                           userAgent.includes('Android') || userAgent.includes('Capacitor');
 
+      console.log(`[IPTV Channels] User-Agent: ${userAgent.substring(0, 50)}..., isNativeApp: ${isNativeApp}`);
+
       if (isNativeApp) {
         // Get the base URL from environment or request
         const baseUrl = process.env.VITE_API_URL || `https://${req.headers.host}`;
+        console.log(`[IPTV Channels] Converting logos for native app, baseUrl: ${baseUrl}`);
 
         // Convert relative logo URLs to absolute
+        let convertedCount = 0;
         channels.forEach((ch: any) => {
           if (ch.logo && ch.logo.startsWith('/')) {
+            const oldLogo = ch.logo;
             ch.logo = `${baseUrl}${ch.logo}`;
+            convertedCount++;
+            if (convertedCount <= 3) {
+              console.log(`[IPTV Channels] Converted logo: ${oldLogo.substring(0, 50)}... -> ${ch.logo.substring(0, 80)}...`);
+            }
           }
         });
+        console.log(`[IPTV Channels] Converted ${convertedCount} logo URLs to absolute`);
       }
 
       res.json({ configured: true, channels });
