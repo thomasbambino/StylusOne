@@ -3516,30 +3516,30 @@ live.ts
         sharedStream.lastAccessed = new Date();
       }
 
-      // Get the base URL from the global cache
-      const iptvSegmentBaseUrls = (global as any).iptvSegmentBaseUrls || new Map();
-
-      // Try both string and number keys since JavaScript Map uses strict equality
-      let baseUrl = iptvSegmentBaseUrls.get(streamId) || iptvSegmentBaseUrls.get(parseInt(streamId)) || iptvSegmentBaseUrls.get(streamId.toString());
-
-      if (!baseUrl) {
-        console.error(`No base URL found for stream ${streamId} (type: ${typeof streamId})`);
-        console.error(`Cache contains ${iptvSegmentBaseUrls.size} entries:`);
-        for (const [key, value] of iptvSegmentBaseUrls.entries()) {
-          console.error(`  - Key: ${key} (type: ${typeof key}) => ${value.substring(0, 50)}...`);
-        }
-        return res.status(404).send('Stream not found or expired. Please reload the channel.');
-      }
-
       // The fullPath is the segment filename/path
       // Check for absolute URL marker (abs:) from M3U providers with absolute segment URLs
       let segmentUrl: string;
 
       if (fullPath.startsWith('abs:')) {
-        // Absolute URL was encoded - decode and use directly
+        // Absolute URL was encoded - decode and use directly (no baseUrl needed)
         segmentUrl = decodeURIComponent(fullPath.substring(4));
         console.log(`Using absolute URL from manifest: ${segmentUrl}`);
       } else {
+        // For relative paths, we need the base URL from the cache
+        const iptvSegmentBaseUrls = (global as any).iptvSegmentBaseUrls || new Map();
+
+        // Try both string and number keys since JavaScript Map uses strict equality
+        let baseUrl = iptvSegmentBaseUrls.get(streamId) || iptvSegmentBaseUrls.get(parseInt(streamId)) || iptvSegmentBaseUrls.get(streamId.toString());
+
+        if (!baseUrl) {
+          console.error(`No base URL found for stream ${streamId} (type: ${typeof streamId})`);
+          console.error(`Cache contains ${iptvSegmentBaseUrls.size} entries:`);
+          for (const [key, value] of iptvSegmentBaseUrls.entries()) {
+            console.error(`  - Key: ${key} (type: ${typeof key}) => ${value.substring(0, 50)}...`);
+          }
+          return res.status(404).send('Stream not found or expired. Please reload the channel.');
+        }
+
         // Check if the original path was absolute (started with /) or relative
         const wasAbsolutePath = fullPath.startsWith('/') || fullPath.startsWith('hls/');
         const segmentPath = fullPath.replace(/^\/+/, '');
