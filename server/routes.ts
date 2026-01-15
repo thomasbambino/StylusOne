@@ -4545,194 +4545,212 @@ export async function registerRoutes(app: Express): Promise<Server> {
    * Requires events_access feature in subscription plan
    */
 
-  // Cache for ESPN events data - prevents 100+ HTTP requests per page load
+  // ============================================================================
+  // ESPN EVENTS - BACKGROUND JOB PATTERN
+  // Cache is refreshed by a scheduled job, NOT by HTTP requests
+  // This prevents blocking the event loop when users open the Events page
+  // ============================================================================
+
+  // Cache stores processed ESPN data
   let eventsCache: { data: any; timestamp: number } | null = null;
-  const EVENTS_CACHE_TTL = 2 * 60 * 1000; // 2 minutes
   let eventsCacheRefreshing = false;
+
+  // Sports configuration
+  const ESPN_SPORTS: Array<{ key: string; league: string; sport: string; name: string }> = [
+    { key: 'nfl', league: 'nfl', sport: 'football', name: 'NFL' },
+    { key: 'nba', league: 'nba', sport: 'basketball', name: 'NBA' },
+    { key: 'nhl', league: 'nhl', sport: 'hockey', name: 'NHL' },
+    { key: 'mlb', league: 'mlb', sport: 'baseball', name: 'MLB' },
+    { key: 'mma', league: 'ufc', sport: 'mma', name: 'UFC/MMA' }
+  ];
 
   // Helper to delay and yield to event loop
   function delay(ms: number): Promise<void> {
     return new Promise(resolve => setTimeout(resolve, ms));
   }
 
-  async function fetchESPNEvents() {
-    // Sports to fetch from ESPN
-    const sportsConfig: Record<string, { league: string; sport: string; name: string }> = {
-      nfl: { league: 'nfl', sport: 'football', name: 'NFL' },
-      nba: { league: 'nba', sport: 'basketball', name: 'NBA' },
-      nhl: { league: 'nhl', sport: 'hockey', name: 'NHL' },
-      mma: { league: 'ufc', sport: 'mma', name: 'UFC/MMA' }
-    };
+  // Fetch a single sport's data with proper delays
+  async function fetchSingleSport(config: { key: string; league: string; sport: string; name: string }) {
+    const today = new Date();
+    const dates: string[] = [];
 
-    const sportResults: Array<{
-      sport: string;
-      name: string;
-      upcoming: any[];
-      recent: any[];
-      live: any[];
-    }> = [];
+    // Past 2 days + next 3 days = 5 dates per sport
+    for (let i = 2; i > 0; i--) {
+      const date = new Date(today);
+      date.setDate(date.getDate() - i);
+      dates.push(date.toISOString().slice(0, 10).replace(/-/g, ''));
+    }
+    for (let i = 0; i < 3; i++) {
+      const date = new Date(today);
+      date.setDate(date.getDate() + i);
+      dates.push(date.toISOString().slice(0, 10).replace(/-/g, ''));
+    }
 
-    // Process sports SEQUENTIALLY to avoid overwhelming the event loop
-    for (const [key, config] of Object.entries(sportsConfig)) {
+    const games: any[] = [];
+
+    // Fetch each date with 200ms delay between requests
+    for (const dateStr of dates) {
       try {
-        const today = new Date();
-        const dates: string[] = [];
-
-        // Past 2 days for recent results (reduced further)
-        for (let i = 2; i > 0; i--) {
-          const date = new Date(today);
-          date.setDate(date.getDate() - i);
-          dates.push(date.toISOString().slice(0, 10).replace(/-/g, ''));
-        }
-
-        // Next 3 days for upcoming (reduced further)
-        for (let i = 0; i < 3; i++) {
-          const date = new Date(today);
-          date.setDate(date.getDate() + i);
-          dates.push(date.toISOString().slice(0, 10).replace(/-/g, ''));
-        }
-
-        const games: any[] = [];
-
-        // Fetch dates SEQUENTIALLY with delays to yield to event loop
-        for (const dateStr of dates) {
-          try {
-            const url = `https://site.api.espn.com/apis/site/v2/sports/${config.sport}/${config.league}/scoreboard?dates=${dateStr}`;
-            const response = await fetch(url, {
-              headers: { 'User-Agent': 'Mozilla/5.0' },
-              signal: AbortSignal.timeout(5000)
-            });
-            if (response.ok) {
-              const data = await response.json();
-              const events = data.events || [];
-              for (const event of events) {
-                games.push(event);
-              }
-            }
-          } catch {
-            // Skip failed requests
-          }
-          // Yield to event loop between requests
-          await delay(50);
-        }
-
-        // Process collected games
-        const processedGames: any[] = [];
-        for (const event of games) {
-          try {
-            const competition = event.competitions?.[0];
-            if (!competition) continue;
-
-            const homeTeam = competition.competitors?.find((c: any) => c.homeAway === 'home');
-            const awayTeam = competition.competitors?.find((c: any) => c.homeAway === 'away');
-            if (!homeTeam || !awayTeam) continue;
-
-            // Get broadcast info
-            const broadcasts: string[] = [];
-            if (competition.broadcasts) {
-              for (const b of competition.broadcasts) {
-                if (b.names) broadcasts.push(...b.names);
-              }
-            }
-            if (competition.geoBroadcasts) {
-              for (const gb of competition.geoBroadcasts) {
-                if (gb.media?.shortName && !broadcasts.includes(gb.media.shortName)) {
-                  broadcasts.push(gb.media.shortName);
-                }
-              }
-            }
-
-            // Parse status
-            const espnStatus = event.status?.type?.name || 'STATUS_SCHEDULED';
-            let status: 'scheduled' | 'live' | 'final' | 'postponed' = 'scheduled';
-            if (espnStatus === 'STATUS_IN_PROGRESS' || espnStatus === 'STATUS_HALFTIME' || espnStatus === 'STATUS_END_PERIOD') {
-              status = 'live';
-            } else if (espnStatus === 'STATUS_FINAL') {
-              status = 'final';
-            } else if (espnStatus === 'STATUS_POSTPONED' || espnStatus === 'STATUS_CANCELED') {
-              status = 'postponed';
-            }
-
-            const homeScore = (status === 'live' || status === 'final') ? parseInt(homeTeam.score) || 0 : undefined;
-            const awayScore = (status === 'live' || status === 'final') ? parseInt(awayTeam.score) || 0 : undefined;
-
-            processedGames.push({
-              id: event.id,
-              name: event.name,
-              shortName: event.shortName,
-              date: event.date,
-              homeTeam: {
-                name: homeTeam.team?.displayName || homeTeam.team?.name,
-                abbreviation: homeTeam.team?.abbreviation,
-                logo: homeTeam.team?.logo,
-                score: homeScore
-              },
-              awayTeam: {
-                name: awayTeam.team?.displayName || awayTeam.team?.name,
-                abbreviation: awayTeam.team?.abbreviation,
-                logo: awayTeam.team?.logo,
-                score: awayScore
-              },
-              broadcast: broadcasts,
-              venue: competition.venue?.fullName,
-              status,
-              statusDetail: event.status?.type?.shortDetail
-            });
-          } catch {
-            // Skip malformed events
-          }
-        }
-
-        // Remove duplicates
-        const uniqueGames = processedGames.filter((game, index, self) =>
-          index === self.findIndex(g => g.id === game.id)
-        );
-
-        // Sort by date
-        uniqueGames.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
-
-        // Separate into live, upcoming, and recent
-        const now = new Date();
-        const live = uniqueGames.filter(g => g.status === 'live');
-        const upcoming = uniqueGames
-          .filter(g => g.status === 'scheduled' && new Date(g.date) > now)
-          .slice(0, 5);
-        const recent = uniqueGames
-          .filter(g => g.status === 'final')
-          .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
-          .slice(0, 5);
-
-        sportResults.push({
-          sport: key,
-          name: config.name,
-          live,
-          upcoming,
-          recent
+        const url = `https://site.api.espn.com/apis/site/v2/sports/${config.sport}/${config.league}/scoreboard?dates=${dateStr}`;
+        const response = await fetch(url, {
+          headers: { 'User-Agent': 'Mozilla/5.0' },
+          signal: AbortSignal.timeout(5000)
         });
+        if (response.ok) {
+          const data = await response.json();
+          games.push(...(data.events || []));
+        }
+      } catch {
+        // Skip failed requests
+      }
+      // Long delay between requests to yield to event loop
+      await delay(200);
+    }
 
-        // Yield between sports too
-        await delay(100);
-      } catch (err) {
-        console.error(`[Events] Error fetching ${key}:`, err);
-        sportResults.push({ sport: key, name: config.name, live: [], upcoming: [], recent: [] });
+    // Process games
+    const processedGames: any[] = [];
+    for (const event of games) {
+      try {
+        const competition = event.competitions?.[0];
+        if (!competition) continue;
+
+        const homeTeam = competition.competitors?.find((c: any) => c.homeAway === 'home');
+        const awayTeam = competition.competitors?.find((c: any) => c.homeAway === 'away');
+        if (!homeTeam || !awayTeam) continue;
+
+        const broadcasts: string[] = [];
+        if (competition.broadcasts) {
+          for (const b of competition.broadcasts) {
+            if (b.names) broadcasts.push(...b.names);
+          }
+        }
+        if (competition.geoBroadcasts) {
+          for (const gb of competition.geoBroadcasts) {
+            if (gb.media?.shortName && !broadcasts.includes(gb.media.shortName)) {
+              broadcasts.push(gb.media.shortName);
+            }
+          }
+        }
+
+        const espnStatus = event.status?.type?.name || 'STATUS_SCHEDULED';
+        let status: 'scheduled' | 'live' | 'final' | 'postponed' = 'scheduled';
+        if (espnStatus === 'STATUS_IN_PROGRESS' || espnStatus === 'STATUS_HALFTIME' || espnStatus === 'STATUS_END_PERIOD') {
+          status = 'live';
+        } else if (espnStatus === 'STATUS_FINAL') {
+          status = 'final';
+        } else if (espnStatus === 'STATUS_POSTPONED' || espnStatus === 'STATUS_CANCELED') {
+          status = 'postponed';
+        }
+
+        const homeScore = (status === 'live' || status === 'final') ? parseInt(homeTeam.score) || 0 : undefined;
+        const awayScore = (status === 'live' || status === 'final') ? parseInt(awayTeam.score) || 0 : undefined;
+
+        processedGames.push({
+          id: event.id,
+          name: event.name,
+          shortName: event.shortName,
+          date: event.date,
+          homeTeam: {
+            name: homeTeam.team?.displayName || homeTeam.team?.name,
+            abbreviation: homeTeam.team?.abbreviation,
+            logo: homeTeam.team?.logo,
+            score: homeScore
+          },
+          awayTeam: {
+            name: awayTeam.team?.displayName || awayTeam.team?.name,
+            abbreviation: awayTeam.team?.abbreviation,
+            logo: awayTeam.team?.logo,
+            score: awayScore
+          },
+          broadcast: broadcasts,
+          venue: competition.venue?.fullName,
+          status,
+          statusDetail: event.status?.type?.shortDetail
+        });
+      } catch {
+        // Skip malformed events
       }
     }
 
-    // Filter out sports with no games
-    const activeSports = sportResults.filter(s => s.live.length > 0 || s.upcoming.length > 0 || s.recent.length > 0);
+    // Dedupe and sort
+    const uniqueGames = processedGames.filter((game, index, self) =>
+      index === self.findIndex(g => g.id === game.id)
+    );
+    uniqueGames.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
 
-    // Flatten for combined view
-    const allLive = sportResults.flatMap(s => s.live.map(g => ({ ...g, sport: s.sport, sportName: s.name })));
-    const allUpcoming = sportResults.flatMap(s => s.upcoming.map(g => ({ ...g, sport: s.sport, sportName: s.name })));
-
+    const now = new Date();
     return {
-      sports: activeSports,
-      live: allLive,
-      upcoming: allUpcoming.slice(0, 10),
-      categories: activeSports.map(s => s.sport)
+      sport: config.key,
+      name: config.name,
+      live: uniqueGames.filter(g => g.status === 'live'),
+      upcoming: uniqueGames.filter(g => g.status === 'scheduled' && new Date(g.date) > now).slice(0, 5),
+      recent: uniqueGames.filter(g => g.status === 'final').sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()).slice(0, 5)
     };
   }
 
+  // Background job: refreshes cache every 2 minutes
+  // Processes ONE sport at a time with long delays - never blocks event loop
+  async function refreshEventsCache() {
+    if (eventsCacheRefreshing) {
+      console.log('[Events Background] Refresh already in progress, skipping');
+      return;
+    }
+
+    eventsCacheRefreshing = true;
+    console.log('[Events Background] Starting cache refresh...');
+
+    try {
+      const sportResults: Array<{ sport: string; name: string; live: any[]; upcoming: any[]; recent: any[] }> = [];
+
+      // Process each sport sequentially with 500ms gap between sports
+      for (const config of ESPN_SPORTS) {
+        try {
+          console.log(`[Events Background] Fetching ${config.name}...`);
+          const result = await fetchSingleSport(config);
+          sportResults.push(result);
+          console.log(`[Events Background] ${config.name}: ${result.live.length} live, ${result.upcoming.length} upcoming, ${result.recent.length} recent`);
+        } catch (err) {
+          console.error(`[Events Background] Error fetching ${config.name}:`, err);
+          sportResults.push({ sport: config.key, name: config.name, live: [], upcoming: [], recent: [] });
+        }
+        // Long delay between sports
+        await delay(500);
+      }
+
+      // Build final cache data
+      const activeSports = sportResults.filter(s => s.live.length > 0 || s.upcoming.length > 0 || s.recent.length > 0);
+      const allLive = sportResults.flatMap(s => s.live.map(g => ({ ...g, sport: s.sport, sportName: s.name })));
+      const allUpcoming = sportResults.flatMap(s => s.upcoming.map(g => ({ ...g, sport: s.sport, sportName: s.name })));
+
+      eventsCache = {
+        data: {
+          sports: activeSports,
+          live: allLive,
+          upcoming: allUpcoming.slice(0, 10),
+          categories: activeSports.map(s => s.sport)
+        },
+        timestamp: Date.now()
+      };
+
+      console.log('[Events Background] Cache refresh complete');
+    } catch (err) {
+      console.error('[Events Background] Cache refresh failed:', err);
+    } finally {
+      eventsCacheRefreshing = false;
+    }
+  }
+
+  // Start background refresh job (every 2 minutes)
+  console.log('[Events] Starting background refresh job (every 2 minutes)');
+  setInterval(refreshEventsCache, 2 * 60 * 1000);
+
+  // Initial cache population (delayed 5 seconds to let server start)
+  setTimeout(() => {
+    console.log('[Events] Initial cache population starting...');
+    refreshEventsCache();
+  }, 5000);
+
+  // API endpoint - ONLY reads from cache, never triggers a fetch
   app.get("/api/events", requireFeature('events_access'), async (req, res) => {
     try {
       const userId = (req.user as User)?.id;
@@ -4740,43 +4758,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(401).json({ error: 'Authentication required' });
       }
 
-      // Return cached data if fresh
-      if (eventsCache && (Date.now() - eventsCache.timestamp) < EVENTS_CACHE_TTL) {
-        console.log('[Events] Returning cached data');
-        return res.json(eventsCache.data);
-      }
-
-      // If cache is stale but we have data, return it and refresh in background
-      if (eventsCache && !eventsCacheRefreshing) {
-        console.log('[Events] Returning stale cache, refreshing in background');
-        res.json(eventsCache.data);
-
-        // Refresh cache in background
-        eventsCacheRefreshing = true;
-        fetchESPNEvents()
-          .then(data => {
-            eventsCache = { data, timestamp: Date.now() };
-            console.log('[Events] Background cache refresh complete');
-          })
-          .catch(err => console.error('[Events] Background refresh failed:', err))
-          .finally(() => { eventsCacheRefreshing = false; });
-        return;
-      }
-
-      // No cache - fetch fresh data (first request or cache expired during refresh)
-      console.log('[Events] Fetching fresh ESPN data...');
-      const data = await fetchESPNEvents();
-      eventsCache = { data, timestamp: Date.now() };
-      console.log('[Events] Fresh data fetched and cached');
-
-      res.json(data);
-    } catch (error) {
-      console.error('[Events] Error fetching events:', error);
-      // Return stale cache if available on error
+      // Always return cached data (even if stale)
       if (eventsCache) {
-        console.log('[Events] Error occurred, returning stale cache');
+        const ageSeconds = Math.round((Date.now() - eventsCache.timestamp) / 1000);
+        console.log(`[Events] Returning cached data (age: ${ageSeconds}s)`);
         return res.json(eventsCache.data);
       }
+
+      // No cache yet - return empty structure (cache will be ready soon)
+      console.log('[Events] Cache not ready yet, returning empty');
+      return res.json({
+        sports: [],
+        live: [],
+        upcoming: [],
+        categories: [],
+        message: 'Loading events data, please refresh in a moment...'
+      });
+    } catch (error) {
+      console.error('[Events] Error:', error);
       res.status(500).json({ error: 'Failed to fetch events' });
     }
   });
@@ -4792,15 +4791,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   const httpServer = createServer(app);
-
-  // Pre-warm the events cache on server startup (non-blocking)
-  console.log('[Events] Pre-warming ESPN cache on startup...');
-  fetchESPNEvents()
-    .then(data => {
-      eventsCache = { data, timestamp: Date.now() };
-      console.log('[Events] Cache pre-warmed successfully');
-    })
-    .catch(err => console.error('[Events] Cache pre-warm failed:', err));
 
   return httpServer;
 }
