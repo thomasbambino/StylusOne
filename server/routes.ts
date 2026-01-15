@@ -3196,10 +3196,13 @@ live.ts
           existingStream.lastAccessed = new Date();
           console.log(`📺 Using cached manifest (${Math.round(manifestAge / 1000)}s old) with token for stream ${streamId} (${existingStream.users.size} users)`);
 
-          const tokenParam = `?token=${token}`;
           const tokenizedManifest = existingStream.manifest.replace(
             /\/api\/iptv\/segment\/([^/]+)\/([^\s\n]+)/g,
-            (match, sid, path) => `/api/iptv/segment/${sid}/${path}${tokenParam}`
+            (match, sid, path) => {
+              // Use & if URL already has query params (?url=), otherwise use ?
+              const separator = path.includes('?') ? '&' : '?';
+              return `/api/iptv/segment/${sid}/${path}${separator}token=${token}`;
+            }
           );
 
           res.set({
@@ -3251,10 +3254,12 @@ live.ts
         if (!freshResponse.ok) {
           console.error(`Failed to fetch fresh stream ${streamId}: ${freshResponse.status}`);
           // Fallback to cached manifest with tokens
-          const tokenParam = `?token=${token}`;
           const tokenizedManifest = existingStream.manifest.replace(
             /\/api\/iptv\/segment\/([^/]+)\/([^\s\n]+)/g,
-            (match, sid, path) => `/api/iptv/segment/${sid}/${path}${tokenParam}`
+            (match, sid, path) => {
+              const separator = path.includes('?') ? '&' : '?';
+              return `/api/iptv/segment/${sid}/${path}${separator}token=${token}`;
+            }
           );
           return res.send(tokenizedManifest);
         }
@@ -3282,14 +3287,14 @@ live.ts
 
         // Rewrite fresh manifest segments
         // Match .ts files with optional query parameters (e.g., file.ts?index=1)
-        // For absolute URLs, URL-encode the path to pass through the segment proxy
+        // For absolute URLs, use query parameter (iOS AVPlayer compatible)
         const freshBaseManifest = freshManifestText.replace(
           /^([^#\n].+\.ts(?:\?[^\s\n]*)?)$/gm,
           (match) => {
             const trimmed = match.trim();
-            // For absolute URLs, encode and prefix with 'abs:' marker
+            // For absolute URLs, pass as query parameter (keeps path as normal .ts file)
             if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
-              return `/api/iptv/segment/${streamId}/abs:${encodeURIComponent(trimmed)}`;
+              return `/api/iptv/segment/${streamId}/stream.ts?url=${encodeURIComponent(trimmed)}`;
             }
             // For relative paths, strip leading slashes
             return `/api/iptv/segment/${streamId}/${trimmed.replace(/^\/+/, '')}`;
@@ -3301,10 +3306,12 @@ live.ts
         existingStream.manifestFetchedAt = new Date();
 
         // Add tokens to segment URLs
-        const tokenParam = `?token=${token}`;
         const tokenizedManifest = freshBaseManifest.replace(
           /\/api\/iptv\/segment\/([^/]+)\/([^\s\n]+)/g,
-          (match, sid, path) => `/api/iptv/segment/${sid}/${path}${tokenParam}`
+          (match, sid, path) => {
+            const separator = path.includes('?') ? '&' : '?';
+            return `/api/iptv/segment/${sid}/${path}${separator}token=${token}`;
+          }
         );
 
         res.set({
@@ -3352,14 +3359,14 @@ live.ts
       // Rewrite segment URLs to go through our proxy
       // Always cache manifest WITHOUT tokens for security and sharing
       // Match .ts files with optional query parameters (e.g., file.ts?index=1)
-      // For absolute URLs, URL-encode the path to pass through the segment proxy
+      // For absolute URLs, use query parameter (iOS AVPlayer compatible)
       const baseManifest = manifestText.replace(
         /^([^#\n].+\.ts(?:\?[^\s\n]*)?)$/gm,
         (match) => {
           const trimmed = match.trim();
-          // For absolute URLs, encode and prefix with 'abs:' marker
+          // For absolute URLs, pass as query parameter (keeps path as normal .ts file)
           if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
-            return `/api/iptv/segment/${streamId}/abs:${encodeURIComponent(trimmed)}`;
+            return `/api/iptv/segment/${streamId}/stream.ts?url=${encodeURIComponent(trimmed)}`;
           }
           // For relative paths, strip leading slashes
           return `/api/iptv/segment/${streamId}/${trimmed.replace(/^\/+/, '')}`;
@@ -3383,14 +3390,16 @@ live.ts
       let finalManifest = baseManifest;
       if (token) {
         console.log(`🔧 Adding token to manifest for Chromecast`);
-        const tokenParam = `?token=${token}`;
         finalManifest = baseManifest.replace(
           /\/api\/iptv\/segment\/([^/]+)\/([^\s\n]+)/g,
-          (match, sid, path) => `/api/iptv/segment/${sid}/${path}${tokenParam}`
+          (match, sid, path) => {
+            const separator = path.includes('?') ? '&' : '?';
+            return `/api/iptv/segment/${sid}/${path}${separator}token=${token}`;
+          }
         );
 
         // Log a sample segment URL to verify token inclusion
-        const sampleSegment = finalManifest.match(/\/api\/iptv\/segment\/[^\s?]+\?token=/);
+        const sampleSegment = finalManifest.match(/\/api\/iptv\/segment\/[^\s]+token=/);
         if (sampleSegment) {
           console.log(`📝 Sample segment URL with token: ${sampleSegment[0].substring(0, 80)}...`);
         }
@@ -3517,13 +3526,14 @@ live.ts
       }
 
       // The fullPath is the segment filename/path
-      // Check for absolute URL marker (abs:) from M3U providers with absolute segment URLs
+      // Check for absolute URL in query parameter (for M3U providers with absolute segment URLs)
       let segmentUrl: string;
+      const urlParam = req.query.url as string | undefined;
 
-      if (fullPath.startsWith('abs:')) {
-        // Absolute URL was encoded - decode and use directly
-        segmentUrl = decodeURIComponent(fullPath.substring(4));
-        console.log(`Using absolute URL from manifest: ${segmentUrl}`);
+      if (urlParam) {
+        // Absolute URL passed as query parameter - decode and use directly
+        segmentUrl = decodeURIComponent(urlParam);
+        console.log(`Using absolute URL from query param: ${segmentUrl}`);
       } else {
         // For relative paths, we need the base URL from the cache
         const iptvSegmentBaseUrls = (global as any).iptvSegmentBaseUrls || new Map();
