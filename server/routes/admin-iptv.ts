@@ -24,6 +24,35 @@ import { m3uParserService } from '../services/m3u-parser-service';
 
 const router = Router();
 
+/**
+ * Convert local/internal logo URLs to use the proxy endpoint
+ */
+function convertLogoToProxy(logoUrl: string | null): string | null {
+  if (!logoUrl) return null;
+
+  try {
+    const url = new URL(logoUrl);
+    const isLocalUrl = url.hostname === 'localhost' ||
+      url.hostname === '127.0.0.1' ||
+      url.hostname.startsWith('192.168.') ||
+      url.hostname.startsWith('10.') ||
+      url.hostname.startsWith('172.16.') ||
+      url.hostname.startsWith('172.17.') ||
+      url.hostname.startsWith('172.18.') ||
+      url.hostname.startsWith('172.19.') ||
+      url.hostname.startsWith('172.2') ||
+      url.hostname.startsWith('172.30.') ||
+      url.hostname.startsWith('172.31.');
+
+    if (isLocalUrl) {
+      return `/api/iptv/logo-proxy?url=${encodeURIComponent(logoUrl)}`;
+    }
+  } catch (e) {
+    // Invalid URL, return as-is
+  }
+  return logoUrl;
+}
+
 // Debug logging for all requests to this router
 router.use((req, res, next) => {
   console.log(`[ADMIN-IPTV] ${req.method} ${req.path} (full: ${req.originalUrl})`);
@@ -778,8 +807,14 @@ router.get('/iptv-channels', requireSuperAdmin, async (req, res) => {
       .limit(limit)
       .offset(offset);
 
+    // Convert local logo URLs to proxy URLs
+    const channelsWithProxiedLogos = channels.map(ch => ({
+      ...ch,
+      logo: convertLogoToProxy(ch.logo),
+    }));
+
     res.json({
-      channels,
+      channels: channelsWithProxiedLogos,
       pagination: {
         page,
         limit,
@@ -1009,9 +1044,15 @@ router.get('/channel-packages/:id', requireSuperAdmin, async (req, res) => {
       .where(eq(packageChannels.packageId, packageId))
       .orderBy(packageChannels.sortOrder, iptvChannels.name);
 
+    // Convert local logo URLs to proxy URLs
+    const channelsWithProxiedLogos = channels.map(ch => ({
+      ...ch,
+      logo: convertLogoToProxy(ch.logo),
+    }));
+
     res.json({
       ...pkg,
-      channels,
+      channels: channelsWithProxiedLogos,
     });
   } catch (error) {
     console.error('Error fetching channel package:', error);
