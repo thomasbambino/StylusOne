@@ -2408,6 +2408,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // Get channels based on user's subscription plan IPTV credentials
       const channels = await xtreamCodesService.getMergedChannels(userId, categoryId);
+
+      // Detect native app requests and convert relative logo URLs to absolute
+      const userAgent = req.headers['user-agent'] || '';
+      const isNativeApp = userAgent.includes('iPhone') || userAgent.includes('iPad') ||
+                          userAgent.includes('Android') || userAgent.includes('Capacitor');
+
+      if (isNativeApp) {
+        // Get the base URL from environment or request
+        const baseUrl = process.env.VITE_API_URL || `https://${req.headers.host}`;
+
+        // Convert relative logo URLs to absolute
+        channels.forEach((ch: any) => {
+          if (ch.logo && ch.logo.startsWith('/')) {
+            ch.logo = `${baseUrl}${ch.logo}`;
+          }
+        });
+      }
+
       res.json({ configured: true, channels });
     } catch (error) {
       console.error('Error fetching IPTV channels:', error);
