@@ -1081,6 +1081,19 @@ export class XtreamCodesManager implements IService {
 
     const providerId = channelInPackage.channel.providerId;
 
+    // Check if this is an M3U provider (no credentials needed)
+    const [providerInfo] = await db.select({ providerType: iptvProviders.providerType })
+      .from(iptvProviders)
+      .where(eq(iptvProviders.id, providerId))
+      .limit(1);
+
+    if (providerInfo?.providerType === 'm3u') {
+      // M3U providers don't need credentials - they use direct URLs
+      // Return -2 as a special marker indicating M3U stream is allowed
+      console.log(`[IPTV-PKG] M3U provider detected for channel ${streamId} - no credentials needed`);
+      return -2;
+    }
+
     // Get all active credentials for this provider, ordered by priority
     const providerCredentials = await db.select()
       .from(iptvCredentials)
@@ -1132,6 +1145,7 @@ export class XtreamCodesManager implements IService {
 
   /**
    * Get a client for a stream (finds the right credential)
+   * Returns null for M3U providers since they use direct URLs, not Xtream clients
    */
   async getClientForStream(userId: number, streamId: string): Promise<XtreamCodesClient | null> {
     const credentialId = await this.selectCredentialForStream(userId, streamId);
@@ -1143,6 +1157,13 @@ export class XtreamCodesManager implements IService {
     // Use env client fallback
     if (credentialId === -1) {
       return this.envClient;
+    }
+
+    // M3U providers don't use clients - they use direct URLs
+    // Returning null here is intentional - the stream endpoint checks for M3U first
+    if (credentialId === -2) {
+      console.log(`[IPTV] M3U provider for stream ${streamId} - no client needed`);
+      return null;
     }
 
     return this.getClient(credentialId);

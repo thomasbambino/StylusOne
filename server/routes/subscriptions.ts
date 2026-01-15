@@ -10,7 +10,8 @@ import {
   channelPackages,
   planPackages,
   packageChannels,
-  iptvChannels
+  iptvChannels,
+  iptvProviders
 } from '@shared/schema';
 import { eq, and, desc, sql } from 'drizzle-orm';
 import { stripeService } from '../services/stripe-service';
@@ -249,18 +250,57 @@ router.get('/packages/:packageId/channels', requireAuth, async (req, res) => {
       return res.status(403).json({ error: 'Package not available on your plan' });
     }
 
-    // Get channels in the package
-    const channels = await db
+    // Get channels in the package with provider info for logo proxy
+    const channelsRaw = await db
       .select({
         id: iptvChannels.id,
         name: iptvChannels.name,
         logo: iptvChannels.logo,
         categoryName: iptvChannels.categoryName,
+        providerId: iptvChannels.providerId,
+        providerType: iptvProviders.providerType,
       })
       .from(packageChannels)
       .innerJoin(iptvChannels, eq(packageChannels.channelId, iptvChannels.id))
+      .leftJoin(iptvProviders, eq(iptvChannels.providerId, iptvProviders.id))
       .where(eq(packageChannels.packageId, packageId))
       .orderBy(packageChannels.sortOrder);
+
+    // Apply logo proxy for M3U channels with internal URLs
+    const channels = channelsRaw.map(channel => {
+      let logo = channel.logo || '';
+
+      if (logo && channel.providerType === 'm3u') {
+        try {
+          const url = new URL(logo);
+          // Detect local/internal IPs that need proxying
+          const isLocalUrl = url.hostname === 'localhost' ||
+            url.hostname === '127.0.0.1' ||
+            url.hostname.startsWith('192.168.') ||
+            url.hostname.startsWith('10.') ||
+            url.hostname.startsWith('172.16.') ||
+            url.hostname.startsWith('172.17.') ||
+            url.hostname.startsWith('172.18.') ||
+            url.hostname.startsWith('172.19.') ||
+            url.hostname.startsWith('172.2') ||
+            url.hostname.startsWith('172.30.') ||
+            url.hostname.startsWith('172.31.');
+
+          if (isLocalUrl) {
+            logo = `/api/iptv/logo-proxy?url=${encodeURIComponent(logo)}`;
+          }
+        } catch (e) {
+          // Invalid URL, leave as-is
+        }
+      }
+
+      return {
+        id: channel.id,
+        name: channel.name,
+        logo,
+        categoryName: channel.categoryName,
+      };
+    });
 
     res.json(channels);
   } catch (error) {

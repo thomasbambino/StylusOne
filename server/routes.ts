@@ -2826,9 +2826,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const { streamTrackerService } = await import('./services/stream-tracker-service');
 
         // Use the service to select a credential (supports both packages and legacy)
+        // Returns: null = no access, -1 = ENV client, -2 = M3U provider (no credential needed), >0 = credential ID
         const credentialId = await xtreamCodesService.selectCredentialForStream(userId, streamId);
 
-        if (credentialId && credentialId !== -1) {
+        if (credentialId && credentialId > 0) {
+          // Regular Xtream provider with credential
           const ipAddress = req.ip || req.socket.remoteAddress;
           sessionToken = await streamTrackerService.acquireStream(
             userId,
@@ -2844,6 +2846,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
           }
         } else if (credentialId === -1) {
           console.log(`[Token+Track] User ${userId} using ENV client for stream ${streamId} (no tracking)`);
+        } else if (credentialId === -2) {
+          console.log(`[Token+Track] User ${userId} using M3U provider for stream ${streamId} (no credential tracking)`);
         } else {
           console.log(`[Token+Track] User ${userId} has no credential for stream ${streamId}`);
         }
@@ -2917,10 +2921,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       try {
         let streamUrl = directUrl;
-        let response = await fetch(streamUrl);
+        console.log(`[Failover] Fetching M3U stream from: ${streamUrl}`);
+        let response = await fetch(streamUrl, { timeout: 10000 });
+        console.log(`[Failover] M3U fetch response: ${response.status} ${response.statusText}`);
 
         if (response.ok) {
           let manifestText = await response.text();
+          console.log(`[Failover] M3U response content type: ${response.headers.get('content-type')}`);
+          console.log(`[Failover] M3U response first 200 chars: ${manifestText.substring(0, 200)}`);
 
           // Handle HTML redirects
           if (manifestText.trim().startsWith('<!DOCTYPE') || manifestText.trim().startsWith('<html')) {
@@ -2941,11 +2949,52 @@ export async function registerRoutes(app: Express): Promise<Server> {
             console.log(`[Failover] M3U direct stream ${streamId} succeeded`);
             return { response, manifestText, streamUrl, usedBackup: false };
           }
+        } else {
+          console.log(`[Failover] M3U HLS endpoint not available (${response.status}), trying MPEG-TS proxy`);
         }
-        console.log(`[Failover] M3U direct stream ${streamId} failed: ${response.status}`);
       } catch (error) {
         console.log(`[Failover] M3U direct stream ${streamId} error:`, error);
       }
+
+      // If HLS (.m3u8) failed, try to serve the MPEG-TS stream directly
+      // Create a synthetic HLS manifest that points to our proxy for the TS stream
+      const originalTsUrl = channel[0].directStreamUrl;
+      if (originalTsUrl && originalTsUrl.endsWith('.ts')) {
+        console.log(`[Failover] Creating synthetic HLS manifest for MPEG-TS stream: ${originalTsUrl}`);
+
+        // Create a live HLS manifest that references our segment proxy
+        // The segment proxy will forward the TS stream
+        const syntheticManifest = `#EXTM3U
+#EXT-X-VERSION:3
+#EXT-X-TARGETDURATION:10
+#EXT-X-MEDIA-SEQUENCE:0
+#EXTINF:10.0,
+live.ts
+`;
+
+        // Store the TS URL so the segment proxy can use it
+        (global as any).m3uTsUrls = (global as any).m3uTsUrls || new Map();
+        (global as any).m3uTsUrls.set(streamId, originalTsUrl);
+
+        // Create a mock response object
+        const mockResponse = {
+          ok: true,
+          status: 200,
+          url: `synthetic://${streamId}/playlist.m3u8`,
+          headers: new Map([['content-type', 'application/vnd.apple.mpegurl']]),
+        };
+
+        console.log(`[Failover] Synthetic manifest created for stream ${streamId}`);
+        return {
+          response: mockResponse as any,
+          manifestText: syntheticManifest,
+          streamUrl: `synthetic://${streamId}/playlist.m3u8`,
+          usedBackup: false,
+          isSynthetic: true,
+          tsUrl: originalTsUrl
+        };
+      }
+
       // Fall through to backup channels if M3U stream fails
     }
 
@@ -3634,6 +3683,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const { xtreamCodesService } = await import('./services/xtream-codes-service');
 
       // Use the service to select a credential (supports both packages and legacy)
+      // Returns: null = no access, -1 = ENV client, -2 = M3U provider (no credential needed), >0 = credential ID
       const credentialId = await xtreamCodesService.selectCredentialForStream(userId, streamId);
 
       if (!credentialId) {
@@ -3646,6 +3696,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
         console.log(`[Stream Acquire] Using ENV client for user ${userId}, stream ${streamId}`);
         // For env client, we don't track streams - just return a dummy token
         res.json({ sessionToken: `env-${userId}-${streamId}-${Date.now()}` });
+        return;
+      }
+
+      // Handle M3U provider (credentialId = -2)
+      if (credentialId === -2) {
+        console.log(`[Stream Acquire] M3U provider for user ${userId}, stream ${streamId} - no tracking needed`);
+        // For M3U, we don't track streams - just return a dummy token
+        res.json({ sessionToken: `m3u-${userId}-${streamId}-${Date.now()}` });
         return;
       }
 
