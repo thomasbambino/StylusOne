@@ -2716,6 +2716,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     lastAccessed: Date;
     manifestUrl: string;
     manifestFetchedAt: Date; // Track when manifest was last fetched
+    segmentMap?: Map<string, string>; // Maps simple segment IDs (seg_0.ts) to actual URLs for M3U streams
   }
 
   // Use global so admin routes can clear cache when needed (e.g., test failover mode)
@@ -3282,24 +3283,32 @@ live.ts
 
         // Rewrite fresh manifest segments
         // Match .ts files with optional query parameters (e.g., file.ts?index=1)
-        // For absolute URLs, URL-encode the path to pass through the segment proxy
+        // For absolute URLs, use simple segment IDs and store mapping (iOS AVPlayer compatible)
+        const freshSegmentMap = new Map<string, string>();
+        let freshSegmentCounter = 0;
+
         const freshBaseManifest = freshManifestText.replace(
           /^([^#\n].+\.ts(?:\?[^\s\n]*)?)$/gm,
           (match) => {
             const trimmed = match.trim();
-            // For absolute URLs, encode and prefix with '_abs_' marker
-            // Note: Using '_abs_' instead of 'abs:' to avoid iOS AVPlayer treating it as a URL scheme
+            // For absolute URLs, use simple segment IDs (iOS AVPlayer friendly)
             if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
-              return `/api/iptv/segment/${streamId}/_abs_${encodeURIComponent(trimmed)}`;
+              const segmentId = `seg_${freshSegmentCounter++}.ts`;
+              freshSegmentMap.set(segmentId, trimmed);
+              return `/api/iptv/segment/${streamId}/${segmentId}`;
             }
             // For relative paths, strip leading slashes
             return `/api/iptv/segment/${streamId}/${trimmed.replace(/^\/+/, '')}`;
           }
         );
 
-        // Update cache with fresh manifest
+        // Update cache with fresh manifest and segment map
         existingStream.manifest = freshBaseManifest;
         existingStream.manifestFetchedAt = new Date();
+        if (freshSegmentMap.size > 0) {
+          existingStream.segmentMap = freshSegmentMap;
+          console.log(`📦 Updated segment map with ${freshSegmentMap.size} absolute URL mappings for stream ${streamId}`);
+        }
 
         // Add tokens to segment URLs
         const tokenParam = `?token=${token}`;
@@ -3353,19 +3362,28 @@ live.ts
       // Rewrite segment URLs to go through our proxy
       // Always cache manifest WITHOUT tokens for security and sharing
       // Match .ts files with optional query parameters (e.g., file.ts?index=1)
-      // For absolute URLs, URL-encode the path to pass through the segment proxy
+      // For absolute URLs, use simple segment IDs and store mapping (iOS AVPlayer compatible)
+      const segmentMap = new Map<string, string>();
+      let segmentCounter = 0;
+
       const baseManifest = manifestText.replace(
         /^([^#\n].+\.ts(?:\?[^\s\n]*)?)$/gm,
         (match) => {
           const trimmed = match.trim();
-          // For absolute URLs, encode and prefix with 'abs:' marker
+          // For absolute URLs, use simple segment IDs (iOS AVPlayer friendly)
           if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
-            return `/api/iptv/segment/${streamId}/abs:${encodeURIComponent(trimmed)}`;
+            const segmentId = `seg_${segmentCounter++}.ts`;
+            segmentMap.set(segmentId, trimmed);
+            return `/api/iptv/segment/${streamId}/${segmentId}`;
           }
           // For relative paths, strip leading slashes
           return `/api/iptv/segment/${streamId}/${trimmed.replace(/^\/+/, '')}`;
         }
       );
+
+      if (segmentMap.size > 0) {
+        console.log(`📦 Created segment map with ${segmentMap.size} absolute URL mappings for stream ${streamId}`);
+      }
 
       // Cache this stream for sharing (WITHOUT tokens)
       sharedStreams.set(streamId, {
@@ -3375,7 +3393,8 @@ live.ts
         users: new Set([userIdString]),
         lastAccessed: new Date(),
         manifestUrl: finalManifestUrl,
-        manifestFetchedAt: new Date()
+        manifestFetchedAt: new Date(),
+        segmentMap: segmentMap.size > 0 ? segmentMap : undefined
       });
 
       console.log(`💾 Cached stream ${streamId} for sharing (1 user)`);
@@ -3518,13 +3537,13 @@ live.ts
       }
 
       // The fullPath is the segment filename/path
-      // Check for absolute URL marker (_abs_) from M3U providers with absolute segment URLs
+      // Check for simple segment ID (seg_N.ts) from M3U providers with absolute segment URLs
       let segmentUrl: string;
 
-      if (fullPath.startsWith('_abs_')) {
-        // Absolute URL was encoded - decode and use directly (no baseUrl needed)
-        segmentUrl = decodeURIComponent(fullPath.substring(5));
-        console.log(`Using absolute URL from manifest: ${segmentUrl}`);
+      if (fullPath.startsWith('seg_') && sharedStream?.segmentMap?.has(fullPath)) {
+        // Simple segment ID - look up the actual URL from the mapping
+        segmentUrl = sharedStream.segmentMap.get(fullPath)!;
+        console.log(`[Segment Proxy] Using mapped segment URL for ${fullPath}: ${segmentUrl}`);
       } else {
         // For relative paths, we need the base URL from the cache
         const iptvSegmentBaseUrls = (global as any).iptvSegmentBaseUrls || new Map();
