@@ -2,7 +2,7 @@ import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { setupAuth, hashPassword } from "./auth";
 import { storage } from "./storage";
-import { insertServiceSchema, insertGameServerSchema, updateServiceSchema, updateGameServerSchema, GameServer } from "@shared/schema";
+import { insertServiceSchema, insertGameServerSchema, updateServiceSchema, updateGameServerSchema, GameServer, iptvChannels } from "@shared/schema";
 import { fromZodError } from "zod-validation-error";
 import { ZodError } from "zod";
 import multer from "multer";
@@ -2896,7 +2896,53 @@ export async function registerRoutes(app: Express): Promise<Server> {
       console.log(`[Failover] Test mode NOT active for stream ${streamId}`);
     }
 
-    // Try primary stream first (unless in test mode)
+    // Check if this is an M3U channel with a direct stream URL
+    const channel = await db
+      .select({ directStreamUrl: iptvChannels.directStreamUrl })
+      .from(iptvChannels)
+      .where(eq(iptvChannels.streamId, streamId))
+      .limit(1);
+
+    if (channel.length > 0 && channel[0].directStreamUrl) {
+      // M3U channel - use direct stream URL
+      const directUrl = channel[0].directStreamUrl;
+      console.log(`[Failover] M3U channel detected, using direct URL: ${directUrl}`);
+
+      try {
+        let streamUrl = directUrl;
+        let response = await fetch(streamUrl);
+
+        if (response.ok) {
+          let manifestText = await response.text();
+
+          // Handle HTML redirects
+          if (manifestText.trim().startsWith('<!DOCTYPE') || manifestText.trim().startsWith('<html')) {
+            const metaRefreshMatch = manifestText.match(/url='([^']+)'/);
+            const hrefMatch = manifestText.match(/href="([^"]+)"/);
+            const redirectUrl = metaRefreshMatch?.[1] || hrefMatch?.[1];
+
+            if (redirectUrl) {
+              response = await fetch(redirectUrl);
+              if (response.ok) {
+                manifestText = await response.text();
+                streamUrl = redirectUrl;
+              }
+            }
+          }
+
+          if (response.ok && !manifestText.trim().startsWith('<!DOCTYPE') && !manifestText.trim().startsWith('<html')) {
+            console.log(`[Failover] M3U direct stream ${streamId} succeeded`);
+            return { response, manifestText, streamUrl, usedBackup: false };
+          }
+        }
+        console.log(`[Failover] M3U direct stream ${streamId} failed: ${response.status}`);
+      } catch (error) {
+        console.log(`[Failover] M3U direct stream ${streamId} error:`, error);
+      }
+      // Fall through to backup channels if M3U stream fails
+    }
+
+    // Try primary stream first (unless in test mode) - for Xtream providers
     const primaryClient = !isTestMode ? await xtreamCodesService.getClientForStream(userId, streamId) : null;
 
     if (primaryClient) {
@@ -2936,7 +2982,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       } catch (error) {
         console.log(`[Failover] Primary stream ${streamId} error:`, error);
       }
-    } else {
+    } else if (!channel.length || !channel[0].directStreamUrl) {
+      // Only log "no client" for non-M3U channels
       console.log(`[Failover] No client available for primary stream ${streamId}`);
     }
 

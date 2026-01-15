@@ -20,6 +20,7 @@ import { xtreamCodesManager, xtreamCodesService, XtreamCodesClient } from '../se
 import { streamTrackerService } from '../services/stream-tracker-service';
 import { providerHealthService } from '../services/provider-health-service';
 import { channelMappingService } from '../services/channel-mapping-service';
+import { m3uParserService } from '../services/m3u-parser-service';
 
 const router = Router();
 
@@ -64,14 +65,30 @@ const assignCredentialSchema = z.object({
 // Provider validation schemas
 const createProviderSchema = z.object({
   name: z.string().min(1, 'Name is required'),
-  serverUrl: z.string().url('Invalid server URL'),
+  providerType: z.enum(['xtream', 'm3u']).default('xtream'),
+  serverUrl: z.string().url('Invalid server URL').optional(), // Required for xtream
+  m3uUrl: z.string().url('Invalid M3U URL').optional(), // Required for m3u
+  xmltvUrl: z.string().url('Invalid XMLTV URL').optional(), // Optional for m3u
   notes: z.string().optional(),
   isActive: z.boolean().default(true),
-});
+}).refine(
+  (data) => {
+    if (data.providerType === 'xtream') {
+      return !!data.serverUrl;
+    }
+    if (data.providerType === 'm3u') {
+      return !!data.m3uUrl;
+    }
+    return true;
+  },
+  { message: 'Xtream providers require serverUrl, M3U providers require m3uUrl' }
+);
 
 const updateProviderSchema = z.object({
   name: z.string().min(1, 'Name is required').optional(),
   serverUrl: z.string().url('Invalid server URL').optional(),
+  m3uUrl: z.string().url('Invalid M3U URL').optional(),
+  xmltvUrl: z.string().url('Invalid XMLTV URL').optional().nullable(),
   notes: z.string().optional().nullable(),
   isActive: z.boolean().optional(),
 });
@@ -216,14 +233,18 @@ router.get('/iptv-providers/:id', requireSuperAdmin, async (req, res) => {
       return res.status(404).json({ error: 'Provider not found' });
     }
 
-    // Return with decrypted server URL (for edit form)
+    // Return with decrypted URLs (for edit form)
     res.json({
       id: provider.id,
       name: provider.name,
-      serverUrl: decrypt(provider.serverUrl),
+      providerType: provider.providerType,
+      serverUrl: provider.serverUrl ? decrypt(provider.serverUrl) : null,
+      m3uUrl: provider.m3uUrl || null,
+      xmltvUrl: provider.xmltvUrl || null,
       isActive: provider.isActive,
       notes: provider.notes,
       lastChannelSync: provider.lastChannelSync,
+      healthStatus: provider.healthStatus,
       createdAt: provider.createdAt,
       updatedAt: provider.updatedAt,
     });
@@ -235,7 +256,7 @@ router.get('/iptv-providers/:id', requireSuperAdmin, async (req, res) => {
 
 /**
  * POST /api/admin/iptv-providers
- * Create a new IPTV provider
+ * Create a new IPTV provider (supports both Xtream and M3U types)
  */
 router.post('/iptv-providers', requireSuperAdmin, async (req, res) => {
   try {
@@ -245,7 +266,10 @@ router.post('/iptv-providers', requireSuperAdmin, async (req, res) => {
       .insert(iptvProviders)
       .values({
         name: validatedData.name,
-        serverUrl: encrypt(validatedData.serverUrl),
+        providerType: validatedData.providerType,
+        serverUrl: validatedData.serverUrl ? encrypt(validatedData.serverUrl) : null,
+        m3uUrl: validatedData.m3uUrl || null,
+        xmltvUrl: validatedData.xmltvUrl || null,
         notes: validatedData.notes || null,
         isActive: validatedData.isActive,
       })
@@ -254,6 +278,7 @@ router.post('/iptv-providers', requireSuperAdmin, async (req, res) => {
     res.status(201).json({
       id: newProvider.id,
       name: newProvider.name,
+      providerType: newProvider.providerType,
       isActive: newProvider.isActive,
       notes: newProvider.notes,
       createdAt: newProvider.createdAt,
@@ -287,6 +312,12 @@ router.put('/iptv-providers/:id', requireSuperAdmin, async (req, res) => {
     }
     if (validatedData.serverUrl !== undefined) {
       updateData.serverUrl = encrypt(validatedData.serverUrl);
+    }
+    if (validatedData.m3uUrl !== undefined) {
+      updateData.m3uUrl = validatedData.m3uUrl;
+    }
+    if (validatedData.xmltvUrl !== undefined) {
+      updateData.xmltvUrl = validatedData.xmltvUrl;
     }
     if (validatedData.notes !== undefined) {
       updateData.notes = validatedData.notes;
@@ -473,7 +504,7 @@ router.post('/iptv-providers/:id/credentials', requireSuperAdmin, async (req, re
 
 /**
  * POST /api/admin/iptv-providers/:id/sync
- * Sync channels from provider's Xtream Codes API
+ * Sync channels from provider (supports both Xtream and M3U types)
  */
 router.post('/iptv-providers/:id/sync', requireSuperAdmin, async (req, res) => {
   try {
@@ -492,92 +523,180 @@ router.post('/iptv-providers/:id/sync', requireSuperAdmin, async (req, res) => {
       return res.status(404).json({ error: 'Provider not found' });
     }
 
-    // Get first active credential for this provider (to fetch channel list)
-    const [credential] = await db
-      .select()
-      .from(iptvCredentials)
-      .where(and(
-        eq(iptvCredentials.providerId, providerId),
-        eq(iptvCredentials.isActive, true)
-      ))
-      .limit(1);
-
-    if (!credential) {
-      return res.status(400).json({ error: 'No active credentials found for this provider' });
-    }
-
-    // Create client to fetch channels
-    const client = new XtreamCodesClient({
-      serverUrl: decrypt(provider.serverUrl),
-      username: decrypt(credential.username),
-      password: decrypt(credential.password),
-      credentialId: credential.id,
-    });
-
-    // Fetch live streams (channels)
-    const liveStreams = await client.getRawLiveStreams();
-
-    if (!Array.isArray(liveStreams)) {
-      return res.status(400).json({ error: 'Failed to fetch channels from provider' });
-    }
-
-    // Upsert channels
     let insertCount = 0;
     let updateCount = 0;
     let withEpgCount = 0;
+    let totalChannels = 0;
 
-    // Log first 5 streams to see what epg_channel_id looks like
-    console.log(`[IPTV Sync] First 5 streams from provider ${providerId}:`);
-    liveStreams.slice(0, 5).forEach((s: any, i: number) => {
-      console.log(`  ${i + 1}. ${s.name} | stream_id: ${s.stream_id} | epg_channel_id: "${s.epg_channel_id || 'NULL'}"`);
-    });
+    // Handle M3U providers
+    if (provider.providerType === 'm3u') {
+      if (!provider.m3uUrl) {
+        return res.status(400).json({ error: 'M3U URL not configured for this provider' });
+      }
 
-    for (const stream of liveStreams) {
-      if (stream.epg_channel_id) withEpgCount++;
-      const streamId = String(stream.stream_id);
+      console.log(`[IPTV Sync] Syncing M3U provider ${providerId}: ${provider.m3uUrl}`);
 
-      // Check if channel exists
-      const [existing] = await db
-        .select({ id: iptvChannels.id })
-        .from(iptvChannels)
+      // Fetch and parse M3U
+      const m3uResult = await m3uParserService.fetchAndParseM3U(provider.m3uUrl);
+      totalChannels = m3uResult.totalCount;
+
+      // Optionally fetch XMLTV for EPG data
+      let epgMap = new Map<string, { name: string; icon?: string }>();
+      if (provider.xmltvUrl) {
+        try {
+          epgMap = await m3uParserService.fetchXMLTV(provider.xmltvUrl);
+        } catch (err) {
+          console.error(`[IPTV Sync] Failed to fetch XMLTV for provider ${providerId}:`, err);
+        }
+      }
+
+      // Log first 5 channels
+      console.log(`[IPTV Sync] First 5 M3U channels from provider ${providerId}:`);
+      m3uResult.channels.slice(0, 5).forEach((ch, i) => {
+        console.log(`  ${i + 1}. ${ch.name} | streamId: ${ch.streamId} | epgId: "${ch.epgId || 'NULL'}"`);
+      });
+
+      // Upsert channels
+      for (const channel of m3uResult.channels) {
+        const hasEpg = !!(channel.epgId && epgMap.has(channel.epgId));
+        if (channel.epgId) withEpgCount++;
+
+        // Check if channel exists
+        const [existing] = await db
+          .select({ id: iptvChannels.id })
+          .from(iptvChannels)
+          .where(and(
+            eq(iptvChannels.providerId, providerId),
+            eq(iptvChannels.streamId, channel.streamId)
+          ));
+
+        if (existing) {
+          // Update existing channel (don't change isEnabled)
+          await db
+            .update(iptvChannels)
+            .set({
+              name: channel.name,
+              logo: channel.logo || null,
+              categoryId: channel.groupTitle || null,
+              categoryName: channel.groupTitle || null,
+              epgChannelId: channel.epgId || null,
+              directStreamUrl: channel.streamUrl, // Store direct URL for M3U
+              hasEPG: hasEpg,
+              lastSeen: new Date(),
+            })
+            .where(eq(iptvChannels.id, existing.id));
+          updateCount++;
+        } else {
+          // Insert new channel (disabled by default)
+          await db
+            .insert(iptvChannels)
+            .values({
+              providerId,
+              streamId: channel.streamId,
+              name: channel.name,
+              logo: channel.logo || null,
+              categoryId: channel.groupTitle || null,
+              categoryName: channel.groupTitle || null,
+              epgChannelId: channel.epgId || null,
+              directStreamUrl: channel.streamUrl, // Store direct URL for M3U
+              isEnabled: false,
+              quality: 'unknown',
+              hasEPG: hasEpg,
+              lastSeen: new Date(),
+            });
+          insertCount++;
+        }
+      }
+    } else {
+      // Handle Xtream providers (original logic)
+      // Get first active credential for this provider
+      const [credential] = await db
+        .select()
+        .from(iptvCredentials)
         .where(and(
-          eq(iptvChannels.providerId, providerId),
-          eq(iptvChannels.streamId, streamId)
-        ));
+          eq(iptvCredentials.providerId, providerId),
+          eq(iptvCredentials.isActive, true)
+        ))
+        .limit(1);
 
-      if (existing) {
-        // Update existing channel (don't change isEnabled)
-        await db
-          .update(iptvChannels)
-          .set({
-            name: stream.name || `Channel ${streamId}`,
-            logo: stream.stream_icon || null,
-            categoryId: stream.category_id ? String(stream.category_id) : null,
-            categoryName: stream.category_name || null,
-            epgChannelId: stream.epg_channel_id || null, // XMLTV channel ID for EPG lookup
-            hasEPG: stream.epg_channel_id ? true : false,
-            lastSeen: new Date(),
-          })
-          .where(eq(iptvChannels.id, existing.id));
-        updateCount++;
-      } else {
-        // Insert new channel (disabled by default)
-        await db
-          .insert(iptvChannels)
-          .values({
-            providerId,
-            streamId,
-            name: stream.name || `Channel ${streamId}`,
-            logo: stream.stream_icon || null,
-            categoryId: stream.category_id ? String(stream.category_id) : null,
-            categoryName: stream.category_name || null,
-            epgChannelId: stream.epg_channel_id || null, // XMLTV channel ID for EPG lookup
-            isEnabled: false, // Disabled by default
-            quality: 'unknown',
-            hasEPG: stream.epg_channel_id ? true : false,
-            lastSeen: new Date(),
-          });
-        insertCount++;
+      if (!credential) {
+        return res.status(400).json({ error: 'No active credentials found for this provider' });
+      }
+
+      if (!provider.serverUrl) {
+        return res.status(400).json({ error: 'Server URL not configured for this provider' });
+      }
+
+      // Create client to fetch channels
+      const client = new XtreamCodesClient({
+        serverUrl: decrypt(provider.serverUrl),
+        username: decrypt(credential.username),
+        password: decrypt(credential.password),
+        credentialId: credential.id,
+      });
+
+      // Fetch live streams (channels)
+      const liveStreams = await client.getRawLiveStreams();
+
+      if (!Array.isArray(liveStreams)) {
+        return res.status(400).json({ error: 'Failed to fetch channels from provider' });
+      }
+
+      totalChannels = liveStreams.length;
+
+      // Log first 5 streams
+      console.log(`[IPTV Sync] First 5 streams from provider ${providerId}:`);
+      liveStreams.slice(0, 5).forEach((s: any, i: number) => {
+        console.log(`  ${i + 1}. ${s.name} | stream_id: ${s.stream_id} | epg_channel_id: "${s.epg_channel_id || 'NULL'}"`);
+      });
+
+      for (const stream of liveStreams) {
+        if (stream.epg_channel_id) withEpgCount++;
+        const streamId = String(stream.stream_id);
+
+        // Check if channel exists
+        const [existing] = await db
+          .select({ id: iptvChannels.id })
+          .from(iptvChannels)
+          .where(and(
+            eq(iptvChannels.providerId, providerId),
+            eq(iptvChannels.streamId, streamId)
+          ));
+
+        if (existing) {
+          // Update existing channel
+          await db
+            .update(iptvChannels)
+            .set({
+              name: stream.name || `Channel ${streamId}`,
+              logo: stream.stream_icon || null,
+              categoryId: stream.category_id ? String(stream.category_id) : null,
+              categoryName: stream.category_name || null,
+              epgChannelId: stream.epg_channel_id || null,
+              hasEPG: stream.epg_channel_id ? true : false,
+              lastSeen: new Date(),
+            })
+            .where(eq(iptvChannels.id, existing.id));
+          updateCount++;
+        } else {
+          // Insert new channel
+          await db
+            .insert(iptvChannels)
+            .values({
+              providerId,
+              streamId,
+              name: stream.name || `Channel ${streamId}`,
+              logo: stream.stream_icon || null,
+              categoryId: stream.category_id ? String(stream.category_id) : null,
+              categoryName: stream.category_name || null,
+              epgChannelId: stream.epg_channel_id || null,
+              isEnabled: false,
+              quality: 'unknown',
+              hasEPG: stream.epg_channel_id ? true : false,
+              lastSeen: new Date(),
+            });
+          insertCount++;
+        }
       }
     }
 
@@ -587,11 +706,11 @@ router.post('/iptv-providers/:id/sync', requireSuperAdmin, async (req, res) => {
       .set({ lastChannelSync: new Date(), updatedAt: new Date() })
       .where(eq(iptvProviders.id, providerId));
 
-    console.log(`[IPTV Sync] Provider ${providerId}: ${liveStreams.length} total, ${withEpgCount} have epg_channel_id`);
+    console.log(`[IPTV Sync] Provider ${providerId}: ${totalChannels} total, ${withEpgCount} have EPG`);
 
     res.json({
       success: true,
-      totalChannels: liveStreams.length,
+      totalChannels,
       newChannels: insertCount,
       updatedChannels: updateCount,
       channelsWithEpg: withEpgCount,

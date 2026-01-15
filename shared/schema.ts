@@ -292,7 +292,10 @@ export const tvCodes = pgTable("tvCodes", {
 export const iptvProviders = pgTable("iptv_providers", {
   id: serial("id").primaryKey(),
   name: text("name").notNull(), // Display name (e.g., "Provider X")
-  serverUrl: text("server_url").notNull(), // Encrypted - Base URL for the provider
+  providerType: text("provider_type", { enum: ['xtream', 'm3u'] }).notNull().default('xtream'), // Provider type
+  serverUrl: text("server_url"), // Encrypted - Base URL for Xtream providers (nullable for M3U)
+  m3uUrl: text("m3u_url"), // M3U playlist URL (for M3U providers)
+  xmltvUrl: text("xmltv_url"), // XMLTV EPG URL (for M3U providers)
   isActive: boolean("is_active").notNull().default(true),
   notes: text("notes"), // Admin notes
   lastChannelSync: timestamp("last_channel_sync"), // When channels were last synced
@@ -329,6 +332,7 @@ export const iptvChannels = pgTable("iptv_channels", {
   categoryId: text("category_id"), // Provider's category ID
   categoryName: text("category_name"), // Category display name
   epgChannelId: text("epg_channel_id"), // XMLTV channel ID for EPG lookup
+  directStreamUrl: text("direct_stream_url"), // Direct stream URL (for M3U providers)
   isEnabled: boolean("is_enabled").notNull().default(false), // Admin enables channels for use
   quality: text("quality", { enum: ['4k', 'hd', 'sd', 'unknown'] }).default('unknown'), // Stream quality
   hasEPG: boolean("has_epg").notNull().default(false), // Whether channel has EPG data

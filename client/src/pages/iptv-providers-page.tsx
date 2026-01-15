@@ -22,7 +22,10 @@ import { Progress } from '@/components/ui/progress';
 interface IptvProvider {
   id: number;
   name: string;
-  serverUrl: string;
+  providerType: 'xtream' | 'm3u';
+  serverUrl: string | null;
+  m3uUrl: string | null;
+  xmltvUrl: string | null;
   isActive: boolean;
   notes: string | null;
   lastChannelSync: string | null;
@@ -128,7 +131,10 @@ interface ProviderHealthSummary {
 
 interface ProviderFormData {
   name: string;
+  providerType: 'xtream' | 'm3u';
   serverUrl: string;
+  m3uUrl: string;
+  xmltvUrl: string;
   notes: string;
   isActive: boolean;
 }
@@ -144,7 +150,10 @@ interface CredentialFormData {
 
 const defaultProviderForm: ProviderFormData = {
   name: '',
+  providerType: 'xtream',
   serverUrl: '',
+  m3uUrl: '',
+  xmltvUrl: '',
   notes: '',
   isActive: true,
 };
@@ -399,7 +408,10 @@ export default function IptvProvidersPage() {
         credentials: 'include',
         body: JSON.stringify({
           name: data.name,
-          serverUrl: data.serverUrl,
+          providerType: data.providerType,
+          serverUrl: data.providerType === 'xtream' ? data.serverUrl : undefined,
+          m3uUrl: data.providerType === 'm3u' ? data.m3uUrl : undefined,
+          xmltvUrl: data.providerType === 'm3u' ? data.xmltvUrl : undefined,
           notes: data.notes || undefined,
           isActive: data.isActive,
         }),
@@ -430,7 +442,10 @@ export default function IptvProvidersPage() {
         credentials: 'include',
         body: JSON.stringify({
           name: data.name,
-          serverUrl: data.serverUrl,
+          providerType: data.providerType,
+          serverUrl: data.providerType === 'xtream' ? data.serverUrl : null,
+          m3uUrl: data.providerType === 'm3u' ? data.m3uUrl : null,
+          xmltvUrl: data.providerType === 'm3u' ? data.xmltvUrl : null,
           notes: data.notes || null,
           isActive: data.isActive,
         }),
@@ -1013,7 +1028,10 @@ export default function IptvProvidersPage() {
       setSelectedProvider(provider);
       setProviderForm({
         name: fullProvider.name,
-        serverUrl: fullProvider.serverUrl,
+        providerType: fullProvider.providerType || 'xtream',
+        serverUrl: fullProvider.serverUrl || '',
+        m3uUrl: fullProvider.m3uUrl || '',
+        xmltvUrl: fullProvider.xmltvUrl || '',
         notes: fullProvider.notes || '',
         isActive: fullProvider.isActive,
       });
@@ -1783,7 +1801,7 @@ export default function IptvProvidersPage() {
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Add IPTV Provider</DialogTitle>
-            <DialogDescription>Add a new IPTV provider (Xtream Codes compatible)</DialogDescription>
+            <DialogDescription>Add a new IPTV provider</DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
             <div>
@@ -1796,14 +1814,52 @@ export default function IptvProvidersPage() {
               />
             </div>
             <div>
-              <Label htmlFor="serverUrl">Server URL</Label>
-              <Input
-                id="serverUrl"
-                value={providerForm.serverUrl}
-                onChange={(e) => setProviderForm({ ...providerForm, serverUrl: e.target.value })}
-                placeholder="http://example.com:8080"
-              />
+              <Label htmlFor="providerType">Provider Type</Label>
+              <Select
+                value={providerForm.providerType}
+                onValueChange={(value: 'xtream' | 'm3u') => setProviderForm({ ...providerForm, providerType: value })}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select provider type" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="xtream">Xtream Codes (requires credentials)</SelectItem>
+                  <SelectItem value="m3u">M3U Playlist (direct URLs)</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
+            {providerForm.providerType === 'xtream' ? (
+              <div>
+                <Label htmlFor="serverUrl">Server URL</Label>
+                <Input
+                  id="serverUrl"
+                  value={providerForm.serverUrl}
+                  onChange={(e) => setProviderForm({ ...providerForm, serverUrl: e.target.value })}
+                  placeholder="http://example.com:8080"
+                />
+              </div>
+            ) : (
+              <>
+                <div>
+                  <Label htmlFor="m3uUrl">M3U Playlist URL</Label>
+                  <Input
+                    id="m3uUrl"
+                    value={providerForm.m3uUrl}
+                    onChange={(e) => setProviderForm({ ...providerForm, m3uUrl: e.target.value })}
+                    placeholder="http://example.com/playlist.m3u"
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="xmltvUrl">XMLTV EPG URL (optional)</Label>
+                  <Input
+                    id="xmltvUrl"
+                    value={providerForm.xmltvUrl}
+                    onChange={(e) => setProviderForm({ ...providerForm, xmltvUrl: e.target.value })}
+                    placeholder="http://example.com/epg.xml"
+                  />
+                </div>
+              </>
+            )}
             <div>
               <Label htmlFor="notes">Notes (optional)</Label>
               <Textarea
@@ -1836,6 +1892,9 @@ export default function IptvProvidersPage() {
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Edit Provider</DialogTitle>
+            <DialogDescription>
+              {providerForm.providerType === 'xtream' ? 'Xtream Codes Provider' : 'M3U Playlist Provider'}
+            </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
             <div>
@@ -1846,14 +1905,35 @@ export default function IptvProvidersPage() {
                 onChange={(e) => setProviderForm({ ...providerForm, name: e.target.value })}
               />
             </div>
-            <div>
-              <Label htmlFor="edit-serverUrl">Server URL</Label>
-              <Input
-                id="edit-serverUrl"
-                value={providerForm.serverUrl}
-                onChange={(e) => setProviderForm({ ...providerForm, serverUrl: e.target.value })}
-              />
-            </div>
+            {providerForm.providerType === 'xtream' ? (
+              <div>
+                <Label htmlFor="edit-serverUrl">Server URL</Label>
+                <Input
+                  id="edit-serverUrl"
+                  value={providerForm.serverUrl}
+                  onChange={(e) => setProviderForm({ ...providerForm, serverUrl: e.target.value })}
+                />
+              </div>
+            ) : (
+              <>
+                <div>
+                  <Label htmlFor="edit-m3uUrl">M3U Playlist URL</Label>
+                  <Input
+                    id="edit-m3uUrl"
+                    value={providerForm.m3uUrl}
+                    onChange={(e) => setProviderForm({ ...providerForm, m3uUrl: e.target.value })}
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="edit-xmltvUrl">XMLTV EPG URL (optional)</Label>
+                  <Input
+                    id="edit-xmltvUrl"
+                    value={providerForm.xmltvUrl}
+                    onChange={(e) => setProviderForm({ ...providerForm, xmltvUrl: e.target.value })}
+                  />
+                </div>
+              </>
+            )}
             <div>
               <Label htmlFor="edit-notes">Notes</Label>
               <Textarea
@@ -2507,13 +2587,18 @@ function ProviderCard({
             <div>
               <CardTitle className="flex items-center gap-2">
                 {provider.name}
+                <Badge variant="outline" className="text-xs">
+                  {provider.providerType === 'm3u' ? 'M3U' : 'Xtream'}
+                </Badge>
                 {provider.isActive ? (
                   <Badge variant="default" className="bg-green-500">Active</Badge>
                 ) : (
                   <Badge variant="secondary">Inactive</Badge>
                 )}
               </CardTitle>
-              <CardDescription className="text-xs">{provider.serverUrl}</CardDescription>
+              <CardDescription className="text-xs">
+                {provider.providerType === 'm3u' ? provider.m3uUrl : provider.serverUrl}
+              </CardDescription>
             </div>
           </div>
           <div className="flex items-center gap-2">
@@ -2546,10 +2631,12 @@ function ProviderCard({
                   <Edit2 className="h-4 w-4 mr-2" />
                   Edit
                 </DropdownMenuItem>
-                <DropdownMenuItem onClick={onAddCredential}>
-                  <Plus className="h-4 w-4 mr-2" />
-                  Add Credential
-                </DropdownMenuItem>
+                {provider.providerType !== 'm3u' && (
+                  <DropdownMenuItem onClick={onAddCredential}>
+                    <Plus className="h-4 w-4 mr-2" />
+                    Add Credential
+                  </DropdownMenuItem>
+                )}
                 <DropdownMenuSeparator />
                 <DropdownMenuItem onClick={onDelete} className="text-destructive">
                   <Trash2 className="h-4 w-4 mr-2" />
@@ -2562,6 +2649,21 @@ function ProviderCard({
       </CardHeader>
       {isExpanded && (
         <CardContent>
+          {provider.providerType === 'm3u' ? (
+            <div className="border rounded-lg p-4 space-y-3">
+              <div>
+                <p className="text-sm font-medium text-muted-foreground">M3U Playlist URL</p>
+                <p className="text-sm break-all">{provider.m3uUrl || 'Not configured'}</p>
+              </div>
+              <div>
+                <p className="text-sm font-medium text-muted-foreground">XMLTV EPG URL</p>
+                <p className="text-sm break-all">{provider.xmltvUrl || 'Not configured'}</p>
+              </div>
+              <div className="pt-2 text-xs text-muted-foreground">
+                M3U providers don't require login credentials. Streams are accessed directly via the M3U playlist URLs.
+              </div>
+            </div>
+          ) : (
           <div className="border rounded-lg">
             <div className="p-3 border-b bg-muted/50 flex justify-between items-center">
               <h4 className="font-medium text-sm">Credentials</h4>
@@ -2653,6 +2755,7 @@ function ProviderCard({
               </Table>
             )}
           </div>
+          )}
           {provider.lastChannelSync && (
             <p className="text-xs text-muted-foreground mt-3">
               Last sync: {format(new Date(provider.lastChannelSync), 'MMM d, yyyy h:mm a')}
