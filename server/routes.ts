@@ -3281,10 +3281,19 @@ live.ts
         existingStream.baseSegmentUrl = freshBaseSegmentUrl;
 
         // Rewrite fresh manifest segments
-        // Strip leading slashes from segment paths to avoid double-slashes in URL
+        // Match .ts files with optional query parameters (e.g., file.ts?index=1)
+        // For absolute URLs, URL-encode the path to pass through the segment proxy
         const freshBaseManifest = freshManifestText.replace(
-          /^([^#\n].+\.ts)$/gm,
-          (match) => `/api/iptv/segment/${streamId}/${match.trim().replace(/^\/+/, '')}`
+          /^([^#\n].+\.ts(?:\?[^\s\n]*)?)$/gm,
+          (match) => {
+            const trimmed = match.trim();
+            // For absolute URLs, encode and prefix with 'abs:' marker
+            if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
+              return `/api/iptv/segment/${streamId}/abs:${encodeURIComponent(trimmed)}`;
+            }
+            // For relative paths, strip leading slashes
+            return `/api/iptv/segment/${streamId}/${trimmed.replace(/^\/+/, '')}`;
+          }
         );
 
         // Update cache with fresh manifest
@@ -3342,10 +3351,19 @@ live.ts
 
       // Rewrite segment URLs to go through our proxy
       // Always cache manifest WITHOUT tokens for security and sharing
-      // Strip leading slashes from segment paths to avoid double-slashes in URL
+      // Match .ts files with optional query parameters (e.g., file.ts?index=1)
+      // For absolute URLs, URL-encode the path to pass through the segment proxy
       const baseManifest = manifestText.replace(
-        /^([^#\n].+\.ts)$/gm,
-        (match) => `/api/iptv/segment/${streamId}/${match.trim().replace(/^\/+/, '')}`
+        /^([^#\n].+\.ts(?:\?[^\s\n]*)?)$/gm,
+        (match) => {
+          const trimmed = match.trim();
+          // For absolute URLs, encode and prefix with 'abs:' marker
+          if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
+            return `/api/iptv/segment/${streamId}/abs:${encodeURIComponent(trimmed)}`;
+          }
+          // For relative paths, strip leading slashes
+          return `/api/iptv/segment/${streamId}/${trimmed.replace(/^\/+/, '')}`;
+        }
       );
 
       // Cache this stream for sharing (WITHOUT tokens)
@@ -3514,25 +3532,32 @@ live.ts
       }
 
       // The fullPath is the segment filename/path
-      // Check if the original path was absolute (started with /) or relative
-      const wasAbsolutePath = fullPath.startsWith('/') || fullPath.startsWith('hls/');
-      const segmentPath = fullPath.replace(/^\/+/, '');
-      console.log(`Fetching segment for stream ${streamId}: ${segmentPath} (absolute: ${wasAbsolutePath})`);
-
-      // Build the full segment URL
+      // Check for absolute URL marker (abs:) from M3U providers with absolute segment URLs
       let segmentUrl: string;
-      if (wasAbsolutePath) {
-        // For absolute paths like /hls/xxx/file.ts, use origin + absolute path
-        const baseUrlObj = new URL(baseUrl);
-        segmentUrl = `${baseUrlObj.origin}/${segmentPath}`;
-        console.log(`Using absolute path from origin: ${segmentUrl}`);
+
+      if (fullPath.startsWith('abs:')) {
+        // Absolute URL was encoded - decode and use directly
+        segmentUrl = decodeURIComponent(fullPath.substring(4));
+        console.log(`Using absolute URL from manifest: ${segmentUrl}`);
       } else {
-        // For relative paths, append to base URL directory
-        const normalizedBaseUrl = baseUrl.endsWith('/') ? baseUrl : baseUrl + '/';
-        segmentUrl = `${normalizedBaseUrl}${segmentPath}`;
+        // Check if the original path was absolute (started with /) or relative
+        const wasAbsolutePath = fullPath.startsWith('/') || fullPath.startsWith('hls/');
+        const segmentPath = fullPath.replace(/^\/+/, '');
+        console.log(`Fetching segment for stream ${streamId}: ${segmentPath} (absolute: ${wasAbsolutePath})`);
+
+        // Build the full segment URL
+        if (wasAbsolutePath) {
+          // For absolute paths like /hls/xxx/file.ts, use origin + absolute path
+          const baseUrlObj = new URL(baseUrl);
+          segmentUrl = `${baseUrlObj.origin}/${segmentPath}`;
+          console.log(`Using absolute path from origin: ${segmentUrl}`);
+        } else {
+          // For relative paths, append to base URL directory
+          const normalizedBaseUrl = baseUrl.endsWith('/') ? baseUrl : baseUrl + '/';
+          segmentUrl = `${normalizedBaseUrl}${segmentPath}`;
+        }
       }
 
-      console.log(`Fetching segment: ${segmentPath}`);
       console.log(`Full segment URL: ${segmentUrl}`);
 
       // Set response headers immediately
