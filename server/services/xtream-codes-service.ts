@@ -749,12 +749,39 @@ export class XtreamCodesManager implements IService {
         // Use epgChannelId if available (new column), fallback to empty string
         // The column might not exist yet if migration hasn't run
         const epgChannelId = (channel as any).epgChannelId;
+
+        // Check if logo URL needs to be proxied (local/internal URLs)
+        let logoUrl = channel.logo || '';
+        if (logoUrl && info.type === 'm3u') {
+          try {
+            const url = new URL(logoUrl);
+            // Detect local/internal IPs that need proxying
+            const isLocalUrl = url.hostname === 'localhost' ||
+              url.hostname === '127.0.0.1' ||
+              url.hostname.startsWith('192.168.') ||
+              url.hostname.startsWith('10.') ||
+              url.hostname.startsWith('172.16.') ||
+              url.hostname.startsWith('172.17.') ||
+              url.hostname.startsWith('172.18.') ||
+              url.hostname.startsWith('172.19.') ||
+              url.hostname.startsWith('172.2') ||
+              url.hostname.startsWith('172.30.') ||
+              url.hostname.startsWith('172.31.');
+
+            if (isLocalUrl) {
+              logoUrl = `/api/iptv/logo-proxy?url=${encodeURIComponent(logoUrl)}`;
+            }
+          } catch (e) {
+            // Invalid URL, leave as-is
+          }
+        }
+
         channelMap.set(key, {
           id: channel.streamId,
           number: String(sortOrder || channel.id),
           name: channel.name,
           streamUrl,
-          logo: channel.logo || '',
+          logo: logoUrl,
           epgId: epgChannelId || '', // Use XMLTV channel ID for EPG lookup
           categoryName: channel.categoryName || 'Uncategorized',
           categoryId: channel.categoryId || '',

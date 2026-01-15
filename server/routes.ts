@@ -3885,6 +3885,51 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Logo proxy for M3U channels with internal/local URLs
+  app.get("/api/iptv/logo-proxy", async (req, res) => {
+    if (!req.isAuthenticated()) return res.sendStatus(401);
+
+    const { url } = req.query;
+    if (!url || typeof url !== 'string') {
+      return res.status(400).send('Missing url parameter');
+    }
+
+    try {
+      // Validate URL format
+      const logoUrl = new URL(url);
+
+      // Fetch the logo from the internal URL
+      const response = await fetch(url, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (compatible; IPTV/1.0)',
+        },
+        signal: AbortSignal.timeout(10000), // 10 second timeout
+      });
+
+      if (!response.ok) {
+        console.error(`[Logo Proxy] Failed to fetch logo: ${response.status} ${url}`);
+        return res.status(response.status).send('Failed to fetch logo');
+      }
+
+      // Get content type and pass it through
+      const contentType = response.headers.get('content-type') || 'image/jpeg';
+
+      // Set cache headers for logos (cache for 1 day)
+      res.set({
+        'Content-Type': contentType,
+        'Cache-Control': 'public, max-age=86400',
+        'Access-Control-Allow-Origin': '*',
+      });
+
+      // Stream the response body
+      const buffer = await response.arrayBuffer();
+      res.send(Buffer.from(buffer));
+    } catch (error) {
+      console.error('[Logo Proxy] Error:', error);
+      res.status(500).send('Failed to proxy logo');
+    }
+  });
+
   // Channel Logo API routes
   app.get("/api/channel-logos", async (req, res) => {
     if (!req.isAuthenticated()) return res.sendStatus(401);
