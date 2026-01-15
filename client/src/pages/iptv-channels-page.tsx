@@ -6,13 +6,21 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { useToast } from '@/hooks/use-toast';
-import { Search, Loader2, Tv, CheckCircle2, XCircle, Filter, ChevronLeft, ChevronRight, ToggleLeft, ToggleRight } from 'lucide-react';
+import { Search, Loader2, Tv, CheckCircle2, XCircle, Filter, ChevronLeft, ChevronRight, ToggleLeft, ToggleRight, ImageIcon, X } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Checkbox } from '@/components/ui/checkbox';
 import { buildApiUrl } from '@/lib/capacitor';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 
 interface IptvProvider {
   id: number;
@@ -27,6 +35,7 @@ interface IptvChannel {
   streamId: string;
   name: string;
   logo: string | null;
+  customLogo: string | null;
   categoryId: string | null;
   categoryName: string | null;
   isEnabled: boolean;
@@ -67,6 +76,11 @@ export default function IptvChannelsPage() {
   // Selection state
   const [selectedChannels, setSelectedChannels] = useState<Set<number>>(new Set());
   const [selectAll, setSelectAll] = useState(false);
+
+  // Custom logo dialog state
+  const [logoDialogOpen, setLogoDialogOpen] = useState(false);
+  const [editingChannel, setEditingChannel] = useState<IptvChannel | null>(null);
+  const [customLogoUrl, setCustomLogoUrl] = useState('');
 
   // Fetch providers
   const { data: providers = [] } = useQuery<IptvProvider[]>({
@@ -184,6 +198,37 @@ export default function IptvChannelsPage() {
       toast({ title: 'Error', description: error.message, variant: 'destructive' });
     },
   });
+
+  // Update custom logo mutation
+  const updateCustomLogoMutation = useMutation({
+    mutationFn: async ({ channelId, customLogo }: { channelId: number; customLogo: string | null }) => {
+      const res = await fetch(buildApiUrl(`/api/admin/iptv-channels/${channelId}`), {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ customLogo }),
+      });
+      if (!res.ok) throw new Error('Failed to update custom logo');
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/admin/iptv-channels'] });
+      setLogoDialogOpen(false);
+      setEditingChannel(null);
+      setCustomLogoUrl('');
+      toast({ title: 'Success', description: 'Custom logo updated' });
+    },
+    onError: (error: Error) => {
+      toast({ title: 'Error', description: error.message, variant: 'destructive' });
+    },
+  });
+
+  // Open logo dialog for a channel
+  const openLogoDialog = (channel: IptvChannel) => {
+    setEditingChannel(channel);
+    setCustomLogoUrl(channel.customLogo || '');
+    setLogoDialogOpen(true);
+  };
 
   const handleSelectAll = useCallback((checked: boolean | 'indeterminate') => {
     const isChecked = checked === true;
@@ -416,20 +461,35 @@ export default function IptvChannelsPage() {
                           />
                         </TableCell>
                         <TableCell>
-                          {channel.logo ? (
-                            <img
-                              src={channel.logo}
-                              alt=""
-                              className="h-8 w-8 object-contain rounded"
-                              onError={(e) => {
-                                (e.target as HTMLImageElement).style.display = 'none';
-                              }}
-                            />
-                          ) : (
-                            <div className="h-8 w-8 bg-muted rounded flex items-center justify-center">
-                              <Tv className="h-4 w-4 text-muted-foreground" />
-                            </div>
-                          )}
+                          <button
+                            onClick={() => openLogoDialog(channel)}
+                            className="relative group cursor-pointer"
+                            title="Click to set custom logo"
+                          >
+                            {(channel.customLogo || channel.logo) ? (
+                              <div className="relative">
+                                <img
+                                  src={channel.customLogo || channel.logo || ''}
+                                  alt=""
+                                  className="h-8 w-8 object-contain rounded group-hover:opacity-70 transition-opacity"
+                                  onError={(e) => {
+                                    (e.target as HTMLImageElement).style.display = 'none';
+                                  }}
+                                />
+                                {channel.customLogo && (
+                                  <div className="absolute -top-1 -right-1 w-3 h-3 bg-blue-500 rounded-full" title="Custom logo" />
+                                )}
+                                <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                                  <ImageIcon className="h-4 w-4 text-white drop-shadow-lg" />
+                                </div>
+                              </div>
+                            ) : (
+                              <div className="h-8 w-8 bg-muted rounded flex items-center justify-center group-hover:bg-muted/70 transition-colors">
+                                <Tv className="h-4 w-4 text-muted-foreground group-hover:hidden" />
+                                <ImageIcon className="h-4 w-4 text-muted-foreground hidden group-hover:block" />
+                              </div>
+                            )}
+                          </button>
                         </TableCell>
                         <TableCell>
                           <div className="font-medium">{channel.name}</div>
@@ -536,6 +596,107 @@ export default function IptvChannelsPage() {
           )}
         </div>
       </div>
+
+      {/* Custom Logo Dialog */}
+      <Dialog open={logoDialogOpen} onOpenChange={setLogoDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Set Custom Logo</DialogTitle>
+            <DialogDescription>
+              Enter a URL for a custom logo image for "{editingChannel?.name}". Leave empty to use the provider's logo.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            {/* Current logos preview */}
+            <div className="flex items-center gap-4">
+              <div className="text-center">
+                <p className="text-xs text-muted-foreground mb-1">Provider Logo</p>
+                {editingChannel?.logo ? (
+                  <img
+                    src={editingChannel.logo}
+                    alt="Provider logo"
+                    className="h-16 w-16 object-contain rounded border"
+                    onError={(e) => {
+                      (e.target as HTMLImageElement).style.display = 'none';
+                    }}
+                  />
+                ) : (
+                  <div className="h-16 w-16 bg-muted rounded border flex items-center justify-center">
+                    <Tv className="h-6 w-6 text-muted-foreground" />
+                  </div>
+                )}
+              </div>
+              {customLogoUrl && (
+                <div className="text-center">
+                  <p className="text-xs text-muted-foreground mb-1">Custom Logo Preview</p>
+                  <img
+                    src={customLogoUrl}
+                    alt="Custom logo preview"
+                    className="h-16 w-16 object-contain rounded border"
+                    onError={(e) => {
+                      (e.target as HTMLImageElement).src = '';
+                      (e.target as HTMLImageElement).alt = 'Invalid URL';
+                    }}
+                  />
+                </div>
+              )}
+            </div>
+
+            {/* URL input */}
+            <div className="space-y-2">
+              <Label htmlFor="customLogoUrl">Custom Logo URL</Label>
+              <Input
+                id="customLogoUrl"
+                placeholder="https://example.com/logo.png"
+                value={customLogoUrl}
+                onChange={(e) => setCustomLogoUrl(e.target.value)}
+              />
+              <p className="text-xs text-muted-foreground">
+                Use a publicly accessible image URL (PNG, JPG, etc.)
+              </p>
+            </div>
+          </div>
+          <DialogFooter className="flex gap-2">
+            {editingChannel?.customLogo && (
+              <Button
+                variant="outline"
+                onClick={() => {
+                  updateCustomLogoMutation.mutate({
+                    channelId: editingChannel.id,
+                    customLogo: null,
+                  });
+                }}
+                disabled={updateCustomLogoMutation.isPending}
+              >
+                <X className="h-4 w-4 mr-2" />
+                Remove Custom
+              </Button>
+            )}
+            <Button
+              variant="outline"
+              onClick={() => setLogoDialogOpen(false)}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={() => {
+                if (editingChannel) {
+                  updateCustomLogoMutation.mutate({
+                    channelId: editingChannel.id,
+                    customLogo: customLogoUrl || null,
+                  });
+                }
+              }}
+              disabled={updateCustomLogoMutation.isPending}
+            >
+              {updateCustomLogoMutation.isPending ? (
+                <Loader2 className="h-4 w-4 animate-spin mr-2" />
+              ) : null}
+              Save
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

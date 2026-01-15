@@ -150,6 +150,7 @@ const updatePackageSchema = z.object({
 const updateChannelSchema = z.object({
   isEnabled: z.boolean().optional(),
   quality: z.enum(['4k', 'hd', 'sd', 'unknown']).optional(),
+  customLogo: z.string().url().nullable().optional(), // Custom logo URL (null to remove)
 });
 
 const bulkUpdateChannelsSchema = z.object({
@@ -941,6 +942,10 @@ router.put('/iptv-channels/:id', requireSuperAdmin, async (req, res) => {
     }
     if (validatedData.quality !== undefined) {
       updateData.quality = validatedData.quality;
+    }
+    // Handle customLogo - can be a URL string or null to remove
+    if ('customLogo' in validatedData) {
+      updateData.customLogo = validatedData.customLogo;
     }
 
     const [updated] = await db

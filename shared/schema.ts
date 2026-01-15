@@ -328,7 +328,8 @@ export const iptvChannels = pgTable("iptv_channels", {
   providerId: integer("provider_id").notNull().references(() => iptvProviders.id, { onDelete: 'cascade' }),
   streamId: text("stream_id").notNull(), // Provider's channel/stream ID
   name: text("name").notNull(),
-  logo: text("logo"), // Channel logo URL
+  logo: text("logo"), // Channel logo URL from provider
+  customLogo: text("custom_logo"), // Admin-set custom logo URL (overrides provider logo)
   categoryId: text("category_id"), // Provider's category ID
   categoryName: text("category_name"), // Category display name
   epgChannelId: text("epg_channel_id"), // XMLTV channel ID for EPG lookup

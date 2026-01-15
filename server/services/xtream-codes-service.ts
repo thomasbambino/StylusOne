@@ -750,8 +750,9 @@ export class XtreamCodesManager implements IService {
         // The column might not exist yet if migration hasn't run
         const epgChannelId = (channel as any).epgChannelId;
 
+        // Use customLogo if set, otherwise fall back to provider logo
         // Check if logo URL needs to be proxied (local/internal URLs)
-        let logoUrl = channel.logo || '';
+        let logoUrl = (channel as any).customLogo || channel.logo || '';
         if (logoUrl && info.type === 'm3u') {
           try {
             const url = new URL(logoUrl);
