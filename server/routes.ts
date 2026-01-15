@@ -4054,8 +4054,6 @@ live.ts
 
   // Logo proxy for M3U channels with internal/local URLs
   app.get("/api/iptv/logo-proxy", async (req, res) => {
-    if (!req.isAuthenticated()) return res.sendStatus(401);
-
     const { url } = req.query;
     if (!url || typeof url !== 'string') {
       return res.status(400).send('Missing url parameter');
@@ -4064,6 +4062,36 @@ live.ts
     try {
       // Validate URL format
       const logoUrl = new URL(url);
+
+      // Check if this is a local/internal URL (safe to proxy without auth)
+      const isLocalUrl = logoUrl.hostname === 'localhost' ||
+        logoUrl.hostname === '127.0.0.1' ||
+        logoUrl.hostname.startsWith('192.168.') ||
+        logoUrl.hostname.startsWith('10.') ||
+        logoUrl.hostname.startsWith('172.16.') ||
+        logoUrl.hostname.startsWith('172.17.') ||
+        logoUrl.hostname.startsWith('172.18.') ||
+        logoUrl.hostname.startsWith('172.19.') ||
+        logoUrl.hostname.startsWith('172.2') ||
+        logoUrl.hostname.startsWith('172.30.') ||
+        logoUrl.hostname.startsWith('172.31.');
+
+      // For non-local URLs, require authentication
+      if (!isLocalUrl) {
+        const token = req.query.token as string | undefined;
+        let isAuthorized = req.isAuthenticated();
+
+        if (!isAuthorized && token) {
+          const tokenData = iptvStreamTokens.get(token);
+          if (tokenData && tokenData.expiresAt > Date.now()) {
+            isAuthorized = true;
+          }
+        }
+
+        if (!isAuthorized) {
+          return res.sendStatus(401);
+        }
+      }
 
       // Fetch the logo from the internal URL
       const response = await fetch(url, {
