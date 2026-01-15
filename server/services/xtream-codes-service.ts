@@ -699,15 +699,21 @@ export class XtreamCodesManager implements IService {
     // Group channels by provider to batch credential lookups
     const providerIds = Array.from(new Set(packChannels.map(pc => pc.channel.providerId)));
 
-    // Get one active credential per provider for building stream URLs
-    const providerCredentials = new Map<number, { serverUrl: string; username: string; password: string }>();
+    // Get provider info and credentials for Xtream providers
+    const providerInfo = new Map<number, { type: string; hasCredentials: boolean }>();
 
     for (const providerId of providerIds) {
       // Get provider with decrypted server URL
       const [provider] = await db.select().from(iptvProviders).where(eq(iptvProviders.id, providerId));
       if (!provider) continue;
 
-      // Get an active credential for this provider
+      // M3U providers don't need credentials
+      if (provider.providerType === 'm3u') {
+        providerInfo.set(providerId, { type: 'm3u', hasCredentials: true }); // M3U uses directStreamUrl on channel
+        continue;
+      }
+
+      // For Xtream providers, check for active credential
       const [credential] = await db.select()
         .from(iptvCredentials)
         .where(and(
@@ -718,10 +724,9 @@ export class XtreamCodesManager implements IService {
 
       if (credential) {
         try {
-          const serverUrl = decrypt(provider.serverUrl);
-          const username = decrypt(credential.username);
-          const password = decrypt(credential.password);
-          providerCredentials.set(providerId, { serverUrl, username, password });
+          // Validate we can decrypt (don't actually need to store for proxy URL)
+          decrypt(provider.serverUrl!);
+          providerInfo.set(providerId, { type: 'xtream', hasCredentials: true });
         } catch (error) {
           console.error(`[IPTV] Failed to decrypt credentials for provider ${providerId}:`, error);
         }
@@ -732,8 +737,8 @@ export class XtreamCodesManager implements IService {
     const channelMap = new Map<string, IPTVChannel>();
 
     for (const { channel, sortOrder } of packChannels) {
-      const creds = providerCredentials.get(channel.providerId);
-      if (!creds) continue; // Skip if no credentials available
+      const info = providerInfo.get(channel.providerId);
+      if (!info || !info.hasCredentials) continue; // Skip if provider not accessible
 
       // Build proxy stream URL (same format as legacy channels)
       const streamUrl = `/api/iptv/stream/${channel.streamId}.m3u8`;
