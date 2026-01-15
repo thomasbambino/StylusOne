@@ -4575,15 +4575,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
           const today = new Date();
           const dates: string[] = [];
 
-          // Past 7 days for recent results
-          for (let i = 7; i > 0; i--) {
+          // Past 3 days for recent results (reduced from 7)
+          for (let i = 3; i > 0; i--) {
             const date = new Date(today);
             date.setDate(date.getDate() - i);
             dates.push(date.toISOString().slice(0, 10).replace(/-/g, ''));
           }
 
-          // Next 14 days for upcoming
-          for (let i = 0; i < 14; i++) {
+          // Next 4 days for upcoming (reduced from 14)
+          for (let i = 0; i < 4; i++) {
             const date = new Date(today);
             date.setDate(date.getDate() + i);
             dates.push(date.toISOString().slice(0, 10).replace(/-/g, ''));
@@ -4591,12 +4591,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
           const games: any[] = [];
 
-          // Fetch in batches
-          for (let i = 0; i < dates.length; i += 5) {
-            const batch = dates.slice(i, i + 5);
-            const results = await Promise.all(
-              batch.map(async (dateStr) => {
-                try {
+          // Fetch ALL dates in parallel (no sequential batching)
+          const results = await Promise.all(
+            dates.map(async (dateStr) => {
+              try {
                   const url = `https://site.api.espn.com/apis/site/v2/sports/${config.sport}/${config.league}/scoreboard?dates=${dateStr}`;
                   const response = await fetch(url, {
                     headers: { 'User-Agent': 'Mozilla/5.0' },
@@ -4677,7 +4675,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
                 }
               }
             }
-          }
 
           // Remove duplicates
           const uniqueGames = games.filter((game, index, self) =>
@@ -4786,5 +4783,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   const httpServer = createServer(app);
+
+  // Pre-warm the events cache on server startup (non-blocking)
+  console.log('[Events] Pre-warming ESPN cache on startup...');
+  fetchESPNEvents()
+    .then(data => {
+      eventsCache = { data, timestamp: Date.now() };
+      console.log('[Events] Cache pre-warmed successfully');
+    })
+    .catch(err => console.error('[Events] Cache pre-warm failed:', err));
+
   return httpServer;
 }
