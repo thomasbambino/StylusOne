@@ -2543,6 +2543,44 @@ export default function LiveTVTvPage() {
     setViewMode('player');
   }, [playStream]);
 
+  // Helper to find a channel for a broadcast network and play it
+  const playEventBroadcast = useCallback((broadcasts: string[] | undefined) => {
+    if (!broadcasts || broadcasts.length === 0 || channels.length === 0) return;
+
+    for (const network of broadcasts) {
+      const networkLower = network.toLowerCase().replace(/[^a-z0-9]/g, '');
+
+      // Try to find a matching channel by name
+      const channel = channels.find(c => {
+        const guideName = (c.GuideName || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+        const name = (c.name || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+
+        // Check various network patterns
+        return guideName.includes(networkLower) ||
+               name.includes(networkLower) ||
+               networkLower.includes(guideName) ||
+               // Handle common abbreviations
+               (networkLower === 'espn' && (guideName.includes('espn') || name.includes('espn'))) ||
+               (networkLower === 'fox' && (guideName.includes('fox') || name.includes('fox'))) ||
+               (networkLower === 'tnt' && (guideName.includes('tnt') || name.includes('tnt'))) ||
+               (networkLower === 'tbs' && (guideName.includes('tbs') || name.includes('tbs'))) ||
+               (networkLower === 'nbc' && (guideName.includes('nbc') || name.includes('nbc'))) ||
+               (networkLower === 'cbs' && (guideName.includes('cbs') || name.includes('cbs'))) ||
+               (networkLower === 'abc' && (guideName.includes('abc') || name.includes('abc')));
+      });
+
+      if (channel) {
+        haptics.medium();
+        playStream(channel);
+        setViewMode('player');
+        return;
+      }
+    }
+
+    // No matching channel found
+    haptics.warning();
+  }, [channels, playStream, setViewMode]);
+
   // Handle pending channel from notification tap - auto-play the channel
   useEffect(() => {
     if (pendingChannel && channels.length > 0) {
@@ -5409,7 +5447,7 @@ export default function LiveTVTvPage() {
                   onClick={() => setSelectedSportCategory(tab.id)}
                   className={`shrink-0 px-4 py-2 text-sm font-medium rounded-full transition-colors ${
                     selectedSportCategory === tab.id
-                      ? 'bg-orange-500 text-white'
+                      ? 'bg-blue-500 text-white'
                       : 'bg-zinc-800/50 text-white/60 active:bg-zinc-700'
                   }`}
                 >
@@ -5448,7 +5486,10 @@ export default function LiveTVTvPage() {
                 {/* Featured Hero Card */}
                 {filteredEventsData.featuredGame && (
                   <section className="px-5">
-                    <div className="relative aspect-[16/10] bg-gradient-to-br from-zinc-800 via-zinc-900 to-black rounded-2xl overflow-hidden">
+                    <div
+                      className="relative aspect-[16/10] bg-gradient-to-br from-zinc-800 via-zinc-900 to-black rounded-2xl overflow-hidden active:scale-[0.98] transition-transform cursor-pointer"
+                      onClick={() => playEventBroadcast(filteredEventsData.featuredGame?.broadcast)}
+                    >
                       {/* Background gradient based on sport */}
                       <div className={`absolute inset-0 opacity-30 ${
                         filteredEventsData.featuredGame.sport === 'nfl' ? 'bg-gradient-to-br from-green-900 to-zinc-900' :
@@ -5542,7 +5583,7 @@ export default function LiveTVTvPage() {
                         {/* Progress bar for live games */}
                         {filteredEventsData.featuredGame.status === 'in' && (
                           <div className="mt-2 h-1 bg-white/20 rounded-full overflow-hidden">
-                            <div className="h-full bg-orange-500 rounded-full" style={{ width: '45%' }} />
+                            <div className="h-full bg-blue-500 rounded-full" style={{ width: '45%' }} />
                           </div>
                         )}
                       </div>
@@ -5565,13 +5606,17 @@ export default function LiveTVTvPage() {
                     </div>
                     <div className="flex gap-3 overflow-x-auto px-5 scrollbar-hide pb-1">
                       {filteredEventsData.live.slice(filteredEventsData.featuredGame?.status === 'in' ? 1 : 0).map((game: any) => (
-                        <div key={game.id} className="shrink-0 w-44 bg-zinc-900/80 rounded-xl overflow-hidden border border-white/5">
+                        <div
+                          key={game.id}
+                          className="shrink-0 w-44 bg-zinc-900/80 rounded-xl overflow-hidden border border-white/5 active:scale-[0.97] transition-transform cursor-pointer"
+                          onClick={() => playEventBroadcast(game.broadcast)}
+                        >
                           {/* Header with LIVE badge and game clock */}
                           <div className="flex items-center justify-between px-3 py-2 bg-zinc-800/50">
                             <span className="bg-red-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded">
                               LIVE
                             </span>
-                            <span className="text-orange-400 text-xs font-medium">{game.statusDetail}</span>
+                            <span className="text-blue-400 text-xs font-medium">{game.statusDetail}</span>
                           </div>
 
                           {/* Teams and Scores */}
@@ -5621,7 +5666,11 @@ export default function LiveTVTvPage() {
                     </div>
                     <div className="flex gap-3 overflow-x-auto px-5 scrollbar-hide pb-1">
                       {filteredEventsData.allUpcoming.slice(0, 10).map((game: any) => (
-                        <div key={game.id} className="shrink-0 w-48 bg-zinc-900/50 rounded-xl overflow-hidden border border-white/5">
+                        <div
+                          key={game.id}
+                          className="shrink-0 w-48 bg-zinc-900/50 rounded-xl overflow-hidden border border-white/5 active:scale-[0.97] transition-transform cursor-pointer"
+                          onClick={() => playEventBroadcast(game.broadcast)}
+                        >
                           {/* Header with sport and date */}
                           <div className="flex items-center justify-between px-3 py-2 bg-zinc-800/30">
                             <span className="text-white/60 text-[10px] font-medium uppercase">{game.sportName}</span>
@@ -5654,7 +5703,7 @@ export default function LiveTVTvPage() {
 
                           {/* Footer with time and broadcast */}
                           <div className="px-3 py-2 bg-zinc-800/20 border-t border-white/5 flex items-center justify-between">
-                            <span className="text-orange-400 text-xs font-medium">
+                            <span className="text-blue-400 text-xs font-medium">
                               {new Date(game.date).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })}
                             </span>
                             {game.broadcast?.length > 0 && (

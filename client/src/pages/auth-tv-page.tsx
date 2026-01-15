@@ -555,7 +555,7 @@ export default function AuthTvPage() {
               className="w-full md:w-1/2 flex flex-col items-center justify-center pt-8 pb-4 md:py-0 md:pr-16 z-10 md:border-l border-white/5 order-1 md:order-2"
             >
               {/* Decorative glow behind logo */}
-              <div className="absolute w-64 h-64 bg-red-600/10 rounded-full blur-3xl" />
+              <div className="absolute w-64 h-64 bg-blue-600/10 rounded-full blur-3xl" />
 
               <div className="relative">
                 {settings?.logo_url_large ? (
@@ -574,8 +574,8 @@ export default function AuthTvPage() {
                     transition={{ duration: 0.5, delay: 0.3 }}
                     className="relative mb-3 md:mb-5"
                   >
-                    <Tv className="h-16 w-16 md:h-20 md:w-20 text-red-500 drop-shadow-2xl" />
-                    <div className="absolute inset-0 bg-red-500/30 blur-2xl rounded-full" />
+                    <Tv className="h-16 w-16 md:h-20 md:w-20 text-blue-500 drop-shadow-2xl" />
+                    <div className="absolute inset-0 bg-blue-500/30 blur-2xl rounded-full" />
                   </motion.div>
                 )}
               </div>
@@ -692,7 +692,7 @@ export default function AuthTvPage() {
               transition={{ duration: 0.4, delay: 0.1 }}
               className="w-full md:w-1/2 flex flex-col items-center justify-end md:justify-center pt-16 pb-6 md:py-0 md:pr-12 z-10 md:border-l border-white/5 order-1 md:order-2"
             >
-              <div className="absolute w-64 h-64 bg-red-600/10 rounded-full blur-3xl" />
+              <div className="absolute w-64 h-64 bg-blue-600/10 rounded-full blur-3xl" />
 
               <motion.div
                 initial={{ opacity: 0, y: 20 }}
@@ -719,7 +719,7 @@ export default function AuthTvPage() {
                 <p className="text-base text-white/60 mb-2">Scan or visit</p>
 
                 <div className="flex items-center justify-center gap-2 mb-4">
-                  <div className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse" />
+                  <div className="w-1.5 h-1.5 rounded-full bg-blue-500 animate-pulse" />
                   <p className="text-xl font-bold text-white tracking-wide">
                     stylus.services/tvcode
                   </p>
@@ -967,7 +967,7 @@ export default function AuthTvPage() {
               transition={{ duration: 0.4, delay: 0.1 }}
               className="w-full md:w-1/2 flex flex-col items-center justify-center pt-8 pb-4 md:py-0 md:pr-16 z-10 md:border-l border-white/5 order-1 md:order-2"
             >
-              <div className="absolute w-64 h-64 bg-red-600/10 rounded-full blur-3xl" />
+              <div className="absolute w-64 h-64 bg-blue-600/10 rounded-full blur-3xl" />
 
               <div className="relative">
                 {settings?.logo_url_large ? (
@@ -986,8 +986,8 @@ export default function AuthTvPage() {
                     transition={{ duration: 0.5, delay: 0.2 }}
                     className="relative mb-3"
                   >
-                    <Mail className="h-16 w-16 md:h-20 md:w-20 text-red-500 drop-shadow-2xl" />
-                    <div className="absolute inset-0 bg-red-500/30 blur-2xl rounded-full" />
+                    <Mail className="h-16 w-16 md:h-20 md:w-20 text-blue-500 drop-shadow-2xl" />
+                    <div className="absolute inset-0 bg-blue-500/30 blur-2xl rounded-full" />
                   </motion.div>
                 )}
               </div>
