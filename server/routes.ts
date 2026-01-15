@@ -3196,6 +3196,13 @@ live.ts
           existingStream.lastAccessed = new Date();
           console.log(`📺 Using cached manifest (${Math.round(manifestAge / 1000)}s old) with token for stream ${streamId} (${existingStream.users.size} users)`);
 
+          // Debug: Show cached manifest content for M3U streams
+          if (streamId.startsWith('m3u_')) {
+            console.log(`📋 Cached manifest for ${streamId} (first 500 chars):\n${existingStream.manifest.substring(0, 500)}`);
+            const cachedSegments = existingStream.manifest.split('\n').filter(line => line.includes('.ts') || line.includes('/api/iptv/segment/')).slice(0, 5);
+            console.log(`📋 Cached manifest segments for ${streamId}:`, cachedSegments);
+          }
+
           const tokenizedManifest = existingStream.manifest.replace(
             /\/api\/iptv\/segment\/([^/]+)\/([^\s\n]+)/g,
             (match, sid, path) => {
