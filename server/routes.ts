@@ -2905,8 +2905,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
     if (channel.length > 0 && channel[0].directStreamUrl) {
       // M3U channel - use direct stream URL
-      const directUrl = channel[0].directStreamUrl;
-      console.log(`[Failover] M3U channel detected, using direct URL: ${directUrl}`);
+      let directUrl = channel[0].directStreamUrl;
+      console.log(`[Failover] M3U channel detected, original URL: ${directUrl}`);
+
+      // Convert MPEG-TS URLs to HLS format for streaming
+      // ErsatzTV and similar servers support both formats at the same endpoint
+      if (directUrl.endsWith('.ts')) {
+        directUrl = directUrl.replace(/\.ts$/, '.m3u8');
+        console.log(`[Failover] Converted to HLS format: ${directUrl}`);
+      }
 
       try {
         let streamUrl = directUrl;
@@ -3173,8 +3180,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
         let freshResponse: Response;
 
         if (m3uChannel.length > 0 && m3uChannel[0].directStreamUrl) {
-          // M3U channel - use direct URL
+          // M3U channel - use direct URL (convert .ts to .m3u8 for HLS)
           freshStreamUrl = m3uChannel[0].directStreamUrl;
+          if (freshStreamUrl.endsWith('.ts')) {
+            freshStreamUrl = freshStreamUrl.replace(/\.ts$/, '.m3u8');
+          }
           console.log(`Fetching fresh M3U manifest from: ${freshStreamUrl}`);
           freshResponse = await fetch(freshStreamUrl);
         } else {

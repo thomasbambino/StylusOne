@@ -4,6 +4,9 @@ import * as fs from 'fs';
 import * as path from 'path';
 import fetch from 'node-fetch';
 import { tmdbService } from './tmdb-service';
+import { db } from '../db';
+import { iptvProviders } from '@shared/schema';
+import { eq, and, isNotNull } from 'drizzle-orm';
 
 // EPG cache directory and file
 const EPG_CACHE_DIR = path.join(process.cwd(), 'data', 'epg-cache');
@@ -471,6 +474,163 @@ export class EPGService implements IService {
       console.log(`[EPG] Fetched ${newProgramCount} programs, merged ${mergedProgramCount} new, total: ${this.getTotalProgramCount()}`);
     } catch (error) {
       console.error('[EPG] Error fetching from provider:', error);
+    }
+
+    // Also fetch from M3U providers with XMLTV URLs
+    await this.fetchM3UProvidersXMLTV();
+  }
+
+  /**
+   * Fetch XMLTV data from M3U providers that have xmltvUrl configured
+   */
+  private async fetchM3UProvidersXMLTV(): Promise<void> {
+    try {
+      // Find all active M3U providers with XMLTV URLs
+      const m3uProviders = await db
+        .select({
+          id: iptvProviders.id,
+          name: iptvProviders.name,
+          xmltvUrl: iptvProviders.xmltvUrl,
+        })
+        .from(iptvProviders)
+        .where(
+          and(
+            eq(iptvProviders.providerType, 'm3u'),
+            eq(iptvProviders.isActive, true),
+            isNotNull(iptvProviders.xmltvUrl)
+          )
+        );
+
+      if (m3uProviders.length === 0) {
+        console.log('[EPG] No M3U providers with XMLTV URLs found');
+        return;
+      }
+
+      console.log(`[EPG] Found ${m3uProviders.length} M3U providers with XMLTV URLs`);
+
+      for (const provider of m3uProviders) {
+        if (!provider.xmltvUrl) continue;
+
+        try {
+          console.log(`[EPG] Fetching XMLTV from M3U provider "${provider.name}": ${provider.xmltvUrl}`);
+
+          const response = await fetch(provider.xmltvUrl, {
+            headers: {
+              'User-Agent': 'Mozilla/5.0 (compatible; IPTV/1.0)',
+            },
+            timeout: 60000
+          });
+
+          if (!response.ok) {
+            console.error(`[EPG] Failed to fetch XMLTV from ${provider.name}: ${response.status}`);
+            continue;
+          }
+
+          const xmlData = await response.text();
+          console.log(`[EPG] Received ${xmlData.length} bytes from ${provider.name}`);
+
+          const parser = new xml2js.Parser();
+          const result = await parser.parseStringPromise(xmlData);
+
+          if (!result.tv) {
+            console.log(`[EPG] No TV data in XMLTV from ${provider.name}`);
+            continue;
+          }
+
+          // Parse channel elements to build name->ID mapping
+          if (result.tv.channel) {
+            for (const channel of result.tv.channel) {
+              const channelId = channel.$.id;
+              const displayNames = channel['display-name'];
+              if (displayNames && Array.isArray(displayNames)) {
+                for (const name of displayNames) {
+                  const displayName = name._ || name;
+                  if (displayName && typeof displayName === 'string') {
+                    const normalized = displayName.toLowerCase().replace(/[^a-z0-9]/g, '');
+                    if (normalized.length > 2) {
+                      this.channelNameToId.set(normalized, channelId);
+                    }
+                  }
+                }
+              }
+            }
+          }
+
+          // Parse programs
+          if (result.tv.programme) {
+            const now = new Date();
+            let programCount = 0;
+
+            for (const prog of result.tv.programme) {
+              const startTime = this.parseXMLTVDate(prog.$.start);
+              const endTime = this.parseXMLTVDate(prog.$.stop);
+
+              // Skip expired programs
+              if (endTime < now) continue;
+
+              const rawTitle = prog.title?.[0]?._ || prog.title?.[0] || 'Unknown';
+              const hasSuperscriptNew = /[\u1D2C-\u1D6A\u02B0-\u02FF]+/.test(rawTitle);
+              const cleanTitle = rawTitle.replace(/[\u1D2C-\u1D6A\u02B0-\u02FF]/g, '').trim();
+
+              const program: EPGProgram = {
+                channelId: prog.$.channel,
+                channelName: prog.$.channel,
+                title: cleanTitle,
+                episodeTitle: prog['sub-title']?.[0]?._ || prog['sub-title']?.[0],
+                description: prog.desc?.[0]?._ || prog.desc?.[0],
+                startTime,
+                endTime,
+                thumbnail: prog.icon?.[0]?.$.src,
+                categories: prog.category?.map((c: any) => c._ || c),
+                isNew: hasSuperscriptNew,
+                isLive: this.isCurrentTime(startTime, endTime)
+              };
+
+              // Parse episode numbers
+              const episodeNum = prog['episode-num']?.find((e: any) => e.$?.system === 'xmltv_ns');
+              if (episodeNum) {
+                const epText = episodeNum._ || episodeNum;
+                const match = epText.match(/(\d+)\.(\d+)/);
+                if (match) {
+                  program.season = parseInt(match[1]) + 1;
+                  program.episode = parseInt(match[2]) + 1;
+                }
+              }
+
+              // Parse rating
+              const ratingEl = prog.rating?.[0];
+              if (ratingEl) {
+                program.rating = ratingEl.value?.[0] || ratingEl._ || ratingEl;
+              }
+
+              // Merge into cache
+              const existingPrograms = this.programCache.get(program.channelId) || [];
+              const existingKeys = new Set(
+                existingPrograms.map(p => `${p.startTime.getTime()}-${p.title}`)
+              );
+              const key = `${program.startTime.getTime()}-${program.title}`;
+
+              if (!existingKeys.has(key)) {
+                existingPrograms.push(program);
+                existingPrograms.sort((a, b) => a.startTime.getTime() - b.startTime.getTime());
+                this.programCache.set(program.channelId, existingPrograms);
+                programCount++;
+              }
+            }
+
+            console.log(`[EPG] Added ${programCount} programs from M3U provider "${provider.name}"`);
+          }
+        } catch (error) {
+          console.error(`[EPG] Error fetching XMLTV from ${provider.name}:`, error);
+        }
+      }
+
+      // Save updated cache to disk
+      this.saveToDisk();
+
+      console.log(`[EPG] M3U provider XMLTV fetch complete. Total channels: ${this.programCache.size}, name mappings: ${this.channelNameToId.size}`);
+    } catch (error) {
+      console.error('[EPG] Error fetching M3U provider XMLTV:', error);
     }
   }
 
