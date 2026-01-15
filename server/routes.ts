@@ -3142,7 +3142,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
           const tokenParam = `?token=${token}`;
           const tokenizedManifest = existingStream.manifest.replace(
-            /\/api\/iptv\/segment\/(\d+)\/([^\s\n]+)/g,
+            /\/api\/iptv\/segment\/([^/]+)\/([^\s\n]+)/g,
             (match, sid, path) => `/api/iptv/segment/${sid}/${path}${tokenParam}`
           );
 
@@ -3161,22 +3161,40 @@ export async function registerRoutes(app: Express): Promise<Server> {
         existingStream.lastAccessed = new Date();
         console.log(`🔄 Fetching fresh manifest (cached was ${Math.round(manifestAge / 1000)}s old) for stream ${streamId} (${existingStream.users.size} users)`);
 
-        // Fetch fresh manifest from source using user's credential
-        const refreshClient = await xtreamCodesService.getClientForStream(userId, streamId);
-        if (!refreshClient) {
-          console.error(`No IPTV credential available for user ${userId} stream ${streamId}`);
-          return res.status(403).send('No IPTV access for this channel');
+        // Fetch fresh manifest from source
+        // First check if this is an M3U channel with direct URL
+        const m3uChannel = await db
+          .select({ directStreamUrl: iptvChannels.directStreamUrl })
+          .from(iptvChannels)
+          .where(eq(iptvChannels.streamId, streamId))
+          .limit(1);
+
+        let freshStreamUrl: string;
+        let freshResponse: Response;
+
+        if (m3uChannel.length > 0 && m3uChannel[0].directStreamUrl) {
+          // M3U channel - use direct URL
+          freshStreamUrl = m3uChannel[0].directStreamUrl;
+          console.log(`Fetching fresh M3U manifest from: ${freshStreamUrl}`);
+          freshResponse = await fetch(freshStreamUrl);
+        } else {
+          // Xtream channel - use credential-based URL
+          const refreshClient = await xtreamCodesService.getClientForStream(userId, streamId);
+          if (!refreshClient) {
+            console.error(`No IPTV credential available for user ${userId} stream ${streamId}`);
+            return res.status(403).send('No IPTV access for this channel');
+          }
+          freshStreamUrl = refreshClient.getHLSStreamUrl(streamId);
+          console.log(`Fetching fresh HLS manifest from: ${freshStreamUrl}`);
+          freshResponse = await fetch(freshStreamUrl);
         }
-        let freshStreamUrl = refreshClient.getHLSStreamUrl(streamId);
-        console.log(`Fetching fresh HLS manifest from: ${freshStreamUrl}`);
-        let freshResponse = await fetch(freshStreamUrl);
 
         if (!freshResponse.ok) {
           console.error(`Failed to fetch fresh stream ${streamId}: ${freshResponse.status}`);
           // Fallback to cached manifest with tokens
           const tokenParam = `?token=${token}`;
           const tokenizedManifest = existingStream.manifest.replace(
-            /\/api\/iptv\/segment\/(\d+)\/([^\s\n]+)/g,
+            /\/api\/iptv\/segment\/([^/]+)\/([^\s\n]+)/g,
             (match, sid, path) => `/api/iptv/segment/${sid}/${path}${tokenParam}`
           );
           return res.send(tokenizedManifest);
@@ -3217,7 +3235,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         // Add tokens to segment URLs
         const tokenParam = `?token=${token}`;
         const tokenizedManifest = freshBaseManifest.replace(
-          /\/api\/iptv\/segment\/(\d+)\/([^\s\n]+)/g,
+          /\/api\/iptv\/segment\/([^/]+)\/([^\s\n]+)/g,
           (match, sid, path) => `/api/iptv/segment/${sid}/${path}${tokenParam}`
         );
 
@@ -3290,7 +3308,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         console.log(`🔧 Adding token to manifest for Chromecast`);
         const tokenParam = `?token=${token}`;
         finalManifest = baseManifest.replace(
-          /\/api\/iptv\/segment\/(\d+)\/([^\s\n]+)/g,
+          /\/api\/iptv\/segment\/([^/]+)\/([^\s\n]+)/g,
           (match, sid, path) => `/api/iptv/segment/${sid}/${path}${tokenParam}`
         );
 
