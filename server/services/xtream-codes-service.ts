@@ -1082,12 +1082,22 @@ export class XtreamCodesManager implements IService {
     const providerId = channelInPackage.channel.providerId;
 
     // Check if this is an M3U provider (no credentials needed)
-    const [providerInfo] = await db.select({ providerType: iptvProviders.providerType })
+    // Also check if the channel has a directStreamUrl (indicates M3U channel)
+    const [providerInfo] = await db.select({
+      providerType: iptvProviders.providerType,
+      directStreamUrl: iptvChannels.directStreamUrl
+    })
       .from(iptvProviders)
-      .where(eq(iptvProviders.id, providerId))
+      .leftJoin(iptvChannels, eq(iptvChannels.providerId, iptvProviders.id))
+      .where(and(
+        eq(iptvProviders.id, providerId),
+        eq(iptvChannels.streamId, streamId)
+      ))
       .limit(1);
 
-    if (providerInfo?.providerType === 'm3u') {
+    console.log(`[IPTV-PKG] Provider ${providerId} type: ${providerInfo?.providerType}, directStreamUrl: ${providerInfo?.directStreamUrl ? 'yes' : 'no'}`);
+
+    if (providerInfo?.providerType === 'm3u' || providerInfo?.directStreamUrl) {
       // M3U providers don't need credentials - they use direct URLs
       // Return -2 as a special marker indicating M3U stream is allowed
       console.log(`[IPTV-PKG] M3U provider detected for channel ${streamId} - no credentials needed`);
