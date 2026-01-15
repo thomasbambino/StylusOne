@@ -2410,9 +2410,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const channels = await xtreamCodesService.getMergedChannels(userId, categoryId);
 
       // Detect native app requests and convert relative logo URLs to absolute
+      // CapacitorHttp on iOS sends "CFNetwork/Darwin" User-Agent, not Safari's "iPhone/iPad"
       const userAgent = req.headers['user-agent'] || '';
       const isNativeApp = userAgent.includes('iPhone') || userAgent.includes('iPad') ||
-                          userAgent.includes('Android') || userAgent.includes('Capacitor');
+                          userAgent.includes('Android') || userAgent.includes('Capacitor') ||
+                          userAgent.includes('CFNetwork') || userAgent.includes('Darwin');
 
       console.log(`[IPTV Channels] User-Agent: ${userAgent.substring(0, 50)}..., isNativeApp: ${isNativeApp}`);
 
