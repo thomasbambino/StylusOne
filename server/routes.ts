@@ -3777,7 +3777,8 @@ live.ts
       res.set({
         'Content-Type': 'application/vnd.apple.mpegurl',
         'Access-Control-Allow-Origin': '*',
-        'Cache-Control': 'no-cache'
+        'Cross-Origin-Resource-Policy': 'cross-origin',
+        'Cache-Control': 'no-cache, no-store, must-revalidate'
       });
       res.send(rewrittenManifest);
 
