@@ -3189,6 +3189,53 @@ live.ts
         return res.status(404).send('IPTV not configured');
       }
 
+      // Check if this is an M3U stream that needs audio transcoding for browsers
+      // Browsers don't support AC3/EC-3 audio, but iOS/Android native apps do
+      const userAgent = req.headers['user-agent'] || '';
+      const isNativeApp = userAgent.includes('CFNetwork') ||
+                          userAgent.includes('AVFoundation') ||
+                          userAgent.includes('okhttp') ||
+                          (userAgent.includes('Android') && !userAgent.includes('Chrome'));
+      const isBrowserRequest = !isNativeApp && !token; // Token requests are from Chromecast/casting
+      const isM3UStream = streamId.startsWith('m3u_');
+
+      if (isBrowserRequest && isM3UStream) {
+        console.log(`🔊 M3U browser stream ${streamId} - using transcoded HLS with AAC audio`);
+
+        // Get the direct stream URL for this M3U channel
+        const m3uChannel = await db
+          .select({ directStreamUrl: iptvChannels.directStreamUrl })
+          .from(iptvChannels)
+          .where(eq(iptvChannels.streamId, streamId))
+          .limit(1);
+
+        if (m3uChannel.length > 0 && m3uChannel[0].directStreamUrl) {
+          let sourceUrl = m3uChannel[0].directStreamUrl;
+
+          // Ensure we have the MPEG-TS URL (not HLS) for ffmpeg input
+          if (sourceUrl.endsWith('.m3u8')) {
+            sourceUrl = sourceUrl.replace(/\.m3u8$/, '.ts');
+          }
+
+          console.log(`🔊 Transcoding M3U stream from: ${sourceUrl}`);
+
+          // Use streaming service to transcode to HLS with AAC audio
+          const { streamingService } = await import('./services/streaming-service');
+          const transcodedStreamId = `m3u_browser_${streamId.replace(/[^a-zA-Z0-9_]/g, '_')}`;
+
+          try {
+            const hlsUrl = await streamingService.startHLSStream(transcodedStreamId, sourceUrl);
+            console.log(`🔊 Transcoded stream available at: ${hlsUrl}`);
+
+            // Redirect browser to the transcoded stream
+            return res.redirect(hlsUrl);
+          } catch (transcodeError) {
+            console.error(`🔊 Transcoding failed, falling back to proxy:`, transcodeError);
+            // Fall through to normal proxy handling
+          }
+        }
+      }
+
       // Check if we have a shared stream for this channel
       const existingStream = sharedStreams.get(streamId);
 
@@ -3787,85 +3834,11 @@ live.ts
         return res.status(500).send('No response body');
       }
 
-      // Check if this is an M3U stream that might need audio transcoding for browsers
-      // Browsers don't support EC-3/EAC-3 audio, but iOS/Android native apps do
-      const userAgent = req.headers['user-agent'] || '';
-      // Detect native apps: iOS uses CFNetwork/AVFoundation, Android uses okhttp or Capacitor
-      const isNativeApp = userAgent.includes('CFNetwork') ||
-                          userAgent.includes('AVFoundation') ||
-                          userAgent.includes('okhttp') ||
-                          (userAgent.includes('Android') && !userAgent.includes('Chrome'));
-      const isBrowserRequest = !isNativeApp;
-      const isM3UStream = streamId.startsWith('m3u_');
-
-      console.log(`📦 Stream ${streamId}: UA=${userAgent.substring(0, 50)}..., isNative=${isNativeApp}, isM3U=${isM3UStream}`);
-
-      if (isBrowserRequest && isM3UStream) {
-        // Transcode audio from EC-3/EAC-3 to AAC for browser compatibility
-        console.log(`🔊 Transcoding audio for browser (stream ${streamId})`);
-
-        try {
-          const ffmpeg = spawn('ffmpeg', [
-            '-i', 'pipe:0',           // Read from stdin
-            '-c:v', 'copy',           // Copy video stream (no re-encoding)
-            '-c:a', 'aac',            // Transcode audio to AAC
-            '-b:a', '192k',           // Audio bitrate
-            '-f', 'mpegts',           // Output format
-            '-loglevel', 'warning',   // Show warnings and errors
-            'pipe:1'                  // Write to stdout
-          ]);
-
-          let ffmpegStarted = false;
-          let ffmpegFailed = false;
-
-          // Handle ffmpeg spawn errors (e.g., ffmpeg not found)
-          ffmpeg.on('error', (error) => {
-            console.error('[FFmpeg] Failed to start:', error.message);
-            ffmpegFailed = true;
-            if (!ffmpegStarted && !res.headersSent) {
-              // Fallback to direct passthrough
-              console.log('[FFmpeg] Falling back to direct passthrough');
-              response.body.pipe(res);
-            }
-          });
-
-          // Handle stderr for debugging
-          ffmpeg.stderr.on('data', (data: Buffer) => {
-            const msg = data.toString().trim();
-            if (msg) console.log(`[FFmpeg] ${msg}`);
-          });
-
-          // When ffmpeg starts outputting, we know it's working
-          ffmpeg.stdout.once('data', () => {
-            ffmpegStarted = true;
-          });
-
-          ffmpeg.on('close', (code) => {
-            if (code !== 0 && code !== null) {
-              console.error(`[FFmpeg] Process exited with code ${code}`);
-            }
-          });
-
-          // Handle client disconnect
-          res.on('close', () => {
-            if (!ffmpeg.killed) {
-              ffmpeg.kill('SIGTERM');
-            }
-          });
-
-          // Pipe source -> ffmpeg -> response
-          response.body.pipe(ffmpeg.stdin);
-          ffmpeg.stdout.pipe(res);
-
-        } catch (spawnError) {
-          console.error('[FFmpeg] Spawn error:', spawnError);
-          // Fallback to direct passthrough
-          response.body.pipe(res);
-        }
-      } else {
-        // Direct passthrough for iOS/Chromecast (they support EC-3 natively)
-        response.body.pipe(res);
-      }
+      // Direct passthrough for all segment requests
+      // Note: Browser M3U streams are now handled via transcoding at the manifest level
+      // (see the /api/iptv/stream/:streamId.m3u8 endpoint which redirects browsers to
+      // the streaming service's transcoded HLS output with AAC audio)
+      response.body.pipe(res);
     } catch (error) {
       console.error('Error proxying IPTV segment:', error);
       res.status(500).send('Failed to proxy segment');
