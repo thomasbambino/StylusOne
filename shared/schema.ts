@@ -381,7 +381,7 @@ export const planIptvCredentials = pgTable("plan_iptv_credentials", {
 // Active IPTV Streams - Track concurrent streams per credential for rate limiting
 export const activeIptvStreams = pgTable("active_iptv_streams", {
   id: serial("id").primaryKey(),
-  credentialId: integer("credential_id").notNull().references(() => iptvCredentials.id, { onDelete: 'cascade' }),
+  credentialId: integer("credential_id").references(() => iptvCredentials.id, { onDelete: 'cascade' }), // Nullable for M3U streams
   userId: integer("user_id").notNull().references(() => users.id, { onDelete: 'cascade' }),
   streamId: text("stream_id").notNull(), // IPTV channel/stream ID
   sessionToken: text("session_token").notNull().unique(), // Unique session identifier

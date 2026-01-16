@@ -135,6 +135,70 @@ export class StreamTrackerService {
   }
 
   /**
+   * Acquire an M3U stream for a user (no credential/capacity limits)
+   * Used for M3U provider streams that don't have connection limits
+   * Returns session token
+   */
+  async acquireM3UStream(
+    userId: number,
+    streamId: string,
+    ipAddress?: string,
+    deviceType?: string
+  ): Promise<string> {
+    // Check if this user already has a stream for this M3U channel
+    const existingStreams = await db.select()
+      .from(activeIptvStreams)
+      .where(and(
+        eq(activeIptvStreams.userId, userId),
+        eq(activeIptvStreams.streamId, streamId)
+      ));
+
+    if (existingStreams.length > 0) {
+      // Update heartbeat and return existing token
+      await this.heartbeat(existingStreams[0].sessionToken);
+      return existingStreams[0].sessionToken;
+    }
+
+    // Create new stream entry
+    const sessionToken = this.generateSessionToken();
+
+    // Look up channel name and current program
+    let startProgramTitle: string | null = null;
+    try {
+      const [channel] = await db.select({ name: iptvChannels.name })
+        .from(iptvChannels)
+        .where(eq(iptvChannels.streamId, streamId))
+        .limit(1);
+
+      if (channel?.name) {
+        const epgService = await getSharedEPGService();
+        const program = epgService.getCurrentProgram(channel.name);
+        if (program) {
+          startProgramTitle = program.title;
+          if (program.episodeTitle) {
+            startProgramTitle += ` - ${program.episodeTitle}`;
+          }
+        }
+      }
+    } catch (e) {
+      // EPG lookup failed, continue without program title
+    }
+
+    await db.insert(activeIptvStreams).values({
+      credentialId: null, // M3U streams have no credential
+      userId,
+      streamId,
+      sessionToken,
+      ipAddress: ipAddress || null,
+      deviceType: deviceType || null,
+      startProgramTitle
+    });
+
+    console.log(`M3U stream acquired: user=${userId}, stream=${streamId}`);
+    return sessionToken;
+  }
+
+  /**
    * Save a stream to viewing history before deletion
    */
   private async saveToViewingHistory(stream: typeof activeIptvStreams.$inferSelect): Promise<void> {

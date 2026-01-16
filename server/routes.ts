@@ -3880,9 +3880,17 @@ live.ts
 
       // Handle M3U provider (credentialId = -2)
       if (credentialId === -2) {
-        console.log(`[Stream Acquire] M3U provider for user ${userId}, stream ${streamId} - no tracking needed`);
-        // For M3U, we don't track streams - just return a dummy token
-        res.json({ sessionToken: `m3u-${userId}-${streamId}-${Date.now()}` });
+        console.log(`[Stream Acquire] M3U provider for user ${userId}, stream ${streamId}`);
+        // Track M3U streams for analytics/trending (no connection limits)
+        const { streamTrackerService } = await import('./services/stream-tracker-service');
+        const ipAddress = req.ip || req.socket.remoteAddress;
+        const sessionToken = await streamTrackerService.acquireM3UStream(
+          userId,
+          streamId,
+          ipAddress,
+          deviceType
+        );
+        res.json({ sessionToken });
         return;
       }
 
