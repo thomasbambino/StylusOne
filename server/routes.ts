@@ -3787,8 +3787,53 @@ live.ts
         return res.status(500).send('No response body');
       }
 
-      // Node.js fetch returns a Node.js ReadableStream, pipe it directly
-      response.body.pipe(res);
+      // Check if this is an M3U stream that might need audio transcoding for browsers
+      // Browsers don't support EC-3/EAC-3 audio, but iOS native does
+      const userAgent = req.headers['user-agent'] || '';
+      const isBrowserRequest = !token && !userAgent.includes('CFNetwork') && !userAgent.includes('AVFoundation');
+      const isM3UStream = streamId.startsWith('m3u_');
+
+      if (isBrowserRequest && isM3UStream) {
+        // Transcode audio from EC-3/EAC-3 to AAC for browser compatibility
+        console.log(`🔊 Transcoding audio for browser (stream ${streamId})`);
+
+        const ffmpeg = spawn('ffmpeg', [
+          '-i', 'pipe:0',           // Read from stdin
+          '-c:v', 'copy',           // Copy video stream (no re-encoding)
+          '-c:a', 'aac',            // Transcode audio to AAC
+          '-b:a', '192k',           // Audio bitrate
+          '-f', 'mpegts',           // Output format
+          '-loglevel', 'error',     // Only show errors
+          'pipe:1'                  // Write to stdout
+        ]);
+
+        // Pipe source -> ffmpeg -> response
+        response.body.pipe(ffmpeg.stdin);
+        ffmpeg.stdout.pipe(res);
+
+        // Handle errors
+        ffmpeg.stderr.on('data', (data: Buffer) => {
+          console.error(`[FFmpeg] ${data.toString()}`);
+        });
+
+        ffmpeg.on('error', (error) => {
+          console.error('[FFmpeg] Process error:', error);
+        });
+
+        ffmpeg.on('close', (code) => {
+          if (code !== 0) {
+            console.error(`[FFmpeg] Process exited with code ${code}`);
+          }
+        });
+
+        // Handle client disconnect
+        res.on('close', () => {
+          ffmpeg.kill('SIGTERM');
+        });
+      } else {
+        // Direct passthrough for iOS/Chromecast (they support EC-3 natively)
+        response.body.pipe(res);
+      }
     } catch (error) {
       console.error('Error proxying IPTV segment:', error);
       res.status(500).send('Failed to proxy segment');
