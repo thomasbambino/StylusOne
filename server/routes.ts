@@ -2877,7 +2877,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
         } else if (credentialId === -1) {
           console.log(`[Token+Track] User ${userId} using ENV client for stream ${streamId} (no tracking)`);
         } else if (credentialId === -2) {
-          console.log(`[Token+Track] User ${userId} using M3U provider for stream ${streamId} (no credential tracking)`);
+          // Track M3U streams for analytics/trending (no connection limits)
+          const ipAddress = req.ip || req.socket.remoteAddress;
+          sessionToken = await streamTrackerService.acquireM3UStream(
+            userId,
+            streamId,
+            ipAddress,
+            deviceType
+          );
+          console.log(`[Token+Track] User ${userId} acquired M3U stream ${streamId}`);
         } else {
           console.log(`[Token+Track] User ${userId} has no credential for stream ${streamId}`);
         }
