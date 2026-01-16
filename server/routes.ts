@@ -3288,12 +3288,19 @@ live.ts
             console.log(`📋 Cached manifest segments for ${streamId}:`, cachedSegments);
           }
 
-          const tokenizedManifest = existingStream.manifest.replace(
+          let tokenizedManifest = existingStream.manifest.replace(
             /\/api\/iptv\/segment\/([^/]+)\/([^\s\n]+)/g,
             (match, sid, path) => {
-              // Use & if URL already has query params (?url=), otherwise use ?
               const separator = path.includes('?') ? '&' : '?';
               return `/api/iptv/segment/${sid}/${path}${separator}token=${token}`;
+            }
+          );
+          // Also add token to manifest URLs (for sub-playlists)
+          tokenizedManifest = tokenizedManifest.replace(
+            /\/api\/iptv\/manifest\/([^/]+)\/([^\s\n]+)/g,
+            (match, sid, path) => {
+              const separator = path.includes('?') ? '&' : '?';
+              return `/api/iptv/manifest/${sid}/${path}${separator}token=${token}`;
             }
           );
 
@@ -3346,11 +3353,18 @@ live.ts
         if (!freshResponse.ok) {
           console.error(`Failed to fetch fresh stream ${streamId}: ${freshResponse.status}`);
           // Fallback to cached manifest with tokens
-          const tokenizedManifest = existingStream.manifest.replace(
+          let tokenizedManifest = existingStream.manifest.replace(
             /\/api\/iptv\/segment\/([^/]+)\/([^\s\n]+)/g,
             (match, sid, path) => {
               const separator = path.includes('?') ? '&' : '?';
               return `/api/iptv/segment/${sid}/${path}${separator}token=${token}`;
+            }
+          );
+          tokenizedManifest = tokenizedManifest.replace(
+            /\/api\/iptv\/manifest\/([^/]+)\/([^\s\n]+)/g,
+            (match, sid, path) => {
+              const separator = path.includes('?') ? '&' : '?';
+              return `/api/iptv/manifest/${sid}/${path}${separator}token=${token}`;
             }
           );
           return res.send(tokenizedManifest);
@@ -3378,25 +3392,37 @@ live.ts
         existingStream.baseSegmentUrl = freshBaseSegmentUrl;
 
         // Rewrite fresh manifest segments
-        // Match .ts files with optional query parameters (e.g., file.ts?index=1)
+        // Match .ts files AND .m3u8 files (for master playlists with variant streams)
         // For absolute URLs, use query parameter (iOS AVPlayer compatible)
         const freshBaseManifest = freshManifestText.replace(
-          /^([^#\n].+\.ts(?:\?[^\s\n]*)?)$/gm,
+          /^([^#\n].+\.(ts|m3u8)(?:\?[^\s\n]*)?)$/gm,
           (match) => {
             const trimmed = match.trim();
+            const isSubPlaylist = trimmed.endsWith('.m3u8') || trimmed.includes('.m3u8?');
+
             // For absolute URLs, pass as query parameter with original filename preserved
             if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
-              // Extract original segment filename from URL (e.g., "42.ts" from "http://.../42.ts?index=1")
               try {
                 const urlObj = new URL(trimmed);
                 const pathParts = urlObj.pathname.split('/');
-                const originalFilename = pathParts[pathParts.length - 1] || 'stream.ts';
-                return `/api/iptv/segment/${streamId}/${originalFilename}?url=${encodeURIComponent(trimmed)}`;
+                const originalFilename = pathParts[pathParts.length - 1] || (isSubPlaylist ? 'variant.m3u8' : 'stream.ts');
+
+                if (isSubPlaylist) {
+                  return `/api/iptv/manifest/${streamId}/${originalFilename}?url=${encodeURIComponent(trimmed)}`;
+                } else {
+                  return `/api/iptv/segment/${streamId}/${originalFilename}?url=${encodeURIComponent(trimmed)}`;
+                }
               } catch {
+                if (isSubPlaylist) {
+                  return `/api/iptv/manifest/${streamId}/variant.m3u8?url=${encodeURIComponent(trimmed)}`;
+                }
                 return `/api/iptv/segment/${streamId}/stream.ts?url=${encodeURIComponent(trimmed)}`;
               }
             }
             // For relative paths, strip leading slashes
+            if (isSubPlaylist) {
+              return `/api/iptv/manifest/${streamId}/${trimmed.replace(/^\/+/, '')}`;
+            }
             return `/api/iptv/segment/${streamId}/${trimmed.replace(/^\/+/, '')}`;
           }
         );
@@ -3421,12 +3447,19 @@ live.ts
         existingStream.manifest = freshFixedManifest;
         existingStream.manifestFetchedAt = new Date();
 
-        // Add tokens to segment URLs
-        const tokenizedManifest = freshFixedManifest.replace(
+        // Add tokens to segment and manifest URLs
+        let tokenizedManifest = freshFixedManifest.replace(
           /\/api\/iptv\/segment\/([^/]+)\/([^\s\n]+)/g,
           (match, sid, path) => {
             const separator = path.includes('?') ? '&' : '?';
             return `/api/iptv/segment/${sid}/${path}${separator}token=${token}`;
+          }
+        );
+        tokenizedManifest = tokenizedManifest.replace(
+          /\/api\/iptv\/manifest\/([^/]+)\/([^\s\n]+)/g,
+          (match, sid, path) => {
+            const separator = path.includes('?') ? '&' : '?';
+            return `/api/iptv/manifest/${sid}/${path}${separator}token=${token}`;
           }
         );
 
@@ -3478,25 +3511,38 @@ live.ts
 
       // Rewrite segment URLs to go through our proxy
       // Always cache manifest WITHOUT tokens for security and sharing
-      // Match .ts files with optional query parameters (e.g., file.ts?index=1)
+      // Match .ts files AND .m3u8 files (for master playlists with variant streams)
       // For absolute URLs, use query parameter (iOS AVPlayer compatible)
       const baseManifest = manifestText.replace(
-        /^([^#\n].+\.ts(?:\?[^\s\n]*)?)$/gm,
+        /^([^#\n].+\.(ts|m3u8)(?:\?[^\s\n]*)?)$/gm,
         (match) => {
           const trimmed = match.trim();
+          const isSubPlaylist = trimmed.endsWith('.m3u8') || trimmed.includes('.m3u8?');
+
           // For absolute URLs, pass as query parameter with original filename preserved
           if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
-            // Extract original segment filename from URL (e.g., "42.ts" from "http://.../42.ts?index=1")
             try {
               const urlObj = new URL(trimmed);
               const pathParts = urlObj.pathname.split('/');
-              const originalFilename = pathParts[pathParts.length - 1] || 'stream.ts';
-              return `/api/iptv/segment/${streamId}/${originalFilename}?url=${encodeURIComponent(trimmed)}`;
+              const originalFilename = pathParts[pathParts.length - 1] || (isSubPlaylist ? 'variant.m3u8' : 'stream.ts');
+
+              if (isSubPlaylist) {
+                // Sub-playlists go through the manifest proxy
+                return `/api/iptv/manifest/${streamId}/${originalFilename}?url=${encodeURIComponent(trimmed)}`;
+              } else {
+                return `/api/iptv/segment/${streamId}/${originalFilename}?url=${encodeURIComponent(trimmed)}`;
+              }
             } catch {
+              if (isSubPlaylist) {
+                return `/api/iptv/manifest/${streamId}/variant.m3u8?url=${encodeURIComponent(trimmed)}`;
+              }
               return `/api/iptv/segment/${streamId}/stream.ts?url=${encodeURIComponent(trimmed)}`;
             }
           }
           // For relative paths, strip leading slashes
+          if (isSubPlaylist) {
+            return `/api/iptv/manifest/${streamId}/${trimmed.replace(/^\/+/, '')}`;
+          }
           return `/api/iptv/segment/${streamId}/${trimmed.replace(/^\/+/, '')}`;
         }
       );
@@ -3535,10 +3581,11 @@ live.ts
       const segmentLines = fixedManifest.split('\n').filter(line => line.includes('/api/iptv/segment/')).slice(0, 3);
       console.log(`📋 Sample segment URLs for ${streamId}:`, segmentLines);
 
-      // If token authentication, add token to segment URLs dynamically
+      // If token authentication, add token to segment and manifest URLs dynamically
       let finalManifest = fixedManifest;
       if (token) {
         console.log(`🔧 Adding token to manifest for Chromecast`);
+        // Add token to segment URLs
         finalManifest = fixedManifest.replace(
           /\/api\/iptv\/segment\/([^/]+)\/([^\s\n]+)/g,
           (match, sid, path) => {
@@ -3546,11 +3593,19 @@ live.ts
             return `/api/iptv/segment/${sid}/${path}${separator}token=${token}`;
           }
         );
+        // Add token to manifest URLs (for sub-playlists)
+        finalManifest = finalManifest.replace(
+          /\/api\/iptv\/manifest\/([^/]+)\/([^\s\n]+)/g,
+          (match, sid, path) => {
+            const separator = path.includes('?') ? '&' : '?';
+            return `/api/iptv/manifest/${sid}/${path}${separator}token=${token}`;
+          }
+        );
 
-        // Log a sample segment URL to verify token inclusion
-        const sampleSegment = finalManifest.match(/\/api\/iptv\/segment\/[^\s]+token=/);
+        // Log a sample URL to verify token inclusion
+        const sampleSegment = finalManifest.match(/\/api\/iptv\/(segment|manifest)\/[^\s]+token=/);
         if (sampleSegment) {
-          console.log(`📝 Sample segment URL with token: ${sampleSegment[0].substring(0, 80)}...`);
+          console.log(`📝 Sample URL with token: ${sampleSegment[0].substring(0, 80)}...`);
         }
       }
 
@@ -3634,6 +3689,101 @@ live.ts
       if (!res.headersSent) {
         res.status(500).send('Failed to proxy stream');
       }
+    }
+  });
+
+  // IPTV Manifest Proxy - proxy sub-playlists (for master playlists with variant streams)
+  // This rewrites URLs in sub-playlists to prevent local IP leakage
+  app.get("/api/iptv/manifest/:streamId/*", async (req, res) => {
+    const { token } = req.query;
+    const { streamId } = req.params;
+
+    console.log(`📋 Manifest proxy request for ${streamId}, token: ${token ? 'present' : 'none'}`);
+
+    // Authenticate
+    if (token && typeof token === 'string') {
+      const userId = validateStreamToken(token, streamId);
+      if (!userId) {
+        console.log(`❌ Invalid token for manifest ${streamId}`);
+        return res.sendStatus(401);
+      }
+    } else if (!req.isAuthenticated()) {
+      console.log(`❌ No auth for manifest ${streamId}`);
+      return res.sendStatus(401);
+    }
+
+    try {
+      // Get the sub-playlist URL from query param
+      const urlParam = req.query.url as string | undefined;
+      if (!urlParam) {
+        return res.status(400).send('URL parameter required');
+      }
+
+      const subPlaylistUrl = decodeURIComponent(urlParam);
+      console.log(`📋 Fetching sub-playlist from: ${subPlaylistUrl}`);
+
+      const response = await fetch(subPlaylistUrl, { timeout: 10000 });
+      if (!response.ok) {
+        console.error(`Sub-playlist fetch failed: ${response.status}`);
+        return res.status(response.status).send('Failed to fetch sub-playlist');
+      }
+
+      let manifestText = await response.text();
+
+      // Get base URL for relative segment paths
+      const manifestUrl = new URL(subPlaylistUrl);
+      const baseSegmentUrl = manifestUrl.origin + manifestUrl.pathname.substring(0, manifestUrl.pathname.lastIndexOf('/') + 1);
+
+      // Rewrite segment URLs to go through our proxy
+      const rewrittenManifest = manifestText.replace(
+        /^([^#\n].+\.(ts|m3u8)(?:\?[^\s\n]*)?)$/gm,
+        (match) => {
+          const trimmed = match.trim();
+          const isSubPlaylist = trimmed.endsWith('.m3u8') || trimmed.includes('.m3u8?');
+
+          // Build absolute URL if relative
+          let absoluteUrl = trimmed;
+          if (!trimmed.startsWith('http://') && !trimmed.startsWith('https://')) {
+            absoluteUrl = baseSegmentUrl + trimmed.replace(/^\/+/, '');
+          }
+
+          try {
+            const urlObj = new URL(absoluteUrl);
+            const pathParts = urlObj.pathname.split('/');
+            const originalFilename = pathParts[pathParts.length - 1] || (isSubPlaylist ? 'variant.m3u8' : 'stream.ts');
+
+            if (isSubPlaylist) {
+              let result = `/api/iptv/manifest/${streamId}/${originalFilename}?url=${encodeURIComponent(absoluteUrl)}`;
+              if (token) result += `&token=${token}`;
+              return result;
+            } else {
+              let result = `/api/iptv/segment/${streamId}/${originalFilename}?url=${encodeURIComponent(absoluteUrl)}`;
+              if (token) result += `&token=${token}`;
+              return result;
+            }
+          } catch {
+            if (isSubPlaylist) {
+              let result = `/api/iptv/manifest/${streamId}/variant.m3u8?url=${encodeURIComponent(absoluteUrl)}`;
+              if (token) result += `&token=${token}`;
+              return result;
+            }
+            let result = `/api/iptv/segment/${streamId}/stream.ts?url=${encodeURIComponent(absoluteUrl)}`;
+            if (token) result += `&token=${token}`;
+            return result;
+          }
+        }
+      );
+
+      res.set({
+        'Content-Type': 'application/vnd.apple.mpegurl',
+        'Access-Control-Allow-Origin': '*',
+        'Cache-Control': 'no-cache'
+      });
+      res.send(rewrittenManifest);
+
+    } catch (error) {
+      console.error('Error proxying manifest:', error);
+      res.status(500).send('Failed to proxy manifest');
     }
   });
 
