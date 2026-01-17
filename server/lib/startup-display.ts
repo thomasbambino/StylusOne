@@ -22,16 +22,22 @@ interface CategoryServices {
  *   display.addBackgroundTask('Stream Tracker', 'cleanup every 30s');
  *   display.render();
  */
+// App version - increment with each deployment
+const APP_VERSION = '1.5.5';
+
 export class StartupDisplay {
   private categories: Map<ServiceCategory, ServiceInfo[]> = new Map();
   private backgroundTasks: BackgroundTask[] = [];
   private serverInfo: ServiceInfo[] = [];
-  private version: string = '1.0.0';
+  private version: string = APP_VERSION;
+  private appName: string;
 
   constructor(version?: string) {
     if (version) {
       this.version = version;
     }
+    // Read app name from environment, default to "Stylus One"
+    this.appName = process.env.APP_NAME || 'Stylus One';
   }
 
   /**
@@ -158,7 +164,7 @@ export class StartupDisplay {
     lines.push(this.topBorder());
 
     // Title
-    const title = `${COLORS.bright}HomelabDashboard v${this.version}${COLORS.reset}`;
+    const title = `${COLORS.bright}${this.appName} Dashboard v${this.version}${COLORS.reset}`;
     lines.push(this.centerText(title));
 
     // Define category order

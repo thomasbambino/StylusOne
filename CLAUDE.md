@@ -2,6 +2,15 @@
 
 This file contains commands and configurations for Claude Code to help with development and deployment.
 
+## Version Management
+
+**IMPORTANT**: When deploying to remote (pushing to main), increment the app version in:
+- `server/lib/startup-display.ts` → `APP_VERSION` constant
+
+Current version: **1.5.5**
+
+The startup display reads `APP_NAME` from `.env` and shows: `{APP_NAME} Dashboard v{VERSION}`
+
 ## Docker Deployment Commands
 
 ### Build and Deploy
