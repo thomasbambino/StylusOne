@@ -75,7 +75,10 @@ router.get('/:id', async (req, res) => {
   if (!req.isAuthenticated()) return res.sendStatus(401);
   try {
     const bookId = parseInt(req.params.id);
-    
+    if (isNaN(bookId)) {
+      return res.status(400).json({ error: 'Invalid book ID' });
+    }
+
     const [book] = await db
       .select()
       .from(books)
@@ -188,6 +191,9 @@ router.patch('/:id', async (req, res) => {
   if (!req.isAuthenticated()) return res.sendStatus(401);
   try {
     const bookId = parseInt(req.params.id);
+    if (isNaN(bookId)) {
+      return res.status(400).json({ error: 'Invalid book ID' });
+    }
     const user = req.user!;
     const { title, author, description } = req.body;
 
@@ -241,6 +247,9 @@ router.post('/:id/cover', uploadImage.single('cover'), async (req, res) => {
   if (!req.isAuthenticated()) return res.sendStatus(401);
   try {
     const bookId = parseInt(req.params.id);
+    if (isNaN(bookId)) {
+      return res.status(400).json({ error: 'Invalid book ID' });
+    }
     const user = req.user!;
 
     if (!req.file) {
@@ -378,6 +387,9 @@ router.delete('/:id', async (req, res) => {
   if (!req.isAuthenticated()) return res.sendStatus(401);
   try {
     const bookId = parseInt(req.params.id);
+    if (isNaN(bookId)) {
+      return res.status(400).json({ error: 'Invalid book ID' });
+    }
     const user = req.user!;
 
     // Find the book
@@ -417,6 +429,9 @@ router.get('/:id/download', async (req, res) => {
   if (!req.isAuthenticated()) return res.sendStatus(401);
   try {
     const bookId = parseInt(req.params.id);
+    if (isNaN(bookId)) {
+      return res.status(400).json({ error: 'Invalid book ID' });
+    }
 
     const [book] = await db
       .select()
@@ -459,6 +474,9 @@ router.get('/:id/download', async (req, res) => {
 router.get('/:id/cover', async (req, res) => {
   try {
     const bookId = parseInt(req.params.id);
+    if (isNaN(bookId)) {
+      return res.status(400).json({ error: 'Invalid book ID' });
+    }
 
     const [book] = await db
       .select()
@@ -528,6 +546,9 @@ router.post('/:id/send-to-kindle', async (req, res) => {
   if (!req.isAuthenticated()) return res.sendStatus(401);
   try {
     const bookId = parseInt(req.params.id);
+    if (isNaN(bookId)) {
+      return res.status(400).json({ error: 'Invalid book ID' });
+    }
     const user = req.user!;
 
     // Check if user has Kindle email configured
