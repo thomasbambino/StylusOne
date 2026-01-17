@@ -1,4 +1,5 @@
 import { Capacitor } from '@capacitor/core';
+// @ts-ignore - capacitor-video-player may not be installed in all environments
 import { CapacitorVideoPlayer } from 'capacitor-video-player';
 import { loggers } from './logger';
 

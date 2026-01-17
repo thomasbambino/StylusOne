@@ -214,6 +214,16 @@ export class TautulliService implements IService {
     }
   }
 
+  /**
+   * Reinitialize the service with new configuration
+   */
+  async reinitialize(): Promise<void> {
+    this.initialized = false;
+    this.baseUrl = process.env.TAUTULLI_URL || '';
+    this.apiKey = process.env.TAUTULLI_API_KEY || '';
+    await this.initialize();
+  }
+
   async testConnection(): Promise<boolean> {
     return await this.isHealthy();
   }

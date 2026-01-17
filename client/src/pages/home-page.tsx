@@ -49,6 +49,72 @@ import { useLocation } from "wouter";
 import { getQueryFn, apiRequest } from "@/lib/queryClient";
 import { AuthenticatedImage } from "@/components/authenticated-image";
 
+// Type definitions for API responses
+interface TautulliActivity {
+  stream_count?: number;
+  sessions?: Array<{
+    user: string;
+    player: string;
+    state: string;
+    title: string;
+    media_type: string;
+  }>;
+}
+
+interface TautulliLibrary {
+  section_id: string;
+  section_name: string;
+  section_type: 'movie' | 'show' | 'artist' | 'photo';
+  count: number;
+}
+
+interface TautulliRecentlyAddedItem {
+  rating_key: string;
+  title: string;
+  grandparent_title?: string;
+  parent_title?: string;
+  media_type: 'movie' | 'episode';
+  thumb?: string;
+  parent_thumb?: string;
+  grandparent_thumb?: string;
+  added_at: number;
+  grandparent_rating_key?: string;
+}
+
+interface TautulliRecentlyAdded {
+  recently_added?: TautulliRecentlyAddedItem[];
+}
+
+interface TautulliServerInfo {
+  data?: {
+    pms_identifier?: string;
+  };
+}
+
+interface GameServer {
+  instanceId: string;
+  name: string;
+  type?: string;
+  status: boolean;
+  playerCount?: number;
+  maxPlayers?: number;
+}
+
+interface IPTVChannel {
+  id: string;
+  name: string;
+  logo?: string;
+}
+
+interface IPTVStatus {
+  connected: boolean;
+  channelCount?: number;
+}
+
+interface IPTVChannelsResponse {
+  channels?: IPTVChannel[];
+}
+
 const plexInviteSchema = z.object({
   email: z.string().email("Please enter a valid email address"),
 });
@@ -174,7 +240,7 @@ export default function HomePage() {
   };
   
   // Fetch Plex activity from Tautulli
-  const { data: plexActivity } = useQuery({
+  const { data: plexActivity } = useQuery<TautulliActivity | null>({
     queryKey: ['/api/tautulli/activity'],
     queryFn: getQueryFn({ on401: "returnNull" }),
     refetchInterval: 30000,
@@ -182,7 +248,7 @@ export default function HomePage() {
   });
 
   // Fetch Plex libraries
-  const { data: plexLibraries } = useQuery({
+  const { data: plexLibraries } = useQuery<TautulliLibrary[] | null>({
     queryKey: ['/api/tautulli/libraries'],
     queryFn: getQueryFn({ on401: "returnNull" }),
     refetchInterval: 60000,
@@ -190,7 +256,7 @@ export default function HomePage() {
   });
 
   // Fetch recently added - available for all users (promotional display)
-  const { data: recentlyAdded } = useQuery({
+  const { data: recentlyAdded } = useQuery<TautulliRecentlyAdded | null>({
     queryKey: ['/api/tautulli/recently-added'],
     queryFn: getQueryFn({ on401: "returnNull" }),
     refetchInterval: 60000,
@@ -199,7 +265,7 @@ export default function HomePage() {
 
 
   // Fetch Game Servers data
-  const { data: gameServers } = useQuery({
+  const { data: gameServers } = useQuery<GameServer[] | null>({
     queryKey: ['/api/game-servers'],
     queryFn: getQueryFn({ on401: "returnNull" }),
     refetchInterval: 30000,
@@ -207,7 +273,7 @@ export default function HomePage() {
   });
 
   // Fetch IPTV channels instead of HDHomeRun
-  const { data: iptvStatus } = useQuery({
+  const { data: iptvStatus } = useQuery<IPTVStatus | null>({
     queryKey: ['/api/iptv/status'],
     queryFn: getQueryFn({ on401: "returnNull" }),
     refetchInterval: 60000,
@@ -215,7 +281,7 @@ export default function HomePage() {
   });
 
   // Fetch IPTV channels - available for all users for promotional display
-  const { data: iptvChannels } = useQuery({
+  const { data: iptvChannels } = useQuery<IPTVChannelsResponse | null>({
     queryKey: ['/api/iptv/channels'],
     queryFn: getQueryFn({ on401: "returnNull" }),
     // Note: No 'enabled' check - available to all users for promotional carousel
@@ -267,7 +333,7 @@ export default function HomePage() {
 
 
   // Fetch Tautulli server info for machine ID (needed for Plex URLs)
-  const { data: serverInfoData } = useQuery({
+  const { data: serverInfoData } = useQuery<TautulliServerInfo | null>({
     queryKey: ['/api/tautulli/server-info'],
     queryFn: getQueryFn({ on401: "returnNull" }),
     refetchInterval: 60000,
@@ -311,8 +377,8 @@ export default function HomePage() {
       // Plex cloud format: https://app.plex.tv/desktop/#!/server/{machineId}/details?key=%2Flibrary%2Fmetadata%2F{key}
       plexWebUrl = `https://app.plex.tv/desktop/#!/server/${machineId}/details?key=%2Flibrary%2Fmetadata%2F${targetKey}`;
     } else {
-      // Fallback to local format
-      const plexUrl = settings?.plexUrl || 'http://localhost:32400';
+      // Fallback to local format - use default Plex URL
+      const plexUrl = 'http://localhost:32400';
       plexWebUrl = `${plexUrl}/web/index.html#!/media/${targetKey}`;
     }
     
@@ -432,12 +498,12 @@ export default function HomePage() {
                           >
                             {(() => {
                               const baseItems = recentlyAddedItems.slice(0, Math.min(recentlyAddedItems.length, 20));
-                              const repeatedItems = [];
+                              const repeatedItems: TautulliRecentlyAddedItem[] = [];
                               for (let rep = 0; rep < 6; rep++) {
                                 baseItems.forEach(item => repeatedItems.push(item));
                               }
                               return repeatedItems;
-                            })().map((item: any, i: number) => (
+                            })().map((item: TautulliRecentlyAddedItem, i: number) => (
                               <div key={`${item.rating_key}-${i}`} className="flex-shrink-0 w-20 h-28 relative group">
                                 {getThumbnailUrl(item, 160, 224) ? (
                                   <AuthenticatedImage
@@ -498,13 +564,13 @@ export default function HomePage() {
                             {/* Create 3 copies for seamless looping */}
                             {(() => {
                               const baseItems = recentlyAddedItems.slice(0, Math.min(recentlyAddedItems.length, 20));
-                              const repeatedItems = [];
+                              const repeatedItems: TautulliRecentlyAddedItem[] = [];
                               // Create 3 full copies for smooth infinite loop
                               for (let rep = 0; rep < 3; rep++) {
                                 baseItems.forEach(item => repeatedItems.push(item));
                               }
                               return repeatedItems;
-                            })().map((item: any, i: number) => (
+                            })().map((item: TautulliRecentlyAddedItem, i: number) => (
                               <div key={`${item.rating_key}-${i}`} className="flex-shrink-0 w-28 h-40 relative group cursor-pointer" onClick={() => openInPlex(item)}>
                                 {getThumbnailUrl(item, 160, 224) ? (
                                   <AuthenticatedImage
@@ -881,12 +947,12 @@ export default function HomePage() {
                           >
                             {(() => {
                               const baseItems = liveTVChannels.slice(0, Math.min(liveTVChannels.length, 30));
-                              const repeatedItems = [];
+                              const repeatedItems: IPTVChannel[] = [];
                               for (let rep = 0; rep < 4; rep++) {
                                 baseItems.forEach(channel => repeatedItems.push(channel));
                               }
                               return repeatedItems;
-                            })().map((channel: any, i: number) => (
+                            })().map((channel: IPTVChannel, i: number) => (
                               <div key={`${channel.id}-${i}`} className="flex-shrink-0 w-24 h-24 relative group">
                                 {channel.logo ? (
                                   <div className="w-full h-full rounded-lg bg-white/5 border border-white/10 p-2 flex items-center justify-center">

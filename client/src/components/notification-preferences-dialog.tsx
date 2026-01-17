@@ -5,7 +5,7 @@ import { Switch } from "@/components/ui/switch";
 import { Bell } from "lucide-react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Service, NotificationPreference } from "@shared/schema";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useAuth } from "@/hooks/use-auth";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -30,9 +30,13 @@ export function NotificationPreferencesDialog({ children }: NotificationPreferen
   const { data: preferences = [] } = useQuery<NotificationPreference[]>({
     queryKey: ["/api/notification-preferences"],
     gcTime: 0,
-    onSuccess: (prefs: NotificationPreference[]) => {
+  });
+
+  // Handle preferences data changes
+  useEffect(() => {
+    if (preferences.length > 0) {
       const newState: Record<number, { email: string; enabled: boolean }> = {};
-      prefs.forEach(pref => {
+      preferences.forEach(pref => {
         newState[pref.serviceId] = {
           email: pref.email,
           enabled: pref.enabled
@@ -40,7 +44,7 @@ export function NotificationPreferencesDialog({ children }: NotificationPreferen
       });
       setNotifications(newState);
     }
-  });
+  }, [preferences]);
 
   const updatePreferenceMutation = useMutation({
     mutationFn: async (data: { serviceId: number; email: string; enabled: boolean }) => {
@@ -154,9 +158,6 @@ export function NotificationPreferencesDialog({ children }: NotificationPreferen
         <EmailTemplateDialog
           open={showTemplates}
           onOpenChange={setShowTemplates}
-          onTestEmail={(templateId: number, email: string) =>
-            testNotificationMutation.mutate({ templateId, email })
-          }
         />
       )}
     </Dialog>

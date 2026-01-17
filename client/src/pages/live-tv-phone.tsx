@@ -28,6 +28,12 @@ interface EPGProgram {
   description?: string;
 }
 
+interface FavoriteChannel {
+  channelId: string;
+  channelName: string;
+  channelLogo?: string | null;
+}
+
 /**
  * Phone-optimized Live TV interface
  * Features:
@@ -72,12 +78,12 @@ export default function LiveTVPhone() {
   });
 
   // Fetch favorite channels
-  const { data: favoriteChannels = [] } = useQuery({
+  const { data: favoriteChannels = [] } = useQuery<FavoriteChannel[]>({
     queryKey: ["/api/favorite-channels"],
   });
 
   const isFavorite = (channelId: string) =>
-    favoriteChannels?.some((fav: any) => fav.channelId === channelId);
+    favoriteChannels?.some((fav) => fav.channelId === channelId);
 
   const toggleFavoriteMutation = useMutation({
     mutationFn: async ({ channelId, channelName, isFav }: any) => {

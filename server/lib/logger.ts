@@ -184,6 +184,7 @@ export const loggers = {
   subscription: createLogger('Subscription'),
   service: createLogger('Service'),
   storage: createLogger('Storage'),
+  serviceChecker: createLogger('ServiceChecker'),
 } as const;
 
 /**

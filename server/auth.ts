@@ -1,6 +1,7 @@
 import admin from 'firebase-admin';
 import passport from "passport";
 import { Strategy as LocalStrategy } from "passport-local";
+// @ts-ignore - no type declarations available
 import { Strategy as GoogleStrategy } from "passport-google-oauth20";
 import { Express, Request, Response, NextFunction } from "express";
 import session from "express-session";
@@ -57,10 +58,11 @@ async function checkRateLimit(req: Request, res: Response, next: NextFunction) {
   }
 
   try {
-    const attempts = await storage.getLoginAttemptsInWindow(identifier, ip, type, RATE_LIMIT.WINDOW_MS);
+    const clientIp = getClientIp(req);
+    const attempts = await storage.getLoginAttemptsInWindow(identifier, clientIp, type, RATE_LIMIT.WINDOW_MS);
 
     if (attempts >= RATE_LIMIT.MAX_ATTEMPTS) {
-      const oldestAttempt = await storage.getOldestLoginAttempt(identifier, ip, type);
+      const oldestAttempt = await storage.getOldestLoginAttempt(identifier, clientIp, type);
       if (!oldestAttempt) {
         return res.sendStatus(429);
       }
@@ -72,7 +74,7 @@ async function checkRateLimit(req: Request, res: Response, next: NextFunction) {
         return res.sendStatus(429);
       }
 
-      await storage.clearLoginAttempts(identifier, ip, type);
+      await storage.clearLoginAttempts(identifier, clientIp, type);
     }
 
     next();
@@ -100,9 +102,9 @@ export function isApproved(req: Request, res: Response, next: NextFunction) {
   next();
 }
 
-function canModifyUser(requestingUser: any, targetUserId: number) {
+async function canModifyUser(requestingUser: any, targetUserId: number) {
   if (requestingUser.role === 'superadmin') {
-    const targetUser = storage.getUser(targetUserId);
+    const targetUser = await storage.getUser(targetUserId);
     if (targetUser && targetUser.role === 'superadmin' && requestingUser.id !== targetUserId) {
       return false;
     }
@@ -110,7 +112,7 @@ function canModifyUser(requestingUser: any, targetUserId: number) {
   }
 
   if (requestingUser.role === 'admin') {
-    const targetUser = storage.getUser(targetUserId);
+    const targetUser = await storage.getUser(targetUserId);
     if (targetUser && targetUser.role === 'superadmin') return false;
     return true;
   }
@@ -118,7 +120,7 @@ function canModifyUser(requestingUser: any, targetUserId: number) {
   return requestingUser.id === targetUserId;
 }
 
-async function getClientIp(req: Request) {
+function getClientIp(req: Request): string {
   const forwardedFor = req.headers['x-forwarded-for'];
   if (forwardedFor) {
     const ip = Array.isArray(forwardedFor)
@@ -143,7 +145,7 @@ async function getClientIp(req: Request) {
   }
 
   loggers.auth.debug('Using direct IP', { ip: req.ip });
-  return req.ip;
+  return req.ip || '0.0.0.0';
 }
 
 
@@ -242,7 +244,7 @@ export function setupAuth(app: Express) {
           clientSecret: process.env.GOOGLE_CLIENT_SECRET || '',
           callbackURL: `${process.env.APP_URL || process.env.BASE_URL}/api/auth/google/callback`,
         },
-        async (accessToken, refreshToken, profile, done) => {
+        async (accessToken: string, refreshToken: string, profile: any, done: (error: any, user?: any) => void) => {
           try {
             const email = profile.emails?.[0]?.value;
             if (!email) {
@@ -322,7 +324,7 @@ export function setupAuth(app: Express) {
   app.post("/api/login", checkRateLimit, async (req, res, next) => {
     try {
       const identifier = req.body.username;
-      const clientIp = await getClientIp(req);
+      const clientIp = getClientIp(req);
       const type = 'login';
 
       loggers.auth.info("Login attempt", { ip: clientIp, username: identifier });
@@ -338,11 +340,11 @@ export function setupAuth(app: Express) {
               ip: ipInfo.ip || clientIp,
               type: 'failed',
               timestamp: new Date(),
-              isp: ipInfo.isp || null,
-              city: ipInfo.city || null,
-              region: ipInfo.region || null,
-              country: ipInfo.country || null,
-              user_agent: req.headers['user-agent'] || null
+              isp: ipInfo.isp ?? null,
+              city: ipInfo.city ?? null,
+              region: ipInfo.region ?? null,
+              country: ipInfo.country ?? null,
+              user_agent: req.headers['user-agent'] ?? null
             });
           } catch (error) {
             loggers.auth.error('Failed to record login attempt with geolocation', { error });
@@ -351,7 +353,7 @@ export function setupAuth(app: Express) {
               ip: clientIp,
               type: 'failed',
               timestamp: new Date(),
-              user_agent: req.headers['user-agent'] || null
+              user_agent: req.headers['user-agent'] ?? null
             });
           }
 
@@ -370,16 +372,16 @@ export function setupAuth(app: Express) {
               ip: ipInfo.ip || clientIp,
               type: 'success',
               timestamp: now,
-              isp: ipInfo.isp || null,
-              city: ipInfo.city || null,
-              region: ipInfo.region || null,
-              country: ipInfo.country || null,
-              user_agent: req.headers['user-agent'] || null
+              isp: ipInfo.isp ?? null,
+              city: ipInfo.city ?? null,
+              region: ipInfo.region ?? null,
+              country: ipInfo.country ?? null,
+              user_agent: req.headers['user-agent'] ?? null
             });
 
             await storage.updateUser({
               id: user.id,
-              last_ip: ipInfo.ip || clientIp,
+              last_ip: ipInfo.ip ?? clientIp,
               last_login: now
             });
 
@@ -430,7 +432,7 @@ export function setupAuth(app: Express) {
     try {
       await storage.addLoginAttempt({
         identifier,
-        ip: req.ip,
+        ip: getClientIp(req),
         type: 'reset',
         timestamp: new Date()
       });
@@ -563,13 +565,13 @@ export function setupAuth(app: Express) {
   app.patch("/api/users/:id", isSuperAdmin, async (req, res) => {
     const targetUserId = parseInt(req.params.id);
 
-    if (!canModifyUser(req.user, targetUserId)) {
+    if (!await canModifyUser(req.user, targetUserId)) {
       return res.status(403).json({
         message: "Regular admins cannot modify superadmin users"
       });
     }
 
-    if (req.body.role === 'superadmin' && req.user.role !== 'superadmin') {
+    if (req.body.role === 'superadmin' && req.user!.role !== 'superadmin') {
       return res.status(403).json({
         message: "Only superadmins can grant superadmin privileges"
       });
@@ -799,7 +801,7 @@ export function setupAuth(app: Express) {
         return res.status(400).json({ message: "No token provided" });
       }
 
-      const clientIp = await getClientIp(req);
+      const clientIp = getClientIp(req);
       loggers.auth.debug('Attempting to verify token');
 
       let decodedToken: any;
@@ -820,6 +822,9 @@ export function setupAuth(app: Express) {
           });
 
           const payload = ticket.getPayload();
+          if (!payload) {
+            throw new Error('No payload in token');
+          }
           decodedToken = {
             email: payload.email,
             name: payload.name,
@@ -844,13 +849,13 @@ export function setupAuth(app: Express) {
           const ipInfo = await getIpInfo(clientIp);
           await storage.addLoginAttempt({
             identifier: 'Unknown Google User',
-            ip: ipInfo.ip || clientIp,
+            ip: ipInfo.ip ?? clientIp,
             type: 'failed',
             timestamp: new Date(),
-            isp: ipInfo.isp || null,
-            city: ipInfo.city || null,
-            region: ipInfo.region || null,
-            country: ipInfo.country || null
+            isp: ipInfo.isp ?? null,
+            city: ipInfo.city ?? null,
+            region: ipInfo.region ?? null,
+            country: ipInfo.country ?? null
           });
         } catch (error) {
           loggers.auth.error('Failed to record failed login attempt', { error });
@@ -885,29 +890,29 @@ export function setupAuth(app: Express) {
         try {
           const ipInfo = await getIpInfo(clientIp);
           const now = new Date();
-          
+
           // Record failed login attempt with email identifier
           await storage.addLoginAttempt({
             identifier: decodedToken.email,
-            ip: ipInfo.ip || clientIp,
+            ip: ipInfo.ip ?? clientIp,
             type: 'failed',
             timestamp: now,
-            isp: ipInfo.isp || null,
-            city: ipInfo.city || null,
-            region: ipInfo.region || null,
-            country: ipInfo.country || null
+            isp: ipInfo.isp ?? null,
+            city: ipInfo.city ?? null,
+            region: ipInfo.region ?? null,
+            country: ipInfo.country ?? null
           });
-          
+
           // Also record failed login attempt with username identifier
           await storage.addLoginAttempt({
             identifier: user.username,
-            ip: ipInfo.ip || clientIp,
+            ip: ipInfo.ip ?? clientIp,
             type: 'failed',
             timestamp: now,
-            isp: ipInfo.isp || null,
-            city: ipInfo.city || null,
-            region: ipInfo.region || null,
-            country: ipInfo.country || null
+            isp: ipInfo.isp ?? null,
+            city: ipInfo.city ?? null,
+            region: ipInfo.region ?? null,
+            country: ipInfo.country ?? null
           });
         } catch (error) {
           loggers.auth.error('Failed to record failed login attempt', { error });
@@ -938,32 +943,32 @@ export function setupAuth(app: Express) {
           // Record login attempt with email identifier
           await storage.addLoginAttempt({
             identifier: decodedToken.email,
-            ip: ipInfo.ip || clientIp,
+            ip: ipInfo.ip ?? clientIp,
             type: 'success',
             timestamp: now,
-            isp: ipInfo.isp || null,
-            city: ipInfo.city || null,
-            region: ipInfo.region || null,
-            country: ipInfo.country || null,
-            user_agent: req.headers['user-agent'] || null
+            isp: ipInfo.isp ?? null,
+            city: ipInfo.city ?? null,
+            region: ipInfo.region ?? null,
+            country: ipInfo.country ?? null,
+            user_agent: req.headers['user-agent'] ?? null
           });
 
           // ALSO record login attempt with username for complete tracking
           await storage.addLoginAttempt({
             identifier: user.username,
-            ip: ipInfo.ip || clientIp,
+            ip: ipInfo.ip ?? clientIp,
             type: 'success',
             timestamp: now,
-            isp: ipInfo.isp || null,
-            city: ipInfo.city || null,
-            region: ipInfo.region || null,
-            country: ipInfo.country || null,
-            user_agent: req.headers['user-agent'] || null
+            isp: ipInfo.isp ?? null,
+            city: ipInfo.city ?? null,
+            region: ipInfo.region ?? null,
+            country: ipInfo.country ?? null,
+            user_agent: req.headers['user-agent'] ?? null
           });
 
           await storage.updateUser({
             id: user.id,
-            last_ip: ipInfo.ip || clientIp,
+            last_ip: ipInfo.ip ?? clientIp,
             last_login: now // Add last_login update for Google auth
           });
 
@@ -978,17 +983,17 @@ export function setupAuth(app: Express) {
       loggers.auth.error('Google auth error', { error });
 
       try {
-        const clientIp = await getClientIp(req);
+        const clientIp = getClientIp(req);
         const ipInfo = await getIpInfo(clientIp);
         await storage.addLoginAttempt({
           identifier: 'Unknown Google User',
-          ip: ipInfo.ip || clientIp,
+          ip: ipInfo.ip ?? clientIp,
           type: 'failed',
           timestamp: new Date(),
-          isp: ipInfo.isp || null,
-          city: ipInfo.city || null,
-          region: ipInfo.region || null,
-          country: ipInfo.country || null
+          isp: ipInfo.isp ?? null,
+          city: ipInfo.city ?? null,
+          region: ipInfo.region ?? null,
+          country: ipInfo.country ?? null
         });
       } catch (recordError) {
         loggers.auth.error('Failed to record failed login attempt', { error: recordError });

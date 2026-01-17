@@ -262,20 +262,18 @@ export class DatabaseStorage implements IStorage {
 
         // On ORM failure, try direct SQL
         try {
-          // Create a prepared statement to update just the icon
-          const sqlQuery = `
+          loggers.storage.debug('Executing direct SQL', { icon: server.icon, id: server.id });
+          const now = new Date();
+          const result = await pool`
             UPDATE "gameServers"
-            SET "icon" = $1, "lastStatusCheck" = $2
-            WHERE "id" = $3
+            SET "icon" = ${server.icon}, "lastStatusCheck" = ${now}
+            WHERE "id" = ${server.id}
             RETURNING *
           `;
 
-          loggers.storage.debug('Executing direct SQL', { icon: server.icon, id: server.id });
-          const result = await pool.query(sqlQuery, [server.icon, new Date(), server.id]);
-
-          if (result.rows && result.rows.length > 0) {
-            loggers.storage.debug('Direct SQL icon update succeeded', { server: result.rows[0] });
-            return result.rows[0] as GameServer;
+          if (result && result.length > 0) {
+            loggers.storage.debug('Direct SQL icon update succeeded', { server: result[0] });
+            return result[0] as GameServer;
           } else {
             loggers.storage.error('Direct SQL returned no rows');
             throw new Error('No rows returned from direct SQL update');

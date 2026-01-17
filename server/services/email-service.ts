@@ -216,6 +216,22 @@ export class EmailService implements IService {
    */
   private async sendWithSendgrid(params: EmailParams): Promise<boolean> {
     try {
+      const content: Array<{ type: string; value: string }> = [];
+
+      if (params.text) {
+        content.push({
+          type: 'text/plain',
+          value: params.text
+        });
+      }
+
+      if (params.html) {
+        content.push({
+          type: 'text/html',
+          value: params.html
+        });
+      }
+
       const data = {
         personalizations: [
           {
@@ -227,22 +243,8 @@ export class EmailService implements IService {
           email: this.fromEmail,
           name: this.fromName
         },
-        content: []
+        content
       };
-
-      if (params.text) {
-        data.content.push({
-          type: 'text/plain',
-          value: params.text
-        });
-      }
-
-      if (params.html) {
-        data.content.push({
-          type: 'text/html',
-          value: params.html
-        });
-      }
 
       const response = await axios.post('https://api.sendgrid.com/v3/mail/send', data, {
         headers: {
@@ -263,9 +265,9 @@ export class EmailService implements IService {
    * Compile a template with data
    */
   compileTemplate(template: string, data: Record<string, any>): string {
-    return template.replace(/\{\{([^}]+)\}\}/g, (match, key) => {
+    return template.replace(/\{\{([^}]+)\}\}/g, (match, key: string) => {
       const keys = key.trim().split('.');
-      let value = data;
+      let value: any = data;
       
       for (const k of keys) {
         value = value && value[k];

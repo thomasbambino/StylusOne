@@ -67,16 +67,12 @@ export async function apiRequest(
     // Use Capacitor HTTP for native apps to bypass CORS
     if (isNativePlatform()) {
       loggers.queryClient.debug('Using CapacitorHttp for native request');
-      const options = {
+      const options: Parameters<typeof CapacitorHttp.request>[0] = {
         url: fullUrl,
-        method: method as any,
+        method: method,
         headers: data ? { "Content-Type": "application/json" } : {},
         data: data,
-        // Disable logging sensitive data
-        disableRedirects: false,
-        // Explicitly enable cookie handling
-        shouldEncodeUrlParams: true,
-        responseType: 'json',
+        responseType: 'json' as const,
       };
 
       const response: HttpResponse = await CapacitorHttp.request(options);

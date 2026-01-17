@@ -33,9 +33,7 @@ export function PaymentMethodForm({ onSuccess, submitButtonText = 'Save Payment 
         title: 'Success',
         description: 'Payment method updated successfully',
       });
-      if (onSuccess) {
-        onSuccess();
-      }
+      // Note: Don't call onSuccess here - it's handled in handleSubmit
     },
     onError: (error: Error) => {
       toast({
@@ -74,8 +72,16 @@ export function PaymentMethodForm({ onSuccess, submitButtonText = 'Save Payment 
       if (paymentMethod) {
         // If onSuccess accepts a parameter, call it with payment method ID (for new subscriptions)
         // Otherwise, call the update endpoint (for updating existing payment methods)
-        if (onSuccess && onSuccess.length > 0) {
-          onSuccess(paymentMethod.id);
+        if (onSuccess) {
+          // Check if callback expects an argument by examining function length
+          const callbackWithArg = onSuccess as (paymentMethodId: string) => void;
+          const callbackWithoutArg = onSuccess as () => void;
+          if (onSuccess.length > 0) {
+            callbackWithArg(paymentMethod.id);
+          } else {
+            await updatePaymentMethodMutation.mutateAsync(paymentMethod.id);
+            callbackWithoutArg();
+          }
         } else {
           await updatePaymentMethodMutation.mutateAsync(paymentMethod.id);
         }

@@ -30,12 +30,23 @@ import {
 } from "lucide-react";
 import { motion } from "framer-motion";
 
-interface Book {
+export interface Book {
   id: number;
+  filename: string;
+  file_path: string;
   title: string;
   author?: string;
-  page_count?: number;
+  description?: string;
+  publisher?: string;
+  publication_date?: string;
+  isbn?: string;
+  language?: string;
+  cover_path?: string;
   file_size: number;
+  page_count?: number;
+  uploaded_by: number;
+  uploaded_at: string;
+  updated_at: string;
 }
 
 interface BookCardProps {

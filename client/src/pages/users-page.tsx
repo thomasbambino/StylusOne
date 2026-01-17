@@ -340,7 +340,9 @@ export default function UsersPage() {
                           <div className="flex items-center gap-2">
                             <span>{u.username}</span>
                             {u.role === 'superadmin' && (
-                              <Shield className="h-4 w-4 text-blue-500" title="Superadmin" />
+                              <span title="Superadmin">
+                                <Shield className="h-4 w-4 text-blue-500" />
+                              </span>
                             )}
                           </div>
                           <div className="text-xs text-muted-foreground">ID: {u.id}</div>

@@ -75,7 +75,7 @@ router.get('/plans', requireAuth, async (req, res) => {
  */
 router.post('/checkout', requireAuth, async (req, res) => {
   try {
-    const userId = req.user.id;
+    const userId = req.user!.id;
     const validatedData = createCheckoutSchema.parse(req.body);
 
     // Get the plan details
@@ -121,7 +121,7 @@ router.post('/checkout', requireAuth, async (req, res) => {
  */
 router.get('/current', requireAuth, async (req, res) => {
   try {
-    const userId = req.user.id;
+    const userId = req.user!.id;
 
     const subscription = await db
       .select({
@@ -163,7 +163,7 @@ router.get('/current', requireAuth, async (req, res) => {
  */
 router.get('/packages', requireAuth, async (req, res) => {
   try {
-    const userId = req.user.id;
+    const userId = req.user!.id;
 
     // Get user's current subscription
     const [subscription] = await db
@@ -219,7 +219,7 @@ router.get('/packages', requireAuth, async (req, res) => {
  */
 router.get('/packages/:packageId/channels', requireAuth, async (req, res) => {
   try {
-    const userId = req.user.id;
+    const userId = req.user!.id;
     const packageId = parseInt(req.params.packageId);
 
     if (isNaN(packageId)) {
@@ -316,7 +316,7 @@ router.get('/packages/:packageId/channels', requireAuth, async (req, res) => {
  */
 router.post('/create', requireAuth, async (req, res) => {
   try {
-    const userId = req.user.id;
+    const userId = req.user!.id;
     const validatedData = createSubscriptionSchema.parse(req.body);
 
     // Check if user already has an active subscription
@@ -381,7 +381,7 @@ router.post('/create', requireAuth, async (req, res) => {
  */
 router.post('/upgrade', requireAuth, async (req, res) => {
   try {
-    const userId = req.user.id;
+    const userId = req.user!.id;
     const validatedData = updateSubscriptionSchema.parse(req.body);
 
     await stripeService.updateSubscriptionPlan({
@@ -408,7 +408,7 @@ router.post('/upgrade', requireAuth, async (req, res) => {
  */
 router.post('/cancel', requireAuth, async (req, res) => {
   try {
-    const userId = req.user.id;
+    const userId = req.user!.id;
     const { immediately } = req.body;
 
     await stripeService.cancelSubscription(userId, immediately === true);
@@ -428,7 +428,7 @@ router.post('/cancel', requireAuth, async (req, res) => {
  */
 router.post('/reactivate', requireAuth, async (req, res) => {
   try {
-    const userId = req.user.id;
+    const userId = req.user!.id;
 
     await stripeService.reactivateSubscription(userId);
 
@@ -447,7 +447,7 @@ router.post('/reactivate', requireAuth, async (req, res) => {
  */
 router.post('/payment-method', requireAuth, async (req, res) => {
   try {
-    const userId = req.user.id;
+    const userId = req.user!.id;
     const validatedData = updatePaymentMethodSchema.parse(req.body);
 
     await stripeService.updatePaymentMethod(userId, validatedData.payment_method_id);
@@ -470,7 +470,7 @@ router.post('/payment-method', requireAuth, async (req, res) => {
  */
 router.get('/payment-methods', requireAuth, async (req, res) => {
   try {
-    const userId = req.user.id;
+    const userId = req.user!.id;
 
     const methods = await db
       .select()
@@ -491,7 +491,7 @@ router.get('/payment-methods', requireAuth, async (req, res) => {
  */
 router.get('/invoices', requireAuth, async (req, res) => {
   try {
-    const userId = req.user.id;
+    const userId = req.user!.id;
 
     const userInvoices = await db
       .select()
@@ -512,7 +512,7 @@ router.get('/invoices', requireAuth, async (req, res) => {
  */
 router.get('/invoices/:id/download', requireAuth, async (req, res) => {
   try {
-    const userId = req.user.id;
+    const userId = req.user!.id;
     const invoiceId = parseInt(req.params.id);
 
     if (isNaN(invoiceId)) {
@@ -550,7 +550,7 @@ router.get('/invoices/:id/download', requireAuth, async (req, res) => {
  */
 router.get('/has-feature/:feature', requireAuth, async (req, res) => {
   try {
-    const userId = req.user.id;
+    const userId = req.user!.id;
     const feature = req.params.feature;
 
     // Get user's active subscription with plan features
@@ -588,7 +588,7 @@ router.get('/has-feature/:feature', requireAuth, async (req, res) => {
 router.get('/admin/users', requireAuth, async (req, res) => {
   try {
     // Check if user is admin or superadmin
-    if (req.user.role !== 'admin' && req.user.role !== 'superadmin') {
+    if (req.user!.role !== 'admin' && req.user!.role !== 'superadmin') {
       return res.status(403).json({ error: 'Admin access required' });
     }
 
@@ -642,7 +642,7 @@ router.get('/admin/users', requireAuth, async (req, res) => {
 router.post('/admin/assign', requireAuth, async (req, res) => {
   try {
     // Check if user is admin or superadmin
-    if (req.user.role !== 'admin' && req.user.role !== 'superadmin') {
+    if (req.user!.role !== 'admin' && req.user!.role !== 'superadmin') {
       return res.status(403).json({ error: 'Admin access required' });
     }
 
@@ -749,7 +749,7 @@ router.post('/admin/assign', requireAuth, async (req, res) => {
 router.get('/admin/plans', requireAuth, async (req, res) => {
   try {
     // Check if user is admin or superadmin
-    if (req.user.role !== 'admin' && req.user.role !== 'superadmin') {
+    if (req.user!.role !== 'admin' && req.user!.role !== 'superadmin') {
       return res.status(403).json({ error: 'Admin access required' });
     }
 
@@ -772,7 +772,7 @@ router.get('/admin/plans', requireAuth, async (req, res) => {
 router.patch('/admin/plans/:planId/toggle', requireAuth, async (req, res) => {
   try {
     // Check if user is admin or superadmin
-    if (req.user.role !== 'admin' && req.user.role !== 'superadmin') {
+    if (req.user!.role !== 'admin' && req.user!.role !== 'superadmin') {
       return res.status(403).json({ error: 'Admin access required' });
     }
 
@@ -820,7 +820,7 @@ router.patch('/admin/plans/:planId/toggle', requireAuth, async (req, res) => {
 router.delete('/admin/remove/:userId', requireAuth, async (req, res) => {
   try {
     // Check if user is admin or superadmin
-    if (req.user.role !== 'admin' && req.user.role !== 'superadmin') {
+    if (req.user!.role !== 'admin' && req.user!.role !== 'superadmin') {
       return res.status(403).json({ error: 'Admin access required' });
     }
 

@@ -494,7 +494,7 @@ export class XtreamCodesManager implements IService {
 
       // Load all providers for efficiency
       const providers = await db.select().from(iptvProviders);
-      const providerMap = new Map(providers.map(p => [p.id, decrypt(p.serverUrl)]));
+      const providerMap = new Map(providers.filter(p => p.serverUrl !== null).map(p => [p.id, decrypt(p.serverUrl!)]));
 
       for (const cred of credentials) {
         try {
@@ -567,7 +567,7 @@ export class XtreamCodesManager implements IService {
       if (cred.providerId) {
         const { iptvProviders } = await import('@shared/schema');
         const [provider] = await db.select().from(iptvProviders).where(eq(iptvProviders.id, cred.providerId));
-        if (provider) {
+        if (provider && provider.serverUrl) {
           providerServerUrl = decrypt(provider.serverUrl);
         }
       }

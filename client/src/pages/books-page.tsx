@@ -1,7 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useState, useEffect } from "react";
 import { Card, CardContent } from "@/components/ui/card";
-import { BookCard } from "@/components/book-card";
+import { BookCard, Book } from "@/components/book-card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -53,25 +53,6 @@ import {
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { cn } from "@/lib/utils";
-
-interface Book {
-  id: number;
-  filename: string;
-  file_path: string;
-  title: string;
-  author?: string;
-  description?: string;
-  publisher?: string;
-  publication_date?: string;
-  isbn?: string;
-  language?: string;
-  cover_path?: string;
-  file_size: number;
-  page_count?: number;
-  uploaded_by: number;
-  uploaded_at: string;
-  updated_at: string;
-}
 
 export default function BooksPage() {
   const { toast } = useToast();

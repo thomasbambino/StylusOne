@@ -166,7 +166,7 @@ export class HDHomeRunService implements IService {
           
           // Parse the HD HomeRun status response - it returns an array of all tuners
           const allTuners = response.data;
-          const tunerData = allTuners.find(t => t.Resource === `tuner${i}`) || { Resource: `tuner${i}` };
+          const tunerData = allTuners.find((t: { Resource?: string }) => t.Resource === `tuner${i}`) || { Resource: `tuner${i}` };
           
           tuners.push({
             Resource: `tuner${i}`,

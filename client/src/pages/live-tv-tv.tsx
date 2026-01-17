@@ -1167,7 +1167,7 @@ export default function LiveTVTvPage() {
   const getProgramTimeRemaining = useCallback((program: EPGProgram | null | undefined): string => {
     if (!program || !program.endTime) return '';
     const now = Date.now();
-    const end = program.endTime instanceof Date ? program.endTime.getTime() : new Date(program.endTime).getTime();
+    const end = new Date(program.endTime).getTime();
     if (isNaN(end)) return '';
     const remaining = Math.max(0, end - now);
     const minutes = Math.floor(remaining / 60000);
@@ -1499,13 +1499,18 @@ export default function LiveTVTvPage() {
   });
 
   // Fetch all package channels for guide filtering
+  interface PackageChannelResult {
+    packageId: number;
+    packageName: string;
+    channels: PackageChannel[];
+  }
   const allPackageChannelsQueries = useQueries({
     queries: userPackages.map(pkg => ({
-      queryKey: [`/api/subscriptions/packages/${pkg.packageId}/channels`],
-      queryFn: getQueryFn({ on401: "returnNull" }),
+      queryKey: [`/api/subscriptions/packages/${pkg.packageId}/channels`] as const,
+      queryFn: getQueryFn({ on401: "returnNull" }) as () => Promise<PackageChannel[]>,
       enabled: viewMode === 'guide' && !!pkg.packageId,
       staleTime: 10 * 60 * 1000, // Cache for 10 minutes
-      select: (data: PackageChannel[] | null) => ({
+      select: (data: PackageChannel[] | null): PackageChannelResult => ({
         packageId: pkg.packageId,
         packageName: pkg.packageName,
         channels: data || []
@@ -1516,7 +1521,7 @@ export default function LiveTVTvPage() {
   // Build a map of channel name -> package IDs for filtering
   const channelToPackages = useMemo(() => {
     const map = new Map<string, Set<number>>();
-    allPackageChannelsQueries.forEach(query => {
+    allPackageChannelsQueries.forEach((query: { data?: PackageChannelResult }) => {
       if (query.data) {
         const { packageId, channels } = query.data;
         channels.forEach((ch: PackageChannel) => {
@@ -1860,7 +1865,7 @@ export default function LiveTVTvPage() {
     // Include sports package channels (for Home view NFL/NBA/MLB sections)
     if (viewMode === 'home') {
       [...nflChannels, ...nbaChannels, ...mlbChannels].forEach((pkgChannel) => {
-        const channel = channels.find((ch: Channel) => ch.GuideName === pkgChannel.name || ch.name === pkgChannel.name);
+        const channel = channels.find((ch: Channel) => ch.GuideName === pkgChannel.name);
         if (channel?.epgId) idsSet.add(channel.epgId);
       });
 
@@ -2556,22 +2561,20 @@ export default function LiveTVTvPage() {
       const networkLower = network.toLowerCase().replace(/[^a-z0-9]/g, '');
 
       // Try to find a matching channel by name
-      const channel = channels.find(c => {
+      const channel = channels.find((c: Channel) => {
         const guideName = (c.GuideName || '').toLowerCase().replace(/[^a-z0-9]/g, '');
-        const name = (c.name || '').toLowerCase().replace(/[^a-z0-9]/g, '');
 
         // Check various network patterns
         return guideName.includes(networkLower) ||
-               name.includes(networkLower) ||
                networkLower.includes(guideName) ||
                // Handle common abbreviations
-               (networkLower === 'espn' && (guideName.includes('espn') || name.includes('espn'))) ||
-               (networkLower === 'fox' && (guideName.includes('fox') || name.includes('fox'))) ||
-               (networkLower === 'tnt' && (guideName.includes('tnt') || name.includes('tnt'))) ||
-               (networkLower === 'tbs' && (guideName.includes('tbs') || name.includes('tbs'))) ||
-               (networkLower === 'nbc' && (guideName.includes('nbc') || name.includes('nbc'))) ||
-               (networkLower === 'cbs' && (guideName.includes('cbs') || name.includes('cbs'))) ||
-               (networkLower === 'abc' && (guideName.includes('abc') || name.includes('abc')));
+               (networkLower === 'espn' && guideName.includes('espn')) ||
+               (networkLower === 'fox' && guideName.includes('fox')) ||
+               (networkLower === 'tnt' && guideName.includes('tnt')) ||
+               (networkLower === 'tbs' && guideName.includes('tbs')) ||
+               (networkLower === 'nbc' && guideName.includes('nbc')) ||
+               (networkLower === 'cbs' && guideName.includes('cbs')) ||
+               (networkLower === 'abc' && guideName.includes('abc'));
       });
 
       if (channel) {
@@ -2621,7 +2624,7 @@ export default function LiveTVTvPage() {
       });
       loggers.tv.info('Set reminder result', { success });
       if (success) {
-        haptics.notification('success');
+        haptics.success();
         toast({
           title: 'Reminder Set',
           description: `You'll be notified before "${program.title}" starts`,
@@ -2629,7 +2632,7 @@ export default function LiveTVTvPage() {
         // Close the modal after setting reminder
         setGuideInfoModal(null);
       } else {
-        haptics.notification('error');
+        haptics.error();
         toast({
           title: 'Could not set reminder',
           description: 'Check notification permissions in Settings',
@@ -2638,7 +2641,7 @@ export default function LiveTVTvPage() {
       }
     } catch (error) {
       loggers.tv.error('Error setting reminder', { error });
-      haptics.notification('error');
+      haptics.error();
       toast({
         title: 'Error',
         description: 'Failed to set reminder',
@@ -2653,7 +2656,7 @@ export default function LiveTVTvPage() {
     loggers.tv.info('Cancelling reminder', { channelId });
     try {
       await cancelReminder(channelId, programStart);
-      haptics.notification('warning');
+      haptics.warning();
       toast({
         title: 'Reminder Cancelled',
         description: 'You will no longer be notified',
@@ -2777,7 +2780,7 @@ export default function LiveTVTvPage() {
 
     // In landscape mode with video playing (player/guide only), or in portrait player mode, tap toggles overlay
     // Don't toggle overlay on home/profile pages - those are locked to portrait on phones
-    const shouldToggleOverlay = isTap && (viewMode === 'player' || (!isPortrait && selectedChannel && (viewMode === 'player' || viewMode === 'guide')));
+    const shouldToggleOverlay = isTap && (viewMode === 'player' || (!isPortrait && selectedChannel && viewMode === 'guide'));
     if (shouldToggleOverlay) {
       // Tap to toggle overlay visibility
       if (showOverlay) {
@@ -3480,8 +3483,8 @@ export default function LiveTVTvPage() {
           {/* Action Buttons - Favorites & AirPlay */}
           <div className="flex items-center justify-center gap-4 pb-4">
             <button
-              onTouchEnd={(e) => { e.preventDefault(); e.stopPropagation(); haptics.light(); toggleFavorite(selectedChannel!); }}
-              onClick={(e) => { e.preventDefault(); e.stopPropagation(); haptics.light(); toggleFavorite(selectedChannel!); }}
+              onTouchEnd={(e) => { e.preventDefault(); e.stopPropagation(); haptics.light(); toggleFavorite(); }}
+              onClick={(e) => { e.preventDefault(); e.stopPropagation(); haptics.light(); toggleFavorite(); }}
               disabled={!selectedChannel}
               className="flex items-center gap-2 px-4 py-2 bg-white/10 rounded-full active:scale-95 active:bg-white/20 disabled:opacity-50"
             >
@@ -3737,8 +3740,8 @@ export default function LiveTVTvPage() {
             {/* Action Buttons - Favorites & AirPlay */}
             <div className="flex items-center justify-center gap-4">
               <button
-                onTouchEnd={(e) => { e.preventDefault(); e.stopPropagation(); haptics.light(); toggleFavorite(selectedChannel!); }}
-                onClick={(e) => { e.preventDefault(); e.stopPropagation(); haptics.light(); toggleFavorite(selectedChannel!); }}
+                onTouchEnd={(e) => { e.preventDefault(); e.stopPropagation(); haptics.light(); toggleFavorite(); }}
+                onClick={(e) => { e.preventDefault(); e.stopPropagation(); haptics.light(); toggleFavorite(); }}
                 disabled={!selectedChannel}
                 className="flex items-center gap-2 px-4 py-2 bg-white/10 rounded-full active:scale-95 active:bg-white/20 disabled:opacity-50"
               >
@@ -4661,7 +4664,7 @@ export default function LiveTVTvPage() {
             {/* Featured - First Favorite (Large Card) */}
             {favorites && favorites.length > 0 && (() => {
               const fav = favorites[0];
-              const channel = channels.find(c => c.iptvId === fav.channelId);
+              const channel = channels.find((c: Channel) => c.iptvId === fav.channelId);
               if (!channel) return null;
               const channelEpg = epgDataMap.get(channel.iptvId || '');
               const thumbnail = channelEpg?.currentProgram?.thumbnail;
@@ -4748,7 +4751,7 @@ export default function LiveTVTvPage() {
                 <h2 className="px-5 text-xl font-semibold text-white/90 mb-4">Favorites</h2>
                 <div className="flex gap-4 overflow-x-auto overflow-y-hidden px-5 scrollbar-hide">
                   {favorites.slice(1).map((fav) => {
-                    const channel = channels.find(c => c.iptvId === fav.channelId);
+                    const channel = channels.find((c: Channel) => c.iptvId === fav.channelId);
                     if (!channel) return null;
                     const channelEpg = epgDataMap.get(channel.iptvId || '');
                     const thumbnail = channelEpg?.currentProgram?.thumbnail;
@@ -4849,7 +4852,7 @@ export default function LiveTVTvPage() {
                 <div className="flex gap-4 overflow-x-auto overflow-y-hidden px-5 scrollbar-hide">
                   <AnimatePresence mode="popLayout">
                     {trendingChannels.map((trending) => {
-                      const channel = channels.find(c => c.iptvId === trending.channelId);
+                      const channel = channels.find((c: Channel) => c.iptvId === trending.channelId);
                       if (!channel) return null;
                       const channelEpg = epgDataMap.get(channel.iptvId || '');
                       const thumbnail = channelEpg?.currentProgram?.thumbnail;
@@ -4966,7 +4969,7 @@ export default function LiveTVTvPage() {
                 </div>
                 <div className="flex gap-4 overflow-x-auto overflow-y-hidden px-5 scrollbar-hide">
                   {nflChannels.map((pkgChannel) => {
-                    const channel = channels.find(c => c.GuideName === pkgChannel.name || c.name === pkgChannel.name);
+                    const channel = channels.find((c: Channel) => c.GuideName === pkgChannel.name);
                     if (!channel) return null;
                     const channelEpg = epgDataMap.get(channel.iptvId || '');
                     const thumbnail = channelEpg?.currentProgram?.thumbnail;
@@ -5055,7 +5058,7 @@ export default function LiveTVTvPage() {
                 </div>
                 <div className="flex gap-3 overflow-x-auto overflow-y-hidden px-5 scrollbar-hide">
                   {nbaChannels.map((pkgChannel) => {
-                    const channel = channels.find(c => c.GuideName === pkgChannel.name || c.name === pkgChannel.name);
+                    const channel = channels.find((c: Channel) => c.GuideName === pkgChannel.name);
                     if (!channel) return null;
                     const channelEpg = epgDataMap.get(channel.iptvId || '');
                     const channelLogo = pkgChannel.logo || channel.logo;
@@ -5131,7 +5134,7 @@ export default function LiveTVTvPage() {
                 </div>
                 <div className="flex gap-4 overflow-x-auto overflow-y-hidden px-5 scrollbar-hide">
                   {mlbChannels.map((pkgChannel) => {
-                    const channel = channels.find(c => c.GuideName === pkgChannel.name || c.name === pkgChannel.name);
+                    const channel = channels.find((c: Channel) => c.GuideName === pkgChannel.name);
                     if (!channel) return null;
                     const channelEpg = epgDataMap.get(channel.iptvId || '');
                     const thumbnail = channelEpg?.currentProgram?.thumbnail;
@@ -5900,12 +5903,12 @@ export default function LiveTVTvPage() {
                       for (const pkgChannel of sportChannels) {
                         const channelName = pkgChannel.name.toLowerCase();
                         if (channelName.includes(networkLower) || networkLower.includes(channelName.replace(/\s+/g, ''))) {
-                          const channel = channels.find(c => c.GuideName === pkgChannel.name || c.name === pkgChannel.name);
+                          const channel = channels.find((c: Channel) => c.GuideName === pkgChannel.name);
                           if (channel) return { channel, networkName: network };
                         }
                       }
                       // Check all channels for network match
-                      const channel = channels.find(c => {
+                      const channel = channels.find((c: Channel) => {
                         const name = c.GuideName.toLowerCase();
                         return name.includes(networkLower) || name === networkLower;
                       });

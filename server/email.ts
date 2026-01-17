@@ -23,9 +23,9 @@ if (MAILGUN_CONFIGURED) {
   loggers.mailgun.warn('Mailgun not configured - email functionality will be disabled');
 }
 
-interface EmailParams {
+export interface EmailParams {
   to: string;
-  subject: string;
+  subject?: string;
   text?: string;
   html?: string;
   templateId?: number;

@@ -408,36 +408,33 @@ const handleUpload = async (req: express.Request, res: express.Response, type: '
             
             try {
               // Use direct SQL with a transaction for the Musashi server
-              await pool.query('BEGIN');
-              
+              await pool`BEGIN`;
+
               try {
-                // Use direct SQL update with a prepared statement
-                const updateSql = `
-                  UPDATE "gameServers" 
-                  SET "icon" = $1 
-                  WHERE "instanceId" = $2
+                // Use direct SQL update with postgres-js template syntax
+                await pool`
+                  UPDATE "gameServers"
+                  SET "icon" = ${iconUrl}
+                  WHERE "instanceId" = ${instanceId}
                 `;
-                
-                await pool.query(updateSql, [iconUrl, instanceId]);
                 loggers.game.debug('Special handling: Direct SQL update completed for Musashi server');
-                
+
                 // Now fetch the updated record using a separate query
-                const selectSql = `SELECT * FROM "gameServers" WHERE "instanceId" = $1`;
-                const { rows } = await pool.query(selectSql, [instanceId]);
-                
+                const rows = await pool`SELECT * FROM "gameServers" WHERE "instanceId" = ${instanceId}`;
+
                 if (rows && rows.length > 0) {
                   server = rows[0];
                   loggers.game.debug('Special handling: Musashi server data retrieved', { server });
                 } else {
                   throw new Error('Unable to retrieve updated Musashi server data');
                 }
-                
+
                 // Commit the transaction
-                await pool.query('COMMIT');
+                await pool`COMMIT`;
                 loggers.game.debug('Special handling: Transaction committed successfully');
               } catch (transactionError) {
                 // Rollback on error
-                await pool.query('ROLLBACK');
+                await pool`ROLLBACK`;
                 loggers.game.error('Special handling: Transaction error, rolling back', { error: transactionError });
                 throw transactionError;
               }
@@ -470,11 +467,8 @@ const handleUpload = async (req: express.Request, res: express.Response, type: '
               // Last resort: Try a super basic direct SQL update, ignore the returning value
               try {
                 loggers.game.debug('Last resort: Using super basic direct SQL update');
-                await pool.query(
-                  'UPDATE "gameServers" SET "icon" = $1 WHERE "id" = $2',
-                  [iconUrl, server.id]
-                );
-                
+                await pool`UPDATE "gameServers" SET "icon" = ${iconUrl} WHERE "id" = ${server.id}`;
+
                 // Just manually update the icon in our local object
                 server.icon = iconUrl;
                 loggers.game.debug('Last resort: Basic update completed', { iconUrl });
@@ -724,13 +718,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
 
         // Get game type from AMP instance - try multiple approaches
-        let gameType = 'Unknown';
-        
+        let gameType: string | null = 'Unknown';
+
         // Function to detect game type from any string
-        const detectGameType = (text: string): string | null => {
+        const detectGameType = (text?: string): string | null => {
           if (!text) return null;
           const lowerText = text.toLowerCase();
-          
+
           if (lowerText.includes('minecraft')) return 'Minecraft';
           if (lowerText.includes('satisfactory')) return 'Satisfactory';
           if (lowerText.includes('valheim')) return 'Valheim';
@@ -741,16 +735,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
           if (lowerText.includes('enshrouded')) return 'Enshrouded';
           if (lowerText.includes('ark')) return 'ARK: Survival Evolved';
           if (lowerText.includes('conan')) return 'Conan Exiles';
-          
+
           return null;
         };
-        
+
         // First try: ApplicationName (most reliable for actual game type)
-        gameType = detectGameType(instance.ApplicationName);
-        
-        // Second try: FriendlyName 
+        gameType = detectGameType(instance.ApplicationName ?? undefined);
+
+        // Second try: FriendlyName
         if (!gameType || gameType === 'Unknown') {
-          gameType = detectGameType(instance.FriendlyName);
+          gameType = detectGameType(instance.FriendlyName ?? undefined);
         }
         
         // Third try: Module property (but avoid generic ones)
@@ -993,7 +987,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/game-servers/:instanceId/console", requireFeature('game_servers_access'), gameServerRateLimiter, validateInstanceId, validateConsoleCommand, handleValidationErrors, async (req, res) => {
+  app.post("/api/game-servers/:instanceId/console", requireFeature('game_servers_access'), gameServerRateLimiter, validateInstanceId, validateConsoleCommand, handleValidationErrors, async (req: express.Request, res: express.Response) => {
     if (!req.isAuthenticated()) return res.sendStatus(401);
     try {
       const { instanceId } = req.params;
@@ -1324,15 +1318,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
     if (!req.isAuthenticated()) return res.sendStatus(401);
     try {
       const currentUser = req.user as User;
-      const users = await storage.listUsers();
+      const users = await storage.getAllUsers();
       // Filter out the current user and only return necessary fields
       const filteredUsers = users
-        .filter(user => user.id !== currentUser.id)
-        .map(({ id, username, isOnline, lastSeen }) => ({
-          id,
-          username,
-          isOnline,
-          lastSeen
+        .filter((user: User) => user.id !== currentUser.id)
+        .map((user: User) => ({
+          id: user.id,
+          username: user.username
         }));
       res.json(filteredUsers);
     } catch (error) {
@@ -1516,9 +1508,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       res.json(response);
     } catch (error) {
-      loggers.amp.error('Error fetching metrics for instance', { instanceId, error });
+      loggers.amp.error('Error fetching metrics for instance', { instanceId: req.params.instanceId, error });
       res.status(500).json({
-        message: "Failed to fetchinstance metrics",
+        message: "Failed to fetch instance metrics",
         error: error instanceof Error ? error.message : "Unknown error"
       });
     }
@@ -1569,8 +1561,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         },
         metrics: {
           raw: metrics,
-          playerCount: parseInt(metrics.Users[0]) || 0,
-          maxPlayers: parseInt(metrics.Users[1]) || 0
+          playerCount: metrics.activePlayers || 0,
+          maxPlayers: metrics.maxPlayers || 0
         },
         userList: {
           raw: userList,
@@ -1808,8 +1800,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
     
     try {
       const { tautulliService } = await import('./services/tautulli-service');
-      const timeRange = req.query.time_range as string || '30';
-      
+      const timeRange = parseInt(req.query.time_range as string) || 30;
+
       const [usersResponse, homeStatsResponse] = await Promise.allSettled([
         tautulliService.getUsers(),
         tautulliService.getHomeStats('top_users', timeRange)
@@ -1918,7 +1910,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     
     try {
       const { tautulliService } = await import('./services/tautulli-service');
-      const timeRange = (req.query.time_range as string) || '30';
+      const timeRange = parseInt(req.query.time_range as string) || 30;
       const playsByDate = await tautulliService.getPlaysByDate(timeRange);
       res.json(playsByDate.response.data);
     } catch (error) {
@@ -2914,6 +2906,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
     usedBackup: boolean;
     backupStreamId?: string;
     backupProviderId?: number;
+    isSynthetic?: boolean;
+    tsUrl?: string;
   }
 
   // Global map to track streams in "test failover mode"
@@ -3329,7 +3323,7 @@ live.ts
           .limit(1);
 
         let freshStreamUrl: string;
-        let freshResponse: Response;
+        let freshResponse: import('node-fetch').Response;
 
         if (m3uChannel.length > 0 && m3uChannel[0].directStreamUrl) {
           // M3U channel - use direct URL (convert .ts to .m3u8 for HLS)
@@ -3792,7 +3786,7 @@ live.ts
     // Check for token-based authentication (for Chromecast) or session authentication
     const { token } = req.query;
     const { streamId } = req.params;
-    const segmentPath = req.params[0];
+    const segmentPath = (req.params as Record<string, string>)[0];
 
     loggers.iptv.trace('Segment request', { streamId, segmentPath: segmentPath?.substring(0, 30), hasToken: !!token });
 
@@ -3811,7 +3805,7 @@ live.ts
     }
 
     try {
-      const fullPath = req.params[0]; // Get the wildcard path
+      const fullPath = (req.params as Record<string, string>)[0]; // Get the wildcard path
       const { xtreamCodesService } = await import('./services/xtream-codes-service');
 
       if (!xtreamCodesService.isConfigured()) {
@@ -3829,25 +3823,25 @@ live.ts
       let segmentUrl: string;
       const urlParam = req.query.url as string | undefined;
 
+      // For relative paths, we need the base URL from the cache
+      const iptvSegmentBaseUrls = (global as any).iptvSegmentBaseUrls || new Map();
+      // Check if the original path was absolute (started with /) or relative
+      const wasAbsolutePath = fullPath.startsWith('/') || fullPath.startsWith('hls/');
+      const segmentPath = fullPath.replace(/^\/+/, '');
+
+      // Try both string and number keys since JavaScript Map uses strict equality
+      let baseUrl = iptvSegmentBaseUrls.get(streamId) || iptvSegmentBaseUrls.get(parseInt(streamId)) || iptvSegmentBaseUrls.get(streamId.toString());
+
       if (urlParam) {
         // Absolute URL passed as query parameter - decode and use directly
         segmentUrl = decodeURIComponent(urlParam);
         loggers.iptv.trace('Using absolute URL from query param', { segmentUrl });
       } else {
-        // For relative paths, we need the base URL from the cache
-        const iptvSegmentBaseUrls = (global as any).iptvSegmentBaseUrls || new Map();
-
-        // Try both string and number keys since JavaScript Map uses strict equality
-        let baseUrl = iptvSegmentBaseUrls.get(streamId) || iptvSegmentBaseUrls.get(parseInt(streamId)) || iptvSegmentBaseUrls.get(streamId.toString());
-
         if (!baseUrl) {
           loggers.iptv.error('No base URL found for stream', { streamId, streamIdType: typeof streamId, cacheSize: iptvSegmentBaseUrls.size });
           return res.status(404).send('Stream not found or expired. Please reload the channel.');
         }
 
-        // Check if the original path was absolute (started with /) or relative
-        const wasAbsolutePath = fullPath.startsWith('/') || fullPath.startsWith('hls/');
-        const segmentPath = fullPath.replace(/^\/+/, '');
         loggers.iptv.trace('Fetching segment for stream', { streamId, segmentPath, wasAbsolutePath });
 
         // Build the full segment URL
@@ -3890,7 +3884,7 @@ live.ts
           const timeoutId = setTimeout(() => controller.abort(), timeout);
 
           response = await fetch(currentSegmentUrl, {
-            signal: controller.signal,
+            signal: controller.signal as any,
             headers: {
               'Connection': 'keep-alive'
             }
@@ -4132,14 +4126,14 @@ live.ts
     try {
       const { channelNumber } = req.body;
       const userId = req.user?.id;
-      const userType = req.user?.role || 'standard'; // Assume role field exists
-      
+      const userType = (req.user?.role || 'standard') as 'admin' | 'premium' | 'standard';
+
       if (!channelNumber || !userId) {
         return res.status(400).json({ error: "Missing required parameters" });
       }
 
       const { tunerManager } = await import('./services/tuner-manager-service');
-      const session = await tunerManager.requestStream(userId, channelNumber, userType);
+      const session = await tunerManager.requestStream(String(userId), channelNumber, userType);
       
       res.json({ success: true, session });
     } catch (error) {
@@ -4207,10 +4201,10 @@ live.ts
         return res.json({ success: true });
       }
       
-      if (session.userId !== userId) {
+      if (session.userId !== String(userId)) {
         return res.status(403).json({ error: "Not authorized to release this session" });
       }
-      
+
       const success = tunerManager.releaseSession(sessionId);
       res.json({ success });
     } catch (error) {
@@ -4250,7 +4244,7 @@ live.ts
       }
 
       const { tunerManager } = await import('./services/tuner-manager-service');
-      const sessions = tunerManager.getUserSessions(userId);
+      const sessions = tunerManager.getUserSessions(String(userId));
       
       res.json({ sessions });
     } catch (error) {
@@ -4280,10 +4274,10 @@ live.ts
         return res.status(404).json({ error: "Session not found" });
       }
       
-      if (session.userId !== userId) {
+      if (session.userId !== String(userId)) {
         return res.status(403).json({ error: "Not authorized to view this session" });
       }
-      
+
       res.json({ session });
     } catch (error) {
       loggers.iptv.error('Error getting session', { error });
@@ -4324,8 +4318,8 @@ live.ts
         let isAuthorized = req.isAuthenticated();
 
         if (!isAuthorized && token) {
-          const tokenData = iptvStreamTokens.get(token);
-          if (tokenData && tokenData.expiresAt > Date.now()) {
+          const tokenData = streamTokens.get(token);
+          if (tokenData && tokenData.expiresAt > new Date()) {
             isAuthorized = true;
           }
         }
@@ -4340,7 +4334,7 @@ live.ts
         headers: {
           'User-Agent': 'Mozilla/5.0 (compatible; IPTV/1.0)',
         },
-        signal: AbortSignal.timeout(10000), // 10 second timeout
+        signal: AbortSignal.timeout(10000) as any, // 10 second timeout
       });
 
       if (!response.ok) {
@@ -4624,9 +4618,9 @@ live.ts
     // Note: Plex server status check removed - using Tautulli for all Plex monitoring
     
     // Sort alerts by severity and timestamp
-    const severityOrder = { 'CRITICAL': 0, 'ERROR': 1, 'WARNING': 2, 'INFO': 3 };
+    const severityOrder: Record<string, number> = { 'CRITICAL': 0, 'ERROR': 1, 'WARNING': 2, 'INFO': 3 };
     alerts.sort((a, b) => {
-      const severityDiff = (severityOrder[a.level] || 4) - (severityOrder[b.level] || 4);
+      const severityDiff = (severityOrder[a.level] ?? 4) - (severityOrder[b.level] ?? 4);
       if (severityDiff !== 0) return severityDiff;
       return new Date(b.last_occurrence).getTime() - new Date(a.last_occurrence).getTime();
     });
@@ -4963,10 +4957,10 @@ live.ts
         const url = `https://site.api.espn.com/apis/site/v2/sports/${config.sport}/${config.league}/scoreboard?dates=${dateStr}`;
         const response = await fetch(url, {
           headers: { 'User-Agent': 'Mozilla/5.0' },
-          signal: AbortSignal.timeout(5000)
+          signal: AbortSignal.timeout(5000) as any
         });
         if (response.ok) {
-          const data = await response.json();
+          const data = await response.json() as any;
           const events = data.events || [];
 
           for (const event of events) {
@@ -5179,10 +5173,10 @@ live.ts
         const url = `https://site.api.espn.com/apis/site/v2/sports/${config.sport}/${config.league}/scoreboard?dates=${dateStr}`;
         const response = await fetch(url, {
           headers: { 'User-Agent': 'Mozilla/5.0' },
-          signal: AbortSignal.timeout(5000)
+          signal: AbortSignal.timeout(5000) as any
         });
         if (response.ok) {
-          const data = await response.json();
+          const data = await response.json() as any;
           games.push(...(data.events || []));
         }
       } catch {

@@ -8,6 +8,81 @@ import { getQueryFn } from "@/lib/queryClient";
 import { buildApiUrl } from "@/lib/capacitor";
 import { AuthenticatedImage } from "@/components/authenticated-image";
 
+// Type definitions for Tautulli API responses
+interface TautulliSession {
+  user: string;
+  player: string;
+  quality?: string;
+  state: 'playing' | 'paused' | 'buffering';
+  title: string;
+  grandparent_title?: string;
+  parent_title?: string;
+  media_type: 'movie' | 'episode' | 'track';
+  thumb?: string;
+  parent_thumb?: string;
+  grandparent_thumb?: string;
+  art?: string;
+  parent_art?: string;
+  grandparent_art?: string;
+  view_offset: number;
+  duration: number;
+  rating_key: string;
+  grandparent_rating_key?: string;
+}
+
+interface TautulliActivity {
+  stream_count?: number;
+  sessions?: TautulliSession[];
+}
+
+interface TautulliLibrary {
+  section_id: string;
+  section_name: string;
+  section_type: 'movie' | 'show' | 'artist' | 'photo';
+  count: number;
+}
+
+interface TautulliRecentlyAddedItem {
+  rating_key: string;
+  title: string;
+  grandparent_title?: string;
+  parent_title?: string;
+  media_type: 'movie' | 'episode';
+  thumb?: string;
+  parent_thumb?: string;
+  grandparent_thumb?: string;
+  added_at: number;
+  grandparent_rating_key?: string;
+}
+
+interface TautulliRecentlyAdded {
+  recently_added?: TautulliRecentlyAddedItem[];
+}
+
+interface TautulliHistoryItem {
+  rating_key: string;
+  title: string;
+  grandparent_title?: string;
+  parent_title?: string;
+  media_type: 'movie' | 'episode';
+  thumb?: string;
+  parent_thumb?: string;
+  grandparent_thumb?: string;
+  user: string;
+  stopped: number;
+  grandparent_rating_key?: string;
+}
+
+interface TautulliHistory {
+  data?: TautulliHistoryItem[];
+}
+
+interface TautulliServerInfo {
+  data?: {
+    pms_identifier?: string;
+  };
+}
+
 export default function PlexPage() {
   const { data: settings } = useQuery<Settings>({
     queryKey: ["/api/settings"],
@@ -15,34 +90,34 @@ export default function PlexPage() {
   });
 
   // Fetch current activity (active streams)
-  const { data: activity } = useQuery({
+  const { data: activity } = useQuery<TautulliActivity | null>({
     queryKey: ['/api/tautulli/activity'],
     queryFn: getQueryFn({ on401: "returnNull" }),
     refetchInterval: 30000,
   });
 
   // Fetch libraries for stats
-  const { data: libraries } = useQuery({
+  const { data: libraries } = useQuery<TautulliLibrary[] | null>({
     queryKey: ['/api/tautulli/libraries'],
     queryFn: getQueryFn({ on401: "returnNull" }),
   });
 
   // Fetch recently added content
-  const { data: recentlyAdded } = useQuery({
+  const { data: recentlyAdded } = useQuery<TautulliRecentlyAdded | null>({
     queryKey: ['/api/tautulli/recently-added?count=10'],
     queryFn: getQueryFn({ on401: "returnNull" }),
     refetchInterval: 60000,
   });
 
   // Fetch recently watched content (from history)
-  const { data: recentlyWatched } = useQuery({
+  const { data: recentlyWatched } = useQuery<TautulliHistory | null>({
     queryKey: ['/api/tautulli/history?length=10'],
     queryFn: getQueryFn({ on401: "returnNull" }),
     refetchInterval: 60000,
   });
 
   // Fetch server info
-  const { data: serverInfo } = useQuery({
+  const { data: serverInfo } = useQuery<TautulliServerInfo | null>({
     queryKey: ['/api/tautulli/server-info'],
     queryFn: getQueryFn({ on401: "returnNull" }),
     refetchInterval: 60000,
@@ -125,8 +200,8 @@ export default function PlexPage() {
       // Plex cloud format: https://app.plex.tv/desktop/#!/server/{machineId}/details?key=%2Flibrary%2Fmetadata%2F{key}
       plexWebUrl = `https://app.plex.tv/desktop/#!/server/${machineId}/details?key=%2Flibrary%2Fmetadata%2F${targetKey}`;
     } else {
-      // Fallback to local format
-      const plexUrl = settings?.plexUrl || 'http://localhost:32400';
+      // Fallback to local format - use default Plex URL
+      const plexUrl = 'http://localhost:32400';
       plexWebUrl = `${plexUrl}/web/index.html#!/media/${targetKey}`;
     }
     

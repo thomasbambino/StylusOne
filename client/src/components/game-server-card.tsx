@@ -1,4 +1,4 @@
-import { GameServer } from "@shared/schema";
+import { GameServerWithRuntime } from "@/types/game-server";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -14,7 +14,7 @@ interface Settings {
 }
 
 interface GameServerCardProps {
-  server: GameServer;
+  server: GameServerWithRuntime;
 }
 
 export function GameServerCard({ server }: GameServerCardProps) {
@@ -251,12 +251,12 @@ export function GameServerCard({ server }: GameServerCardProps) {
             <div>
               <span className="text-muted-foreground">CPU:</span>
               <br />
-              <span>{server.cpuUsage ?? 0}%</span>
+              <span>{(server as GameServerWithRuntime).cpuUsage ?? 0}%</span>
             </div>
             <div>
               <span className="text-muted-foreground">RAM:</span>
               <br />
-              <span>{mbToGb(server.memoryUsage ?? 0)}/{mbToGb(server.maxMemory ?? 0)} GB</span>
+              <span>{mbToGb((server as GameServerWithRuntime).memoryUsage ?? 0)}/{mbToGb((server as GameServerWithRuntime).maxMemory ?? 0)} GB</span>
             </div>
           </div>
 
@@ -267,7 +267,7 @@ export function GameServerCard({ server }: GameServerCardProps) {
                 variant="ghost"
                 size="sm"
                 onClick={() => startMutation.mutate()}
-                disabled={startMutation.isPending || server.status}
+                disabled={startMutation.isPending || !!server.status}
               >
                 <PlayCircle className="h-4 w-4" />
               </Button>
@@ -290,14 +290,14 @@ export function GameServerCard({ server }: GameServerCardProps) {
             </div>
 
             {/* Server Address */}
-            {server.port && (
+            {(server as GameServerWithRuntime).port && (
               <Button
                 variant="ghost"
                 size="sm"
                 className="text-xs"
-                onClick={() => copyServerAddress(server.port)}
+                onClick={() => copyServerAddress(String((server as GameServerWithRuntime).port))}
               >
-                <span className="mr-2">game.stylus.services:{server.port}</span>
+                <span className="mr-2">game.stylus.services:{(server as GameServerWithRuntime).port}</span>
                 <Copy className="h-3 w-3" />
               </Button>
             )}

@@ -5,7 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Form, FormControl, FormField, FormItem, FormLabel } from "@/components/ui/form";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Settings, updateSettingsSchema } from "@shared/schema";
+import { Settings, updateSettingsSchema, UpdateSettings } from "@shared/schema";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
@@ -73,26 +73,26 @@ export function SettingsDialog() {
     if (settings && open) {
       form.reset({
         id: settings.id,
-        favicon_url: settings.favicon_url,
-        favicon_label: settings.favicon_label,
-        tracking_code: settings.tracking_code,
+        favicon_url: settings.favicon_url ?? undefined,
+        favicon_label: settings.favicon_label ?? undefined,
+        tracking_code: settings.tracking_code ?? undefined,
         default_role: settings.default_role,
-        site_title: settings.site_title,
-        font_family: settings.font_family,
-        login_description: settings.login_description,
-        online_color: settings.online_color,
-        offline_color: settings.offline_color,
-        discord_url: settings.discord_url,
-        show_refresh_interval: settings.show_refresh_interval,
-        show_last_checked: settings.show_last_checked,
-        show_service_url: settings.show_service_url,
-        show_status_badge: settings.show_status_badge,
-        admin_show_refresh_interval: settings.admin_show_refresh_interval,
-        admin_show_last_checked: settings.admin_show_last_checked,
-        admin_show_service_url: settings.admin_show_service_url,
-        admin_show_status_badge: settings.admin_show_status_badge,
-        logo_url: settings.logo_url,
-        logo_url_large: settings.logo_url_large,
+        site_title: settings.site_title ?? undefined,
+        font_family: settings.font_family ?? undefined,
+        login_description: settings.login_description ?? undefined,
+        online_color: settings.online_color ?? undefined,
+        offline_color: settings.offline_color ?? undefined,
+        discord_url: settings.discord_url ?? undefined,
+        show_refresh_interval: settings.show_refresh_interval ?? undefined,
+        show_last_checked: settings.show_last_checked ?? undefined,
+        show_service_url: settings.show_service_url ?? undefined,
+        show_status_badge: settings.show_status_badge ?? undefined,
+        admin_show_refresh_interval: settings.admin_show_refresh_interval ?? undefined,
+        admin_show_last_checked: settings.admin_show_last_checked ?? undefined,
+        admin_show_service_url: settings.admin_show_service_url ?? undefined,
+        admin_show_status_badge: settings.admin_show_status_badge ?? undefined,
+        logo_url: settings.logo_url ?? undefined,
+        logo_url_large: settings.logo_url_large ?? undefined,
       });
 
       // Set the document title when settings are loaded
@@ -103,43 +103,43 @@ export function SettingsDialog() {
   }, [settings, open, form]);
 
   const updateSettingsMutation = useMutation({
-    mutationFn: async (data: Parameters<typeof updateSettingsSchema.parse>[0]) => {
+    mutationFn: async (formData: UpdateSettings) => {
       // Only send the fields that are relevant to the current tab
-      const relevantData = { id: data.id };
+      const relevantData: Record<string, unknown> = { id: formData.id };
 
       if (currentTab === "general") {
         Object.assign(relevantData, {
-          site_title: data.site_title,
-          default_role: data.default_role,
-          discord_url: data.discord_url,
-          font_family: data.font_family,
-          login_description: data.login_description,
+          site_title: formData.site_title,
+          default_role: formData.default_role,
+          discord_url: formData.discord_url,
+          font_family: formData.font_family,
+          login_description: formData.login_description,
         });
       } else if (currentTab === "branding") {
         Object.assign(relevantData, {
-          logo_url: data.logo_url,
-          logo_url_large: data.logo_url_large,
-          favicon_url: data.favicon_url,
-          favicon_label: data.favicon_label,
-          tracking_code: data.tracking_code,
-          online_color: data.online_color,
-          offline_color: data.offline_color,
+          logo_url: formData.logo_url,
+          logo_url_large: formData.logo_url_large,
+          favicon_url: formData.favicon_url,
+          favicon_label: formData.favicon_label,
+          tracking_code: formData.tracking_code,
+          online_color: formData.online_color,
+          offline_color: formData.offline_color,
         });
 
         // Update the document title immediately after successful mutation
-        if (data.favicon_label) {
-          document.title = data.favicon_label;
+        if (formData.favicon_label) {
+          document.title = formData.favicon_label;
         }
       } else if (currentTab === "visibility") {
         Object.assign(relevantData, {
-          show_refresh_interval: data.show_refresh_interval,
-          show_last_checked: data.show_last_checked,
-          show_service_url: data.show_service_url,
-          show_status_badge: data.show_status_badge,
-          admin_show_refresh_interval: data.admin_show_refresh_interval,
-          admin_show_last_checked: data.admin_show_last_checked,
-          admin_show_service_url: data.admin_show_service_url,
-          admin_show_status_badge: data.admin_show_status_badge,
+          show_refresh_interval: formData.show_refresh_interval,
+          show_last_checked: formData.show_last_checked,
+          show_service_url: formData.show_service_url,
+          show_status_badge: formData.show_status_badge,
+          admin_show_refresh_interval: formData.admin_show_refresh_interval,
+          admin_show_last_checked: formData.admin_show_last_checked,
+          admin_show_service_url: formData.admin_show_service_url,
+          admin_show_status_badge: formData.admin_show_status_badge,
         });
       }
 
@@ -373,8 +373,7 @@ export function SettingsDialog() {
                             value={field.value}
                             onChange={field.onChange}
                             onClear={() => field.onChange("")}
-                            uploadType="favicon"
-                            accept=".ico,.png"
+                            uploadType="site"
                           />
                         </FormControl>
                       </FormItem>
@@ -708,30 +707,6 @@ export function SettingsDialog() {
                   <EmailTemplateDialog
                     open={showEmailTemplates}
                     onOpenChange={setShowEmailTemplates}
-                    onTestEmail={async (templateId: number, email: string) => {
-                      try {
-                        const res = await apiRequest(
-                          "POST",
-                          `/api/email-templates/${templateId}/test`,
-                          { email }
-                        );
-
-                        if (!res.ok) {
-                          throw new Error("Failed to send test email");
-                        }
-
-                        toast({
-                          title: "Test Email Sent",
-                          description: "Check your inbox for the test email.",
-                        });
-                      } catch (error) {
-                        toast({
-                          title: "Failed to Send Test Email",
-                          description: error instanceof Error ? error.message : "An error occurred",
-                          variant: "destructive",
-                        });
-                      }
-                    }}
                   />
                 </div>
 

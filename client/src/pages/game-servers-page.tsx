@@ -12,40 +12,7 @@ import {
   WifiOff
 } from "lucide-react";
 import { motion } from "framer-motion";
-
-interface AMPInstance {
-  InstanceID: string;
-  FriendlyName: string;
-  Running: boolean;
-  Status: string;
-  State?: string;
-  Metrics: {
-    'CPU Usage': {
-      RawValue: number;
-      MaxValue: number;
-    };
-    'Memory Usage': {
-      RawValue: number;
-      MaxValue: number;
-    };
-    'Active Users': {
-      RawValue: number;
-      MaxValue: number;
-    };
-  };
-  ApplicationEndpoints?: Array<{
-    DisplayName: string;
-    Endpoint: string;
-  }>;
-  // Include additional fields that might be present
-  type?: string;
-  Module?: string;
-  ModuleDisplayName?: string;
-  instanceId?: string;
-  hidden?: boolean;
-  show_player_count?: boolean;
-  AppState?: number;
-}
+import { AMPInstance } from "@/types/game-server";
 
 export default function GameServersPage() {
 
@@ -65,7 +32,7 @@ export default function GameServersPage() {
     const isRunning = server.status !== undefined ? server.status : server.Running;
     return !isRunning;
   }) || [];
-  const totalPlayers = runningServers.reduce((sum, server) => 
+  const totalPlayers = runningServers.reduce((sum, server) =>
     sum + (server.Metrics?.['Active Users']?.RawValue || server.playerCount || 0), 0
   );
 
@@ -205,7 +172,7 @@ export default function GameServersPage() {
                   <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
                     {runningServers.map((server) => (
                       <motion.div key={server.InstanceID || server.instanceId} variants={item}>
-                        <GameServerCardModern 
+                        <GameServerCardModern
                           server={{
                             id: 0,
                             instanceId: server.instanceId || server.InstanceID,
@@ -223,9 +190,11 @@ export default function GameServersPage() {
                             autoStart: false,
                             lastStatusCheck: null,
                             refreshInterval: 30,
-                            // Add extra properties as any to avoid type errors
-                            ...server as any
-                          }} 
+                            // Runtime properties
+                            version: server.Version,
+                            ip: server.IP,
+                            port: server.Port,
+                          }}
                         />
                       </motion.div>
                     ))}
@@ -255,7 +224,7 @@ export default function GameServersPage() {
                   <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
                     {offlineServers.map((server) => (
                       <motion.div key={server.InstanceID || server.instanceId} variants={item}>
-                        <GameServerCardModern 
+                        <GameServerCardModern
                           server={{
                             id: 0,
                             instanceId: server.instanceId || server.InstanceID,
@@ -273,9 +242,11 @@ export default function GameServersPage() {
                             autoStart: false,
                             lastStatusCheck: null,
                             refreshInterval: 30,
-                            // Add extra properties as any to avoid type errors
-                            ...server as any
-                          }} 
+                            // Runtime properties
+                            version: server.Version,
+                            ip: server.IP,
+                            port: server.Port,
+                          }}
                         />
                       </motion.div>
                     ))}

@@ -2,6 +2,28 @@ import { useQuery, useQueries, useMutation, useQueryClient } from "@tanstack/rea
 import { useState, useRef, useEffect, useCallback, memo, useMemo } from "react";
 import { Button } from "@/components/ui/button";
 import Hls from "hls.js";
+
+// Extend Window interface for Chrome Cast API
+declare global {
+  interface Window {
+    chrome?: {
+      cast?: {
+        isAvailable?: boolean;
+        CastContext: {
+          getInstance: () => {
+            getCurrentSession: () => any;
+            requestSession: () => Promise<void>;
+          };
+        };
+        media: {
+          MediaInfo: new (url: string, contentType: string) => any;
+          GenericMediaMetadata: new () => any;
+          LoadRequest: new (mediaInfo: any) => any;
+        };
+      };
+    };
+  }
+}
 import { List, Volume2, VolumeX, Menu, Play, Pause, Maximize, Cast } from "lucide-react";
 import { buildApiUrl, isNativePlatform, getDeviceType, getPlatform } from "@/lib/capacitor";
 import { apiRequest, getQueryFn } from "@/lib/queryClient";
@@ -524,13 +546,14 @@ export default function LiveTVSimple() {
     }
 
     // Web Cast API fallback
-    if (!window.chrome || !window.chrome.cast || !window.chrome.cast.isAvailable) {
+    const chromeCast = window.chrome?.cast;
+    if (!chromeCast || !chromeCast.isAvailable) {
       loggers.tv.warn('Cast API not available');
       return;
     }
 
     try {
-      const castContext = window.chrome.cast.CastContext.getInstance();
+      const castContext = chromeCast.CastContext.getInstance();
       const castSession = castContext.getCurrentSession();
 
       if (castSession) {
@@ -546,14 +569,14 @@ export default function LiveTVSimple() {
           if (selectedChannel) {
             const session = castContext.getCurrentSession();
             if (session) {
-              const mediaInfo = new window.chrome.cast.media.MediaInfo(
+              const mediaInfo = new chromeCast.media.MediaInfo(
                 buildApiUrl(selectedChannel.URL),
                 'application/x-mpegURL'
               );
-              mediaInfo.metadata = new window.chrome.cast.media.GenericMediaMetadata();
+              mediaInfo.metadata = new chromeCast.media.GenericMediaMetadata();
               mediaInfo.metadata.title = selectedChannel.GuideName;
 
-              const request = new window.chrome.cast.media.LoadRequest(mediaInfo);
+              const request = new chromeCast.media.LoadRequest(mediaInfo);
               session.loadMedia(request).then(
                 () => loggers.tv.info('Media loaded on Cast device'),
                 (err: any) => loggers.tv.error('Cast media load error', { error: err })

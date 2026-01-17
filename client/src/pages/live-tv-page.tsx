@@ -280,7 +280,7 @@ function ChannelGuideRow({ channel, selectedChannel, onChannelSelect, programs =
 
   const handleToggleFavorite = () => {
     if (onToggleFavorite && channel.source === 'iptv') {
-      onToggleFavorite(channel.id || channel.GuideNumber, channel.GuideName, channelLogo, isFavorite);
+      onToggleFavorite(channel.iptvId || channel.GuideNumber, channel.GuideName, channelLogo, isFavorite);
     }
   };
 
@@ -723,12 +723,12 @@ export default function LiveTVPage() {
   const [castSession, setCastSession] = useState<any>(null);
   const [visibleChannelCount, setVisibleChannelCount] = useState(100); // Start with 100 channels
   const fullscreenContainerRef = useRef<HTMLDivElement>(null);
-  const videoRef = useRef<HTMLVideoElement>(null);
+  const videoRef = useRef<HTMLVideoElement | null>(null);
   const hlsRef = useRef<Hls | null>(null);
   const controlsTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const heartbeatIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const playbackTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  const channelListRef = useRef<HTMLDivElement>(null);
+  const channelListRef = useRef<HTMLDivElement | null>(null);
 
   // IPTV stream tracking (separate from HDHomeRun tuner tracking)
   const iptvSessionToken = useRef<string | null>(null);
@@ -1045,11 +1045,7 @@ export default function LiveTVPage() {
             if (!session && event.sessionState === 'SESSION_ENDED' && selectedChannel) {
               loggers.tv.info('Resuming local playback after cast ended');
               // Reload the channel in the browser
-              if (selectedChannel.source === 'iptv') {
-                handlePlayIPTVChannel(selectedChannel);
-              } else {
-                handlePlayChannel(selectedChannel);
-              }
+              handleChannelSelect(selectedChannel);
             }
 
             // Only load media when session is starting/started, not when ending
@@ -1082,8 +1078,8 @@ export default function LiveTVPage() {
                   metadata.seriesTitle = 'Stylus One';
                   metadata.title = selectedChannel.GuideName;
                   metadata.subtitle = selectedChannelProgram?.title || 'Live TV';
-                  if (selectedChannel.channelLogo) {
-                    metadata.images = [new chromecast.media.Image(selectedChannel.channelLogo)];
+                  if (selectedChannel.logo) {
+                    metadata.images = [new chromecast.media.Image(selectedChannel.logo)];
                   }
                   mediaInfo.metadata = metadata;
 

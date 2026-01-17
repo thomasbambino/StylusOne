@@ -1,4 +1,4 @@
-import { GameServer } from "@shared/schema";
+import { GameServerWithRuntime, GameServerMetrics } from "@/types/game-server";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -41,7 +41,7 @@ import {
 } from "@/components/ui/dialog";
 
 interface GameServerCardModernProps {
-  server: GameServer;
+  server: GameServerWithRuntime;
 }
 
 export function GameServerCardModern({ server }: GameServerCardModernProps) {
@@ -245,15 +245,15 @@ export function GameServerCardModern({ server }: GameServerCardModernProps) {
   const isLoading = startMutation.isPending || stopMutation.isPending || 
                     restartMutation.isPending || killMutation.isPending || isTransitioning;
 
-  // Calculate player percentage
-  const playerPercentage = server.maxPlayers > 0 
-    ? (server.playerCount / server.maxPlayers) * 100 
+  // Calculate player percentage (handle nullable values)
+  const playerPercentage = (server.maxPlayers ?? 0) > 0
+    ? ((server.playerCount ?? 0) / (server.maxPlayers ?? 1)) * 100
     : 0;
 
   // Get status color
   const getStatusColor = () => {
     if (!server.status) return "bg-gray-500";
-    if (server.playerCount > 0) return "bg-green-500";
+    if ((server.playerCount ?? 0) > 0) return "bg-green-500";
     return "bg-blue-500";
   };
 
@@ -361,9 +361,9 @@ export function GameServerCardModern({ server }: GameServerCardModernProps) {
                     <Gamepad2 className="h-4 w-4 mr-1" style={{ display: 'none' }} />
                     {server.type || "Unknown"}
                   </Badge>
-                  {server.version && (
+                  {(server as GameServerWithRuntime).version && (
                     <Badge variant="outline" className="text-xs">
-                      {server.version}
+                      {(server as GameServerWithRuntime).version}
                     </Badge>
                   )}
                 </div>
@@ -416,14 +416,14 @@ export function GameServerCardModern({ server }: GameServerCardModernProps) {
                   <div className="flex items-center gap-2 text-sm">
                     <Globe className="h-3.5 w-3.5 text-muted-foreground" />
                     <code className="font-mono text-xs">
-                      game.stylus.services:{(server as any).port || "25565"}
+                      game.stylus.services:{(server as GameServerWithRuntime).port || "25565"}
                     </code>
                   </div>
                   <Button
                     variant="ghost"
                     size="sm"
                     onClick={() => {
-                      navigator.clipboard.writeText(`game.stylus.services:${(server as any).port || "25565"}`);
+                      navigator.clipboard.writeText(`game.stylus.services:${(server as GameServerWithRuntime).port || "25565"}`);
                     }}
                     className="h-6 text-xs px-2"
                   >
@@ -622,26 +622,26 @@ export function GameServerCardModern({ server }: GameServerCardModernProps) {
               <div>
                 <h3 className="font-semibold mb-2">Connection</h3>
                 <div className="space-y-2 text-sm">
-                  {server.ip && (
+                  {(server as GameServerWithRuntime).ip && (
                     <div>
                       <span className="font-medium">Address:</span>
                       <code className="ml-2 px-2 py-1 bg-muted rounded text-xs">
-                        {server.ip}:{server.port || "25565"}
+                        {(server as GameServerWithRuntime).ip}:{(server as GameServerWithRuntime).port || "25565"}
                       </code>
                     </div>
                   )}
-                  <div><span className="font-medium">Version:</span> {server.version || "Unknown"}</div>
+                  <div><span className="font-medium">Version:</span> {(server as GameServerWithRuntime).version || "Unknown"}</div>
                   <div><span className="font-medium">Players:</span> {server.playerCount || 0} / {server.maxPlayers || 0}</div>
                 </div>
               </div>
             </div>
 
             {/* Players List */}
-            {server.status && server.players && server.players.length > 0 && (
+            {server.status && (server as GameServerWithRuntime).players && ((server as GameServerWithRuntime).players?.length ?? 0) > 0 && (
               <div>
                 <h3 className="font-semibold mb-2">Online Players</h3>
                 <div className="flex flex-wrap gap-2">
-                  {server.players.map((player, i) => (
+                  {((server as GameServerWithRuntime).players || []).map((player: string, i: number) => (
                     <Badge key={i} variant="secondary">{player}</Badge>
                   ))}
                 </div>
@@ -660,9 +660,9 @@ export function GameServerCardModern({ server }: GameServerCardModernProps) {
   );
 }
 
-// Server Metrics Component  
-function ServerMetrics({ serverId, server }: { serverId: string; server: GameServer }) {
-  const { data: metrics, isLoading, error } = useQuery({
+// Server Metrics Component
+function ServerMetrics({ serverId, server }: { serverId: string; server: GameServerWithRuntime }) {
+  const { data: metrics, isLoading, error } = useQuery<GameServerMetrics>({
     queryKey: [`/api/game-servers/${serverId}/metrics`],
     refetchInterval: 30000, // Refresh every 30 seconds
     enabled: !!serverId,
@@ -735,7 +735,7 @@ function ServerMetrics({ serverId, server }: { serverId: string; server: GameSer
             {metrics ? `${(memoryValue / 1024).toFixed(1)} GB` : "N/A"}
           </div>
           {metrics && (
-            <Progress value={(memoryValue / (server.allocatedMemory || 8192)) * 100} className="mt-1 h-1" />
+            <Progress value={(memoryValue / ((server as GameServerWithRuntime).allocatedMemory || 8192)) * 100} className="mt-1 h-1" />
           )}
         </div>
       </div>
@@ -744,8 +744,8 @@ function ServerMetrics({ serverId, server }: { serverId: string; server: GameSer
 }
 
 // Additional Server Info Component
-function AdditionalServerInfo({ serverId, server }: { serverId: string; server: GameServer }) {
-  const { data: metrics, isLoading, error } = useQuery({
+function AdditionalServerInfo({ serverId, server }: { serverId: string; server: GameServerWithRuntime }) {
+  const { data: metrics, isLoading, error } = useQuery<GameServerMetrics>({
     queryKey: [`/api/game-servers/${serverId}/metrics`],
     refetchInterval: 30000,
     enabled: !!serverId,
@@ -837,13 +837,13 @@ function AdditionalServerInfo({ serverId, server }: { serverId: string; server: 
           <div className="flex items-center justify-between p-3 bg-muted/50 rounded">
             <div>
               <div className="font-medium">Game Server</div>
-              <code className="text-xs">game.stylus.services:{(server as any).port || "25565"}</code>
+              <code className="text-xs">game.stylus.services:{(server as GameServerWithRuntime).port || "25565"}</code>
             </div>
             <Button
               variant="ghost"
               size="sm"
               onClick={() => {
-                navigator.clipboard.writeText(`game.stylus.services:${(server as any).port || "25565"}`);
+                navigator.clipboard.writeText(`game.stylus.services:${(server as GameServerWithRuntime).port || "25565"}`);
               }}
               className="h-7 text-xs"
             >
@@ -851,7 +851,7 @@ function AdditionalServerInfo({ serverId, server }: { serverId: string; server: 
             </Button>
           </div>
           <div><span className="font-medium">Instance ID:</span> {server.instanceId}</div>
-          <div><span className="font-medium">Running:</span> 
+          <div><span className="font-medium">Running:</span>
             <Badge className="ml-2" variant={debug.running ? 'default' : 'destructive'}>
               {debug.running ? 'Yes' : 'No'}
             </Badge>

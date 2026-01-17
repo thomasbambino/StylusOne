@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { isNativePlatform } from '@/lib/capacitor';
 import { CapacitorHttp } from '@capacitor/core';
 
-interface AuthenticatedImageProps extends React.ImgHTMLAttributes<HTMLImageElement> {
+interface AuthenticatedImageProps extends Omit<React.ImgHTMLAttributes<HTMLImageElement>, 'src'> {
   src: string | null | undefined;
   alt: string;
 }

@@ -128,7 +128,7 @@ export class EpubService implements IService {
 
       return result;
     } catch (error) {
-      throw new Error(`Failed to parse EPUB: ${error.message}`);
+      throw new Error(`Failed to parse EPUB: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   }
 

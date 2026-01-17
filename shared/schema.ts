@@ -597,3 +597,10 @@ export type ActiveIptvStream = typeof activeIptvStreams.$inferSelect;
 export type InsertViewingHistory = z.infer<typeof insertViewingHistorySchema>;
 export type UpdateViewingHistory = z.infer<typeof updateViewingHistorySchema>;
 export type ViewingHistory = typeof viewingHistory.$inferSelect;
+
+// Additional exported types for notification system
+export type InsertNotificationPreference = z.infer<typeof insertNotificationPreferenceSchema>;
+export type InsertEmailTemplate = z.infer<typeof insertEmailTemplateSchema>;
+export type InsertSentNotification = z.infer<typeof insertSentNotificationSchema>;
+export type UpdateNotificationPreference = z.infer<typeof updateNotificationPreferenceSchema>;
+export type UpdateEmailTemplate = z.infer<typeof updateEmailTemplateSchema>;

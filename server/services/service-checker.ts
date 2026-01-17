@@ -136,38 +136,36 @@ export class ServiceCheckerService implements IService {
    */
   private async updateServiceStatus(service: Service): Promise<void> {
     try {
-      if (service.hidden) {
-        return;
-      }
+      // Services don't have a hidden property, skip check if needed
 
       const now = new Date();
       let shouldUpdate = false;
       let statusChanged = false;
       
       // Only check status if it's time to do so based on refresh interval
-      if (!service.lastChecked || 
-          now.getTime() - (service.lastChecked instanceof Date ? service.lastChecked.getTime() : 0) >= (service.refreshInterval || 30) * 1000) {
-        
+      const lastCheckedTime = service.lastChecked ? new Date(service.lastChecked).getTime() : 0;
+      if (!service.lastChecked ||
+          now.getTime() - lastCheckedTime >= (service.refreshInterval || 30) * 1000) {
+
         const result = await this.checkHttpService(service.url);
-        
+
         // Check if status changed
-        if (service.status !== result.status || service.error !== result.error) {
+        if (service.status !== result.status) {
           statusChanged = true;
         }
-        
+
         // Only update if status changed or it's been more than 5 minutes
-        if (statusChanged || 
-            !service.lastChecked || 
-            now.getTime() - (service.lastChecked instanceof Date ? service.lastChecked.getTime() : 0) >= 5 * 60 * 1000) {
+        if (statusChanged ||
+            !service.lastChecked ||
+            now.getTime() - lastCheckedTime >= 5 * 60 * 1000) {
           shouldUpdate = true;
         }
-        
+
         if (shouldUpdate) {
           await storage.updateService({
             id: service.id,
             status: result.status,
-            lastChecked: now,
-            error: result.error
+            lastChecked: new Date().toISOString()
           });
         }
       }

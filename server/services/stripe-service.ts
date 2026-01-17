@@ -27,7 +27,7 @@ export class StripeService {
     }
 
     this.stripe = new Stripe(secretKey, {
-      apiVersion: '2024-11-20.acacia',
+      apiVersion: '2025-10-29.clover',
       typescript: true,
     });
 
@@ -135,15 +135,22 @@ export class StripeService {
     });
 
     // Save subscription to database
+    // Access period dates from the first subscription item (Stripe API 2025-10-29.clover)
+    const firstItem = subscription.items.data[0];
+    const periodStart = firstItem?.current_period_start ?? subscription.start_date;
+    const periodEnd = firstItem?.current_period_end ?? subscription.start_date;
+    // Map 'paused' status to 'canceled' for database compatibility
+    const dbStatus = subscription.status === 'paused' ? 'canceled' : subscription.status;
+
     await db.insert(userSubscriptions).values({
       user_id: userId,
       plan_id: planId,
       stripe_customer_id: customerId,
       stripe_subscription_id: subscription.id,
-      status: subscription.status,
+      status: dbStatus as 'active' | 'canceled' | 'past_due' | 'trialing' | 'incomplete' | 'incomplete_expired' | 'unpaid',
       billing_period: billingPeriod,
-      current_period_start: new Date(subscription.current_period_start * 1000),
-      current_period_end: new Date(subscription.current_period_end * 1000),
+      current_period_start: new Date(periodStart * 1000),
+      current_period_end: new Date(periodEnd * 1000),
       cancel_at_period_end: subscription.cancel_at_period_end || false,
     });
 
@@ -161,7 +168,8 @@ export class StripeService {
       });
     }
 
-    const latestInvoice = subscription.latest_invoice;
+    // Access payment_intent via type assertion (Stripe API 2025-10-29.clover)
+    const latestInvoice = subscription.latest_invoice as any;
     const clientSecret = typeof latestInvoice === 'object' && latestInvoice?.payment_intent
       ? (typeof latestInvoice.payment_intent === 'object'
           ? latestInvoice.payment_intent.client_secret

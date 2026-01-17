@@ -414,7 +414,7 @@ export class TMDBService {
     const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT);
 
     try {
-      const response = await fetch(url, { signal: controller.signal });
+      const response = await fetch(url, { signal: controller.signal as any });
       clearTimeout(timeoutId);
       if (!response.ok) {
         throw new Error(`TMDB API error: ${response.status}`);

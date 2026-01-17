@@ -10,7 +10,7 @@ const router = Router();
 
 // Initialize Stripe
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
-  apiVersion: '2024-11-20.acacia',
+  apiVersion: '2025-10-29.clover',
 });
 
 const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
@@ -130,16 +130,23 @@ async function handleSubscriptionCreated(subscription: Stripe.Subscription) {
     throw new Error('Subscription missing plan_id in metadata');
   }
 
+  // Access period dates from the first subscription item (Stripe API 2025-10-29.clover)
+  const firstItem = subscription.items.data[0];
+  const periodStart = firstItem?.current_period_start ?? subscription.start_date;
+  const periodEnd = firstItem?.current_period_end ?? subscription.start_date;
+  // Map 'paused' status to 'canceled' for database compatibility
+  const dbStatus = subscription.status === 'paused' ? 'canceled' : subscription.status;
+
   // Create subscription record
   await db.insert(userSubscriptions).values({
     user_id: user.id,
     plan_id: parseInt(planId),
     stripe_customer_id: subscription.customer as string,
     stripe_subscription_id: subscription.id,
-    status: subscription.status as any,
+    status: dbStatus as 'active' | 'canceled' | 'past_due' | 'trialing' | 'incomplete' | 'incomplete_expired' | 'unpaid',
     billing_period: subscription.metadata.billing_period as 'monthly' | 'annual',
-    current_period_start: new Date(subscription.current_period_start * 1000),
-    current_period_end: new Date(subscription.current_period_end * 1000),
+    current_period_start: new Date(periodStart * 1000),
+    current_period_end: new Date(periodEnd * 1000),
     cancel_at_period_end: subscription.cancel_at_period_end,
     created_at: new Date(),
     updated_at: new Date(),
@@ -167,13 +174,20 @@ async function handleSubscriptionUpdated(subscription: Stripe.Subscription) {
     return;
   }
 
+  // Access period dates from the first subscription item (Stripe API 2025-10-29.clover)
+  const firstItem = subscription.items.data[0];
+  const periodStart = firstItem?.current_period_start ?? subscription.start_date;
+  const periodEnd = firstItem?.current_period_end ?? subscription.start_date;
+  // Map 'paused' status to 'canceled' for database compatibility
+  const dbStatus = subscription.status === 'paused' ? 'canceled' : subscription.status;
+
   // Update subscription
   await db
     .update(userSubscriptions)
     .set({
-      status: subscription.status as any,
-      current_period_start: new Date(subscription.current_period_start * 1000),
-      current_period_end: new Date(subscription.current_period_end * 1000),
+      status: dbStatus as 'active' | 'canceled' | 'past_due' | 'trialing' | 'incomplete' | 'incomplete_expired' | 'unpaid',
+      current_period_start: new Date(periodStart * 1000),
+      current_period_end: new Date(periodEnd * 1000),
       cancel_at_period_end: subscription.cancel_at_period_end,
       canceled_at: subscription.canceled_at ? new Date(subscription.canceled_at * 1000) : null,
       updated_at: new Date(),
@@ -207,7 +221,13 @@ async function handleSubscriptionDeleted(subscription: Stripe.Subscription) {
 async function handleInvoicePaid(invoice: Stripe.Invoice) {
   loggers.stripe.info(`Webhook processing invoice.paid: ${invoice.id}`);
 
-  if (!invoice.subscription) {
+  // Access subscription via parent (Stripe API 2025-10-29.clover)
+  const subscriptionId = invoice.parent?.subscription_details?.subscription;
+  const stripeSubscriptionId = typeof subscriptionId === 'string'
+    ? subscriptionId
+    : subscriptionId?.id;
+
+  if (!stripeSubscriptionId) {
     loggers.stripe.debug('Webhook invoice has no subscription, skipping');
     return;
   }
@@ -216,7 +236,7 @@ async function handleInvoicePaid(invoice: Stripe.Invoice) {
   const [subscription] = await db
     .select()
     .from(userSubscriptions)
-    .where(eq(userSubscriptions.stripe_subscription_id, invoice.subscription as string))
+    .where(eq(userSubscriptions.stripe_subscription_id, stripeSubscriptionId))
     .limit(1);
 
   if (!subscription) {
@@ -277,7 +297,13 @@ async function handleInvoicePaid(invoice: Stripe.Invoice) {
 async function handleInvoicePaymentFailed(invoice: Stripe.Invoice) {
   loggers.stripe.info(`Webhook processing invoice.payment_failed: ${invoice.id}`);
 
-  if (!invoice.subscription) {
+  // Access subscription via parent (Stripe API 2025-10-29.clover)
+  const subscriptionId = invoice.parent?.subscription_details?.subscription;
+  const stripeSubscriptionId = typeof subscriptionId === 'string'
+    ? subscriptionId
+    : subscriptionId?.id;
+
+  if (!stripeSubscriptionId) {
     loggers.stripe.debug('Webhook invoice has no subscription, skipping');
     return;
   }
@@ -289,7 +315,7 @@ async function handleInvoicePaymentFailed(invoice: Stripe.Invoice) {
       status: 'past_due',
       updated_at: new Date(),
     })
-    .where(eq(userSubscriptions.stripe_subscription_id, invoice.subscription as string));
+    .where(eq(userSubscriptions.stripe_subscription_id, stripeSubscriptionId));
 
   loggers.stripe.info(`Webhook marked subscription as past_due`);
 }

@@ -121,6 +121,9 @@ export class ProviderHealthService {
     let password: string;
 
     try {
+      if (!provider.serverUrl) {
+        throw new Error('Provider serverUrl is null');
+      }
       serverUrl = decrypt(provider.serverUrl);
       username = decrypt(credential.username);
       password = decrypt(credential.password);
@@ -305,7 +308,7 @@ export class ProviderHealthService {
           ))
           .orderBy(desc(providerHealthLogs.checkedAt))
           .limit(1);
-        lastError = lastLog?.errorMessage || null;
+        lastError = lastLog?.errorMessage ?? null;
       }
 
       return {

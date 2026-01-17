@@ -10,6 +10,9 @@ export interface AMPInstance {
   FriendlyName: string;
   Running: boolean;
   Status: string;
+  State?: number;
+  ActiveUsers?: number;
+  MaxUsers?: number;
   Metrics: {
     'CPU Usage': {
       RawValue: number;
@@ -28,6 +31,16 @@ export interface AMPInstance {
     DisplayName: string;
     Endpoint: string;
   }>;
+  // Additional AMP API properties
+  Module?: string;
+  ModuleDisplayName?: string;
+  InstanceName?: string;
+  IP?: string;
+  Port?: number;
+  Version?: string;
+  Uptime?: number;
+  ConnectionString?: string;
+  ApplicationName?: string;
 }
 
 /**
@@ -133,7 +146,7 @@ export class AMPService implements IService {
       return data.result !== undefined ? data.result : data;
     } catch (error) {
       // Don't log the full error which might contain credentials
-      loggers.amp.error(`Error calling API at ${endpoint}`, { error: error.message || 'Connection failed' });
+      loggers.amp.error(`Error calling API at ${endpoint}`, { error: (error instanceof Error ? error.message : 'Connection failed') });
       throw error;
     }
   }
@@ -158,7 +171,7 @@ export class AMPService implements IService {
 
       loggers.amp.info('Successfully logged in');
     } catch (error) {
-      loggers.amp.error('Failed to login', { error: error.message || 'Authentication failed' });
+      loggers.amp.error('Failed to login', { error: (error instanceof Error ? error.message : 'Authentication failed') });
       throw error;
     }
   }
@@ -194,14 +207,14 @@ export class AMPService implements IService {
         result = await this.callAPI(`ADSModule/StartInstance`, { InstanceName: instanceId });
         loggers.amp.debug(`Start result via ADSModule/StartInstance for ${instanceId}`, { result });
       } catch (adsError) {
-        loggers.amp.debug(`ADSModule/StartInstance failed, trying direct Core/Start: ${adsError.message}`);
+        loggers.amp.debug(`ADSModule/StartInstance failed, trying direct Core/Start: ${adsError instanceof Error ? adsError.message : 'Unknown error'}`);
 
         // Try direct Core API call
         try {
           result = await this.callAPI(`Core/Start`, {});
           loggers.amp.debug(`Start result via Core/Start for ${instanceId}`, { result });
         } catch (coreError) {
-          loggers.amp.debug(`Core/Start failed, trying instance-specific endpoint: ${coreError.message}`);
+          loggers.amp.debug(`Core/Start failed, trying instance-specific endpoint: ${coreError instanceof Error ? coreError.message : 'Unknown error'}`);
 
           // Try the original endpoint format
           result = await this.callAPI(`ADSModule/Servers/${instanceId}/API/Core/Start`, {});
@@ -228,14 +241,14 @@ export class AMPService implements IService {
         result = await this.callAPI(`ADSModule/StopInstance`, { InstanceName: instanceId });
         loggers.amp.debug(`Stop result via ADSModule/StopInstance for ${instanceId}`, { result });
       } catch (adsError) {
-        loggers.amp.debug(`ADSModule/StopInstance failed, trying direct Core/Stop: ${adsError.message}`);
+        loggers.amp.debug(`ADSModule/StopInstance failed, trying direct Core/Stop: ${adsError instanceof Error ? adsError.message : 'Unknown error'}`);
 
         // Try direct Core API call
         try {
           result = await this.callAPI(`Core/Stop`, {});
           loggers.amp.debug(`Stop result via Core/Stop for ${instanceId}`, { result });
         } catch (coreError) {
-          loggers.amp.debug(`Core/Stop failed, trying instance-specific endpoint: ${coreError.message}`);
+          loggers.amp.debug(`Core/Stop failed, trying instance-specific endpoint: ${coreError instanceof Error ? coreError.message : 'Unknown error'}`);
 
           // Try the original endpoint format
           result = await this.callAPI(`ADSModule/Servers/${instanceId}/API/Core/Stop`, {});
@@ -440,6 +453,61 @@ export class AMPService implements IService {
         }
       }
     }
+  }
+
+  /**
+   * Send a console command to an instance
+   */
+  async sendConsoleCommand(instanceId: string, command: string): Promise<void> {
+    await this.callAPI(`ADSModule/Servers/${instanceId}/API/Core/SendConsoleMessage`, { message: command });
+  }
+
+  /**
+   * Update an instance
+   */
+  async updateInstance(instanceId: string): Promise<void> {
+    await this.callAPI(`ADSModule/Servers/${instanceId}/API/Core/UpdateApplication`, {});
+  }
+
+  /**
+   * Take a backup of an instance
+   */
+  async takeBackup(instanceId: string, title: string, description: string): Promise<any> {
+    return await this.callAPI(`ADSModule/Servers/${instanceId}/API/LocalFileBackupPlugin/TakeBackup`, {
+      Title: title,
+      Description: description
+    });
+  }
+
+  /**
+   * Get backups for an instance
+   */
+  async getBackups(instanceId: string): Promise<any[]> {
+    return await this.callAPI(`ADSModule/Servers/${instanceId}/API/LocalFileBackupPlugin/GetBackups`, {});
+  }
+
+  /**
+   * Restore a backup for an instance
+   */
+  async restoreBackup(instanceId: string, backupId: string): Promise<void> {
+    await this.callAPI(`ADSModule/Servers/${instanceId}/API/LocalFileBackupPlugin/RestoreBackup`, {
+      BackupId: backupId
+    });
+  }
+
+  /**
+   * Get console output for an instance
+   */
+  async getConsoleOutput(instanceId: string, since?: number): Promise<string[]> {
+    const result = await this.callAPI(`ADSModule/Servers/${instanceId}/API/Core/GetUpdates`, {});
+    return result?.ConsoleEntries || [];
+  }
+
+  /**
+   * Get scheduled tasks for an instance
+   */
+  async getScheduledTasks(instanceId: string): Promise<any[]> {
+    return await this.callAPI(`ADSModule/Servers/${instanceId}/API/Core/GetScheduleData`, {});
   }
 }
 

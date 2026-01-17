@@ -21,11 +21,11 @@ const uploadEpub = multer({
   },
   fileFilter: (req, file, cb) => {
     // Only accept EPUB files
-    if (file.mimetype === 'application/epub+zip' || 
+    if (file.mimetype === 'application/epub+zip' ||
         file.originalname.toLowerCase().endsWith('.epub')) {
       cb(null, true);
     } else {
-      cb(new Error('Only EPUB files are allowed'), false);
+      cb(null, false);
     }
   },
 });
@@ -42,7 +42,7 @@ const uploadImage = multer({
     if (allowedTypes.includes(file.mimetype)) {
       cb(null, true);
     } else {
-      cb(new Error('Only JPEG, PNG, and WebP images are allowed'), false);
+      cb(null, false);
     }
   },
 });
@@ -171,11 +171,11 @@ router.post('/upload', uploadEpub.single('epub'), async (req, res) => {
 
   } catch (error) {
     loggers.book.error('Error uploading book', { error });
-    
-    if (error.message.includes('EPUB parsing error')) {
+
+    if (error instanceof Error && error.message.includes('EPUB parsing error')) {
       return res.status(400).json({ error: 'Failed to parse EPUB file' });
     }
-    
+
     res.status(500).json({ error: 'Failed to upload book' });
   }
 });
@@ -314,9 +314,8 @@ router.post('/kindle-settings', async (req, res) => {
     // Update user's Kindle email
     const [updatedUser] = await db
       .update(users)
-      .set({ 
-        kindle_email: kindleEmail || null,
-        updated_at: new Date()
+      .set({
+        kindle_email: kindleEmail || null
       })
       .where(eq(users.id, user.id))
       .returning();

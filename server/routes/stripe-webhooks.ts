@@ -138,14 +138,21 @@ async function handleCheckoutSessionCompleted(session: Stripe.Checkout.Session) 
     .where(eq(userSubscriptions.stripe_subscription_id, subscription.id))
     .limit(1);
 
+  // Access period dates from the first subscription item (Stripe API 2025-10-29.clover)
+  const firstItem = subscription.items.data[0];
+  const periodStart = firstItem?.current_period_start ?? subscription.start_date;
+  const periodEnd = firstItem?.current_period_end ?? subscription.start_date;
+  // Map 'paused' status to 'canceled' for database compatibility
+  const dbStatus = subscription.status === 'paused' ? 'canceled' : subscription.status;
+
   if (existingSubscription.length > 0) {
     loggers.stripe.debug('Subscription already exists in database, updating');
     await db
       .update(userSubscriptions)
       .set({
-        status: subscription.status,
-        current_period_start: new Date(subscription.current_period_start * 1000),
-        current_period_end: new Date(subscription.current_period_end * 1000),
+        status: dbStatus as 'active' | 'canceled' | 'past_due' | 'trialing' | 'incomplete' | 'incomplete_expired' | 'unpaid',
+        current_period_start: new Date(periodStart * 1000),
+        current_period_end: new Date(periodEnd * 1000),
         cancel_at_period_end: subscription.cancel_at_period_end || false,
         updated_at: new Date(),
       })
@@ -159,10 +166,10 @@ async function handleCheckoutSessionCompleted(session: Stripe.Checkout.Session) 
     plan_id: planId,
     stripe_customer_id: session.customer as string,
     stripe_subscription_id: subscription.id,
-    status: subscription.status,
+    status: dbStatus as 'active' | 'canceled' | 'past_due' | 'trialing' | 'incomplete' | 'incomplete_expired' | 'unpaid',
     billing_period: billingPeriod,
-    current_period_start: new Date(subscription.current_period_start * 1000),
-    current_period_end: new Date(subscription.current_period_end * 1000),
+    current_period_start: new Date(periodStart * 1000),
+    current_period_end: new Date(periodEnd * 1000),
     cancel_at_period_end: subscription.cancel_at_period_end || false,
   });
 
@@ -205,12 +212,19 @@ async function handleSubscriptionCreated(subscription: Stripe.Subscription) {
     .limit(1);
 
   if (existingSubscription.length > 0) {
+    // Access period dates from the first subscription item (Stripe API 2025-10-29.clover)
+    const firstItem = subscription.items.data[0];
+    const periodStart = firstItem?.current_period_start ?? subscription.start_date;
+    const periodEnd = firstItem?.current_period_end ?? subscription.start_date;
+    // Map 'paused' status to 'canceled' for database compatibility
+    const dbStatus = subscription.status === 'paused' ? 'canceled' : subscription.status;
+
     await db
       .update(userSubscriptions)
       .set({
-        status: subscription.status,
-        current_period_start: new Date(subscription.current_period_start * 1000),
-        current_period_end: new Date(subscription.current_period_end * 1000),
+        status: dbStatus as 'active' | 'canceled' | 'past_due' | 'trialing' | 'incomplete' | 'incomplete_expired' | 'unpaid',
+        current_period_start: new Date(periodStart * 1000),
+        current_period_end: new Date(periodEnd * 1000),
         cancel_at_period_end: subscription.cancel_at_period_end || false,
         updated_at: new Date(),
       })
@@ -235,12 +249,19 @@ async function handleSubscriptionUpdated(subscription: Stripe.Subscription) {
     return;
   }
 
+  // Access period dates from the first subscription item (Stripe API 2025-10-29.clover)
+  const firstItem = subscription.items.data[0];
+  const periodStart = firstItem?.current_period_start ?? subscription.start_date;
+  const periodEnd = firstItem?.current_period_end ?? subscription.start_date;
+  // Map 'paused' status to 'canceled' for database compatibility
+  const dbStatus = subscription.status === 'paused' ? 'canceled' : subscription.status;
+
   await db
     .update(userSubscriptions)
     .set({
-      status: subscription.status,
-      current_period_start: new Date(subscription.current_period_start * 1000),
-      current_period_end: new Date(subscription.current_period_end * 1000),
+      status: dbStatus as 'active' | 'canceled' | 'past_due' | 'trialing' | 'incomplete' | 'incomplete_expired' | 'unpaid',
+      current_period_start: new Date(periodStart * 1000),
+      current_period_end: new Date(periodEnd * 1000),
       cancel_at_period_end: subscription.cancel_at_period_end || false,
       updated_at: new Date(),
     })
@@ -269,7 +290,13 @@ async function handleSubscriptionDeleted(subscription: Stripe.Subscription) {
 async function handleInvoicePaid(invoice: Stripe.Invoice) {
   loggers.stripe.info(`Processing invoice.paid: ${invoice.id}`);
 
-  if (!invoice.subscription) {
+  // Access subscription via parent (Stripe API 2025-10-29.clover)
+  const subscriptionId = invoice.parent?.subscription_details?.subscription;
+  const stripeSubscriptionId = typeof subscriptionId === 'string'
+    ? subscriptionId
+    : subscriptionId?.id;
+
+  if (!stripeSubscriptionId) {
     loggers.stripe.debug('Invoice has no subscription, skipping');
     return;
   }
@@ -278,11 +305,11 @@ async function handleInvoicePaid(invoice: Stripe.Invoice) {
   const subscription = await db
     .select()
     .from(userSubscriptions)
-    .where(eq(userSubscriptions.stripe_subscription_id, invoice.subscription as string))
+    .where(eq(userSubscriptions.stripe_subscription_id, stripeSubscriptionId))
     .limit(1);
 
   if (subscription.length === 0) {
-    loggers.stripe.error(`Subscription not found for invoice: ${invoice.subscription}`);
+    loggers.stripe.error(`Subscription not found for invoice: ${stripeSubscriptionId}`);
     return;
   }
 
@@ -336,14 +363,20 @@ async function handleInvoicePaid(invoice: Stripe.Invoice) {
 async function handleInvoicePaymentFailed(invoice: Stripe.Invoice) {
   loggers.stripe.warn(`Processing invoice.payment_failed: ${invoice.id}`);
 
-  if (!invoice.subscription) {
+  // Access subscription via parent (Stripe API 2025-10-29.clover)
+  const subscriptionId = invoice.parent?.subscription_details?.subscription;
+  const stripeSubscriptionId = typeof subscriptionId === 'string'
+    ? subscriptionId
+    : subscriptionId?.id;
+
+  if (!stripeSubscriptionId) {
     return;
   }
 
   const subscription = await db
     .select()
     .from(userSubscriptions)
-    .where(eq(userSubscriptions.stripe_subscription_id, invoice.subscription as string))
+    .where(eq(userSubscriptions.stripe_subscription_id, stripeSubscriptionId))
     .limit(1);
 
   if (subscription.length === 0) {

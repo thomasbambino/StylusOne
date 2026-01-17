@@ -89,10 +89,9 @@ async function updateServiceStatus(service: Service) {
       // Update service status in database
       await db
         .update(services)
-        .set({ 
-          status: currentStatus, 
-          lastChecked: new Date().toISOString(),
-          lastError: error ? `${error} at ${new Date().toISOString()}` : null
+        .set({
+          status: currentStatus,
+          lastChecked: new Date().toISOString()
         })
         .where(eq(services.id, service.id));
 
@@ -111,18 +110,16 @@ async function updateServiceStatus(service: Service) {
     const fiveMinutesAgo = new Date();
     fiveMinutesAgo.setMinutes(fiveMinutesAgo.getMinutes() - 5);
     
-    const shouldUpdateTimestamp = 
-      !service.lastChecked || 
-      new Date(service.lastChecked) < fiveMinutesAgo || 
-      (error && (!service.lastError || !service.lastError.includes(error)));
-    
+    const shouldUpdateTimestamp =
+      !service.lastChecked ||
+      new Date(service.lastChecked) < fiveMinutesAgo;
+
     if (shouldUpdateTimestamp) {
       try {
         await db
           .update(services)
-          .set({ 
-            lastChecked: new Date().toISOString(),
-            lastError: error ? `${error} at ${new Date().toISOString()}` : null
+          .set({
+            lastChecked: new Date().toISOString()
           })
           .where(eq(services.id, service.id));
       } catch (error) {

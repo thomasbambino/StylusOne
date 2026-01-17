@@ -135,12 +135,12 @@ export const additionalSecurity = (req: Request, res: Response, next: NextFuncti
 // IP whitelist middleware (optional - for admin endpoints)
 export const createIPWhitelist = (allowedIPs: string[]) => {
   return (req: Request, res: Response, next: NextFunction) => {
-    const clientIP = req.ip || req.connection.remoteAddress;
-    
+    const clientIP = req.ip || req.connection.remoteAddress || '';
+
     if (allowedIPs.length > 0 && !allowedIPs.includes(clientIP)) {
       return res.status(403).json({ error: 'IP address not allowed' });
     }
-    
+
     next();
   };
 };

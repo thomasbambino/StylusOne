@@ -10,7 +10,8 @@ import { Input } from "@/components/ui/input";
 import { Form, FormControl, FormField, FormItem, FormLabel } from "@/components/ui/form";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { GameServer, updateGameServerSchema } from "@shared/schema";
+import { updateGameServerSchema } from "@shared/schema";
+import { GameServerWithRuntime } from "@/types/game-server";
 import { useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
@@ -18,7 +19,7 @@ import { Settings2 } from "lucide-react";
 import * as z from 'zod';
 
 interface EditGameServerDisplayProps {
-  server: GameServer;
+  server: GameServerWithRuntime;
   isAdmin: boolean;
 }
 

@@ -7,6 +7,7 @@ import { useQuery } from "@tanstack/react-query";
 import { FeatureGate } from "./feature-gate";
 import { isNativePlatform, getDeviceType } from "@/lib/capacitor";
 import { useEffect, useState, Suspense } from "react";
+import type { Settings } from "@shared/schema";
 
 interface FeatureProtectedRouteProps {
   path: string;
@@ -30,7 +31,7 @@ export function FeatureProtectedRoute({
     const [isTVDevice, setIsTVDevice] = useState(false);
 
     // IMPORTANT: All hooks must be called before any conditional returns
-    const { data: settings } = useQuery({
+    const { data: settings } = useQuery<Settings>({
       queryKey: ["/api/settings"],
       // Uses default queryFn from queryClient which handles native platforms
       enabled: !!user?.approved, // Only fetch when user is approved

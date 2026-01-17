@@ -138,7 +138,7 @@ export function EmailTemplateDialog({ open, onOpenChange }: EmailTemplateDialogP
 
   const handleSubmit = (data: EmailTemplateForm) => {
     if (editingTemplate?.id) {
-      updateTemplateMutation.mutate({ ...data, id: editingTemplate.id });
+      updateTemplateMutation.mutate({ ...data, id: editingTemplate.id } as EmailTemplate);
     } else {
       createTemplateMutation.mutate(data);
     }

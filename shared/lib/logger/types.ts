@@ -33,6 +33,7 @@ export type LogModule =
   | 'OAuth'
   // Media Services
   | 'Plex'
+  | 'PlexCache'
   | 'Tautulli'
   | 'TMDB'
   // Payment & Email
@@ -57,14 +58,26 @@ export type LogModule =
   | 'Cache'
   | 'ImageCache'
   | 'MediaSession'
+  // Mobile/Native
+  | 'Capacitor'
+  | 'NativeVideo'
+  | 'NativeStorage'
+  | 'NativeTabBar'
+  // Features
+  | 'Reminders'
+  | 'Books'
+  | 'ServerShare'
   // Admin & Routes
   | 'Admin'
+  | 'AdminIPTV'
+  | 'Analytics'
   | 'API'
   | 'Webhook'
   | 'Book'
   | 'Referral'
   | 'Subscription'
   | 'Service'
+  | 'ServiceChecker'
   | 'Storage';
 
 /**

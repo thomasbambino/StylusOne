@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Service, Settings, updateSettingsSchema } from "@shared/schema";
+import { Service, Settings, updateSettingsSchema, UpdateSettings } from "@shared/schema";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { PageTransition } from "@/components/page-transition";
 import { Button } from "@/components/ui/button";
@@ -70,57 +70,57 @@ export default function SettingsPage() {
     if (settings) {
       form.reset({
         id: settings.id,
-        favicon_url: settings.favicon_url,
-        favicon_label: settings.favicon_label,
-        tracking_code: settings.tracking_code,
+        favicon_url: settings.favicon_url ?? undefined,
+        favicon_label: settings.favicon_label ?? undefined,
+        tracking_code: settings.tracking_code ?? undefined,
         default_role: settings.default_role,
-        site_title: settings.site_title,
-        site_description: settings.site_description,
-        site_keywords: settings.site_keywords,
-        og_image_url: settings.og_image_url,
-        font_family: settings.font_family,
-        login_description: settings.login_description,
-        online_color: settings.online_color,
-        offline_color: settings.offline_color,
-        discord_url: settings.discord_url,
-        show_refresh_interval: settings.show_refresh_interval,
-        show_last_checked: settings.show_last_checked,
-        show_service_url: settings.show_service_url,
-        show_status_badge: settings.show_status_badge,
-        admin_show_refresh_interval: settings.admin_show_refresh_interval,
-        admin_show_last_checked: settings.admin_show_last_checked,
-        admin_show_service_url: settings.admin_show_service_url,
-        admin_show_status_badge: settings.admin_show_status_badge,
-        logo_url: settings.logo_url,
-        logo_url_large: settings.logo_url_large,
+        site_title: settings.site_title ?? undefined,
+        site_description: settings.site_description ?? undefined,
+        site_keywords: settings.site_keywords ?? undefined,
+        og_image_url: settings.og_image_url ?? undefined,
+        font_family: settings.font_family ?? undefined,
+        login_description: settings.login_description ?? undefined,
+        online_color: settings.online_color ?? undefined,
+        offline_color: settings.offline_color ?? undefined,
+        discord_url: settings.discord_url ?? undefined,
+        show_refresh_interval: settings.show_refresh_interval ?? undefined,
+        show_last_checked: settings.show_last_checked ?? undefined,
+        show_service_url: settings.show_service_url ?? undefined,
+        show_status_badge: settings.show_status_badge ?? undefined,
+        admin_show_refresh_interval: settings.admin_show_refresh_interval ?? undefined,
+        admin_show_last_checked: settings.admin_show_last_checked ?? undefined,
+        admin_show_service_url: settings.admin_show_service_url ?? undefined,
+        admin_show_status_badge: settings.admin_show_status_badge ?? undefined,
+        logo_url: settings.logo_url ?? undefined,
+        logo_url_large: settings.logo_url_large ?? undefined,
       });
     }
   }, [settings, form]);
 
   const updateSettingsMutation = useMutation({
-    mutationFn: async (data: Parameters<typeof updateSettingsSchema.parse>[0]) => {
-      const relevantData = { id: data.id };
+    mutationFn: async (formData: UpdateSettings) => {
+      const relevantData: Record<string, unknown> = { id: formData.id };
 
       if (currentTab === "general") {
         Object.assign(relevantData, {
-          site_title: data.site_title,
-          default_role: data.default_role,
-          discord_url: data.discord_url,
-          font_family: data.font_family,
-          login_description: data.login_description,
+          site_title: formData.site_title,
+          default_role: formData.default_role,
+          discord_url: formData.discord_url,
+          font_family: formData.font_family,
+          login_description: formData.login_description,
         });
       } else if (currentTab === "branding") {
         Object.assign(relevantData, {
-          logo_url: data.logo_url,
-          logo_url_large: data.logo_url_large,
-          favicon_url: data.favicon_url,
-          favicon_label: data.favicon_label,
-          tracking_code: data.tracking_code,
-          online_color: data.online_color,
-          offline_color: data.offline_color,
-          site_description: data.site_description,
-          site_keywords: data.site_keywords,
-          og_image_url: data.og_image_url,
+          logo_url: formData.logo_url,
+          logo_url_large: formData.logo_url_large,
+          favicon_url: formData.favicon_url,
+          favicon_label: formData.favicon_label,
+          tracking_code: formData.tracking_code,
+          online_color: formData.online_color,
+          offline_color: formData.offline_color,
+          site_description: formData.site_description,
+          site_keywords: formData.site_keywords,
+          og_image_url: formData.og_image_url,
         });
       }
 

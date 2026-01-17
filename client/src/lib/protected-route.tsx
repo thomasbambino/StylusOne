@@ -6,6 +6,7 @@ import { NavigationBar } from "@/components/navigation-bar";
 import { useQuery } from "@tanstack/react-query";
 import { isNativePlatform } from "@/lib/capacitor";
 import { Suspense } from "react";
+import type { Settings } from "@shared/schema";
 
 interface ProtectedRouteProps {
   path: string;
@@ -20,7 +21,7 @@ export function ProtectedRoute({
     const { user, isLoading } = useAuth();
 
     // IMPORTANT: All hooks must be called before any conditional returns
-    const { data: settings } = useQuery({
+    const { data: settings } = useQuery<Settings>({
       queryKey: ["/api/settings"],
       // Uses default queryFn from queryClient which handles native platforms
       enabled: !!user?.approved, // Only fetch when user is approved

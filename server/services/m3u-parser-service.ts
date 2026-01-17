@@ -124,7 +124,7 @@ export async function fetchAndParseM3U(url: string): Promise<M3UParseResult> {
     headers: {
       'User-Agent': 'Mozilla/5.0 (compatible; IPTV/1.0)',
     },
-    signal: AbortSignal.timeout(30000), // 30 second timeout
+    signal: AbortSignal.timeout(30000) as any, // 30 second timeout
   });
 
   if (!response.ok) {
@@ -151,7 +151,7 @@ export async function fetchXMLTV(url: string): Promise<Map<string, { name: strin
     headers: {
       'User-Agent': 'Mozilla/5.0 (compatible; IPTV/1.0)',
     },
-    signal: AbortSignal.timeout(60000), // 60 second timeout for larger files
+    signal: AbortSignal.timeout(60000) as any, // 60 second timeout for larger files
   });
 
   if (!response.ok) {

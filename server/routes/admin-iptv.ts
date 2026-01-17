@@ -164,7 +164,7 @@ const bulkUpdateChannelsSchema = z.object({
  */
 function requireSuperAdmin(req: any, res: any, next: any) {
   loggers.adminIptv.trace('Checking superadmin access', { username: req.user?.username, role: req.user?.role });
-  if (!req.user || req.user.role !== 'superadmin') {
+  if (!req.user || req.user!.role !== 'superadmin') {
     loggers.adminIptv.warn('Access denied', { username: req.user?.username, role: req.user?.role });
     return res.status(403).json({ error: 'Super admin access required' });
   }
@@ -2111,7 +2111,7 @@ router.get('/iptv-streams', requireSuperAdmin, async (req, res) => {
 
     // Also get credential capacity info
     const capacityInfo = [];
-    const credentialIds = [...new Set(streams.map(s => s.credentialId))];
+    const credentialIds = [...new Set(streams.map(s => s.credentialId).filter((id): id is number => id !== null))];
 
     for (const credId of credentialIds) {
       const capacity = await streamTrackerService.getCredentialCapacity(credId);

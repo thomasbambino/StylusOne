@@ -32,7 +32,7 @@ const updatePlanSchema = createPlanSchema.partial();
  * Middleware to check if user is super admin
  */
 function requireSuperAdmin(req: any, res: any, next: any) {
-  if (!req.user || req.user.role !== 'superadmin') {
+  if (!req.user || req.user!.role !== 'superadmin') {
     return res.status(403).json({ error: 'Super admin access required' });
   }
   next();

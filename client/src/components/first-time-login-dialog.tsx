@@ -325,10 +325,10 @@ export function FirstTimeLoginDialog({ open, onOpenChange, forceShow = false }: 
   ];
 
   // Don't show if user has already seen it (unless forced to show for testing)
-  const shouldShow = forceShow || (user && !user.has_seen_first_time_dialog);
+  const shouldShow = forceShow || (user && !(user.has_seen_first_time_dialog ?? false));
 
   return (
-    <Dialog open={open && shouldShow} onOpenChange={onOpenChange}>
+    <Dialog open={open && (shouldShow ?? false)} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-[600px]">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2 text-xl">
