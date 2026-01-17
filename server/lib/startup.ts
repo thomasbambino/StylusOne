@@ -195,12 +195,16 @@ async function checkTautulli(): Promise<ServiceInfo> {
 
   if (tautulliService) {
     try {
+      // Initialize the service first, then check health
+      await tautulliService.initialize();
       const healthy = await tautulliService.isHealthy();
       if (healthy) {
+        const serverInfo = await tautulliService.getServerInfo?.();
+        const version = serverInfo?.tautulli_version ? `v${serverInfo.tautulli_version}` : 'connected';
         return {
           name: 'Tautulli',
           status: 'success',
-          message: 'connected',
+          message: version,
         };
       }
     } catch {}
