@@ -192,7 +192,6 @@ export default function IptvPackagesPage() {
     mutationFn: async ({ id, data }: { id: number; data: PackageFormData }) => {
       // Use POST endpoint which has better compatibility with Cloudflare/WAF
       const url = buildApiUrl(`/api/admin/channel-packages/${id}/update`);
-      console.log('[UPDATE-PACKAGE] Calling POST', url, data);
       const body = JSON.stringify({
         name: data.name,
         description: data.description || null,
@@ -204,16 +203,12 @@ export default function IptvPackagesPage() {
         credentials: 'include',
         body,
       });
-      console.log('[UPDATE-PACKAGE] Response:', res.status, res.statusText);
       if (!res.ok) {
         const contentType = res.headers.get('content-type');
-        console.log('[UPDATE-PACKAGE] Error content-type:', contentType);
         if (contentType && contentType.includes('application/json')) {
           const error = await res.json();
           throw new Error(error.error || 'Failed to update package');
         } else {
-          const text = await res.text();
-          console.log('[UPDATE-PACKAGE] Non-JSON response:', text.substring(0, 200));
           throw new Error(`Server error: ${res.status} ${res.statusText}`);
         }
       }

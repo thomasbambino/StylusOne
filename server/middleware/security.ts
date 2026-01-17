@@ -1,6 +1,7 @@
 import helmet from 'helmet';
 import cors from 'cors';
 import { Request, Response, NextFunction } from 'express';
+import { loggers } from '../lib/logger';
 
 // CORS configuration  
 export const corsOptions = {
@@ -152,8 +153,8 @@ export const securityLogger = (req: Request, res: Response, next: NextFunction) 
   
   // Log security-relevant requests
   if (req.path.includes('/auth') || req.path.includes('/admin') || req.method !== 'GET') {
-    console.log(`[SECURITY] ${timestamp} - ${ip} - ${req.method} ${req.path} - ${userAgent}`);
+    loggers.api.debug('Security event', { ip, method: req.method, path: req.path, userAgent });
   }
-  
+
   next();
 };

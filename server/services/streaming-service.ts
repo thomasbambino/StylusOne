@@ -2,6 +2,7 @@ import { spawn, ChildProcess } from 'child_process';
 import { join } from 'path';
 import { mkdirSync, existsSync, rmSync, readFileSync } from 'fs';
 import { sanitizeFilename, safeJoin, validatePath } from '../utils/path-security';
+import { loggers } from '../lib/logger';
 
 export class StreamingService {
   private activeStreams: Map<string, { process: ChildProcess; timestamp: number }> = new Map();
@@ -81,9 +82,8 @@ export class StreamingService {
       join(streamPath, 'playlist.m3u8')
     ];
 
-    console.log(`Starting HLS stream for channel ${channel} with command:`, 'ffmpeg', ffmpegArgs.join(' '));
-    console.log(`Stream path: ${streamPath}`);
-    console.log(`Source URL: ${sourceUrl}`);
+    loggers.stream.info(`Starting HLS stream for channel ${channel}`);
+    loggers.stream.debug('FFmpeg args', { streamPath, sourceUrl });
 
     const ffmpegProcess = spawn('ffmpeg', ffmpegArgs, {
       stdio: ['ignore', 'pipe', 'pipe']
@@ -91,12 +91,12 @@ export class StreamingService {
 
     // Handle process events
     ffmpegProcess.on('error', (error) => {
-      console.error(`FFmpeg error for channel ${channel}:`, error);
+      loggers.stream.error(`FFmpeg error for channel ${channel}`, { error });
       this.activeStreams.delete(streamId);
     });
 
     ffmpegProcess.on('exit', (code, signal) => {
-      console.log(`FFmpeg process for channel ${channel} exited with code ${code}, signal ${signal}`);
+      loggers.stream.debug(`FFmpeg process for channel ${channel} exited`, { code, signal });
       this.activeStreams.delete(streamId);
     });
 
@@ -104,9 +104,9 @@ export class StreamingService {
     ffmpegProcess.stderr?.on('data', (data) => {
       const message = data.toString().trim();
       if (message.includes('error') || message.includes('Error')) {
-        console.error(`FFmpeg stderr for channel ${channel}:`, message);
+        loggers.stream.error(`FFmpeg stderr for channel ${channel}`, { message });
       } else if (message.includes('warning') || message.includes('Warning')) {
-        console.warn(`FFmpeg warning for channel ${channel}:`, message);
+        loggers.stream.warn(`FFmpeg warning for channel ${channel}`, { message });
       }
     });
 
@@ -135,7 +135,7 @@ export class StreamingService {
           const content = readFileSync(playlistPath, 'utf8');
           // Check if playlist has at least one segment
           if (content.includes('.ts') && content.includes('#EXTINF:')) {
-            console.log(`Playlist ready with segments: ${playlistPath}`);
+            loggers.stream.debug('Playlist ready with segments', { playlistPath });
             return;
           }
         }
@@ -147,7 +147,7 @@ export class StreamingService {
       await new Promise(resolve => setTimeout(resolve, 500));
     }
     
-    console.warn(`Playlist not ready after ${maxWait}ms: ${playlistPath}`);
+    loggers.stream.warn(`Playlist not ready after ${maxWait}ms`, { playlistPath });
   }
 
   /**
@@ -166,7 +166,7 @@ export class StreamingService {
         try {
           rmSync(streamPath, { recursive: true, force: true });
         } catch (error) {
-          console.error(`Error cleaning up stream directory ${streamPath}:`, error);
+          loggers.stream.error('Error cleaning up stream directory', { streamPath, error });
         }
       }
     }

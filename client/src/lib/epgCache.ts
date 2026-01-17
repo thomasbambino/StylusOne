@@ -3,6 +3,8 @@
  * Stores EPG data in IndexedDB for offline access and faster loading
  */
 
+import { loggers } from './logger';
+
 const DB_NAME = 'epg-cache';
 const DB_VERSION = 1;
 const STORE_NAME = 'programs';
@@ -35,7 +37,7 @@ function openDB(): Promise<IDBDatabase> {
     const request = indexedDB.open(DB_NAME, DB_VERSION);
 
     request.onerror = () => {
-      console.error('[EPG Cache] Failed to open database:', request.error);
+      loggers.epg.error('Failed to open database', { error: request.error });
       reject(request.error);
     };
 
@@ -64,13 +66,13 @@ async function checkCacheVersion(): Promise<void> {
     const currentVersion = String(CACHE_FORMAT_VERSION);
 
     if (storedVersion !== currentVersion) {
-      console.log(`[EPG Cache] Version changed from ${storedVersion} to ${currentVersion}, clearing cache...`);
+      loggers.epg.info('Version changed, clearing cache', { from: storedVersion, to: currentVersion });
       await clearAllCache();
       localStorage.setItem(CACHE_VERSION_KEY, currentVersion);
-      console.log('[EPG Cache] Cache cleared and version updated');
+      loggers.epg.info('Cache cleared and version updated');
     }
   } catch (error) {
-    console.error('[EPG Cache] Error checking cache version:', error);
+    loggers.epg.error('Error checking cache version', { error });
   }
 }
 
@@ -89,7 +91,7 @@ export async function clearAllCache(): Promise<void> {
       request.onsuccess = () => resolve();
     });
   } catch (error) {
-    console.error('[EPG Cache] Error clearing cache:', error);
+    loggers.epg.error('Error clearing cache', { error });
   }
 }
 
@@ -141,7 +143,7 @@ export async function getCachedEPG(channelId: string): Promise<any[] | null> {
       };
     });
   } catch (error) {
-    console.error('[EPG Cache] Error getting cached data:', error);
+    loggers.epg.error('Error getting cached data', { error });
     return null;
   }
 }
@@ -180,7 +182,7 @@ export async function cacheEPG(channelId: string, programs: any[]): Promise<void
       request.onsuccess = () => resolve();
     });
   } catch (error) {
-    console.error('[EPG Cache] Error caching data:', error);
+    loggers.epg.error('Error caching data', { error });
   }
 }
 
@@ -199,7 +201,7 @@ async function deleteFromCache(channelId: string): Promise<void> {
       request.onsuccess = () => resolve();
     });
   } catch (error) {
-    console.error('[EPG Cache] Error deleting from cache:', error);
+    loggers.epg.error('Error deleting from cache', { error });
   }
 }
 
@@ -228,14 +230,14 @@ export async function cleanupExpiredCache(): Promise<number> {
           cursor.continue();
         } else {
           if (deletedCount > 0) {
-            console.log(`[EPG Cache] Cleaned up ${deletedCount} expired entries`);
+            loggers.epg.debug('Cleaned up expired entries', { count: deletedCount });
           }
           resolve(deletedCount);
         }
       };
     });
   } catch (error) {
-    console.error('[EPG Cache] Error cleaning up cache:', error);
+    loggers.epg.error('Error cleaning up cache', { error });
     return 0;
   }
 }
@@ -272,7 +274,7 @@ export async function getCacheStats(): Promise<{ channels: number; totalPrograms
       };
     });
   } catch (error) {
-    console.error('[EPG Cache] Error getting stats:', error);
+    loggers.epg.error('Error getting stats', { error });
     return { channels: 0, totalPrograms: 0, cacheSize: '0 MB' };
   }
 }
@@ -284,7 +286,7 @@ export async function prefetchEPG(
   channelIds: string[],
   fetchFn: (channelId: string) => Promise<any[]>
 ): Promise<void> {
-  console.log(`[EPG Cache] Prefetching ${channelIds.length} channels...`);
+  loggers.epg.debug('Prefetching channels', { count: channelIds.length });
 
   // Process in batches of 5 to avoid overwhelming the server
   const batchSize = 5;
@@ -304,13 +306,13 @@ export async function prefetchEPG(
             await cacheEPG(channelId, programs);
           }
         } catch (error) {
-          console.error(`[EPG Cache] Failed to prefetch ${channelId}:`, error);
+          loggers.epg.error('Failed to prefetch channel', { channelId, error });
         }
       })
     );
   }
 
-  console.log('[EPG Cache] Prefetch complete');
+  loggers.epg.debug('Prefetch complete');
 }
 
 // Check cache version and clean up on module load

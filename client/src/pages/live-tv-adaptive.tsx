@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { getDeviceType, type DeviceType } from '@/lib/capacitor';
 import LiveTVTV from './live-tv-tv';
 import LiveTVPage from './live-tv-page'; // Fallback for web
+import { loggers } from '@/lib/logger';
 
 /**
  * Adaptive Live TV component that switches layouts based on device type
@@ -17,7 +18,7 @@ export default function LiveTVAdaptive() {
       const type = await getDeviceType();
       setDeviceType(type);
       setIsLoading(false);
-      console.log(`[Live TV] Detected device type: ${type}`);
+      loggers.tv.info('Device type detected', { type });
     }
 
     detectDevice();

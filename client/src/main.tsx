@@ -4,6 +4,7 @@ import "./index.css";
 import { isNativePlatform } from "./lib/capacitor";
 import { GoogleAuth } from '@codetrix-studio/capacitor-google-auth';
 import { Capacitor } from '@capacitor/core';
+import { loggers } from "./lib/logger";
 
 // Initialize Google Auth for native platforms
 if (isNativePlatform()) {
@@ -19,9 +20,9 @@ if (isNativePlatform()) {
       scopes: ['profile', 'email'],
       grantOfflineAccess: true,
     });
-    console.log(`GoogleAuth initialized for ${platform}`);
+    loggers.oauth.info('GoogleAuth initialized', { platform });
   } else {
-    console.warn(`GoogleAuth not initialized - no client ID for ${platform}`);
+    loggers.oauth.warn('GoogleAuth not initialized - no client ID', { platform });
   }
 }
 
@@ -30,10 +31,10 @@ if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
     navigator.serviceWorker.register('/sw.js')
       .then(registration => {
-        console.log('ServiceWorker registration successful:', registration.scope);
+        loggers.capacitor.debug('ServiceWorker registration successful', { scope: registration.scope });
       })
       .catch(error => {
-        console.error('ServiceWorker registration failed:', error);
+        loggers.capacitor.error('ServiceWorker registration failed', { error });
       });
   });
 }

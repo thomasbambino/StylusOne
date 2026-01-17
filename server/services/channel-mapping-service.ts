@@ -1,6 +1,7 @@
 import { db } from '../db';
 import { channelMappings, iptvChannels, iptvProviders } from '@shared/schema';
 import { eq, and, ne, asc, like, or, sql, inArray } from 'drizzle-orm';
+import { loggers } from '../lib/logger';
 
 /**
  * Service for managing cross-provider channel mappings
@@ -570,7 +571,7 @@ export class ChannelMappingService {
 
     // Extract elements from primary channel for matching
     const primaryElements = this.extractChannelElements(primaryChannel.name);
-    console.log(`[Channel Mapping] Primary: "${primaryChannel.name}" -> callSign: ${primaryElements.callSign}, brand: ${primaryElements.brand}, city: ${primaryElements.city}`);
+    loggers.iptv.debug('Channel mapping primary', { name: primaryChannel.name, callSign: primaryElements.callSign, brand: primaryElements.brand, city: primaryElements.city });
 
     // Build search terms from the primary channel
     const searchTerms: string[] = [];
@@ -581,7 +582,7 @@ export class ChannelMappingService {
     const nameWords = primaryElements.cleanName.split(' ').filter(w => w.length >= 3);
     searchTerms.push(...nameWords.slice(0, 3));
 
-    console.log(`[Channel Mapping] Search terms: ${searchTerms.join(', ')}`);
+    loggers.iptv.debug('Channel mapping search terms', { terms: searchTerms });
 
     // First, explicitly search for US/Sling channels matching our search terms
     let priorityChannels: Array<{ id: number; name: string; logo: string | null; providerId: number; providerName: string }> = [];
@@ -612,7 +613,7 @@ export class ChannelMappingService {
     // Deduplicate priority channels
     const priorityChannelMap = new Map(priorityChannels.map(c => [c.id, c]));
     priorityChannels = Array.from(priorityChannelMap.values());
-    console.log(`[Channel Mapping] Found ${priorityChannels.length} US/Sling channels matching search terms`);
+    loggers.iptv.debug('Channel mapping US/Sling channels found', { count: priorityChannels.length });
 
     // Then get general candidates (any channels from the provider)
     const generalCandidates = await db.select({
@@ -658,7 +659,7 @@ export class ChannelMappingService {
     suggestions.slice(0, 5).forEach((s, i) => {
       const candidateElements = this.extractChannelElements(s.channel.name);
       const isPriority = /^(US|USA|SLING)[\s:\-\|\.]/i.test(s.channel.name);
-      console.log(`[Channel Mapping] #${i+1} (${s.confidence}%): "${s.channel.name}" -> Priority: ${isPriority}, brand: ${candidateElements.brand}`);
+      loggers.iptv.trace('Channel mapping suggestion', { rank: i+1, confidence: s.confidence, name: s.channel.name, isPriority, brand: candidateElements.brand });
     });
 
     return suggestions;
@@ -781,7 +782,7 @@ export class ChannelMappingService {
         created++;
       } catch (error) {
         // Skip duplicates or invalid mappings
-        console.warn(`Failed to create mapping:`, error);
+        loggers.iptv.warn('Failed to create mapping', { error });
       }
     }
 

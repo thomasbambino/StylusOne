@@ -1,5 +1,6 @@
 import { Capacitor } from '@capacitor/core';
 import { Device } from '@capacitor/device';
+import { loggers } from './logger';
 
 export type DeviceType = 'phone' | 'tablet' | 'tv' | 'web';
 
@@ -29,7 +30,7 @@ export async function getDeviceType(): Promise<DeviceType> {
 
   try {
     const info = await Device.getInfo();
-    console.log('[DeviceType] Device info:', JSON.stringify(info));
+    loggers.capacitor.debug('Device info', { info });
 
     // Check if running on Android TV
     if (info.platform === 'android') {
@@ -44,11 +45,11 @@ export async function getDeviceType(): Promise<DeviceType> {
                           nameLower.includes('android tv') ||
                           nameLower.includes('television');
 
-      console.log(`[DeviceType] Android TV check: model="${info.model}", name="${info.name}", isAndroidTV=${isAndroidTV}`);
+      loggers.capacitor.debug('Android TV check', { model: info.model, name: info.name, isAndroidTV });
 
       if (isAndroidTV) {
         cachedDeviceType = 'tv';
-        console.log('[DeviceType] Detected: TV (by model/name)');
+        loggers.capacitor.info('Detected: TV (by model/name)');
         return 'tv';
       }
 
@@ -60,17 +61,17 @@ export async function getDeviceType(): Promise<DeviceType> {
       const physicalHeight = screenHeight * devicePixelRatio;
       const largerPhysical = Math.max(physicalWidth, physicalHeight);
 
-      console.log(`[DeviceType] Screen: ${screenWidth}x${screenHeight} CSS, ${physicalWidth}x${physicalHeight} physical, DPR: ${devicePixelRatio}`);
+      loggers.capacitor.debug('Screen dimensions', { screenWidth, screenHeight, physicalWidth, physicalHeight, devicePixelRatio });
 
       // TV detection: physical resolution >= 1920 or large CSS pixels with low DPR
       const isTVByScreen = largerPhysical >= 1920 ||
                            (Math.max(screenWidth, screenHeight) >= 1280 && devicePixelRatio <= 1.5);
 
-      console.log(`[DeviceType] isTV by screen: ${isTVByScreen}`);
+      loggers.capacitor.debug('TV detection by screen', { isTVByScreen });
 
       if (isTVByScreen) {
         cachedDeviceType = 'tv';
-        console.log('[DeviceType] Detected: TV (by screen size)');
+        loggers.capacitor.info('Detected: TV (by screen size)');
         return 'tv';
       }
 
@@ -99,7 +100,7 @@ export async function getDeviceType(): Promise<DeviceType> {
     cachedDeviceType = 'phone';
     return 'phone';
   } catch (error) {
-    console.error('Error detecting device type:', error);
+    loggers.capacitor.error('Error detecting device type', { error });
     cachedDeviceType = 'phone';
     return 'phone';
   }
@@ -129,12 +130,11 @@ export function getApiBaseUrl(): string {
   if (isNativePlatform()) {
     // Use environment variable or fallback to production URL
     const apiUrl = import.meta.env.VITE_API_URL || 'https://stylus.services';
-    console.log('[Capacitor] Native platform detected, using API URL:', apiUrl);
-    console.log('[Capacitor] Environment VITE_API_URL:', import.meta.env.VITE_API_URL);
+    loggers.capacitor.debug('Native platform detected', { apiUrl, envUrl: import.meta.env.VITE_API_URL });
     return apiUrl;
   }
   // For web, use relative URLs (handled by the server)
-  console.log('[Capacitor] Web platform detected, using relative URLs');
+  loggers.capacitor.debug('Web platform detected, using relative URLs');
   return '';
 }
 
@@ -146,6 +146,6 @@ export function buildApiUrl(path: string): string {
   // Ensure path starts with /
   const normalizedPath = path.startsWith('/') ? path : `/${path}`;
   const fullUrl = `${baseUrl}${normalizedPath}`;
-  console.log('[Capacitor] Building API URL:', path, '->', fullUrl);
+  loggers.capacitor.trace('Building API URL', { path, fullUrl });
   return fullUrl;
 }

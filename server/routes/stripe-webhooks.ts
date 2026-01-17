@@ -9,6 +9,7 @@ import {
 import { eq } from 'drizzle-orm';
 import { stripeService } from '../services/stripe-service';
 import type Stripe from 'stripe';
+import { loggers } from '../lib/logger';
 
 const router = Router();
 
@@ -31,7 +32,7 @@ router.post('/stripe', async (req, res) => {
 
   const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
   if (!webhookSecret) {
-    console.error('STRIPE_WEBHOOK_SECRET not configured');
+    loggers.stripe.error('STRIPE_WEBHOOK_SECRET not configured');
     return res.status(500).json({ error: 'Webhook secret not configured' });
   }
 
@@ -45,11 +46,11 @@ router.post('/stripe', async (req, res) => {
       webhookSecret
     );
   } catch (err) {
-    console.error('Webhook signature verification failed:', err);
+    loggers.stripe.error('Webhook signature verification failed', { error: err });
     return res.status(400).json({ error: 'Invalid signature' });
   }
 
-  console.log(`Received Stripe webhook: ${event.type}`);
+  loggers.stripe.info(`Received Stripe webhook: ${event.type}`);
 
   try {
     switch (event.type) {
@@ -86,12 +87,12 @@ router.post('/stripe', async (req, res) => {
         break;
 
       default:
-        console.log(`Unhandled event type: ${event.type}`);
+        loggers.stripe.debug(`Unhandled event type: ${event.type}`);
     }
 
     res.json({ received: true });
   } catch (error) {
-    console.error('Error processing webhook:', error);
+    loggers.stripe.error('Error processing webhook', { error });
     res.status(500).json({ error: 'Webhook processing failed' });
   }
 });
@@ -101,15 +102,15 @@ router.post('/stripe', async (req, res) => {
  * This is triggered when a user completes a Stripe Checkout session
  */
 async function handleCheckoutSessionCompleted(session: Stripe.Checkout.Session) {
-  console.log('Processing checkout session completed:', session.id);
+  loggers.stripe.info(`Processing checkout.session.completed: ${session.id}`);
 
   if (session.mode !== 'subscription') {
-    console.log('Checkout session is not for subscription, skipping');
+    loggers.stripe.debug('Checkout session is not for subscription, skipping');
     return;
   }
 
   if (!session.subscription) {
-    console.error('Checkout session has no subscription ID');
+    loggers.stripe.error('Checkout session has no subscription ID');
     return;
   }
 
@@ -118,7 +119,7 @@ async function handleCheckoutSessionCompleted(session: Stripe.Checkout.Session) 
   const billingPeriod = session.metadata?.billing_period as 'monthly' | 'annual';
 
   if (!userId || !planId || !billingPeriod) {
-    console.error('Missing required metadata in checkout session:', {
+    loggers.stripe.error('Missing required metadata in checkout session', {
       userId,
       planId,
       billingPeriod,
@@ -138,7 +139,7 @@ async function handleCheckoutSessionCompleted(session: Stripe.Checkout.Session) 
     .limit(1);
 
   if (existingSubscription.length > 0) {
-    console.log('Subscription already exists in database, updating');
+    loggers.stripe.debug('Subscription already exists in database, updating');
     await db
       .update(userSubscriptions)
       .set({
@@ -165,7 +166,7 @@ async function handleCheckoutSessionCompleted(session: Stripe.Checkout.Session) 
     cancel_at_period_end: subscription.cancel_at_period_end || false,
   });
 
-  console.log('Subscription created in database:', subscription.id);
+  loggers.stripe.info(`Subscription created in database: ${subscription.id}`);
 
   // If the session has a default payment method, save it
   if (subscription.default_payment_method) {
@@ -193,7 +194,7 @@ async function handleCheckoutSessionCompleted(session: Stripe.Checkout.Session) 
  * Handle customer.subscription.created event
  */
 async function handleSubscriptionCreated(subscription: Stripe.Subscription) {
-  console.log('Processing subscription created:', subscription.id);
+  loggers.stripe.info(`Processing subscription.created: ${subscription.id}`);
 
   // Subscription should already exist in DB from createSubscription()
   // But update it with latest data from Stripe
@@ -221,7 +222,7 @@ async function handleSubscriptionCreated(subscription: Stripe.Subscription) {
  * Handle customer.subscription.updated event
  */
 async function handleSubscriptionUpdated(subscription: Stripe.Subscription) {
-  console.log('Processing subscription updated:', subscription.id);
+  loggers.stripe.info(`Processing subscription.updated: ${subscription.id}`);
 
   const existingSubscription = await db
     .select()
@@ -230,7 +231,7 @@ async function handleSubscriptionUpdated(subscription: Stripe.Subscription) {
     .limit(1);
 
   if (existingSubscription.length === 0) {
-    console.error('Subscription not found in database:', subscription.id);
+    loggers.stripe.error(`Subscription not found in database: ${subscription.id}`);
     return;
   }
 
@@ -250,7 +251,7 @@ async function handleSubscriptionUpdated(subscription: Stripe.Subscription) {
  * Handle customer.subscription.deleted event
  */
 async function handleSubscriptionDeleted(subscription: Stripe.Subscription) {
-  console.log('Processing subscription deleted:', subscription.id);
+  loggers.stripe.info(`Processing subscription.deleted: ${subscription.id}`);
 
   await db
     .update(userSubscriptions)
@@ -266,10 +267,10 @@ async function handleSubscriptionDeleted(subscription: Stripe.Subscription) {
  * Handle invoice.paid event
  */
 async function handleInvoicePaid(invoice: Stripe.Invoice) {
-  console.log('Processing invoice paid:', invoice.id);
+  loggers.stripe.info(`Processing invoice.paid: ${invoice.id}`);
 
   if (!invoice.subscription) {
-    console.log('Invoice has no subscription, skipping');
+    loggers.stripe.debug('Invoice has no subscription, skipping');
     return;
   }
 
@@ -281,7 +282,7 @@ async function handleInvoicePaid(invoice: Stripe.Invoice) {
     .limit(1);
 
   if (subscription.length === 0) {
-    console.error('Subscription not found for invoice:', invoice.subscription);
+    loggers.stripe.error(`Subscription not found for invoice: ${invoice.subscription}`);
     return;
   }
 
@@ -293,7 +294,7 @@ async function handleInvoicePaid(invoice: Stripe.Invoice) {
     .limit(1);
 
   if (existingInvoice.length > 0) {
-    console.log('Invoice already exists in database, updating status');
+    loggers.stripe.debug('Invoice already exists in database, updating status');
     await db
       .update(invoices)
       .set({
@@ -333,7 +334,7 @@ async function handleInvoicePaid(invoice: Stripe.Invoice) {
  * Handle invoice.payment_failed event
  */
 async function handleInvoicePaymentFailed(invoice: Stripe.Invoice) {
-  console.log('Processing invoice payment failed:', invoice.id);
+  loggers.stripe.warn(`Processing invoice.payment_failed: ${invoice.id}`);
 
   if (!invoice.subscription) {
     return;
@@ -393,7 +394,7 @@ async function handleInvoicePaymentFailed(invoice: Stripe.Invoice) {
  * Handle payment_method.attached event
  */
 async function handlePaymentMethodAttached(paymentMethod: Stripe.PaymentMethod) {
-  console.log('Processing payment method attached:', paymentMethod.id);
+  loggers.stripe.debug(`Processing payment_method.attached: ${paymentMethod.id}`);
 
   // Payment method should be saved when subscription is created
   // This is just for logging
@@ -403,7 +404,7 @@ async function handlePaymentMethodAttached(paymentMethod: Stripe.PaymentMethod) 
  * Handle payment_method.detached event
  */
 async function handlePaymentMethodDetached(paymentMethod: Stripe.PaymentMethod) {
-  console.log('Processing payment method detached:', paymentMethod.id);
+  loggers.stripe.debug(`Processing payment_method.detached: ${paymentMethod.id}`);
 
   // Remove payment method from database
   await db

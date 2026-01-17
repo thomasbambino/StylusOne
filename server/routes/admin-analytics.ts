@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import { db } from '../db';
+import { loggers } from '../lib/logger';
 import {
   viewingHistory,
   activeIptvStreams,
@@ -81,7 +82,7 @@ router.get('/active-streams', requireAdmin, async (req, res) => {
 
     res.json(enrichedStreams);
   } catch (error) {
-    console.error('Error fetching active streams:', error);
+    loggers.analytics.error('Error fetching active streams', { error });
     res.status(500).json({ error: 'Failed to fetch active streams' });
   }
 });
@@ -125,7 +126,7 @@ router.get('/live-stats', requireAdmin, async (req, res) => {
       sessionsToday: Number(sessionsToday?.count) || 0,
     });
   } catch (error) {
-    console.error('Error fetching live stats:', error);
+    loggers.analytics.error('Error fetching live stats', { error });
     res.status(500).json({ error: 'Failed to fetch live stats' });
   }
 });
@@ -154,7 +155,7 @@ router.delete('/active-streams/:id', requireAdmin, async (req, res) => {
     await streamTrackerService.releaseStream(stream.sessionToken);
     res.json({ success: true });
   } catch (error) {
-    console.error('Error disconnecting stream:', error);
+    loggers.analytics.error('Error disconnecting stream', { error });
     res.status(500).json({ error: 'Failed to disconnect stream' });
   }
 });
@@ -219,7 +220,7 @@ router.get('/channels', requireAdmin, async (req, res) => {
 
     res.json(enrichedStats);
   } catch (error) {
-    console.error('Error fetching channel analytics:', error);
+    loggers.analytics.error('Error fetching channel analytics', { error });
     res.status(500).json({ error: 'Failed to fetch channel analytics' });
   }
 });
@@ -293,7 +294,7 @@ router.get('/users', requireAdmin, async (req, res) => {
 
     res.json(enrichedStats);
   } catch (error) {
-    console.error('Error fetching user analytics:', error);
+    loggers.analytics.error('Error fetching user analytics', { error });
     res.status(500).json({ error: 'Failed to fetch user analytics' });
   }
 });
@@ -364,7 +365,7 @@ router.get('/users/:id', requireAdmin, async (req, res) => {
       },
     });
   } catch (error) {
-    console.error('Error fetching user history:', error);
+    loggers.analytics.error('Error fetching user history', { error });
     res.status(500).json({ error: 'Failed to fetch user history' });
   }
 });
@@ -450,7 +451,7 @@ router.get('/history', requireAdmin, async (req, res) => {
       },
     });
   } catch (error) {
-    console.error('Error fetching viewing history:', error);
+    loggers.analytics.error('Error fetching viewing history', { error });
     res.status(500).json({ error: 'Failed to fetch viewing history' });
   }
 });
@@ -541,7 +542,7 @@ router.post('/export', requireAdmin, async (req, res) => {
     if (error instanceof z.ZodError) {
       return res.status(400).json({ error: error.errors });
     }
-    console.error('Error exporting history:', error);
+    loggers.analytics.error('Error exporting history', { error });
     res.status(500).json({ error: 'Failed to export history' });
   }
 });
@@ -582,7 +583,7 @@ router.post('/import', requireAdmin, async (req, res) => {
         });
         imported++;
       } catch (err) {
-        console.error('Error importing row:', err);
+        loggers.analytics.error('Error importing row', { error: err });
       }
     }
 
@@ -591,7 +592,7 @@ router.post('/import', requireAdmin, async (req, res) => {
     if (error instanceof z.ZodError) {
       return res.status(400).json({ error: error.errors });
     }
-    console.error('Error importing history:', error);
+    loggers.analytics.error('Error importing history', { error });
     res.status(500).json({ error: 'Failed to import history' });
   }
 });
@@ -627,13 +628,13 @@ router.delete('/history', requireAdmin, async (req, res) => {
       .where(whereClause)
       .returning({ id: viewingHistory.id });
 
-    console.log(`[ADMIN] Deleted ${result.length} viewing history records`);
+    loggers.analytics.info('Deleted viewing history records', { count: result.length });
     res.json({ success: true, deleted: result.length });
   } catch (error) {
     if (error instanceof z.ZodError) {
       return res.status(400).json({ error: error.errors });
     }
-    console.error('Error deleting history:', error);
+    loggers.analytics.error('Error deleting history', { error });
     res.status(500).json({ error: 'Failed to delete history' });
   }
 });

@@ -1,6 +1,7 @@
 /**
  * Cache management utilities for the application
  */
+import { loggers } from '@/lib/logger';
 
 export const CACHE_VERSION = 'v2.0.0-20250903';
 
@@ -12,7 +13,7 @@ export async function clearAllCaches(): Promise<void> {
     const cacheNames = await caches.keys();
     await Promise.all(
       cacheNames.map(cacheName => {
-        console.log(`[CacheHelper] Deleting cache: ${cacheName}`);
+        loggers.cache.debug('Deleting cache', { cacheName });
         return caches.delete(cacheName);
       })
     );
@@ -27,7 +28,7 @@ export async function unregisterServiceWorkers(): Promise<void> {
     const registrations = await navigator.serviceWorker.getRegistrations();
     await Promise.all(
       registrations.map(registration => {
-        console.log('[CacheHelper] Unregistering service worker:', registration.scope);
+        loggers.cache.debug('Unregistering service worker', { scope: registration.scope });
         return registration.unregister();
       })
     );
@@ -83,7 +84,7 @@ export function addHardRefreshShortcut(): void {
   document.addEventListener('keydown', async (e) => {
     if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === 'R') {
       e.preventDefault();
-      console.log('[CacheHelper] Hard refresh triggered');
+      loggers.cache.info('Hard refresh triggered');
       await forceRefresh();
     }
   });

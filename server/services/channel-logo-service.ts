@@ -2,6 +2,8 @@
  * Channel Logo Service - Maps channel numbers to logos from TV guide data
  */
 
+import { loggers } from '../lib/logger';
+
 export interface ChannelLogoInfo {
   channelNumber: string;
   callSign: string;
@@ -63,7 +65,7 @@ export class ChannelLogoService {
       });
     }
 
-    console.log(`Parsed ${this.channelLogos.size / 2} channel logos from TV guide data`);
+    loggers.epg.info(`Parsed ${this.channelLogos.size / 2} channel logos from TV guide data`);
   }
 
   /**

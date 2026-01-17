@@ -2,6 +2,7 @@ import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { setupAuth, hashPassword } from "./auth";
 import { storage } from "./storage";
+import { loggers } from './lib/logger';
 import { insertServiceSchema, insertGameServerSchema, updateServiceSchema, updateGameServerSchema, GameServer, iptvChannels } from "@shared/schema";
 import { fromZodError } from "zod-validation-error";
 import { ZodError } from "zod";
@@ -88,7 +89,7 @@ async function getEPGService() {
   // Start TMDB worker once after EPG is ready
   if (!tmdbWorkerStarted) {
     tmdbWorkerStarted = true;
-    console.log('[EPG] Routes using shared EPG service singleton');
+    loggers.epg.info('Routes using shared EPG service singleton');
 
     // Start TMDB worker with callback to get favorite titles
     tmdbService.startAfterEPGReady(async () => {
@@ -111,7 +112,7 @@ async function getEPGService() {
         }
         return titles;
       } catch (error) {
-        console.error('Error getting favorite titles:', error);
+        loggers.tmdb.error('Error getting favorite titles', { error });
         return [];
       }
     });
@@ -250,20 +251,20 @@ const handleUpload = async (req: express.Request, res: express.Response, type: '
 
     let instance;
     if (type === 'game') {
-      console.log('Processing icon upload for instance:', instanceId);
+      loggers.game.debug('Processing icon upload for instance', { instanceId });
       // Verify instance exists before proceeding
       const instances = await ampService.getInstances();
       instance = instances.find((i: any) => i.InstanceID === instanceId);
       if (!instance) {
         return res.status(404).json({ message: "Game server not found in AMP" });
       }
-      console.log('Found matching AMP instance:', instance.FriendlyName);
+      loggers.game.debug('Found matching AMP instance', { name: instance.FriendlyName });
     }
 
     let inputBuffer: Buffer;
     let filename: string;
 
-    console.log('Upload request details:', {
+    loggers.storage.debug('Upload request details', {
       hasFile: !!req.file,
       hasImageUrl: !!req.body.imageUrl,
       fileDetails: req.file ? {
@@ -277,38 +278,38 @@ const handleUpload = async (req: express.Request, res: express.Response, type: '
     try {
       if (req.file) {
         // Handle direct file upload
-        console.log('Reading file from path:', req.file.path);
+        loggers.storage.debug('Reading file from path', { path: req.file.path });
         if (!fs.existsSync(req.file.path)) {
           return res.status(400).json({ message: "Uploaded file doesn't exist at expected path" });
         }
         
         inputBuffer = fs.readFileSync(req.file.path);
-        console.log('File read successfully, size:', inputBuffer.length, 'bytes');
+        loggers.storage.debug('File read successfully', { size: inputBuffer.length });
         
         filename = req.file.filename;
         
         // Delete the original uploaded file since we'll create resized version
         try {
           fs.unlinkSync(req.file.path);
-          console.log('Original file deleted');
+          loggers.storage.debug('Original file deleted');
         } catch (deleteErr) {
-          console.error('Error deleting original file:', deleteErr);
+          loggers.storage.error('Error deleting original file', { error: deleteErr });
           // Continue even if delete fails
         }
       } else if (req.body.imageUrl) {
         // Handle URL-based upload
-        console.log('Downloading image from URL:', req.body.imageUrl);
+        loggers.storage.debug('Downloading image from URL', { url: req.body.imageUrl });
         const { buffer } = await downloadImage(req.body.imageUrl);
         inputBuffer = buffer;
-        console.log('Image downloaded successfully, size:', inputBuffer.length, 'bytes');
+        loggers.storage.debug('Image downloaded successfully', { size: inputBuffer.length });
         
         filename = `url-${Date.now()}-${Math.round(Math.random() * 1E9)}.png`;
       } else {
-        console.error('No file or URL provided in request:', req.body);
+        loggers.storage.error('No file or URL provided in request', { body: req.body });
         return res.status(400).json({ message: "No file or URL provided" });
       }
     } catch (fileProcessingError) {
-      console.error('Error processing uploaded file:', fileProcessingError);
+      loggers.storage.error('Error processing uploaded file', { error: fileProcessingError });
       return res.status(500).json({ message: "Error processing uploaded file: " + (fileProcessingError instanceof Error ? fileProcessingError.message : String(fileProcessingError)) });
     }
 
@@ -322,14 +323,14 @@ const handleUpload = async (req: express.Request, res: express.Response, type: '
     // If this is a game server icon
     if (type === 'game') {
       try {
-        console.log('Handling game server icon upload');
+        loggers.game.debug('Handling game server icon upload');
         
         // Get server ID from request
         const idStr = req.body.id;
         const id = idStr ? parseInt(idStr) : undefined;
         
         // Log debugging info
-        console.log(`Game icon upload - ID: ${id}, instanceId: ${instanceId}, icon path: ${typeof result === 'string' ? result : result.url}`);
+        loggers.game.debug('Game icon upload', { id, instanceId, iconPath: typeof result === 'string' ? result : result.url });
         
         if (!instanceId && !id) {
           return res.status(400).json({ message: "Either instanceId or server id is required for game server icons" });
@@ -340,23 +341,23 @@ const handleUpload = async (req: express.Request, res: express.Response, type: '
         
         // First, try to find by ID if provided
         if (id) {
-          console.log('Looking up server by id:', id);
+          loggers.game.debug('Looking up server by id', { id });
           try {
             server = await storage.getGameServer(id);
-            console.log('Server found by ID:', server ? server.id : 'not found');
+            loggers.game.debug('Server found by ID', { serverId: server ? server.id : 'not found' });
           } catch (err) {
-            console.error('Error looking up server by ID:', err);
+            loggers.game.error('Error looking up server by ID', { error: err });
           }
         }
         
         // If not found by ID, try instanceId
         if (!server && instanceId) {
-          console.log('Looking up server by instanceId:', instanceId);
+          loggers.game.debug('Looking up server by instanceId', { instanceId });
           try {
             server = await storage.getGameServerByInstanceId(instanceId);
-            console.log('Server found by instanceId:', server ? server.id : 'not found');
+            loggers.game.debug('Server found by instanceId', { serverId: server ? server.id : 'not found' });
           } catch (err) {
-            console.error('Error looking up server by instanceId:', err);
+            loggers.game.error('Error looking up server by instanceId', { error: err });
           }
         }
         
@@ -365,7 +366,7 @@ const handleUpload = async (req: express.Request, res: express.Response, type: '
         
         // Create new server if none exists
         if (!server) {
-          console.log('No existing server found, creating new record');
+          loggers.game.debug('No existing server found, creating new record');
           
           if (!instanceId) {
             return res.status(404).json({ message: "Cannot create new server without instanceId" });
@@ -388,22 +389,22 @@ const handleUpload = async (req: express.Request, res: express.Response, type: '
               icon: iconUrl
             };
             
-            console.log('Creating new server with data:', JSON.stringify(newServer));
+            loggers.game.debug('Creating new server with data', { newServer });
             server = await storage.createGameServer(newServer);
-            
-            console.log('Created new server record with ID:', server.id);
+
+            loggers.game.debug('Created new server record', { serverId: server.id });
           } catch (err) {
-            console.error('Error creating new server:', err);
+            loggers.game.error('Error creating new server', { error: err });
             throw err;
           }
         } 
         // Update existing server with a completely new approach using raw SQL without ORM
         else {
-          console.log('COMPLETELY NEW APPROACH: Updating icon for existing server ID:', server.id);
+          loggers.game.debug('Updating icon for existing server', { serverId: server.id });
           
           // FIRST: Check for the existence of Satisfactory Musashi server specifically
           if (server.name && server.name.includes('Musashi')) {
-            console.log('SPECIAL HANDLING: Detected Musashi server - using special bypassing technique');
+            loggers.game.debug('Special handling: Detected Musashi server');
             
             try {
               // Use direct SQL with a transaction for the Musashi server
@@ -418,7 +419,7 @@ const handleUpload = async (req: express.Request, res: express.Response, type: '
                 `;
                 
                 await pool.query(updateSql, [iconUrl, instanceId]);
-                console.log('SPECIAL HANDLING: Direct SQL update completed for Musashi server');
+                loggers.game.debug('Special handling: Direct SQL update completed for Musashi server');
                 
                 // Now fetch the updated record using a separate query
                 const selectSql = `SELECT * FROM "gameServers" WHERE "instanceId" = $1`;
@@ -426,32 +427,32 @@ const handleUpload = async (req: express.Request, res: express.Response, type: '
                 
                 if (rows && rows.length > 0) {
                   server = rows[0];
-                  console.log('SPECIAL HANDLING: Musashi server data retrieved:', JSON.stringify(server));
+                  loggers.game.debug('Special handling: Musashi server data retrieved', { server });
                 } else {
                   throw new Error('Unable to retrieve updated Musashi server data');
                 }
                 
                 // Commit the transaction
                 await pool.query('COMMIT');
-                console.log('SPECIAL HANDLING: Transaction committed successfully');
+                loggers.game.debug('Special handling: Transaction committed successfully');
               } catch (transactionError) {
                 // Rollback on error
                 await pool.query('ROLLBACK');
-                console.error('SPECIAL HANDLING: Transaction error, rolling back:', transactionError);
+                loggers.game.error('Special handling: Transaction error, rolling back', { error: transactionError });
                 throw transactionError;
               }
             } catch (specialHandlingError) {
-              console.error('SPECIAL HANDLING: Complete error handling failure for Musashi server:', specialHandlingError);
+              loggers.game.error('Special handling: Complete error handling failure for Musashi server', { error: specialHandlingError });
               throw specialHandlingError;
             }
           }
           // For all other servers, try our normal updated approach
           else {
-            console.log('Standard approach: Updating icon for existing server ID:', server.id);
+            loggers.game.debug('Standard approach: Updating icon for existing server', { serverId: server.id });
             
             try {
               // Simply use the storage service and let it handle the complexity
-              console.log('Using storage service for updating icon');
+              loggers.game.debug('Using storage service for updating icon');
               const updatedServer = await storage.updateGameServer({
                 id: server.id,
                 icon: iconUrl
@@ -459,16 +460,16 @@ const handleUpload = async (req: express.Request, res: express.Response, type: '
               
               if (updatedServer) {
                 server = updatedServer;
-                console.log('Server updated successfully via storage service');
+                loggers.game.debug('Server updated successfully via storage service');
               } else {
                 throw new Error('Storage service returned no server object');
               }
             } catch (updateError) {
-              console.error('Error updating server icon:', updateError);
-              
+              loggers.game.error('Error updating server icon', { error: updateError });
+
               // Last resort: Try a super basic direct SQL update, ignore the returning value
               try {
-                console.log('LAST RESORT: Using super basic direct SQL update');
+                loggers.game.debug('Last resort: Using super basic direct SQL update');
                 await pool.query(
                   'UPDATE "gameServers" SET "icon" = $1 WHERE "id" = $2',
                   [iconUrl, server.id]
@@ -476,24 +477,24 @@ const handleUpload = async (req: express.Request, res: express.Response, type: '
                 
                 // Just manually update the icon in our local object
                 server.icon = iconUrl;
-                console.log('LAST RESORT: Basic update completed, icon set to:', iconUrl);
+                loggers.game.debug('Last resort: Basic update completed', { iconUrl });
               } catch (finalError) {
-                console.error('LAST RESORT: Even basic SQL update failed:', finalError);
+                loggers.game.error('Last resort: Even basic SQL update failed', { error: finalError });
                 throw updateError; // Throw the original error for better diagnosis
               }
             }
           }
         }
         
-        console.log('Server operation completed successfully - ID:', server.id, 'Icon:', server.icon);
+        loggers.game.debug('Server operation completed successfully', { serverId: server.id, icon: server.icon });
       } catch (finalError) {
-        console.error('Error handling game server icon:', finalError);
+        loggers.game.error('Error handling game server icon', { error: finalError });
         // More detailed error message for frontend 
         let detailedError = "Unknown error";
         if (finalError instanceof Error) {
           detailedError = `${finalError.name}: ${finalError.message}`;
           if (finalError.stack) {
-            console.error('Stack:', finalError.stack);
+            loggers.game.error('Stack trace', { stack: finalError.stack });
           }
         }
         
@@ -517,7 +518,7 @@ const handleUpload = async (req: express.Request, res: express.Response, type: '
       res.json({ url: result });
     }
   } catch (error) {
-    console.error('Upload error:', error);
+    loggers.storage.error('Upload error', { error });
     res.status(400).json({
       message: error instanceof Error ? error.message : "Upload failed"
     });
@@ -534,7 +535,7 @@ const isAdmin = (req: express.Request, res: express.Response, next: express.Next
 export async function registerRoutes(app: Express): Promise<Server> {
   // Debug middleware to trace API requests
   app.use('/api', (req, res, next) => {
-    console.log(`[API-DEBUG] ${req.method} ${req.originalUrl}`);
+    loggers.api.trace(`${req.method} ${req.originalUrl}`);
     next();
   });
 
@@ -589,7 +590,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (error instanceof ZodError) {
         res.status(400).json({ message: fromZodError(error).message });
       } else {
-        console.error('Error creating service:', error);
+        loggers.service.error('Error creating service', { error });
         res.status(500).json({ message: "Internal server error" });
       }
     }
@@ -608,7 +609,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (error instanceof ZodError) {
         res.status(400).json({ message: fromZodError(error).message });
       } else {
-        console.error('Error updating service:', error);
+        loggers.service.error('Error updating service', { error });
         res.status(500).json({ message: "Internal server error" });
       }
     }
@@ -627,7 +628,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (error instanceof ZodError) {
         res.status(400).json({ message: fromZodError(error).message });
       } else {
-        console.error('Error deleting service:', error);
+        loggers.service.error('Error deleting service', { error });
         res.status(500).json({ message: "Internal server error" });
       }
     }
@@ -676,7 +677,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       res.json(server);
     } catch (error) {
-      console.error('Error getting game server:', error);
+      loggers.game.error('Error getting game server', { error });
       res.status(500).json({ 
         message: "Failed to get game server",
         error: error instanceof Error ? error.message : "Unknown error"
@@ -689,7 +690,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       // Get all AMP instances
       const ampInstances = await ampService.getInstances();
-      console.log('Raw AMP instances:', ampInstances);
+      loggers.amp.debug('Raw AMP instances', { count: ampInstances.length });
 
       // Get all stored game servers (for hidden status and customizations)
       const storedServers = await storage.getAllGameServers();
@@ -702,7 +703,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
                !instance.FriendlyName.toLowerCase().includes('ads');
       });
 
-      console.log(`Filtered ${gameInstances.length} game servers from ${ampInstances.length} total instances`);
+      loggers.amp.debug('Filtered game servers', { gameCount: gameInstances.length, totalCount: ampInstances.length });
 
       const servers = gameInstances.map(instance => {
         // Find existing stored server or create new one
@@ -788,7 +789,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
         // Debug server status
         if (serverData.name.toLowerCase().includes('satisfactory')) {
-          console.log('DEBUG Server Status:', {
+          loggers.game.debug('Satisfactory server status', {
             name: serverData.name,
             status: serverData.status,
             statusType: typeof serverData.status,
@@ -796,8 +797,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
             runningType: typeof instance.Running
           });
         }
-        
-        console.log('Processed server data:', serverData);
+
+        loggers.game.trace('Processed server data', { serverData });
         return serverData;
       });
 
@@ -805,10 +806,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const showHidden = req.query.showHidden === 'true';
       const filteredServers = showHidden ? servers : servers.filter(s => !s.hidden);
 
-      console.log('Sending filtered servers:', filteredServers);
+      loggers.game.debug('Sending filtered servers', { count: filteredServers.length });
       res.json(filteredServers);
     } catch (error) {
-      console.error('Error fetching game servers:', error);
+      loggers.game.error('Error fetching game servers', { error });
       res.status(500).json({ message: "Failed to fetch game servers" });
     }
   });
@@ -837,35 +838,35 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       res.json(server);
     } catch (error) {
-      console.error('Error updating server visibility:', error);
+      loggers.game.error('Error updating server visibility', { error });
       res.status(500).json({ message: "Failed to update server visibility" });
     }
   });
 
   app.post("/api/game-servers/:instanceId/start", requireFeature('game_servers_access'), gameServerRateLimiter, validateInstanceId, handleValidationErrors, async (req, res) => {
-    console.log(`Start request received - Auth check: ${req.isAuthenticated()}, User: ${req.user?.email || 'none'}`);
-    
+    loggers.game.debug('Start request received', { authenticated: req.isAuthenticated(), user: req.user?.email || 'none' });
+
     if (!req.isAuthenticated()) {
-      console.log('Start request denied - not authenticated');
+      loggers.game.debug('Start request denied - not authenticated');
       return res.sendStatus(401);
     }
     
     try {
       const { instanceId } = req.params;
-      console.log(`Start request received for instance ${instanceId}`);
+      loggers.game.debug('Start request received for instance', { instanceId });
 
       // Verify instance exists
       const instances = await ampService.getInstances();
       const instance = instances.find(i => i.InstanceID === instanceId);
       if (!instance) {
-        console.error(`Instance ${instanceId} not found`);
+        loggers.game.error('Instance not found', { instanceId });
         return res.status(404).json({ message: "Instance not found" });
       }
 
       // Attempt to start the instance
-      console.log(`Calling ampService.startInstance for ${instanceId}`);
+      loggers.game.debug('Calling ampService.startInstance', { instanceId });
       await ampService.startInstance(instanceId);
-      console.log(`Start command successful for instance ${instanceId}`);
+      loggers.game.info('Start command successful', { instanceId });
 
       // Don't wait for status update - return immediately
       // The server may take time to start, and we don't want to timeout
@@ -875,7 +876,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         note: "Server is starting up, this may take a few minutes"
       });
     } catch (error) {
-      console.error('Error starting game server:', error);
+      loggers.game.error('Error starting game server', { error });
       res.status(500).json({
         message: "Failed to start game server",
         error: error instanceof Error ? error.message : "Unknown error"
@@ -884,28 +885,28 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   app.post("/api/game-servers/:instanceId/stop", requireFeature('game_servers_access'), gameServerRateLimiter, validateInstanceId, handleValidationErrors, async (req, res) => {
-    console.log(`Stop request received - Auth check: ${req.isAuthenticated()}, User: ${req.user?.email || 'none'}`);
-    
+    loggers.game.debug('Stop request received', { authenticated: req.isAuthenticated(), user: req.user?.email || 'none' });
+
     if (!req.isAuthenticated()) {
-      console.log('Stop request denied - not authenticated');
+      loggers.game.debug('Stop request denied - not authenticated');
       return res.sendStatus(401);
     }
     
     try {
       const { instanceId } = req.params;
-      console.log(`Stop request received for instance ${instanceId}`);
+      loggers.game.debug('Stop request received for instance', { instanceId });
 
       // Verify instance exists
       const instances = await ampService.getInstances();
       const instance = instances.find(i => i.InstanceID === instanceId);
       if (!instance) {
-        console.error(`Instance ${instanceId} not found`);
+        loggers.game.error('Instance not found', { instanceId });
         return res.status(404).json({ message: "Instance not found" });
       }
 
       // Attempt to stop the instance
       await ampService.stopInstance(instanceId);
-      console.log(`Stop command successful for instance ${instanceId}`);
+      loggers.game.info('Stop command successful', { instanceId });
 
       // Don't wait for status update - return immediately
       // The server may take time to stop, and we don't want to timeout
@@ -915,7 +916,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         note: "Server is shutting down"
       });
     } catch (error) {
-      console.error('Error stopping game server:', error);
+      loggers.game.error('Error stopping game server', { error });
       res.status(500).json({
         message: "Failed to stop game server",
         error: error instanceof Error ? error.message : "Unknown error"
@@ -927,19 +928,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
     if (!req.isAuthenticated()) return res.sendStatus(401);
     try {
       const { instanceId } = req.params;
-      console.log(`Restart request received for instance ${instanceId}`);
+      loggers.game.debug('Restart request received for instance', { instanceId });
 
       // Verify instance exists
       const instances = await ampService.getInstances();
       const instance = instances.find(i => i.InstanceID === instanceId);
       if (!instance) {
-        console.error(`Instance ${instanceId} not found`);
+        loggers.game.error('Instance not found', { instanceId });
         return res.status(404).json({ message: "Instance not found" });
       }
 
       // Attempt to restart the instance
       await ampService.restartInstance(instanceId);
-      console.log(`Restart command successful for instance ${instanceId}`);
+      loggers.game.info('Restart command successful', { instanceId });
 
       // Don't wait for status update - return immediately
       // The server may take time to restart, and we don't want to timeout
@@ -949,7 +950,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         note: "Server is restarting, this may take a few minutes"
       });
     } catch (error) {
-      console.error('Error restarting game server:', error);
+      loggers.game.error('Error restarting game server', { error });
       res.status(500).json({
         message: "Failed to restart game server",
         error: error instanceof Error ? error.message : "Unknown error"
@@ -961,30 +962,30 @@ export async function registerRoutes(app: Express): Promise<Server> {
     if (!req.isAuthenticated()) return res.sendStatus(401);
     try {
       const { instanceId } = req.params;
-      console.log(`Kill request received for instance ${instanceId}`);
+      loggers.game.debug('Kill request received for instance', { instanceId });
 
       // Verify instance exists
       const instances = await ampService.getInstances();
       const instance = instances.find(i => i.InstanceID === instanceId);
       if (!instance) {
-        console.error(`Instance ${instanceId} not found`);
+        loggers.game.error('Instance not found', { instanceId });
         return res.status(404).json({ message: "Instance not found" });
       }
 
       // Attempt to kill the instance
       await ampService.killInstance(instanceId);
-      console.log(`Kill command successful for instance ${instanceId}`);
+      loggers.game.info('Kill command successful', { instanceId });
 
       // Get updated status
       const status = await ampService.getInstanceStatus(instanceId);
-      console.log(`Updated status for instance ${instanceId}:`, status);
+      loggers.game.debug('Updated status for instance', { instanceId, status });
 
       res.json({
         message: "Server killed",
         status: status?.State || "Unknown"
       });
     } catch (error) {
-      console.error('Error killing game server:', error);
+      loggers.game.error('Error killing game server', { error });
       res.status(500).json({
         message: "Failed to kill game server",
         error: error instanceof Error ? error.message : "Unknown error"
@@ -1002,7 +1003,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ message: "Command is required" });
       }
       
-      console.log(`Console command for instance ${instanceId}: ${command}`);
+      loggers.game.debug('Console command for instance', { instanceId, command });
       
       // Send the console command
       await ampService.sendConsoleCommand(instanceId, command);
@@ -1012,7 +1013,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         command: command 
       });
     } catch (error) {
-      console.error('Error sending console command:', error);
+      loggers.game.error('Error sending console command', { error });
       res.status(500).json({ 
         message: "Failed to send console command",
         error: error instanceof Error ? error.message : "Unknown error"
@@ -1024,28 +1025,28 @@ export async function registerRoutes(app: Express): Promise<Server> {
     if (!req.isAuthenticated()) return res.sendStatus(401);
     try {
       const { instanceId } = req.params;
-      console.log(`Update request received for instance ${instanceId}`);
-      
+      loggers.game.debug('Update request received for instance', { instanceId });
+
       // Verify instance exists
       const instances = await ampService.getInstances();
       const instance = instances.find(i => i.InstanceID === instanceId);
-      
+
       if (!instance) {
-        console.error(`Instance ${instanceId} not found`);
+        loggers.game.error('Instance not found', { instanceId });
         return res.status(404).json({ message: "Instance not found" });
       }
-      
+
       // Initiate update
       await ampService.updateInstance(instanceId);
-      console.log(`Update initiated for instance ${instanceId}`);
+      loggers.game.info('Update initiated for instance', { instanceId });
       
       res.json({ 
         message: "Server update initiated",
         instanceName: instance.FriendlyName
       });
     } catch (error) {
-      console.error('Error updating game server:', error);
-      res.status(500).json({ 
+      loggers.game.error('Error updating game server', { error });
+      res.status(500).json({
         message: "Failed to update game server",
         error: error instanceof Error ? error.message : "Unknown error"
       });
@@ -1059,23 +1060,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const { title, description } = req.body;
       const user = req.user as User;
       
-      console.log(`Backup request received for instance ${instanceId}`);
-      
+      loggers.game.debug('Backup request received for instance', { instanceId });
+
       // Verify instance exists
       const instances = await ampService.getInstances();
       const instance = instances.find(i => i.InstanceID === instanceId);
-      
+
       if (!instance) {
-        console.error(`Instance ${instanceId} not found`);
+        loggers.game.error('Instance not found', { instanceId });
         return res.status(404).json({ message: "Instance not found" });
       }
-      
+
       // Take backup
       const backupTitle = title || `Manual Backup - ${new Date().toLocaleString()}`;
       const backupDescription = description || `Backup requested by ${user.email}`;
-      
+
       const result = await ampService.takeBackup(instanceId, backupTitle, backupDescription);
-      console.log(`Backup initiated for instance ${instanceId}`);
+      loggers.game.info('Backup initiated for instance', { instanceId });
       
       res.json({ 
         message: "Backup initiated successfully",
@@ -1084,7 +1085,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         result: result
       });
     } catch (error) {
-      console.error('Error taking backup:', error);
+      loggers.game.error('Error taking backup', { error });
       res.status(500).json({ 
         message: "Failed to take backup",
         error: error instanceof Error ? error.message : "Unknown error"
@@ -1096,12 +1097,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
     if (!req.isAuthenticated()) return res.sendStatus(401);
     try {
       const { instanceId } = req.params;
-      console.log(`Getting backups for instance ${instanceId}`);
+      loggers.game.debug('Getting backups for instance', { instanceId });
       
       const backups = await ampService.getBackups(instanceId);
       res.json(backups);
     } catch (error) {
-      console.error('Error getting backups:', error);
+      loggers.game.error('Error getting backups', { error });
       res.status(500).json({ 
         message: "Failed to get backups",
         error: error instanceof Error ? error.message : "Unknown error"
@@ -1119,7 +1120,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ message: "Backup ID is required" });
       }
       
-      console.log(`Restore request for instance ${instanceId}, backup ${backupId}`);
+      loggers.game.debug('Restore request for instance', { instanceId, backupId });
       
       await ampService.restoreBackup(instanceId, backupId);
       
@@ -1128,7 +1129,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         backupId: backupId
       });
     } catch (error) {
-      console.error('Error restoring backup:', error);
+      loggers.game.error('Error restoring backup', { error });
       res.status(500).json({ 
         message: "Failed to restore backup",
         error: error instanceof Error ? error.message : "Unknown error"
@@ -1145,7 +1146,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const output = await ampService.getConsoleOutput(instanceId, since);
       res.json({ output });
     } catch (error) {
-      console.error('Error getting console output:', error);
+      loggers.game.error('Error getting console output', { error });
       res.status(500).json({ 
         message: "Failed to get console output",
         error: error instanceof Error ? error.message : "Unknown error"
@@ -1161,7 +1162,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const tasks = await ampService.getScheduledTasks(instanceId);
       res.json(tasks);
     } catch (error) {
-      console.error('Error getting scheduled tasks:', error);
+      loggers.game.error('Error getting scheduled tasks', { error });
       res.status(500).json({ 
         message: "Failed to get scheduled tasks",
         error: error instanceof Error ? error.message : "Unknown error"
@@ -1179,7 +1180,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (error instanceof ZodError) {
         res.status(400).json({ message: fromZodError(error).message });
       } else {
-        console.error('Error creating game server:', error);
+        loggers.game.error('Error creating game server', { error });
         res.status(500).json({ message: "Internal server error" });
       }
     }
@@ -1198,7 +1199,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (error instanceof ZodError) {
         res.status(400).json({ message: fromZodError(error).message });
       } else {
-        console.error('Error updating game server:', error);
+        loggers.game.error('Error updating game server', { error });
         res.status(500).json({ message: "Internal server error" });
       }
     }
@@ -1217,7 +1218,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (error instanceof ZodError) {
         res.status(400).json({ message: fromZodError(error).message });
       } else {
-        console.error('Error deleting game server:', error);
+        loggers.game.error('Error deleting game server', { error });
         res.status(500).json({ message: "Internal server error" });
       }
     }
@@ -1227,13 +1228,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/amp-test", async (req, res) => {
     if (!req.isAuthenticated()) return res.sendStatus(401);
     try {
-      console.log('Testing AMP connection...');
-      console.log('AMP URL:', process.env.AMP_API_URL);
-      console.log('Username configured:', !!process.env.AMP_API_USERNAME);
+      loggers.amp.debug('Testing AMP connection');
+      loggers.amp.debug('AMP URL', { url: process.env.AMP_API_URL });
+      loggers.amp.debug('Username configured', { configured: !!process.env.AMP_API_USERNAME });
 
       // Try to get available API methods
       const apiMethods = await ampService.getAvailableAPIMethods();
-      console.log('Available API methods:', apiMethods);
+      loggers.amp.debug('Available API methods', { methods: apiMethods });
 
       // Get instance information
       const instances = await ampService.getInstances();
@@ -1246,7 +1247,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         availableAPIMethods: apiMethods
       });
     } catch (error) {
-      console.error('AMP test endpoint error:', error);
+      loggers.amp.error('AMP test endpoint error', { error });
       res.status(500).json({
         success: false,
         message: "Failed to connect to AMP",
@@ -1312,7 +1313,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       res.json({ message: "Request submitted successfully" });
     } catch (error) {
-      console.error('Error processing game server request:', error);
+      loggers.game.error('Error processing game server request', { error });
       res.status(500).json({ message: "Failed to process request" });
     }
   });
@@ -1335,7 +1336,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }));
       res.json(filteredUsers);
     } catch (error) {
-      console.error("Error fetching users:", error);
+      loggers.auth.error('Error fetching users', { error });
       res.status(500).json({ message: "Failed to fetch users" });
     }
   });
@@ -1400,20 +1401,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
           const commissionAmount = 500; // $5.00 in cents
           await storage.creditReferralRewards(referral.id, commissionAmount);
         } catch (error) {
-          console.error("Error creating referral record:", error);
+          loggers.auth.error('Error creating referral record', { error });
           // Don't fail user creation if referral tracking fails
         }
       }
 
       req.login(user, (err) => {
         if (err) {
-          console.error("Login error after registration:", err);
+          loggers.auth.error('Login error after registration', { error: err });
           return res.status(500).json({ message: "Error during login" });
         }
         res.json(user);
       });
     } catch (error) {
-      console.error("Registration error:", error);
+      loggers.auth.error('Registration error', { error });
       res.status(500).json({ message: "Error creating user" });
     }
   });
@@ -1438,13 +1439,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // Test the new credentials
       try {
-        console.log('Testing new AMP credentials...');
-        console.log('Using username:', amp_username);
+        loggers.amp.debug('Testing new AMP credentials');
+        loggers.amp.debug('Using username', { username: amp_username });
         const systemInfo = await ampService.getSystemInfo();
-        console.log('Updated credentials test - System info:', systemInfo);
+        loggers.amp.debug('Updated credentials test - System info', { systemInfo });
         res.json({ message: "AMP credentials updated successfully" });
       } catch (error) {
-        console.error('Error testing new credentials:', error);
+        loggers.amp.error('Error testing new credentials', { error });
 
         // Extract the specific error message if available
         let errorMessage = "Failed to connect with new credentials";
@@ -1458,7 +1459,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
     } catch (error) {
-      console.error('Error updating AMP credentials:', error);
+      loggers.amp.error('Error updating AMP credentials', { error });
       res.status(500).json({ message: "Failed to update AMP credentials" });
     }
   });
@@ -1467,19 +1468,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
     if (!req.isAuthenticated()) return res.sendStatus(401);
     try {
       const { instanceId } = req.params;
-      console.log(`Fetching metrics for instance ${instanceId}`);
+      loggers.amp.debug('Fetching metrics for instance', { instanceId });
 
       // Get instance status first to verify it exists and is running
       const instances = await ampService.getInstances();
       const instance = instances.find(i => i.InstanceID === instanceId);
 
       if (!instance) {
-        console.error(`Instance ${instanceId} not found`);
+        loggers.amp.error('Instance not found', { instanceId });
         return res.status(404).json({ message: "Instance not found" });
       }
 
       if (!instance.Running) {
-        console.log(`Instance ${instanceId} is not running, returning null metrics`);
+        loggers.amp.debug('Instance is not running, returning null metrics', { instanceId });
         return res.json(null);
       }
 
@@ -1490,7 +1491,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ message: "Instance not found in instances list" });
       }
       
-      console.log(`Instance data for ${instanceId}:`, JSON.stringify(instanceData.Metrics, null, 2));
+      loggers.amp.debug('Instance metrics data', { instanceId, metrics: instanceData.Metrics });
       
       // Extract metrics the same way as the main server list
       const metrics = {
@@ -1515,7 +1516,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       res.json(response);
     } catch (error) {
-      console.error(`Error fetching metrics for instance ${instanceId}:`, error);
+      loggers.amp.error('Error fetching metrics for instance', { instanceId, error });
       res.status(500).json({
         message: "Failed to fetchinstance metrics",
         error: error instanceof Error ? error.message : "Unknown error"
@@ -1528,34 +1529,34 @@ export async function registerRoutes(app: Express): Promise<Server> {
     if (!req.isAuthenticated()) return res.sendStatus(401);
     try {
       const { instanceId } = req.params;
-      console.log(`Debug request received for instance ${instanceId}`);
+      loggers.amp.debug('Debug request received for instance', { instanceId });
 
       // Get all instance information first
       const instances = await ampService.getInstances();
       const instance = instances.find(i => i.InstanceID === instanceId);
 
       if (!instance) {
-        console.log(`Instance ${instanceId} not found`);
+        loggers.amp.debug('Instance not found', { instanceId });
         return res.status(404).json({ message: "Instance not found" });
       }
 
-      console.log('Found instance:', instance);
+      loggers.amp.debug('Found instance', { instance });
 
       // Get data from all possible sources
-      console.log('Fetching metrics...');
+      loggers.amp.debug('Fetching metrics...');
       const metrics = await ampService.getMetrics(instanceId);
-      console.log('Raw metrics:', metrics);
+      loggers.amp.debug('Raw metrics', { metrics });
 
-      console.log('Fetching user list...');
+      loggers.amp.debug('Fetching user list...');
       const userList = await ampService.getUserList(instanceId);
-      console.log('Raw user list:', userList);
+      loggers.amp.debug('Raw user list', { userList });
 
-      console.log('Fetching instance status...');
+      loggers.amp.debug('Fetching instance status...');
       const status = await ampService.getInstanceStatus(instanceId);
-      console.log('Raw instance status:', status);
+      loggers.amp.debug('Raw instance status', { status });
 
       const activeUsers = status?.Metrics?.['Active Users']?.RawValue || 0;
-      console.log('Extracted active users:', activeUsers);
+      loggers.amp.debug('Extracted active users', { activeUsers });
 
       // Return all debug information
       const response = {
@@ -1580,11 +1581,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
         state: status?.State
       };
 
-      console.log('Sending debug response:', response);
+      loggers.amp.debug('Sending debug response', { response });
       res.json(response);
 
     } catch (error) {
-      console.error('Debug endpoint error:', error);
+      loggers.amp.error('Debug endpoint error', { error });
       res.status(500).json({
         message: "Debug operation failed",
         error: error instanceof Error ? error.message : "Unknown error"
@@ -1598,7 +1599,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const templates = await storage.getAllEmailTemplates();
       res.json(templates);
     } catch (error) {
-      console.error('Error fetching email templates:', error);
+      loggers.api.error('Error fetching email templates', { error });
       res.status(500).json({ message: "Failed to fetch email templates" });
     }
   });
@@ -1608,7 +1609,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const template = await storage.createEmailTemplate(req.body);
       res.status(201).json(template);
     } catch (error) {
-      console.error('Error creating email template:', error);
+      loggers.api.error('Error creating email template', { error });
       res.status(500).json({ message: "Failed to create email template" });
     }
   });
@@ -1624,7 +1625,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       res.json(template);
     } catch (error) {
-      console.error('Error updating email template:', error);
+      loggers.api.error('Error updating email template', { error });
       res.status(500).json({ message: "Failed to update email template" });
     }
   });
@@ -1646,7 +1647,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const baseUrl = `${req.protocol}://${req.get('host')}`;
       const absoluteLogoUrl = logoUrl?.startsWith('http') ? logoUrl : `${baseUrl}${logoUrl}`;
 
-      console.log('Testing email template with logo:', {
+      loggers.api.debug('Testing email template with logo', {
         providedUrl: logoUrl,
         absoluteUrl: absoluteLogoUrl,
         baseUrl
@@ -1672,7 +1673,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         res.status(500).json({ message: "Failed to send test email" });
       }
     } catch (error) {
-      console.error('Error sending test email:', error);
+      loggers.api.error('Error sending test email', { error });
       res.status(500).json({ message: "Internal server error" });
     }
   });
@@ -1684,7 +1685,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const attempts = await storage.getAllLoginAttempts();
       res.json(attempts);
     } catch (error) {
-      console.error('Error fetching login attempts:', error);
+      loggers.auth.error('Error fetching login attempts', { error });
       res.status(500).json({ message: "Failed to fetch login attempts" });
     }
   });
@@ -1700,7 +1701,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         throw new Error("Plex token not configured");
       }
 
-      console.log(`Sending Plex invitation to ${email}...`);
+      loggers.plex.debug('Sending Plex invitation', { email });
 
       // Common headers for all Plex API requests
       const headers = {
@@ -1719,12 +1720,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       if (!resourcesResponse.ok) {
         const errorText = await resourcesResponse.text();
-        console.error('Plex API resources error:', errorText);
+        loggers.plex.error('Plex API resources error', { errorText });
         throw new Error(`Failed to get Plex resources: ${resourcesResponse.status} ${errorText}`);
       }
 
       const resourcesText = await resourcesResponse.text();
-      console.log('Raw Plex response:', resourcesText);
+      loggers.plex.debug('Raw Plex response', { resourcesText: resourcesText.substring(0, 500) });
 
       // Simple XML parsing to get the server identifier
       const serverMatch = resourcesText.match(/clientIdentifier="([^"]+)"/);
@@ -1737,7 +1738,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const serverId = serverMatch[1];
       const serverName = serverNameMatch[1];
 
-      console.log(`Found Plex server: ${serverName} (${serverId})`);
+      loggers.plex.debug('Found Plex server', { serverName, serverId });
 
       // Step 2: Send the invitation
       const inviteResponse = await fetch(`https://plex.tv/api/servers/${serverId}/shared_servers`, {
@@ -1764,12 +1765,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       if (!inviteResponse.ok) {
         const errorText = await inviteResponse.text();
-        console.error('Plex API invitation error:', errorText);
+        loggers.plex.error('Plex API invitation error', { errorText });
         throw new Error(`Failed to send invitation: ${inviteResponse.status} ${errorText}`);
       }
 
       const inviteResult = await inviteResponse.text();
-      console.log('Plex invitation response:', inviteResult);
+      loggers.plex.debug('Plex invitation response', { inviteResult: inviteResult.substring(0, 500) });
 
       res.json({ 
         message: "Plex invitation sent successfully", 
@@ -1777,7 +1778,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         email: email
       });
     } catch (error) {
-      console.error('Error sending Plex invitation:', error);
+      loggers.plex.error('Error sending Plex invitation', { error });
       res.status(500).json({
         message: "Failed to send Plex invitation",
         error: error instanceof Error ? error.message : "Unknown error"
@@ -1794,7 +1795,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const activity = await tautulliService.getActivity();
       res.json(activity.response.data);
     } catch (error) {
-      console.error('Error fetching Tautulli activity:', error);
+      loggers.plex.error('Error fetching Tautulli activity', { error });
       res.status(500).json({
         message: "Failed to fetch Tautulli activity",
         error: error instanceof Error ? error.message : "Unknown error"
@@ -1854,7 +1855,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       res.json(enrichedUsers);
     } catch (error) {
-      console.error('Error fetching Tautulli users:', error);
+      loggers.plex.error('Error fetching Tautulli users', { error });
       res.status(500).json({
         message: "Failed to fetch Tautulli users",
         error: error instanceof Error ? error.message : "Unknown error"
@@ -1870,7 +1871,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const libraries = await tautulliService.getLibraries();
       res.json(libraries.response.data);
     } catch (error) {
-      console.error('Error fetching Tautulli libraries:', error);
+      loggers.plex.error('Error fetching Tautulli libraries', { error });
       res.status(500).json({
         message: "Failed to fetch Tautulli libraries",
         error: error instanceof Error ? error.message : "Unknown error"
@@ -1886,7 +1887,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const history = await tautulliService.getHistory(req.query as any);
       res.json(history.response.data);
     } catch (error) {
-      console.error('Error fetching Tautulli history:', error);
+      loggers.plex.error('Error fetching Tautulli history', { error });
       res.status(500).json({
         message: "Failed to fetch Tautulli history",
         error: error instanceof Error ? error.message : "Unknown error"
@@ -1904,7 +1905,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const recentlyAdded = await tautulliService.getRecentlyAdded(count);
       res.json(recentlyAdded.response.data);
     } catch (error) {
-      console.error('Error fetching Tautulli recently added:', error);
+      loggers.plex.error('Error fetching Tautulli recently added', { error });
       res.status(500).json({
         message: "Failed to fetch recently added content",
         error: error instanceof Error ? error.message : "Unknown error"
@@ -1921,7 +1922,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const playsByDate = await tautulliService.getPlaysByDate(timeRange);
       res.json(playsByDate.response.data);
     } catch (error) {
-      console.error('Error fetching Tautulli plays by date:', error);
+      loggers.plex.error('Error fetching Tautulli plays by date', { error });
       res.status(500).json({
         message: "Failed to fetch plays by date analytics",
         error: error instanceof Error ? error.message : "Unknown error"
@@ -1937,7 +1938,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const serverInfo = await tautulliService.getServerInfo();
       res.json({ data: serverInfo });
     } catch (error) {
-      console.error('Error fetching Tautulli server info:', error);
+      loggers.plex.error('Error fetching Tautulli server info', { error });
       res.status(500).json({
         message: "Failed to fetch server info",
         error: error instanceof Error ? error.message : "Unknown error"
@@ -1957,7 +1958,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         message: isConnected ? "Tautulli connection successful" : "Tautulli connection failed"
       });
     } catch (error) {
-      console.error('Error testing Tautulli connection:', error);
+      loggers.plex.error('Error testing Tautulli connection', { error });
       res.status(500).json({
         connected: false,
         message: "Failed to test Tautulli connection",
@@ -2015,7 +2016,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Send the image
       res.send(Buffer.from(buffer));
     } catch (error) {
-      console.error('Error proxying Tautulli image:', error);
+      loggers.plex.error('Error proxying Tautulli image', { error });
       res.status(500).json({
         message: "Failed to proxy image",
         error: error instanceof Error ? error.message : "Unknown error"
@@ -2043,7 +2044,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const deviceInfo = await hdhrService.getDeviceInfo();
       res.json({ configured: true, device: deviceInfo });
     } catch (error) {
-      console.error('Error fetching HD HomeRun devices:', error);
+      loggers.iptv.error('Error fetching HD HomeRun devices', { error });
       res.status(500).json({
         message: "Failed to fetch HD HomeRun devices",
         error: error instanceof Error ? error.message : "Unknown error"
@@ -2070,7 +2071,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const channels = await hdhrService.getChannelLineup();
       res.json({ configured: true, channels });
     } catch (error) {
-      console.error('Error fetching HD HomeRun channels:', error);
+      loggers.iptv.error('Error fetching HD HomeRun channels', { error });
       res.status(500).json({
         message: "Failed to fetch HD HomeRun channels",
         error: error instanceof Error ? error.message : "Unknown error"
@@ -2097,7 +2098,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const tuners = await hdhrService.getTunerStatus();
       res.json({ configured: true, tuners });
     } catch (error) {
-      console.error('Error fetching HD HomeRun tuner status:', error);
+      loggers.iptv.error('Error fetching HD HomeRun tuner status', { error });
       res.status(500).json({
         message: "Failed to fetch HD HomeRun tuner status",
         error: error instanceof Error ? error.message : "Unknown error"
@@ -2119,15 +2120,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       // Get the raw stream URL from HDHomeRun
       const sourceUrl = hdhrService.getChannelStreamUrl(channel);
-      console.log(`HD HomeRun stream request for channel ${channel}, source URL: ${sourceUrl}`);
+      loggers.iptv.debug('HD HomeRun stream request', { channel, sourceUrl });
       
       // Import streaming service
       const { streamingService } = await import('./services/streaming-service');
       
       // Start HLS conversion
-      console.log(`Starting HLS stream conversion for channel ${channel}`);
+      loggers.iptv.debug('Starting HLS stream conversion', { channel });
       const hlsUrl = await streamingService.startHLSStream(channel, sourceUrl);
-      console.log(`HLS stream URL generated: ${hlsUrl}`);
+      loggers.iptv.debug('HLS stream URL generated', { hlsUrl });
       
       res.json({ 
         streamUrl: hlsUrl,
@@ -2135,7 +2136,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         type: 'hls'
       });
     } catch (error) {
-      console.error('Error getting HD HomeRun stream URL:', error);
+      loggers.iptv.error('Error getting HD HomeRun stream URL', { error });
       res.status(500).json({
         message: "Failed to get stream URL",
         error: error instanceof Error ? error.message : "Unknown error"
@@ -2167,7 +2168,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         message: isHealthy ? "HD HomeRun connection successful" : "HD HomeRun connection failed" 
       });
     } catch (error) {
-      console.error('Error testing HD HomeRun connection:', error);
+      loggers.iptv.error('Error testing HD HomeRun connection', { error });
       res.status(500).json({
         success: false,
         message: "Failed to test HD HomeRun connection",
@@ -2206,7 +2207,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         } : null
       });
     } catch (error) {
-      console.error('Error fetching IPTV status:', error);
+      loggers.iptv.error('Error fetching IPTV status', { error });
       res.status(500).json({
         configured: false,
         message: "Failed to fetch IPTV status",
@@ -2226,7 +2227,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const stats = epgService.getCacheStats();
       res.json(stats);
     } catch (error) {
-      console.error('Error fetching EPG stats:', error);
+      loggers.epg.error('Error fetching EPG stats', { error });
       res.status(500).json({
         message: "Failed to fetch EPG stats",
         error: error instanceof Error ? error.message : "Unknown error"
@@ -2246,7 +2247,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const stats = epgService.getCacheStats();
       res.json({ success: true, stats });
     } catch (error) {
-      console.error('Error refreshing EPG:', error);
+      loggers.epg.error('Error refreshing EPG', { error });
       res.status(500).json({
         success: false,
         message: "Failed to refresh EPG",
@@ -2266,7 +2267,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const data = epgService.getDataSummary();
       res.json(data);
     } catch (error) {
-      console.error('Error fetching EPG data:', error);
+      loggers.epg.error('Error fetching EPG data', { error });
       res.status(500).json({
         message: "Failed to fetch EPG data",
         error: error instanceof Error ? error.message : "Unknown error"
@@ -2287,7 +2288,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const programs = epgService.getChannelPrograms(decodeURIComponent(channelId), limit);
       res.json(programs);
     } catch (error) {
-      console.error('Error fetching channel programs:', error);
+      loggers.epg.error('Error fetching channel programs', { error });
       res.status(500).json({
         message: "Failed to fetch channel programs",
         error: error instanceof Error ? error.message : "Unknown error"
@@ -2308,7 +2309,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         ...stats
       });
     } catch (error) {
-      console.error('Error fetching TMDB stats:', error);
+      loggers.tmdb.error('Error fetching TMDB stats', { error });
       res.status(500).json({
         message: "Failed to fetch TMDB stats",
         error: error instanceof Error ? error.message : "Unknown error"
@@ -2327,7 +2328,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const stats = tmdbService.getCacheStats();
       res.json({ success: true, message: "TMDB cache cleared", stats });
     } catch (error) {
-      console.error('Error clearing TMDB cache:', error);
+      loggers.tmdb.error('Error clearing TMDB cache', { error });
       res.status(500).json({
         success: false,
         message: "Failed to clear TMDB cache",
@@ -2351,7 +2352,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       res.json(debugResults);
     } catch (error) {
-      console.error('Error testing TMDB:', error);
+      loggers.tmdb.error('Error testing TMDB', { error });
       res.status(500).json({
         message: "Failed to test TMDB",
         error: error instanceof Error ? error.message : "Unknown error"
@@ -2378,7 +2379,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const categories = await xtreamCodesService.getCategories();
       res.json({ configured: true, categories });
     } catch (error) {
-      console.error('Error fetching IPTV categories:', error);
+      loggers.iptv.error('Error fetching IPTV categories', { error });
       res.status(500).json({
         message: "Failed to fetch IPTV categories",
         error: error instanceof Error ? error.message : "Unknown error"
@@ -2416,12 +2417,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
                           userAgent.includes('Android') || userAgent.includes('Capacitor') ||
                           userAgent.includes('CFNetwork') || userAgent.includes('Darwin');
 
-      console.log(`[IPTV Channels] User-Agent: ${userAgent.substring(0, 50)}..., isNativeApp: ${isNativeApp}`);
+      loggers.iptv.debug('IPTV Channels request', { userAgent: userAgent.substring(0, 50), isNativeApp });
 
       if (isNativeApp) {
         // Get the base URL from environment or request
         const baseUrl = process.env.VITE_API_URL || `https://${req.headers.host}`;
-        console.log(`[IPTV Channels] Converting logos for native app, baseUrl: ${baseUrl}`);
+        loggers.iptv.debug('Converting logos for native app', { baseUrl });
 
         // Convert relative logo URLs to absolute
         let convertedCount = 0;
@@ -2431,16 +2432,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
             ch.logo = `${baseUrl}${ch.logo}`;
             convertedCount++;
             if (convertedCount <= 3) {
-              console.log(`[IPTV Channels] Converted logo: ${oldLogo.substring(0, 50)}... -> ${ch.logo.substring(0, 80)}...`);
+              loggers.iptv.trace('Converted logo', { oldLogo: oldLogo.substring(0, 50), newLogo: ch.logo.substring(0, 80) });
             }
           }
         });
-        console.log(`[IPTV Channels] Converted ${convertedCount} logo URLs to absolute`);
+        loggers.iptv.debug('Converted logo URLs to absolute', { convertedCount });
       }
 
       res.json({ configured: true, channels });
     } catch (error) {
-      console.error('Error fetching IPTV channels:', error);
+      loggers.iptv.error('Error fetching IPTV channels', { error });
       res.status(500).json({
         message: "Failed to fetch IPTV channels",
         error: error instanceof Error ? error.message : "Unknown error"
@@ -2554,7 +2555,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       res.json({ trending: trendingChannels });
     } catch (error) {
-      console.error('Error fetching trending channels:', error);
+      loggers.iptv.error('Error fetching trending channels', { error });
       res.status(500).json({ error: 'Failed to fetch trending channels' });
     }
   });
@@ -2586,7 +2587,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const epg = await client.getEPG(streamId, limit);
       res.json({ configured: true, epg });
     } catch (error) {
-      console.error('Error fetching IPTV EPG:', error);
+      loggers.iptv.error('Error fetching IPTV EPG', { error });
       res.status(500).json({
         message: "Failed to fetch IPTV EPG",
         error: error instanceof Error ? error.message : "Unknown error"
@@ -2620,7 +2621,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const { now, next } = await client.getShortEPG(streamId);
       res.json({ configured: true, now, next });
     } catch (error) {
-      console.error('Error fetching short IPTV EPG:', error);
+      loggers.iptv.error('Error fetching short IPTV EPG', { error });
       res.status(500).json({
         message: "Failed to fetch short IPTV EPG",
         error: error instanceof Error ? error.message : "Unknown error"
@@ -2649,7 +2650,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         xmltvUrl: xtreamCodesService.getXMLTVUrl()
       });
     } catch (error) {
-      console.error('Error fetching IPTV URLs:', error);
+      loggers.iptv.error('Error fetching IPTV URLs', { error });
       res.status(500).json({
         message: "Failed to fetch IPTV URLs",
         error: error instanceof Error ? error.message : "Unknown error"
@@ -2680,7 +2681,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       res.json(favorites);
     } catch (error) {
-      console.error('Error fetching favorite channels:', error);
+      loggers.iptv.error('Error fetching favorite channels', { error });
       res.status(500).json({
         message: "Failed to fetch favorite channels",
         error: error instanceof Error ? error.message : "Unknown error"
@@ -2704,7 +2705,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       res.json(newFavorite[0]);
     } catch (error) {
-      console.error('Error adding favorite channel:', error);
+      loggers.iptv.error('Error adding favorite channel', { error });
       res.status(500).json({
         message: "Failed to add favorite channel",
         error: error instanceof Error ? error.message : "Unknown error"
@@ -2729,7 +2730,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       res.json({ success: true });
     } catch (error) {
-      console.error('Error removing favorite channel:', error);
+      loggers.iptv.error('Error removing favorite channel', { error });
       res.status(500).json({
         message: "Failed to remove favorite channel",
         error: error instanceof Error ? error.message : "Unknown error"
@@ -2776,7 +2777,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       createdAt: new Date()
     });
 
-    console.log(`🔑 Generated stream token for user ${userId}, stream ${streamId}`);
+    loggers.iptv.debug('Generated stream token', { userId, streamId });
     return token;
   }
 
@@ -2785,25 +2786,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
     const tokenData = streamTokens.get(token);
 
     if (!tokenData) {
-      console.log(`❌ Invalid token: ${token}`);
+      loggers.iptv.debug('Invalid token', { token: token.substring(0, 20) });
       return null;
     }
 
     if (tokenData.expiresAt < new Date()) {
-      console.log(`⏰ Expired token: ${token}`);
+      loggers.iptv.debug('Expired token', { token: token.substring(0, 20) });
       streamTokens.delete(token);
       return null;
     }
 
     if (tokenData.streamId !== streamId) {
-      console.log(`❌ Token stream mismatch: expected ${streamId}, got ${tokenData.streamId}`);
+      loggers.iptv.debug('Token stream mismatch', { expected: streamId, got: tokenData.streamId });
       return null;
     }
 
     // Sliding expiration: extend token lifetime by 1 hour on each use
     // This allows long-running streams (>1 hour) to continue playing
     tokenData.expiresAt = new Date(Date.now() + 3600000);
-    console.log(`✅ Valid token for user ${tokenData.userId}, stream ${streamId} (expiry extended)`);
+    loggers.iptv.trace('Valid token, expiry extended', { userId: tokenData.userId, streamId });
 
     return tokenData.userId;
   }
@@ -2815,7 +2816,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     // Clean up expired tokens
     for (const [token, tokenData] of streamTokens.entries()) {
       if (tokenData.expiresAt < now) {
-        console.log(`🧹 Cleaning up expired token for stream ${tokenData.streamId}`);
+        loggers.iptv.trace('Cleaning up expired token', { streamId: tokenData.streamId });
         streamTokens.delete(token);
       }
     }
@@ -2824,7 +2825,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     for (const [streamId, stream] of sharedStreams.entries()) {
       const timeSinceAccess = now.getTime() - stream.lastAccessed.getTime();
       if (timeSinceAccess > 30000) { // 30 seconds
-        console.log(`🧹 Cleaning up inactive stream ${streamId} (${stream.users.size} users)`);
+        loggers.iptv.trace('Cleaning up inactive stream', { streamId, userCount: stream.users.size });
         sharedStreams.delete(streamId);
         // Also clean up segment base URLs
         if ((global as any).iptvSegmentBaseUrls) {
@@ -2840,7 +2841,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
     try {
       const { streamId, deviceType } = req.body;
-      console.log(`[Generate Token] streamId: ${streamId}, deviceType: ${deviceType}`);
+      loggers.iptv.debug('Generate Token request', { streamId, deviceType });
 
       if (!streamId) {
         return res.status(400).json({ message: "streamId is required" });
@@ -2870,12 +2871,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
             deviceType // Pass device type for analytics
           );
           if (sessionToken) {
-            console.log(`[Token+Track] User ${userId} acquired stream ${streamId} on credential ${credentialId}`);
+            loggers.iptv.debug('User acquired stream on credential', { userId, streamId, credentialId });
           } else {
-            console.log(`[Token+Track] User ${userId} could not acquire stream ${streamId} - no slots available`);
+            loggers.iptv.debug('User could not acquire stream - no slots available', { userId, streamId });
           }
         } else if (credentialId === -1) {
-          console.log(`[Token+Track] User ${userId} using ENV client for stream ${streamId} (no tracking)`);
+          loggers.iptv.debug('User using ENV client (no tracking)', { userId, streamId });
         } else if (credentialId === -2) {
           // Track M3U streams for analytics/trending (no connection limits)
           const ipAddress = req.ip || req.socket.remoteAddress;
@@ -2885,12 +2886,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
             ipAddress,
             deviceType
           );
-          console.log(`[Token+Track] User ${userId} acquired M3U stream ${streamId}`);
+          loggers.iptv.debug('User acquired M3U stream', { userId, streamId });
         } else {
-          console.log(`[Token+Track] User ${userId} has no credential for stream ${streamId}`);
+          loggers.iptv.debug('User has no credential for stream', { userId, streamId });
         }
       } catch (trackError) {
-        console.error('Error tracking stream at token generation:', trackError);
+        loggers.iptv.error('Error tracking stream at token generation', { error: trackError });
         // Don't fail the request - token still works
       }
 
@@ -2900,7 +2901,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         expiresIn: 3600 // seconds
       });
     } catch (error) {
-      console.error('Error generating stream token:', error);
+      loggers.iptv.error('Error generating stream token', { error });
       res.status(500).json({ message: "Failed to generate stream token" });
     }
   });
@@ -2928,14 +2929,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
     const testFailoverStreams = (global as any).testFailoverStreams as Map<string, boolean>;
 
     // Check if this stream is in test failover mode
-    console.log(`[Failover] Checking test mode for stream "${streamId}" (type: ${typeof streamId})`);
-    console.log(`[Failover] Test mode streams: ${testFailoverStreams ? Array.from(testFailoverStreams.keys()).join(', ') || 'none' : 'map not initialized'}`);
+    loggers.iptv.trace('Failover: Checking test mode for stream', { streamId, streamIdType: typeof streamId });
+    loggers.iptv.trace('Failover: Test mode streams', { streams: testFailoverStreams ? Array.from(testFailoverStreams.keys()).join(', ') || 'none' : 'map not initialized' });
 
     const isTestMode = testFailoverStreams?.get(String(streamId)) === true;
     if (isTestMode) {
-      console.log(`[Failover] ⚠️ TEST MODE ACTIVE for stream ${streamId} - skipping primary`);
+      loggers.iptv.warn('Failover: TEST MODE ACTIVE - skipping primary', { streamId });
     } else {
-      console.log(`[Failover] Test mode NOT active for stream ${streamId}`);
+      loggers.iptv.trace('Failover: Test mode NOT active for stream', { streamId });
     }
 
     // Check if this is an M3U channel with a direct stream URL
@@ -2948,25 +2949,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
     if (channel.length > 0 && channel[0].directStreamUrl) {
       // M3U channel - use direct stream URL
       let directUrl = channel[0].directStreamUrl;
-      console.log(`[Failover] M3U channel detected, original URL: ${directUrl}`);
+      loggers.iptv.debug('Failover: M3U channel detected', { directUrl });
 
       // Convert MPEG-TS URLs to HLS format for streaming
       // ErsatzTV and similar servers support both formats at the same endpoint
       if (directUrl.endsWith('.ts')) {
         directUrl = directUrl.replace(/\.ts$/, '.m3u8');
-        console.log(`[Failover] Converted to HLS format: ${directUrl}`);
+        loggers.iptv.debug('Failover: Converted to HLS format', { directUrl });
       }
 
       try {
         let streamUrl = directUrl;
-        console.log(`[Failover] Fetching M3U stream from: ${streamUrl}`);
+        loggers.iptv.debug('Failover: Fetching M3U stream from', { streamUrl });
         let response = await fetch(streamUrl, { timeout: 10000 });
-        console.log(`[Failover] M3U fetch response: ${response.status} ${response.statusText}`);
+        loggers.iptv.debug('Failover: M3U fetch response', { status: response.status, statusText: response.statusText });
 
         if (response.ok) {
           let manifestText = await response.text();
-          console.log(`[Failover] M3U response content type: ${response.headers.get('content-type')}`);
-          console.log(`[Failover] M3U response first 200 chars: ${manifestText.substring(0, 200)}`);
+          loggers.iptv.trace('Failover: M3U response content type', { contentType: response.headers.get('content-type') });
+          loggers.iptv.trace('Failover: M3U response preview', { preview: manifestText.substring(0, 200) });
 
           // Handle HTML redirects
           if (manifestText.trim().startsWith('<!DOCTYPE') || manifestText.trim().startsWith('<html')) {
@@ -2984,21 +2985,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
           }
 
           if (response.ok && !manifestText.trim().startsWith('<!DOCTYPE') && !manifestText.trim().startsWith('<html')) {
-            console.log(`[Failover] M3U direct stream ${streamId} succeeded`);
+            loggers.iptv.debug('Failover: M3U direct stream succeeded', { streamId });
             return { response, manifestText, streamUrl, usedBackup: false };
           }
         } else {
-          console.log(`[Failover] M3U HLS endpoint not available (${response.status}), trying MPEG-TS proxy`);
+          loggers.iptv.debug('Failover: M3U HLS endpoint not available, trying MPEG-TS proxy', { status: response.status });
         }
       } catch (error) {
-        console.log(`[Failover] M3U direct stream ${streamId} error:`, error);
+        loggers.iptv.debug('Failover: M3U direct stream error', { streamId, error });
       }
 
       // If HLS (.m3u8) failed, try to serve the MPEG-TS stream directly
       // Create a synthetic HLS manifest that points to our proxy for the TS stream
       const originalTsUrl = channel[0].directStreamUrl;
       if (originalTsUrl && originalTsUrl.endsWith('.ts')) {
-        console.log(`[Failover] Creating synthetic HLS manifest for MPEG-TS stream: ${originalTsUrl}`);
+        loggers.iptv.debug('Failover: Creating synthetic HLS manifest for MPEG-TS stream', { originalTsUrl });
 
         // Create a live HLS manifest that references our segment proxy
         // The segment proxy will forward the TS stream
@@ -3022,7 +3023,7 @@ live.ts
           headers: new Map([['content-type', 'application/vnd.apple.mpegurl']]),
         };
 
-        console.log(`[Failover] Synthetic manifest created for stream ${streamId}`);
+        loggers.iptv.debug('Failover: Synthetic manifest created', { streamId });
         return {
           response: mockResponse as any,
           manifestText: syntheticManifest,
@@ -3042,7 +3043,7 @@ live.ts
     if (primaryClient) {
       try {
         let streamUrl = primaryClient.getHLSStreamUrl(streamId);
-        console.log(`[Failover] Trying primary stream ${streamId}`);
+        loggers.iptv.debug('Failover: Trying primary stream', { streamId });
 
         let response = await fetch(streamUrl);
 
@@ -3061,57 +3062,57 @@ live.ts
                 manifestText = await response.text();
                 streamUrl = redirectUrl;
               } else {
-                console.log(`[Failover] Primary stream ${streamId} redirect failed: ${response.status}`);
+                loggers.iptv.debug('Failover: Primary stream redirect failed', { streamId, status: response.status });
               }
             }
           }
 
           if (response.ok && !manifestText.trim().startsWith('<!DOCTYPE') && !manifestText.trim().startsWith('<html')) {
-            console.log(`[Failover] Primary stream ${streamId} succeeded`);
+            loggers.iptv.debug('Failover: Primary stream succeeded', { streamId });
             return { response, manifestText, streamUrl, usedBackup: false };
           }
         } else {
-          console.log(`[Failover] Primary stream ${streamId} failed: ${response.status}`);
+          loggers.iptv.debug('Failover: Primary stream failed', { streamId, status: response.status });
         }
       } catch (error) {
-        console.log(`[Failover] Primary stream ${streamId} error:`, error);
+        loggers.iptv.debug('Failover: Primary stream error', { streamId, error });
       }
     } else if (!channel.length || !channel[0].directStreamUrl) {
       // Only log "no client" for non-M3U channels
-      console.log(`[Failover] No client available for primary stream ${streamId}`);
+      loggers.iptv.debug('Failover: No client available for primary stream', { streamId });
     }
 
     // Primary failed, try backup channels
-    console.log(`[Failover] Looking for backup channels for stream ${streamId}`);
+    loggers.iptv.debug('Failover: Looking for backup channels', { streamId });
     const backups = await channelMappingService.getBackupsByStreamId(streamId); // Searches across all providers
 
     if (backups.length === 0) {
-      console.log(`[Failover] No backup channels configured for stream ${streamId}`);
+      loggers.iptv.debug('Failover: No backup channels configured', { streamId });
       return null;
     }
 
     let attempts = 0;
     for (const backup of backups) {
       if (attempts >= MAX_FAILOVER_ATTEMPTS) {
-        console.log(`[Failover] Max failover attempts (${MAX_FAILOVER_ATTEMPTS}) reached`);
+        loggers.iptv.debug('Failover: Max failover attempts reached', { maxAttempts: MAX_FAILOVER_ATTEMPTS });
         break;
       }
 
       // Check provider health
       const healthStatus = await providerHealthService.getProviderHealthStatus(backup.providerId);
       if (healthStatus === 'unhealthy') {
-        console.log(`[Failover] Skipping backup ${backup.streamId} - provider ${backup.providerName} is unhealthy`);
+        loggers.iptv.debug('Failover: Skipping backup - provider unhealthy', { backupStreamId: backup.streamId, provider: backup.providerName });
         continue;
       }
 
       attempts++;
-      console.log(`[Failover] Trying backup ${attempts}/${MAX_FAILOVER_ATTEMPTS}: ${backup.name} (${backup.providerName})`);
+      loggers.iptv.debug('Failover: Trying backup', { attempt: attempts, maxAttempts: MAX_FAILOVER_ATTEMPTS, name: backup.name, provider: backup.providerName });
 
       // Get client for backup stream - use getClientForBackupStream which doesn't require user access
       // This allows failover to use ANY available credential for the backup provider
       const backupClient = await xtreamCodesService.getClientForBackupStream(backup.streamId);
       if (!backupClient) {
-        console.log(`[Failover] No client available for backup ${backup.streamId}`);
+        loggers.iptv.debug('Failover: No client available for backup', { backupStreamId: backup.streamId });
         continue;
       }
 
@@ -3138,7 +3139,7 @@ live.ts
           }
 
           if (response.ok && !manifestText.trim().startsWith('<!DOCTYPE') && !manifestText.trim().startsWith('<html')) {
-            console.log(`[Failover] Backup stream ${backup.streamId} succeeded (was: ${streamId})`);
+            loggers.iptv.debug('Failover: Backup stream succeeded', { backupStreamId: backup.streamId, originalStreamId: streamId });
             return {
               response,
               manifestText,
@@ -3150,13 +3151,13 @@ live.ts
           }
         }
 
-        console.log(`[Failover] Backup ${backup.streamId} failed: ${response.status}`);
+        loggers.iptv.debug('Failover: Backup failed', { backupStreamId: backup.streamId, status: response.status });
       } catch (error) {
-        console.log(`[Failover] Backup ${backup.streamId} error:`, error);
+        loggers.iptv.debug('Failover: Backup error', { backupStreamId: backup.streamId, error });
       }
     }
 
-    console.log(`[Failover] All failover attempts exhausted for stream ${streamId}`);
+    loggers.iptv.warn('Failover: All failover attempts exhausted', { streamId });
     return null;
   }
 
@@ -3166,26 +3167,26 @@ live.ts
     const { token } = req.query;
     const { streamId } = req.params;
 
-    console.log(`📺 Stream request for ${streamId}, token: ${token ? 'present' : 'none'}, session: ${req.isAuthenticated() ? 'yes' : 'no'}, User-Agent: ${req.headers['user-agent']?.substring(0, 50)}`);
+    loggers.iptv.debug('Stream request', { streamId, hasToken: !!token, hasSession: req.isAuthenticated(), userAgent: req.headers['user-agent']?.substring(0, 50) });
 
     let userId: number | null = null;
 
     if (token && typeof token === 'string') {
       // Token-based authentication
-      console.log(`🔐 Attempting token authentication for stream ${streamId}`);
+      loggers.iptv.debug('Attempting token authentication', { streamId });
       userId = validateStreamToken(token, streamId);
       if (!userId) {
-        console.log(`❌ Invalid or expired token for stream ${streamId}`);
+        loggers.iptv.debug('Invalid or expired token', { streamId });
         return res.sendStatus(401);
       }
-      console.log(`✅ Token authentication successful for user ${userId}, stream ${streamId}`);
+      loggers.iptv.debug('Token authentication successful', { userId, streamId });
     } else if (req.isAuthenticated()) {
       // Session-based authentication
       userId = req.user!.id;
-      console.log(`✅ Session authentication successful for user ${userId}, stream ${streamId}`);
+      loggers.iptv.debug('Session authentication successful', { userId, streamId });
     } else {
       // No valid authentication
-      console.log(`❌ No authentication provided for stream ${streamId}`);
+      loggers.iptv.debug('No authentication provided', { streamId });
       return res.sendStatus(401);
     }
 
@@ -3208,7 +3209,7 @@ live.ts
       const isM3UStream = streamId.startsWith('m3u_');
 
       if (isBrowserRequest && isM3UStream) {
-        console.log(`🔊 M3U browser stream ${streamId} - using transcoded HLS with AAC audio`);
+        loggers.iptv.debug('M3U browser stream - using transcoded HLS with AAC audio', { streamId });
 
         // Get the direct stream URL for this M3U channel
         const m3uChannel = await db
@@ -3225,7 +3226,7 @@ live.ts
             sourceUrl = sourceUrl.replace(/\.m3u8$/, '.ts');
           }
 
-          console.log(`🔊 Transcoding M3U stream from: ${sourceUrl}`);
+          loggers.iptv.debug('Transcoding M3U stream', { sourceUrl });
 
           // Use streaming service to transcode to HLS with AAC audio
           const { streamingService } = await import('./services/streaming-service');
@@ -3233,12 +3234,12 @@ live.ts
 
           try {
             const hlsUrl = await streamingService.startHLSStream(transcodedStreamId, sourceUrl);
-            console.log(`🔊 Transcoded stream available at: ${hlsUrl}`);
+            loggers.iptv.debug('Transcoded stream available', { hlsUrl });
 
             // Redirect browser to the transcoded stream
             return res.redirect(hlsUrl);
           } catch (transcodeError) {
-            console.error(`🔊 Transcoding failed, falling back to proxy:`, transcodeError);
+            loggers.iptv.error('Transcoding failed, falling back to proxy', { error: transcodeError });
             // Fall through to normal proxy handling
           }
         }
@@ -3256,7 +3257,7 @@ live.ts
           // Manifest is fresh enough, share it
           existingStream.users.add(userIdString);
           existingStream.lastAccessed = new Date();
-          console.log(`📺 Sharing cached stream (${Math.round(manifestAge / 1000)}s old) ${streamId} with user ${userIdString} (${existingStream.users.size} total users)`);
+          loggers.iptv.debug('Sharing cached stream', { streamId, ageSeconds: Math.round(manifestAge / 1000), userId: userIdString, totalUsers: existingStream.users.size });
 
           res.set({
             'Content-Type': 'application/vnd.apple.mpegurl',
@@ -3269,7 +3270,7 @@ live.ts
         }
 
         // Manifest too old, fetch fresh one below
-        console.log(`🔄 Browser manifest too old (${Math.round(manifestAge / 1000)}s), fetching fresh for stream ${streamId}`);
+        loggers.iptv.debug('Browser manifest too old, fetching fresh', { streamId, ageSeconds: Math.round(manifestAge / 1000) });
       } else if (existingStream && token) {
         // For token-based auth (Chromecast), use moderate refresh
         const manifestAge = Date.now() - existingStream.manifestFetchedAt.getTime();
@@ -3279,13 +3280,13 @@ live.ts
           // Manifest is still fresh, use cached version with tokens
           existingStream.users.add(userIdString);
           existingStream.lastAccessed = new Date();
-          console.log(`📺 Using cached manifest (${Math.round(manifestAge / 1000)}s old) with token for stream ${streamId} (${existingStream.users.size} users)`);
+          loggers.iptv.debug('Using cached manifest with token', { streamId, ageSeconds: Math.round(manifestAge / 1000), userCount: existingStream.users.size });
 
           // Debug: Show cached manifest content for M3U streams
           if (streamId.startsWith('m3u_')) {
-            console.log(`📋 Cached manifest for ${streamId} (first 500 chars):\n${existingStream.manifest.substring(0, 500)}`);
+            loggers.iptv.trace('Cached manifest preview', { streamId, preview: existingStream.manifest.substring(0, 500) });
             const cachedSegments = existingStream.manifest.split('\n').filter(line => line.includes('.ts') || line.includes('/api/iptv/segment/')).slice(0, 5);
-            console.log(`📋 Cached manifest segments for ${streamId}:`, cachedSegments);
+            loggers.iptv.trace('Cached manifest segments', { streamId, segments: cachedSegments });
           }
 
           let tokenizedManifest = existingStream.manifest.replace(
@@ -3317,7 +3318,7 @@ live.ts
         // Manifest is stale, fetch a fresh one
         existingStream.users.add(userIdString);
         existingStream.lastAccessed = new Date();
-        console.log(`🔄 Fetching fresh manifest (cached was ${Math.round(manifestAge / 1000)}s old) for stream ${streamId} (${existingStream.users.size} users)`);
+        loggers.iptv.debug('Fetching fresh manifest (cached was old)', { streamId, oldAgeSeconds: Math.round(manifestAge / 1000), userCount: existingStream.users.size });
 
         // Fetch fresh manifest from source
         // First check if this is an M3U channel with direct URL
@@ -3336,22 +3337,22 @@ live.ts
           if (freshStreamUrl.endsWith('.ts')) {
             freshStreamUrl = freshStreamUrl.replace(/\.ts$/, '.m3u8');
           }
-          console.log(`Fetching fresh M3U manifest from: ${freshStreamUrl}`);
+          loggers.iptv.debug('Fetching fresh M3U manifest', { freshStreamUrl });
           freshResponse = await fetch(freshStreamUrl);
         } else {
           // Xtream channel - use credential-based URL
           const refreshClient = await xtreamCodesService.getClientForStream(userId, streamId);
           if (!refreshClient) {
-            console.error(`No IPTV credential available for user ${userId} stream ${streamId}`);
+            loggers.iptv.error('No IPTV credential available for user', { userId, streamId });
             return res.status(403).send('No IPTV access for this channel');
           }
           freshStreamUrl = refreshClient.getHLSStreamUrl(streamId);
-          console.log(`Fetching fresh HLS manifest from: ${freshStreamUrl}`);
+          loggers.iptv.debug('Fetching fresh HLS manifest', { freshStreamUrl });
           freshResponse = await fetch(freshStreamUrl);
         }
 
         if (!freshResponse.ok) {
-          console.error(`Failed to fetch fresh stream ${streamId}: ${freshResponse.status}`);
+          loggers.iptv.error('Failed to fetch fresh stream', { streamId, status: freshResponse.status });
           // Fallback to cached manifest with tokens
           let tokenizedManifest = existingStream.manifest.replace(
             /\/api\/iptv\/segment\/([^/]+)\/([^\s\n]+)/g,
@@ -3435,7 +3436,7 @@ live.ts
           const freshCurrentTargetMatch = freshBaseManifest.match(/#EXT-X-TARGETDURATION:(\d+)/);
           const freshCurrentTarget = freshCurrentTargetMatch ? parseInt(freshCurrentTargetMatch[1]) : 0;
           if (freshMaxDuration > freshCurrentTarget) {
-            console.log(`⚠️ Fixing invalid TARGETDURATION: ${freshCurrentTarget} -> ${freshMaxDuration} for iOS compatibility`);
+            loggers.iptv.debug('Fixing invalid TARGETDURATION for iOS', { oldValue: freshCurrentTarget, newValue: freshMaxDuration });
             freshFixedManifest = freshBaseManifest.replace(
               /#EXT-X-TARGETDURATION:\d+/,
               `#EXT-X-TARGETDURATION:${freshMaxDuration}`
@@ -3474,20 +3475,20 @@ live.ts
       }
 
       // No existing stream, fetch from provider (with failover support)
-      console.log(`🆕 Creating new stream ${streamId} for user ${userIdString}`);
+      loggers.iptv.debug('Creating new stream', { streamId, userId: userIdString });
 
       // Try to fetch stream with automatic failover to backup channels
       const fetchResult = await fetchStreamWithFailover(userId!, streamId, xtreamCodesService);
 
       if (!fetchResult) {
-        console.error(`No stream available for ${streamId} (primary and all backups failed)`);
+        loggers.iptv.error('No stream available (primary and all backups failed)', { streamId });
         return res.status(503).send('Stream not available');
       }
 
       const { response, manifestText, streamUrl, usedBackup, backupStreamId } = fetchResult;
 
       if (usedBackup && backupStreamId) {
-        console.log(`🔄 Using backup stream ${backupStreamId} for requested ${streamId}`);
+        loggers.iptv.debug('Using backup stream', { backupStreamId, requestedStreamId: streamId });
       }
 
       // Get the base URL for segments (directory of the manifest)
@@ -3496,18 +3497,16 @@ live.ts
       const manifestUrl = new URL(finalManifestUrl);
       const baseSegmentUrl = manifestUrl.origin + manifestUrl.pathname.substring(0, manifestUrl.pathname.lastIndexOf('/') + 1);
 
-      console.log(`Initial manifest URL: ${streamUrl}`);
-      console.log(`Final manifest URL (after redirects): ${finalManifestUrl}`);
-      console.log(`Base segment URL: ${baseSegmentUrl}`);
+      loggers.iptv.trace('Manifest URLs', { initialUrl: streamUrl, finalUrl: finalManifestUrl, baseSegmentUrl });
 
       // Store the base URL in a map so the segment proxy can look it up
       (global as any).iptvSegmentBaseUrls = (global as any).iptvSegmentBaseUrls || new Map();
       (global as any).iptvSegmentBaseUrls.set(streamId, baseSegmentUrl);
-      console.log(`Stored base URL for stream ${streamId} (type: ${typeof streamId}) in cache`);
+      loggers.iptv.trace('Stored base URL in cache', { streamId });
 
       // Debug: Show original manifest segment URLs
       const originalSegments = manifestText.split('\n').filter(line => line.includes('.ts')).slice(0, 3);
-      console.log(`📥 Original manifest segments for ${streamId}:`, originalSegments);
+      loggers.iptv.trace('Original manifest segments', { streamId, segments: originalSegments });
 
       // Rewrite segment URLs to go through our proxy
       // Always cache manifest WITHOUT tokens for security and sharing
@@ -3556,7 +3555,7 @@ live.ts
         const currentTargetMatch = baseManifest.match(/#EXT-X-TARGETDURATION:(\d+)/);
         const currentTarget = currentTargetMatch ? parseInt(currentTargetMatch[1]) : 0;
         if (maxDuration > currentTarget) {
-          console.log(`⚠️ Fixing invalid TARGETDURATION: ${currentTarget} -> ${maxDuration} for iOS compatibility`);
+          loggers.iptv.debug('Fixing invalid TARGETDURATION for iOS', { oldValue: currentTarget, newValue: maxDuration });
           fixedManifest = baseManifest.replace(
             /#EXT-X-TARGETDURATION:\d+/,
             `#EXT-X-TARGETDURATION:${maxDuration}`
@@ -3575,16 +3574,16 @@ live.ts
         manifestFetchedAt: new Date()
       });
 
-      console.log(`💾 Cached stream ${streamId} for sharing (1 user)`);
+      loggers.iptv.debug('Cached stream for sharing', { streamId, userCount: 1 });
 
       // Debug: Show first few segment URLs from manifest
       const segmentLines = fixedManifest.split('\n').filter(line => line.includes('/api/iptv/segment/')).slice(0, 3);
-      console.log(`📋 Sample segment URLs for ${streamId}:`, segmentLines);
+      loggers.iptv.trace('Sample segment URLs', { streamId, segments: segmentLines });
 
       // If token authentication, add token to segment and manifest URLs dynamically
       let finalManifest = fixedManifest;
       if (token) {
-        console.log(`🔧 Adding token to manifest for Chromecast`);
+        loggers.iptv.debug('Adding token to manifest for Chromecast');
         // Add token to segment URLs
         finalManifest = fixedManifest.replace(
           /\/api\/iptv\/segment\/([^/]+)\/([^\s\n]+)/g,
@@ -3605,7 +3604,7 @@ live.ts
         // Log a sample URL to verify token inclusion
         const sampleSegment = finalManifest.match(/\/api\/iptv\/(segment|manifest)\/[^\s]+token=/);
         if (sampleSegment) {
-          console.log(`📝 Sample URL with token: ${sampleSegment[0].substring(0, 80)}...`);
+          loggers.iptv.trace('Sample URL with token', { sample: sampleSegment[0].substring(0, 80) });
         }
       }
 
@@ -3618,7 +3617,7 @@ live.ts
 
       res.send(finalManifest);
     } catch (error) {
-      console.error('Error proxying IPTV manifest:', error);
+      loggers.iptv.error('Error proxying IPTV manifest', { error });
       res.status(500).send('Failed to proxy manifest');
     }
   });
@@ -3635,14 +3634,14 @@ live.ts
       // Token-based authentication
       userId = validateStreamToken(token, streamId);
       if (!userId) {
-        console.log(`❌ Invalid or expired token for TS stream ${streamId}`);
+        loggers.iptv.debug('Invalid or expired token for TS stream', { streamId });
         return res.sendStatus(401);
       }
     } else if (req.isAuthenticated()) {
       userId = req.user!.id;
     } else {
       // No valid authentication
-      console.log(`❌ No authentication provided for TS stream ${streamId}`);
+      loggers.iptv.debug('No authentication provided for TS stream', { streamId });
       return res.sendStatus(401);
     }
 
@@ -3656,20 +3655,20 @@ live.ts
       // Get the appropriate client based on user's subscription
       const client = await xtreamCodesService.getClientForStream(userId, streamId);
       if (!client) {
-        console.error(`No IPTV credential available for user ${userId} stream ${streamId}`);
+        loggers.iptv.error('No IPTV credential available for user TS stream', { userId, streamId });
         return res.status(403).send('No IPTV access for this channel');
       }
 
       // Get the direct TS stream URL from user's credential
       const streamUrl = client.getStreamUrl(streamId, 'ts');
 
-      console.log(`Proxying TS stream ${streamId} from: ${streamUrl}`);
+      loggers.iptv.debug('Proxying TS stream', { streamId, streamUrl });
 
       // Proxy the stream directly
       const response = await fetch(streamUrl);
 
       if (!response.ok) {
-        console.error(`Failed to fetch TS stream ${streamId}: ${response.status}`);
+        loggers.iptv.error('Failed to fetch TS stream', { streamId, status: response.status });
         return res.status(response.status).send('Stream not available');
       }
 
@@ -3685,7 +3684,7 @@ live.ts
       const buffer = await response.arrayBuffer();
       res.send(Buffer.from(buffer));
     } catch (error) {
-      console.error('Error proxying IPTV TS stream:', error);
+      loggers.iptv.error('Error proxying IPTV TS stream', { error });
       if (!res.headersSent) {
         res.status(500).send('Failed to proxy stream');
       }
@@ -3698,17 +3697,17 @@ live.ts
     const { token } = req.query;
     const { streamId } = req.params;
 
-    console.log(`📋 Manifest proxy request for ${streamId}, token: ${token ? 'present' : 'none'}`);
+    loggers.iptv.debug('Manifest proxy request', { streamId, hasToken: !!token });
 
     // Authenticate
     if (token && typeof token === 'string') {
       const userId = validateStreamToken(token, streamId);
       if (!userId) {
-        console.log(`❌ Invalid token for manifest ${streamId}`);
+        loggers.iptv.debug('Invalid token for manifest', { streamId });
         return res.sendStatus(401);
       }
     } else if (!req.isAuthenticated()) {
-      console.log(`❌ No auth for manifest ${streamId}`);
+      loggers.iptv.debug('No auth for manifest', { streamId });
       return res.sendStatus(401);
     }
 
@@ -3720,11 +3719,11 @@ live.ts
       }
 
       const subPlaylistUrl = decodeURIComponent(urlParam);
-      console.log(`📋 Fetching sub-playlist from: ${subPlaylistUrl}`);
+      loggers.iptv.debug('Fetching sub-playlist', { subPlaylistUrl });
 
       const response = await fetch(subPlaylistUrl, { timeout: 10000 });
       if (!response.ok) {
-        console.error(`Sub-playlist fetch failed: ${response.status}`);
+        loggers.iptv.error('Sub-playlist fetch failed', { status: response.status });
         return res.status(response.status).send('Failed to fetch sub-playlist');
       }
 
@@ -3783,7 +3782,7 @@ live.ts
       res.send(rewrittenManifest);
 
     } catch (error) {
-      console.error('Error proxying manifest:', error);
+      loggers.iptv.error('Error proxying manifest', { error });
       res.status(500).send('Failed to proxy manifest');
     }
   });
@@ -3795,19 +3794,19 @@ live.ts
     const { streamId } = req.params;
     const segmentPath = req.params[0];
 
-    console.log(`📦 Segment request for ${streamId}/${segmentPath?.substring(0, 30)}, token: ${token ? 'present' : 'none'}`);
+    loggers.iptv.trace('Segment request', { streamId, segmentPath: segmentPath?.substring(0, 30), hasToken: !!token });
 
     if (token && typeof token === 'string') {
       // Token-based authentication
       const userId = validateStreamToken(token, streamId);
       if (!userId) {
-        console.log(`❌ Invalid or expired token for segment ${streamId}`);
+        loggers.iptv.debug('Invalid or expired token for segment', { streamId });
         return res.sendStatus(401);
       }
-      console.log(`✅ Token auth OK for segment`);
+      loggers.iptv.trace('Token auth OK for segment');
     } else if (!req.isAuthenticated()) {
       // No valid authentication
-      console.log(`❌ No authentication provided for segment ${streamId}`);
+      loggers.iptv.debug('No authentication provided for segment', { streamId });
       return res.sendStatus(401);
     }
 
@@ -3833,7 +3832,7 @@ live.ts
       if (urlParam) {
         // Absolute URL passed as query parameter - decode and use directly
         segmentUrl = decodeURIComponent(urlParam);
-        console.log(`Using absolute URL from query param: ${segmentUrl}`);
+        loggers.iptv.trace('Using absolute URL from query param', { segmentUrl });
       } else {
         // For relative paths, we need the base URL from the cache
         const iptvSegmentBaseUrls = (global as any).iptvSegmentBaseUrls || new Map();
@@ -3842,25 +3841,21 @@ live.ts
         let baseUrl = iptvSegmentBaseUrls.get(streamId) || iptvSegmentBaseUrls.get(parseInt(streamId)) || iptvSegmentBaseUrls.get(streamId.toString());
 
         if (!baseUrl) {
-          console.error(`No base URL found for stream ${streamId} (type: ${typeof streamId})`);
-          console.error(`Cache contains ${iptvSegmentBaseUrls.size} entries:`);
-          for (const [key, value] of iptvSegmentBaseUrls.entries()) {
-            console.error(`  - Key: ${key} (type: ${typeof key}) => ${value.substring(0, 50)}...`);
-          }
+          loggers.iptv.error('No base URL found for stream', { streamId, streamIdType: typeof streamId, cacheSize: iptvSegmentBaseUrls.size });
           return res.status(404).send('Stream not found or expired. Please reload the channel.');
         }
 
         // Check if the original path was absolute (started with /) or relative
         const wasAbsolutePath = fullPath.startsWith('/') || fullPath.startsWith('hls/');
         const segmentPath = fullPath.replace(/^\/+/, '');
-        console.log(`Fetching segment for stream ${streamId}: ${segmentPath} (absolute: ${wasAbsolutePath})`);
+        loggers.iptv.trace('Fetching segment for stream', { streamId, segmentPath, wasAbsolutePath });
 
         // Build the full segment URL
         if (wasAbsolutePath) {
           // For absolute paths like /hls/xxx/file.ts, use origin + absolute path
           const baseUrlObj = new URL(baseUrl);
           segmentUrl = `${baseUrlObj.origin}/${segmentPath}`;
-          console.log(`Using absolute path from origin: ${segmentUrl}`);
+          loggers.iptv.trace('Using absolute path from origin', { segmentUrl });
         } else {
           // For relative paths, append to base URL directory
           const normalizedBaseUrl = baseUrl.endsWith('/') ? baseUrl : baseUrl + '/';
@@ -3868,7 +3863,7 @@ live.ts
         }
       }
 
-      console.log(`Full segment URL: ${segmentUrl}`);
+      loggers.iptv.trace('Full segment URL', { segmentUrl });
 
       // Set response headers immediately
       res.set({
@@ -3906,7 +3901,7 @@ live.ts
             break; // Success!
           }
 
-          console.error(`Segment fetch attempt ${retries + 1} failed: ${response.status}`);
+          loggers.iptv.debug('Segment fetch attempt failed', { attempt: retries + 1, status: response.status });
 
           // On 509 (bandwidth limit) or 5xx errors, refresh the base URL from cache
           // The manifest may have been refreshed and redirected to a different server
@@ -3915,7 +3910,7 @@ live.ts
                                  iptvSegmentBaseUrls.get(parseInt(streamId)) ||
                                  iptvSegmentBaseUrls.get(streamId.toString());
             if (freshBaseUrl && freshBaseUrl !== baseUrl) {
-              console.log(`🔄 Base URL changed, rebuilding segment URL`);
+              loggers.iptv.debug('Base URL changed, rebuilding segment URL');
               if (wasAbsolutePath) {
                 const freshUrlObj = new URL(freshBaseUrl);
                 currentSegmentUrl = `${freshUrlObj.origin}/${segmentPath}`;
@@ -3933,9 +3928,9 @@ live.ts
           }
         } catch (error: any) {
           if (error.name === 'AbortError') {
-            console.error(`Segment fetch timeout on attempt ${retries + 1} (${isChromecast ? 'Chromecast' : 'Browser'})`);
+            loggers.iptv.debug('Segment fetch timeout', { attempt: retries + 1, device: isChromecast ? 'Chromecast' : 'Browser' });
           } else {
-            console.error(`Segment fetch error on attempt ${retries + 1}:`, error.message);
+            loggers.iptv.debug('Segment fetch error', { attempt: retries + 1, error: error.message });
           }
           retries++;
 
@@ -3946,12 +3941,12 @@ live.ts
       }
 
       if (!response || !response.ok) {
-        console.error(`Failed to fetch segment ${segmentPath} after ${maxRetries + 1} attempts: ${response?.status || 'no response'}`);
+        loggers.iptv.error('Failed to fetch segment after retries', { segmentPath, attempts: maxRetries + 1, status: response?.status || 'no response' });
 
         // If we got 509 (bandwidth limit), invalidate the cached stream so next request
         // gets a fresh manifest that may redirect to a different server
         if (response?.status === 509) {
-          console.log(`🔄 509 error - invalidating cached stream ${streamId} to force fresh manifest`);
+          loggers.iptv.debug('509 error - invalidating cached stream to force fresh manifest', { streamId });
           sharedStreams.delete(streamId);
           iptvSegmentBaseUrls.delete(streamId);
           iptvSegmentBaseUrls.delete(parseInt(streamId));
@@ -3964,18 +3959,18 @@ live.ts
       // Check content type - if HTML, we might need to follow a redirect
       const contentType = response.headers.get('content-type') || '';
       if (contentType.includes('text/html')) {
-        console.log('Segment returned HTML, checking for redirect');
+        loggers.iptv.debug('Segment returned HTML, checking for redirect');
         const htmlText = await response.text();
         const metaRefreshMatch = htmlText.match(/url='([^']+)'/);
         const hrefMatch = htmlText.match(/href="([^"]+)"/);
         const redirectUrl = metaRefreshMatch?.[1] || hrefMatch?.[1];
 
         if (redirectUrl) {
-          console.log(`Following segment redirect to: ${redirectUrl}`);
+          loggers.iptv.debug('Following segment redirect', { redirectUrl });
           const redirectResponse = await fetch(redirectUrl);
 
           if (!redirectResponse.ok || !redirectResponse.body) {
-            console.error(`Failed to fetch redirected segment: ${redirectResponse.status}`);
+            loggers.iptv.error('Failed to fetch redirected segment', { status: redirectResponse.status });
             return res.status(redirectResponse.status).send('Segment not available');
           }
 
@@ -3983,7 +3978,7 @@ live.ts
           redirectResponse.body.pipe(res);
           return;
         } else {
-          console.error('Received HTML but could not extract redirect URL');
+          loggers.iptv.error('Received HTML but could not extract redirect URL');
           return res.status(404).send('Segment not available');
         }
       }
@@ -3999,19 +3994,19 @@ live.ts
       // the streaming service's transcoded HLS output with AAC audio)
       response.body.pipe(res);
     } catch (error) {
-      console.error('Error proxying IPTV segment:', error);
+      loggers.iptv.error('Error proxying IPTV segment', { error });
       res.status(500).send('Failed to proxy segment');
     }
   });
 
   // IPTV Stream Acquire - get a stream session token for tracking
   app.post("/api/iptv/stream/acquire", async (req, res) => {
-    console.log(`[Stream Acquire] Auth: ${req.isAuthenticated()}, User: ${req.user?.email || 'none'}, Body:`, req.body);
+    loggers.iptv.debug('Stream Acquire request', { authenticated: req.isAuthenticated(), user: req.user?.email || 'none', body: req.body });
     if (!req.isAuthenticated()) return res.sendStatus(401);
 
     try {
       const { streamId, deviceType } = req.body;
-      console.log(`[Stream Acquire] Received request - streamId: ${streamId}, deviceType: ${deviceType}, body:`, req.body);
+      loggers.iptv.debug('Stream Acquire received', { streamId, deviceType });
 
       if (!streamId) {
         return res.status(400).json({ error: "Stream ID required" });
@@ -4025,13 +4020,13 @@ live.ts
       const credentialId = await xtreamCodesService.selectCredentialForStream(userId, streamId);
 
       if (!credentialId) {
-        console.log(`[Stream Acquire] No credential found for user ${userId}, stream ${streamId}`);
+        loggers.iptv.debug('Stream Acquire: No credential found for user', { userId, streamId });
         return res.status(403).json({ error: "No IPTV access for this channel" });
       }
 
       // Handle env client fallback (credentialId = -1)
       if (credentialId === -1) {
-        console.log(`[Stream Acquire] Using ENV client for user ${userId}, stream ${streamId}`);
+        loggers.iptv.debug('Stream Acquire: Using ENV client', { userId, streamId });
         // For env client, we don't track streams - just return a dummy token
         res.json({ sessionToken: `env-${userId}-${streamId}-${Date.now()}` });
         return;
@@ -4039,7 +4034,7 @@ live.ts
 
       // Handle M3U provider (credentialId = -2)
       if (credentialId === -2) {
-        console.log(`[Stream Acquire] M3U provider for user ${userId}, stream ${streamId}`);
+        loggers.iptv.debug('Stream Acquire: M3U provider', { userId, streamId });
         // Track M3U streams for analytics/trending (no connection limits)
         const { streamTrackerService } = await import('./services/stream-tracker-service');
         const ipAddress = req.ip || req.socket.remoteAddress;
@@ -4064,14 +4059,14 @@ live.ts
       );
 
       if (sessionToken) {
-        console.log(`[Stream Acquire] Success for user ${userId}, credential ${credentialId}, session: ${sessionToken}`);
+        loggers.iptv.debug('Stream Acquire: Success', { userId, credentialId, sessionToken });
         res.json({ sessionToken });
       } else {
-        console.log(`[Stream Acquire] Failed - no slots for user ${userId}, credential ${credentialId}`);
+        loggers.iptv.debug('Stream Acquire: Failed - no slots', { userId, credentialId });
         res.status(429).json({ error: "No available stream slots" });
       }
     } catch (error) {
-      console.error('Error acquiring stream:', error);
+      loggers.iptv.error('Error acquiring stream', { error });
       res.status(500).json({ error: "Failed to acquire stream" });
     }
   });
@@ -4095,7 +4090,7 @@ live.ts
         res.status(404).json({ error: "Session not found" });
       }
     } catch (error) {
-      console.error('Error processing stream heartbeat:', error);
+      loggers.iptv.error('Error processing stream heartbeat', { error });
       res.status(500).json({ error: "Failed to process heartbeat" });
     }
   });
@@ -4125,7 +4120,7 @@ live.ts
 
       res.json({ success: success });
     } catch (error) {
-      console.error('Error releasing stream:', error);
+      loggers.iptv.error('Error releasing stream', { error });
       res.status(500).json({ error: "Failed to release stream" });
     }
   });
@@ -4148,7 +4143,7 @@ live.ts
       
       res.json({ success: true, session });
     } catch (error) {
-      console.error('Error requesting stream:', error);
+      loggers.iptv.error('Error requesting stream', { error });
       res.status(500).json({ 
         error: "Failed to request stream", 
         message: error instanceof Error ? error.message : "Unknown error" 
@@ -4175,7 +4170,7 @@ live.ts
       
       res.json({ success: true });
     } catch (error) {
-      console.error('Error updating heartbeat:', error);
+      loggers.iptv.error('Error updating heartbeat', { error });
       res.status(500).json({ 
         error: "Failed to update heartbeat", 
         message: error instanceof Error ? error.message : "Unknown error" 
@@ -4219,7 +4214,7 @@ live.ts
       const success = tunerManager.releaseSession(sessionId);
       res.json({ success });
     } catch (error) {
-      console.error('Error releasing session:', error);
+      loggers.iptv.error('Error releasing session', { error });
       res.status(500).json({ 
         error: "Failed to release session", 
         message: error instanceof Error ? error.message : "Unknown error" 
@@ -4236,7 +4231,7 @@ live.ts
       
       res.json(status);
     } catch (error) {
-      console.error('Error getting tuner status:', error);
+      loggers.iptv.error('Error getting tuner status', { error });
       res.status(500).json({ 
         error: "Failed to get tuner status", 
         message: error instanceof Error ? error.message : "Unknown error" 
@@ -4259,7 +4254,7 @@ live.ts
       
       res.json({ sessions });
     } catch (error) {
-      console.error('Error getting user sessions:', error);
+      loggers.iptv.error('Error getting user sessions', { error });
       res.status(500).json({ 
         error: "Failed to get user sessions", 
         message: error instanceof Error ? error.message : "Unknown error" 
@@ -4291,7 +4286,7 @@ live.ts
       
       res.json({ session });
     } catch (error) {
-      console.error('Error getting session:', error);
+      loggers.iptv.error('Error getting session', { error });
       res.status(500).json({ 
         error: "Failed to get session", 
         message: error instanceof Error ? error.message : "Unknown error" 
@@ -4349,7 +4344,7 @@ live.ts
       });
 
       if (!response.ok) {
-        console.error(`[Logo Proxy] Failed to fetch logo: ${response.status} ${url}`);
+        loggers.iptv.error('Logo Proxy: Failed to fetch logo', { status: response.status, url });
         return res.status(response.status).send('Failed to fetch logo');
       }
 
@@ -4367,7 +4362,7 @@ live.ts
       const buffer = await response.arrayBuffer();
       res.send(Buffer.from(buffer));
     } catch (error) {
-      console.error('[Logo Proxy] Error:', error);
+      loggers.iptv.error('Logo Proxy: Error', { error });
       res.status(500).send('Failed to proxy logo');
     }
   });
@@ -4381,7 +4376,7 @@ live.ts
       const logos = channelLogoService.getAllChannelLogos();
       res.json({ logos, count: channelLogoService.getLogoCount() });
     } catch (error) {
-      console.error('Error fetching channel logos:', error);
+      loggers.iptv.error('Error fetching channel logos', { error });
       res.status(500).json({
         message: "Failed to fetch channel logos",
         error: error instanceof Error ? error.message : "Unknown error"
@@ -4405,7 +4400,7 @@ live.ts
         res.status(404).json({ message: "Channel logo not found" });
       }
     } catch (error) {
-      console.error('Error fetching channel logo:', error);
+      loggers.iptv.error('Error fetching channel logo', { error });
       res.status(500).json({
         message: "Failed to fetch channel logo",
         error: error instanceof Error ? error.message : "Unknown error"
@@ -4432,7 +4427,7 @@ live.ts
         count: logoCount 
       });
     } catch (error) {
-      console.error('Error loading channel logos from guide:', error);
+      loggers.iptv.error('Error loading channel logos from guide', { error });
       res.status(500).json({
         message: "Failed to load channel logos",
         error: error instanceof Error ? error.message : "Unknown error"
@@ -4454,7 +4449,7 @@ live.ts
       const channels = epgService.getChannels();
       res.json({ channels });
     } catch (error) {
-      console.error('Error fetching EPG channels:', error);
+      loggers.epg.error('Error fetching EPG channels', { error });
       res.status(500).json({
         message: "Failed to fetch EPG channels",
         error: error instanceof Error ? error.message : "Unknown error"
@@ -4471,15 +4466,15 @@ live.ts
       
       // Run update in background
       epgScheduler.manualUpdate()
-        .then(() => console.log('Manual EPG update completed'))
-        .catch(err => console.error('Manual EPG update failed:', err));
+        .then(() => loggers.epg.info('Manual EPG update completed'))
+        .catch(err => loggers.epg.error('Manual EPG update failed', { error: err }));
       
       res.json({ 
         success: true, 
         message: "EPG update started in background" 
       });
     } catch (error) {
-      console.error('Error triggering EPG update:', error);
+      loggers.epg.error('Error triggering EPG update', { error });
       res.status(500).json({
         message: "Failed to trigger EPG update",
         error: error instanceof Error ? error.message : "Unknown error"
@@ -4500,7 +4495,7 @@ live.ts
       const currentProgram = epgService.getCurrentProgram(channelId);
       res.json({ program: currentProgram });
     } catch (error) {
-      console.error('Error fetching current program:', error);
+      loggers.epg.error('Error fetching current program', { error });
       res.status(500).json({
         message: "Failed to fetch current program",
         error: error instanceof Error ? error.message : "Unknown error"
@@ -4544,7 +4539,7 @@ live.ts
 
       res.json({ programs: enrichedPrograms });
     } catch (error) {
-      console.error('Error fetching upcoming programs:', error);
+      loggers.epg.error('Error fetching upcoming programs', { error });
       res.status(500).json({
         message: "Failed to fetch upcoming programs",
         error: error instanceof Error ? error.message : "Unknown error"
@@ -4623,7 +4618,7 @@ live.ts
         });
       }
     } catch (error) {
-      console.error('Error fetching Tautulli logs:', error);
+      loggers.plex.error('Error fetching Tautulli logs', { error });
     }
     
     // Note: Plex server status check removed - using Tautulli for all Plex monitoring
@@ -4652,7 +4647,7 @@ live.ts
       const program = epgService.getCurrentProgram(req.params.channelId);
       res.json({ program });
     } catch (error) {
-      console.error('Error fetching current program:', error);
+      loggers.epg.error('Error fetching current program', { error });
       res.status(500).json({
         message: "Failed to fetch current program",
         error: error instanceof Error ? error.message : "Unknown error"
@@ -4670,7 +4665,7 @@ live.ts
       const programs = epgService.getUpcomingPrograms(req.params.channelId, hours);
       res.json({ programs });
     } catch (error) {
-      console.error('Error fetching upcoming programs:', error);
+      loggers.epg.error('Error fetching upcoming programs', { error });
       res.status(500).json({
         message: "Failed to fetch upcoming programs",
         error: error instanceof Error ? error.message : "Unknown error"
@@ -4687,7 +4682,7 @@ live.ts
       const channels = epgService.getChannels();
       res.json({ channels });
     } catch (error) {
-      console.error('Error fetching EPG channels:', error);
+      loggers.epg.error('Error fetching EPG channels', { error });
       res.status(500).json({
         message: "Failed to fetch EPG channels",
         error: error instanceof Error ? error.message : "Unknown error"
@@ -4741,7 +4736,7 @@ live.ts
         expires_at: expiresAt,
       });
 
-      console.log(`📺 Generated TV code: ${code}`);
+      loggers.auth.debug('Generated TV code', { code });
 
       res.json({
         code,
@@ -4749,7 +4744,7 @@ live.ts
         expiresInSeconds: TV_CODE_EXPIRY_MINUTES * 60
       });
     } catch (error) {
-      console.error('Error generating TV code:', error);
+      loggers.auth.error('Error generating TV code', { error });
       res.status(500).json({
         message: "Failed to generate TV code",
         error: error instanceof Error ? error.message : "Unknown error"
@@ -4792,7 +4787,7 @@ live.ts
         });
       }
     } catch (error) {
-      console.error('Error checking TV code status:', error);
+      loggers.auth.error('Error checking TV code status', { error });
       res.status(500).json({
         message: "Failed to check TV code status",
         error: error instanceof Error ? error.message : "Unknown error"
@@ -4842,11 +4837,11 @@ live.ts
         auth_token: authToken
       }).where(eq(tvCodes.code, code.toUpperCase()));
 
-      console.log(`✅ TV code ${code} verified by user ${req.user!.id}`);
+      loggers.auth.debug('TV code verified by user', { code, userId: req.user!.id });
 
       res.json({ success: true, message: "TV linked successfully" });
     } catch (error) {
-      console.error('Error verifying TV code:', error);
+      loggers.auth.error('Error verifying TV code', { error });
       res.status(500).json({
         message: "Failed to verify TV code",
         error: error instanceof Error ? error.message : "Unknown error"
@@ -4898,11 +4893,11 @@ live.ts
       // Log the user in via Passport
       req.login(user, (err) => {
         if (err) {
-          console.error('Error logging in user via TV code:', err);
+          loggers.auth.error('Error logging in user via TV code', { error: err });
           return res.status(500).json({ message: "Login failed" });
         }
 
-        console.log(`📺 User ${user.id} (${user.username}) logged in via TV code`);
+        loggers.auth.info('User logged in via TV code', { userId: user.id, username: user.username });
 
         // Return user data similar to /api/login
         res.json({
@@ -4915,7 +4910,7 @@ live.ts
         });
       });
     } catch (error) {
-      console.error('Error logging in with TV code:', error);
+      loggers.auth.error('Error logging in with TV code', { error });
       res.status(500).json({
         message: "Failed to login with TV code",
         error: error instanceof Error ? error.message : "Unknown error"
@@ -5052,41 +5047,41 @@ live.ts
   // Background job: refreshes all sports schedules
   async function refreshSportsScheduleCache() {
     if (sportsScheduleRefreshing) {
-      console.log('[Sports Schedule] Refresh already in progress, skipping');
+      loggers.api.debug('Sports Schedule: Refresh already in progress, skipping');
       return;
     }
 
     sportsScheduleRefreshing = true;
-    console.log('[Sports Schedule] Starting cache refresh...');
+    loggers.api.debug('Sports Schedule: Starting cache refresh...');
 
     try {
       for (const config of SCHEDULE_SPORTS) {
         try {
-          console.log(`[Sports Schedule] Fetching ${config.key.toUpperCase()}...`);
+          loggers.api.trace('Sports Schedule: Fetching', { sport: config.key.toUpperCase() });
           const games = await fetchSportSchedule(config);
           sportsScheduleCache[config.key] = { games, timestamp: Date.now() };
-          console.log(`[Sports Schedule] ${config.key.toUpperCase()}: ${games.length} games cached`);
+          loggers.api.debug('Sports Schedule: Games cached', { sport: config.key.toUpperCase(), count: games.length });
         } catch (err) {
-          console.error(`[Sports Schedule] Error fetching ${config.key}:`, err);
+          loggers.api.error('Sports Schedule: Error fetching', { sport: config.key, error: err });
         }
         // Long delay between sports
         await scheduleDelay(500);
       }
-      console.log('[Sports Schedule] Cache refresh complete');
+      loggers.api.debug('Sports Schedule: Cache refresh complete');
     } catch (err) {
-      console.error('[Sports Schedule] Cache refresh failed:', err);
+      loggers.api.error('Sports Schedule: Cache refresh failed', { error: err });
     } finally {
       sportsScheduleRefreshing = false;
     }
   }
 
   // Start background refresh job (every 2 minutes)
-  console.log('[Sports Schedule] Starting background refresh job (every 2 minutes)');
+  loggers.api.info('Sports Schedule: Starting background refresh job (every 2 minutes)');
   setInterval(refreshSportsScheduleCache, 2 * 60 * 1000);
 
   // Initial cache population (delayed 10 seconds after events cache starts)
   setTimeout(() => {
-    console.log('[Sports Schedule] Initial cache population starting...');
+    loggers.api.info('Sports Schedule: Initial cache population starting...');
     refreshSportsScheduleCache();
   }, 15000);
 
@@ -5104,7 +5099,7 @@ live.ts
       const cached = sportsScheduleCache[sportKey];
       if (cached) {
         const ageSeconds = Math.round((Date.now() - cached.timestamp) / 1000);
-        console.log(`[Sports Schedule] Returning ${sportKey.toUpperCase()} cache (age: ${ageSeconds}s, ${cached.games.length} games)`);
+        loggers.api.trace('Sports Schedule: Returning cache', { sport: sportKey.toUpperCase(), ageSeconds, gameCount: cached.games.length });
         return res.json({
           sport: sportKey.toUpperCase(),
           games: cached.games
@@ -5112,14 +5107,14 @@ live.ts
       }
 
       // No cache yet - return empty (cache will be ready soon)
-      console.log(`[Sports Schedule] Cache not ready for ${sportKey}, returning empty`);
+      loggers.api.debug('Sports Schedule: Cache not ready, returning empty', { sport: sportKey });
       return res.json({
         sport: sportKey.toUpperCase(),
         games: [],
         message: 'Loading schedule data, please refresh in a moment...'
       });
     } catch (error) {
-      console.error('[Sports Schedule] Error:', error);
+      loggers.api.error('Sports Schedule: Error', { error });
       res.status(500).json({ error: 'Failed to fetch sports schedule' });
     }
   });
@@ -5282,12 +5277,12 @@ live.ts
   // Processes ONE sport at a time with long delays - never blocks event loop
   async function refreshEventsCache() {
     if (eventsCacheRefreshing) {
-      console.log('[Events Background] Refresh already in progress, skipping');
+      loggers.api.debug('Events Background: Refresh already in progress, skipping');
       return;
     }
 
     eventsCacheRefreshing = true;
-    console.log('[Events Background] Starting cache refresh...');
+    loggers.api.debug('Events Background: Starting cache refresh...');
 
     try {
       const sportResults: Array<{ sport: string; name: string; live: any[]; upcoming: any[]; recent: any[] }> = [];
@@ -5295,12 +5290,12 @@ live.ts
       // Process each sport sequentially with 500ms gap between sports
       for (const config of ESPN_SPORTS) {
         try {
-          console.log(`[Events Background] Fetching ${config.name}...`);
+          loggers.api.trace('Events Background: Fetching', { sport: config.name });
           const result = await fetchSingleSport(config);
           sportResults.push(result);
-          console.log(`[Events Background] ${config.name}: ${result.live.length} live, ${result.upcoming.length} upcoming, ${result.recent.length} recent`);
+          loggers.api.debug('Events Background: Sport fetched', { sport: config.name, live: result.live.length, upcoming: result.upcoming.length, recent: result.recent.length });
         } catch (err) {
-          console.error(`[Events Background] Error fetching ${config.name}:`, err);
+          loggers.api.error('Events Background: Error fetching', { sport: config.name, error: err });
           sportResults.push({ sport: config.key, name: config.name, live: [], upcoming: [], recent: [] });
         }
         // Long delay between sports
@@ -5322,21 +5317,21 @@ live.ts
         timestamp: Date.now()
       };
 
-      console.log('[Events Background] Cache refresh complete');
+      loggers.api.debug('Events Background: Cache refresh complete');
     } catch (err) {
-      console.error('[Events Background] Cache refresh failed:', err);
+      loggers.api.error('Events Background: Cache refresh failed', { error: err });
     } finally {
       eventsCacheRefreshing = false;
     }
   }
 
   // Start background refresh job (every 2 minutes)
-  console.log('[Events] Starting background refresh job (every 2 minutes)');
+  loggers.api.info('Events: Starting background refresh job (every 2 minutes)');
   setInterval(refreshEventsCache, 2 * 60 * 1000);
 
   // Initial cache population (delayed 5 seconds to let server start)
   setTimeout(() => {
-    console.log('[Events] Initial cache population starting...');
+    loggers.api.info('Events: Initial cache population starting...');
     refreshEventsCache();
   }, 5000);
 
@@ -5351,12 +5346,12 @@ live.ts
       // Always return cached data (even if stale)
       if (eventsCache) {
         const ageSeconds = Math.round((Date.now() - eventsCache.timestamp) / 1000);
-        console.log(`[Events] Returning cached data (age: ${ageSeconds}s)`);
+        loggers.api.trace('Events: Returning cached data', { ageSeconds });
         return res.json(eventsCache.data);
       }
 
       // No cache yet - return empty structure (cache will be ready soon)
-      console.log('[Events] Cache not ready yet, returning empty');
+      loggers.api.debug('Events: Cache not ready yet, returning empty');
       return res.json({
         sports: [],
         live: [],
@@ -5365,14 +5360,14 @@ live.ts
         message: 'Loading events data, please refresh in a moment...'
       });
     } catch (error) {
-      console.error('[Events] Error:', error);
+      loggers.api.error('Events: Error', { error });
       res.status(500).json({ error: 'Failed to fetch events' });
     }
   });
 
   // Catch-all for unmatched API routes - MUST be last
   app.all('/api/*', (req, res) => {
-    console.log(`[API-UNMATCHED] ${req.method} ${req.originalUrl} - No route matched!`);
+    loggers.api.warn('API-UNMATCHED: No route matched', { method: req.method, url: req.originalUrl });
     res.status(404).json({
       error: 'API endpoint not found',
       method: req.method,

@@ -1,5 +1,6 @@
 import axios from 'axios';
 import https from 'https';
+import { loggers } from './lib/logger';
 
 interface AMPInstance {
   InstanceID: string;
@@ -39,7 +40,7 @@ export class AMPService {
     this.password = process.env.AMP_API_PASSWORD || '';
 
     if (!this.baseUrl || !this.username || !this.password) {
-      console.error('AMP configuration missing:', {
+      loggers.amp.error('AMP configuration missing', {
         hasUrl: !!this.baseUrl,
         hasUsername: !!this.username,
         hasPassword: !!this.password
@@ -53,7 +54,7 @@ export class AMPService {
 
   private async makeAPICall(endpoint: string, parameters: any = {}, requiresAuth: boolean = true) {
     try {
-      console.log(`Making API call to ${endpoint}`, { ...parameters, password: '[REDACTED]' });
+      loggers.amp.debug(`Making API call to ${endpoint}`, { ...parameters, password: '[REDACTED]' });
 
       const response = await axios.post(
         `${this.baseUrl}/API/${endpoint}`,
@@ -69,12 +70,12 @@ export class AMPService {
         }
       );
 
-      console.log(`API Response from ${endpoint}:`, response.data);
+      loggers.amp.debug(`API Response from ${endpoint}`, { data: response.data });
       return response.data;
     } catch (error) {
-      console.error(`API call failed for ${endpoint}:`, error);
+      loggers.amp.error(`API call failed for ${endpoint}`, { error });
       if (axios.isAxiosError(error) && error.response) {
-        console.error('Error response:', error.response.data);
+        loggers.amp.error('Error response', { data: error.response.data });
         throw new Error(`API call failed: ${error.response.data.message || error.message}`);
       }
       throw error;
@@ -83,7 +84,7 @@ export class AMPService {
 
   private async login(): Promise<void> {
     try {
-      console.log('Attempting to login to AMP');
+      loggers.amp.info('Attempting to login to AMP');
       const loginData = {
         username: this.username,
         password: this.password,
@@ -95,12 +96,12 @@ export class AMPService {
       if (response.sessionID) {
         this.sessionId = response.sessionID;
         this.sessionExpiry = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
-        console.log('Login successful, session established');
+        loggers.amp.info('Login successful, session established');
       } else {
         throw new Error('No session ID in login response');
       }
     } catch (error) {
-      console.error('Login failed:', error);
+      loggers.amp.error('Login failed', { error });
       throw error;
     }
   }
@@ -136,12 +137,12 @@ export class AMPService {
   // Status and metrics methods
   async getInstances(): Promise<AMPInstance[]> {
     try {
-      console.log('Fetching AMP instances');
+      loggers.amp.debug('Fetching AMP instances');
       const result = await this.callAPI('ADSModule/GetInstances', {});
 
       if (result && Array.isArray(result) && result.length > 0 && result[0].AvailableInstances) {
         const instances = result[0].AvailableInstances;
-        console.log('Found instances with metrics:', instances);
+        loggers.amp.debug('Found instances with metrics', { instances });
         return instances.map((instance: any) => ({
           ...instance,
           Metrics: instance.Metrics || {
@@ -151,22 +152,22 @@ export class AMPService {
           }
         }));
       }
-      console.log('No instances found in response');
+      loggers.amp.debug('No instances found in response');
       return [];
     } catch (error) {
-      console.error('Failed to fetch instances:', error);
+      loggers.amp.error('Failed to fetch instances', { error });
       throw error;
     }
   }
 
   async getInstanceStatus(instanceId: string): Promise<any> {
     try {
-      console.log(`Getting status for instance ${instanceId}`);
+      loggers.amp.debug(`Getting status for instance ${instanceId}`);
       const status = await this.callAPI(`ADSModule/Servers/${instanceId}/API/Core/GetStatus`, {});
-      console.log(`Status for instance ${instanceId}:`, status);
+      loggers.amp.debug(`Status for instance ${instanceId}`, { status });
       return status;
     } catch (error) {
-      console.error(`Failed to get status for instance ${instanceId}:`, error);
+      loggers.amp.error(`Failed to get status for instance ${instanceId}`, { error });
       throw error;
     }
   }
@@ -179,9 +180,9 @@ export class AMPService {
     Uptime: string;
   }> {
     try {
-      console.log(`Getting metrics for instance ${instanceId}`);
+      loggers.amp.debug(`Getting metrics for instance ${instanceId}`);
       const result = await this.getInstanceStatus(instanceId);
-      console.log('Raw metrics result:', result);
+      loggers.amp.debug('Raw metrics result', { result });
 
       // Extract metrics with proper null/undefined checking
       const metrics = {
@@ -198,10 +199,10 @@ export class AMPService {
         Uptime: String(result.Uptime || '00:00:00')
       };
 
-      console.log('Formatted metrics:', metrics);
+      loggers.amp.debug('Formatted metrics', { metrics });
       return metrics;
     } catch (error) {
-      console.error(`Failed to get metrics for instance ${instanceId}:`, error);
+      loggers.amp.error(`Failed to get metrics for instance ${instanceId}`, { error });
       // Return default values in case of error
       return {
         TPS: '0',
@@ -215,15 +216,15 @@ export class AMPService {
 
   async getUserList(instanceId: string): Promise<string[]> {
     try {
-      console.log(`Getting user list for instance ${instanceId}`);
+      loggers.amp.debug(`Getting user list for instance ${instanceId}`);
 
       // Call the GetUserList API endpoint
       const result = await this.callAPI(`ADSModule/Servers/${instanceId}/API/Core/GetUserList`, {});
-      console.log('Raw user list response:', result);
+      loggers.amp.debug('Raw user list response', { result });
 
       // Handle empty or invalid responses
       if (!result || typeof result !== 'object') {
-        console.log(`No valid user list returned for instance ${instanceId}`);
+        loggers.amp.debug(`No valid user list returned for instance ${instanceId}`);
         return [];
       }
 
@@ -235,10 +236,10 @@ export class AMPService {
         }
       }
 
-      console.log(`Found ${userList.length} active players:`, userList);
+      loggers.amp.debug(`Found ${userList.length} active players`, { userList });
       return userList;
     } catch (error) {
-      console.error(`Failed to get user list for instance ${instanceId}:`, error);
+      loggers.amp.error(`Failed to get user list for instance ${instanceId}`, { error });
       return [];
     }
   }
@@ -255,57 +256,57 @@ export class AMPService {
       const metrics = await this.getMetrics(instanceId);
       return parseInt(metrics.Users[0]) || 0;
     } catch (error) {
-      console.error(`Failed to get active player count for instance ${instanceId}:`, error);
+      loggers.amp.error(`Failed to get active player count for instance ${instanceId}`, { error });
       return 0;
     }
   }
 
   async debugPlayerCount(instanceId: string): Promise<void> {
     try {
-      console.log(`\n=== Debug Player Count for Instance ${instanceId} ===`);
+      loggers.amp.debug(`Debug Player Count for Instance ${instanceId}`);
 
       // Method 1: Get count from metrics
-      console.log('\n1. Getting count from metrics:');
+      loggers.amp.debug('1. Getting count from metrics');
       const metrics = await this.getMetrics(instanceId);
-      console.log('Raw metrics response:', metrics);
-      console.log('Users from metrics:', metrics.Users);
+      loggers.amp.debug('Raw metrics response', { metrics });
+      loggers.amp.debug('Users from metrics', { users: metrics.Users });
       const metricsCount = parseInt(metrics.Users[0]) || 0;
-      console.log('Parsed metrics count:', metricsCount);
+      loggers.amp.debug('Parsed metrics count', { metricsCount });
 
       // Method 2: Get count from user list
-      console.log('\n2. Getting count from user list:');
+      loggers.amp.debug('2. Getting count from user list');
       const userList = await this.getUserList(instanceId);
-      console.log('Raw user list:', userList);
-      console.log('User list count:', userList.length);
+      loggers.amp.debug('Raw user list', { userList });
+      loggers.amp.debug('User list count', { count: userList.length });
 
       // Get full instance status for comparison
-      console.log('\n3. Getting full instance status:');
+      loggers.amp.debug('3. Getting full instance status');
       const status = await this.getInstanceStatus(instanceId);
-      console.log('Full instance status:', JSON.stringify(status, null, 2));
+      loggers.amp.debug('Full instance status', { status });
 
     } catch (error) {
-      console.error('Debug operation failed:', error);
+      loggers.amp.error('Debug operation failed', { error });
     }
   }
 
   async getAvailableAPIMethods(): Promise<any> {
     try {
-      console.log('Attempting to get API specification...');
+      loggers.amp.debug('Attempting to get API specification');
       // Try to get the API specification
       const apiSpec = await this.callAPI('Core/GetAPISpec', {});
-      console.log('Available API methods:', apiSpec);
+      loggers.amp.debug('Available API methods', { apiSpec });
       return apiSpec;
     } catch (error) {
-      console.error('Failed to get API specification:', error);
+      loggers.amp.error('Failed to get API specification', { error });
 
       // If GetAPISpec also doesn't exist, try a different approach
       try {
-        console.log('Trying to get module info instead...');
+        loggers.amp.debug('Trying to get module info instead');
         const moduleInfo = await this.callAPI('Core/GetModuleInfo', {});
-        console.log('Module info (might contain API hints):', moduleInfo);
+        loggers.amp.debug('Module info (might contain API hints)', { moduleInfo });
         return moduleInfo;
       } catch (innerError) {
-        console.error('Also failed to get module info:', innerError);
+        loggers.amp.error('Also failed to get module info', { error: innerError });
         throw new Error('Cannot determine available API methods');
       }
     }

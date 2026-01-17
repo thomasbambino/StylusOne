@@ -45,8 +45,8 @@ export function GameServerConsole({ server, open, onOpenChange }: GameServerCons
       }
 
       setCommand("");
-    } catch (error) {
-      console.error("Error sending console command:", error);
+    } catch {
+      // Error handled by UI feedback
     } finally {
       setIsLoading(false);
     }

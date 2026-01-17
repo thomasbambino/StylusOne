@@ -3,6 +3,7 @@ import { iptvProviders, iptvCredentials, providerHealthLogs } from '@shared/sche
 import { eq, desc, and, gte } from 'drizzle-orm';
 import { decrypt } from '../utils/encryption';
 import axios from 'axios';
+import { loggers } from '../lib/logger';
 
 /**
  * Service for monitoring IPTV provider health
@@ -30,11 +31,11 @@ export class ProviderHealthService {
       clearInterval(this.checkIntervalId);
     }
 
-    console.log('[Provider Health] Starting health check service (5 minute interval)');
+    loggers.providerHealth.info('Starting health check service (5 minute interval)');
 
     // Run immediately on startup
     this.checkAllProviders().catch(err =>
-      console.error('[Provider Health] Initial check failed:', err)
+      loggers.providerHealth.error('Initial check failed', { error: err })
     );
 
     // Then run every 5 minutes
@@ -42,7 +43,7 @@ export class ProviderHealthService {
       try {
         await this.checkAllProviders();
       } catch (error) {
-        console.error('[Provider Health] Check cycle failed:', error);
+        loggers.providerHealth.error('Check cycle failed', { error });
       }
     }, this.CHECK_INTERVAL_MS);
   }
@@ -54,7 +55,7 @@ export class ProviderHealthService {
     if (this.checkIntervalId) {
       clearInterval(this.checkIntervalId);
       this.checkIntervalId = null;
-      console.log('[Provider Health] Health check service stopped');
+      loggers.providerHealth.info('Health check service stopped');
     }
   }
 
@@ -66,7 +67,7 @@ export class ProviderHealthService {
       .from(iptvProviders)
       .where(eq(iptvProviders.isActive, true));
 
-    console.log(`[Provider Health] Checking ${providers.length} providers...`);
+    loggers.providerHealth.debug(`Checking ${providers.length} providers...`);
 
     for (const provider of providers) {
       try {
@@ -75,10 +76,10 @@ export class ProviderHealthService {
         // Log status change
         const previousStatus = provider.healthStatus;
         if (previousStatus !== result.status) {
-          console.log(`[Provider Health] ${provider.name}: ${previousStatus} -> ${result.status}`);
+          loggers.providerHealth.info(`${provider.name}: ${previousStatus} -> ${result.status}`);
         }
       } catch (error) {
-        console.error(`[Provider Health] Failed to check ${provider.name}:`, error);
+        loggers.providerHealth.error(`Failed to check ${provider.name}`, { error });
       }
     }
   }

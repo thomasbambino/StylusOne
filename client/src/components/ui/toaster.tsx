@@ -20,8 +20,8 @@ export function Toaster() {
       await navigator.clipboard.writeText(textToCopy)
       setCopiedId(id)
       setTimeout(() => setCopiedId(null), 1000)
-    } catch (err) {
-      console.error('Failed to copy to clipboard:', err)
+    } catch {
+      // Silent failure - clipboard copy is a nice-to-have
     }
   }
 

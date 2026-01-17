@@ -46,6 +46,7 @@ import { eq, desc, and, gte, lte, or, asc } from "drizzle-orm";
 import session from "express-session";
 import connectPgSimple from "connect-pg-simple";
 import { Pool } from "pg";
+import { loggers } from './lib/logger';
 
 export interface IStorage {
   getUser(id: number): Promise<User | undefined>;
@@ -238,11 +239,11 @@ export class DatabaseStorage implements IStorage {
   }
 
   async updateGameServer(server: UpdateGameServer): Promise<GameServer | undefined> {
-    console.log('STORAGE: updateGameServer called with data:', JSON.stringify(server));
-    
+    loggers.storage.debug('updateGameServer called', { data: server });
+
     // For icon updates, try a different approach due to potential conflicts
     if (server.icon) {
-      console.log('STORAGE: Icon update detected, using special handling');
+      loggers.storage.debug('Icon update detected, using special handling');
       try {
         // Try the ORM approach first
         const [updatedServer] = await db
@@ -253,43 +254,43 @@ export class DatabaseStorage implements IStorage {
           })
           .where(eq(gameServers.id, server.id))
           .returning();
-        
-        console.log('STORAGE: Icon update succeeded with ORM, returning:', JSON.stringify(updatedServer));
+
+        loggers.storage.debug('Icon update succeeded with ORM', { server: updatedServer });
         return updatedServer;
       } catch (ormError) {
-        console.error('STORAGE: ORM update failed for icon, trying direct SQL:', ormError);
-        
+        loggers.storage.error('ORM update failed for icon, trying direct SQL', { error: ormError });
+
         // On ORM failure, try direct SQL
         try {
           // Create a prepared statement to update just the icon
           const sqlQuery = `
-            UPDATE "gameServers" 
-            SET "icon" = $1, "lastStatusCheck" = $2 
-            WHERE "id" = $3 
+            UPDATE "gameServers"
+            SET "icon" = $1, "lastStatusCheck" = $2
+            WHERE "id" = $3
             RETURNING *
           `;
-          
-          console.log('STORAGE: Executing direct SQL with values:', [server.icon, new Date(), server.id]);
+
+          loggers.storage.debug('Executing direct SQL', { icon: server.icon, id: server.id });
           const result = await pool.query(sqlQuery, [server.icon, new Date(), server.id]);
-          
+
           if (result.rows && result.rows.length > 0) {
-            console.log('STORAGE: Direct SQL icon update succeeded, returning:', JSON.stringify(result.rows[0]));
+            loggers.storage.debug('Direct SQL icon update succeeded', { server: result.rows[0] });
             return result.rows[0] as GameServer;
           } else {
-            console.error('STORAGE: Direct SQL returned no rows');
+            loggers.storage.error('Direct SQL returned no rows');
             throw new Error('No rows returned from direct SQL update');
           }
         } catch (sqlError) {
-          console.error('STORAGE: Even direct SQL update failed:', sqlError);
+          loggers.storage.error('Even direct SQL update failed', { error: sqlError });
           if (sqlError instanceof Error) {
-            console.error('STORAGE: SQL error stack:', sqlError.stack);
-            
+            loggers.storage.error('SQL error details', { stack: sqlError.stack });
+
             // Look for specific error patterns
             if (sqlError.message.includes('duplicate key')) {
-              console.error('STORAGE: Primary key conflict detected');
+              loggers.storage.error('Primary key conflict detected');
             }
           }
-          
+
           // If all else fails, throw the original ORM error for consistency
           throw ormError;
         }
@@ -305,13 +306,13 @@ export class DatabaseStorage implements IStorage {
           })
           .where(eq(gameServers.id, server.id))
           .returning();
-        
-        console.log('STORAGE: Standard update succeeded, returning:', JSON.stringify(updatedServer));
+
+        loggers.storage.debug('Standard update succeeded', { server: updatedServer });
         return updatedServer;
       } catch (error) {
-        console.error('STORAGE: updateGameServer FAILED with error:', error);
+        loggers.storage.error('updateGameServer FAILED', { error });
         if (error instanceof Error) {
-          console.error('STORAGE: error stack:', error.stack);
+          loggers.storage.error('Error details', { stack: error.stack });
         }
         throw error;
       }

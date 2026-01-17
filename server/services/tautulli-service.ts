@@ -1,5 +1,6 @@
 import axios from 'axios';
 import { IService } from './interfaces';
+import { loggers } from '../lib/logger';
 
 /**
  * Tautulli service for monitoring Plex server activity
@@ -31,16 +32,16 @@ export class TautulliService implements IService {
         
         if (response.data.response.result === 'success') {
           this.initialized = true;
-          console.log('Tautulli Service initialized successfully');
+          loggers.tautulli.info('Service initialized successfully');
         } else {
           throw new Error('API test failed');
         }
       } catch (error) {
-        console.error('Failed to initialize Tautulli Service:', error);
-        console.log('Tautulli Service will continue without connection - functionality will be limited');
+        loggers.tautulli.error('Failed to initialize service', { error });
+        loggers.tautulli.warn('Service will continue without connection - functionality will be limited');
       }
     } else {
-      console.warn('Tautulli Service not fully configured - missing URL or API key');
+      loggers.tautulli.warn('Service not fully configured - missing URL or API key');
     }
   }
 
@@ -88,7 +89,7 @@ export class TautulliService implements IService {
         throw new Error(`API call failed: ${response.data.response.message}`);
       }
     } catch (error) {
-      console.error(`Tautulli API call failed for command ${command}:`, error);
+      loggers.tautulli.error(`API call failed for command ${command}`, { error });
       throw error;
     }
   }
@@ -101,7 +102,7 @@ export class TautulliService implements IService {
       const result = await this.makeAPICall('get_activity');
       return { response: { data: result || { sessions: [] } } };
     } catch (error) {
-      console.error('Failed to get Tautulli activity:', error);
+      loggers.tautulli.error('Failed to get activity', { error });
       return { response: { data: { sessions: [] } } };
     }
   }
@@ -114,7 +115,7 @@ export class TautulliService implements IService {
       const result = await this.makeAPICall('get_users');
       return { response: { data: result || [] } };
     } catch (error) {
-      console.error('Failed to get Tautulli users:', error);
+      loggers.tautulli.error('Failed to get users', { error });
       return { response: { data: [] } };
     }
   }
@@ -128,7 +129,7 @@ export class TautulliService implements IService {
       if (time_range) params.time_range = time_range;
       return await this.makeAPICall('get_home_stats', params);
     } catch (error) {
-      console.error('Failed to get Tautulli home stats:', error);
+      loggers.tautulli.error('Failed to get home stats', { error });
       return [];
     }
   }
@@ -141,7 +142,7 @@ export class TautulliService implements IService {
       const result = await this.makeAPICall('get_libraries');
       return { response: { data: result || [] } };
     } catch (error) {
-      console.error('Failed to get Tautulli libraries:', error);
+      loggers.tautulli.error('Failed to get libraries', { error });
       return { response: { data: [] } };
     }
   }
@@ -156,7 +157,7 @@ export class TautulliService implements IService {
       if (length !== undefined) params.length = length;
       return await this.makeAPICall('get_library_media_info', params);
     } catch (error) {
-      console.error('Failed to get Tautulli library media info:', error);
+      loggers.tautulli.error('Failed to get library media info', { error });
       return { data: [] };
     }
   }
@@ -173,7 +174,7 @@ export class TautulliService implements IService {
       const result = await this.makeAPICall('get_history', params);
       return { response: { data: result || { data: [] } } };
     } catch (error) {
-      console.error('Failed to get Tautulli history:', error);
+      loggers.tautulli.error('Failed to get history', { error });
       return { response: { data: { data: [] } } };
     }
   }
@@ -186,7 +187,7 @@ export class TautulliService implements IService {
       const result = await this.makeAPICall('get_logs', params);
       return { response: { data: result } };
     } catch (error) {
-      console.error('Failed to get Tautulli logs:', error);
+      loggers.tautulli.error('Failed to get logs', { error });
       return { response: { data: { data: [] } } };
     }
   }
@@ -196,7 +197,7 @@ export class TautulliService implements IService {
       const result = await this.makeAPICall('get_recently_added', { count });
       return { response: { data: result || { recently_added: [] } } };
     } catch (error) {
-      console.error('Failed to get recently added:', error);
+      loggers.tautulli.error('Failed to get recently added', { error });
       return { response: { data: { recently_added: [] } } };
     }
   }
@@ -208,7 +209,7 @@ export class TautulliService implements IService {
       });
       return { response: { data: result || { series: [] } } };
     } catch (error) {
-      console.error('Failed to get plays by date:', error);
+      loggers.tautulli.error('Failed to get plays by date', { error });
       return { response: { data: { series: [] } } };
     }
   }
@@ -222,7 +223,7 @@ export class TautulliService implements IService {
       const result = await this.makeAPICall('get_server_info');
       return result;
     } catch (error) {
-      console.error('Failed to get server info:', error);
+      loggers.tautulli.error('Failed to get server info', { error });
       return null;
     }
   }

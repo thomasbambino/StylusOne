@@ -3,12 +3,12 @@ import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
-import { 
-  Users, 
-  Globe, 
-  Play, 
-  Square, 
-  RotateCw, 
+import {
+  Users,
+  Globe,
+  Play,
+  Square,
+  RotateCw,
   Skull,
   Wifi,
   WifiOff,
@@ -23,6 +23,7 @@ import { useState, useEffect } from "react";
 import { useMutation, useQueryClient, useQuery } from "@tanstack/react-query";
 import { cn } from "@/lib/utils";
 import { motion } from "framer-motion";
+import { loggers } from "@/lib/logger";
 import { getGameArtwork, getGameBanner, getGameIcon } from "@/lib/game-artwork";
 import {
   Tooltip,
@@ -61,7 +62,7 @@ export function GameServerCardModern({ server }: GameServerCardModernProps) {
 
     // Stop polling after 45 seconds (longer timeout)
     const timeout = setTimeout(() => {
-      console.log('Stopping transition polling due to timeout');
+      loggers.game.debug('Stopping transition polling due to timeout');
       setIsTransitioning(false);
     }, 45000);
 
@@ -77,13 +78,13 @@ export function GameServerCardModern({ server }: GameServerCardModernProps) {
   // Stop transitioning when server status actually changes
   useEffect(() => {
     if (server.status !== previousStatus) {
-      console.log('Server status changed from', previousStatus, 'to', server.status);
+      loggers.game.debug('Server status changed', { from: previousStatus, to: server.status });
       setPreviousStatus(server.status);
-      
+
       if (isTransitioning) {
         // Give a small delay to ensure the status is stable
         const timeout = setTimeout(() => {
-          console.log('Stopping transition due to status change');
+          loggers.game.debug('Stopping transition due to status change');
           setIsTransitioning(false);
         }, 1500);
         
@@ -100,9 +101,9 @@ export function GameServerCardModern({ server }: GameServerCardModernProps) {
   // Server control mutations
   const startMutation = useMutation({
     mutationFn: async () => {
-      console.log('startMutation.mutationFn called for server:', server.instanceId);
+      loggers.game.debug('Start mutation called', { instanceId: server.instanceId });
       try {
-        console.log('Making fetch request to:', `/api/game-servers/${server.instanceId}/start`);
+        loggers.game.debug('Making fetch request', { url: `/api/game-servers/${server.instanceId}/start` });
         const res = await fetch(`/api/game-servers/${server.instanceId}/start`, {
           method: "POST",
           credentials: 'include',
@@ -110,26 +111,26 @@ export function GameServerCardModern({ server }: GameServerCardModernProps) {
             'Content-Type': 'application/json',
           },
         });
-        console.log('Fetch response status:', res.status, res.statusText);
+        loggers.game.debug('Fetch response', { status: res.status, statusText: res.statusText });
         if (!res.ok) {
           const error = await res.text();
-          console.error('Response error text:', error);
+          loggers.game.error('Response error', { error });
           throw new Error(`Failed to start server: ${error}`);
         }
         const result = await res.json();
-        console.log('Start server success result:', result);
+        loggers.game.debug('Start server success', { result });
         return result;
       } catch (error) {
-        console.error('Fetch error in mutationFn:', error);
+        loggers.game.error('Fetch error in mutationFn', { error });
         throw error;
       }
     },
     onMutate: () => {
-      console.log('startMutation.onMutate called');
+      loggers.game.debug('Start mutation onMutate');
       setIsTransitioning(true);
     },
     onSuccess: (data) => {
-      console.log('startMutation.onSuccess called with data:', data);
+      loggers.game.debug('Start mutation success', { data });
       queryClient.invalidateQueries({ queryKey: ["/api/game-servers"] });
       
       // Immediately start aggressive polling
@@ -143,12 +144,12 @@ export function GameServerCardModern({ server }: GameServerCardModernProps) {
       }, 10000);
     },
     onError: (error) => {
-      console.error('startMutation.onError called with error:', error);
+      loggers.game.error('Start mutation error', { error });
       alert(`Failed to start server: ${error.message}`);
       setIsTransitioning(false);
     },
     onSettled: () => {
-      console.log('startMutation.onSettled called');
+      loggers.game.debug('Start mutation settled');
     },
   });
 
@@ -184,7 +185,7 @@ export function GameServerCardModern({ server }: GameServerCardModernProps) {
       }, 10000);
     },
     onError: (error) => {
-      console.error('Stop server error:', error);
+      loggers.game.error('Stop server error', { error });
       alert(`Failed to stop server: ${error.message}`);
       setIsTransitioning(false);
     },
@@ -213,7 +214,7 @@ export function GameServerCardModern({ server }: GameServerCardModernProps) {
       // Keep transitioning state active for polling
     },
     onError: (error) => {
-      console.error('Restart server error:', error);
+      loggers.game.error('Restart server error', { error });
       setIsTransitioning(false);
     },
   });
@@ -237,7 +238,7 @@ export function GameServerCardModern({ server }: GameServerCardModernProps) {
       queryClient.invalidateQueries({ queryKey: ["/api/game-servers"] });
     },
     onError: (error) => {
-      console.error('Kill server error:', error);
+      loggers.game.error('Kill server error', { error });
     },
   });
 
@@ -451,15 +452,12 @@ export function GameServerCardModern({ server }: GameServerCardModernProps) {
                       size="icon"
                       className="h-6 w-6"
                       onClick={() => {
-                        console.log('Start button clicked for server:', server.name, 'instanceId:', server.instanceId);
-                        console.log('startMutation object:', startMutation);
-                        console.log('startMutation.mutate type:', typeof startMutation.mutate);
-                        console.log('Calling startMutation.mutate()...');
+                        loggers.game.debug('Start button clicked', { name: server.name, instanceId: server.instanceId });
                         try {
                           startMutation.mutate();
-                          console.log('startMutation.mutate() called successfully');
+                          loggers.game.debug('Start mutation called successfully');
                         } catch (error) {
-                          console.error('Error calling startMutation.mutate():', error);
+                          loggers.game.error('Error calling start mutation', { error });
                         }
                       }}
                       disabled={isLoading}
@@ -495,7 +493,7 @@ export function GameServerCardModern({ server }: GameServerCardModernProps) {
                           description: "The server share link has been copied to your clipboard.",
                         });
                       } catch (error) {
-                        console.error('Failed to copy to clipboard:', error);
+                        loggers.game.error('Failed to copy to clipboard', { error });
                         toast({
                           title: "Copy Failed",
                           description: "Failed to copy the share link. Please try again.",
@@ -526,7 +524,7 @@ export function GameServerCardModern({ server }: GameServerCardModernProps) {
                                 size="icon"
                                 className="h-7 w-7 text-red-500 hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-950"
                                 onClick={() => {
-                                console.log('Stop button clicked for server:', server.name, 'instanceId:', server.instanceId);
+                                loggers.game.debug('Stop button clicked', { name: server.name, instanceId: server.instanceId });
                                 stopMutation.mutate();
                               }}
                                 disabled={isLoading}
@@ -552,14 +550,12 @@ export function GameServerCardModern({ server }: GameServerCardModernProps) {
                               size="icon"
                               className="h-7 w-7 text-green-500 hover:text-green-400 hover:bg-green-50 dark:hover:bg-green-950"
                               onClick={() => {
-                                console.log('Start button clicked for server:', server.name, 'instanceId:', server.instanceId);
-                                console.log('startMutation object:', startMutation);
-                                console.log('Calling startMutation.mutate()...');
+                                loggers.game.debug('Start button clicked', { name: server.name, instanceId: server.instanceId });
                                 try {
                                   startMutation.mutate();
-                                  console.log('startMutation.mutate() called successfully');
+                                  loggers.game.debug('Start mutation called successfully');
                                 } catch (error) {
-                                  console.error('Error calling startMutation.mutate():', error);
+                                  loggers.game.error('Error calling start mutation', { error });
                                 }
                               }}
                               disabled={isLoading}

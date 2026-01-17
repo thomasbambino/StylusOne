@@ -1,5 +1,6 @@
 import { isNativePlatform } from './capacitor';
 import { CapacitorHttp } from '@capacitor/core';
+import { loggers } from './logger';
 
 const DB_NAME = 'ImageCache';
 const STORE_NAME = 'images';
@@ -25,7 +26,7 @@ async function initDB(): Promise<IDBDatabase> {
     const request = indexedDB.open(DB_NAME, DB_VERSION);
 
     request.onerror = () => {
-      console.error('[ImageCache] Failed to open IndexedDB:', request.error);
+      loggers.imageCache.error('Failed to open IndexedDB', { error: request.error });
       reject(request.error);
     };
 
@@ -80,7 +81,7 @@ export async function getCachedImage(url: string): Promise<string | null> {
       };
     });
   } catch (error) {
-    console.error('[ImageCache] Error getting cached image:', error);
+    loggers.imageCache.error('Error getting cached image', { error });
     return null;
   }
 }
@@ -100,14 +101,14 @@ export async function cacheImage(url: string): Promise<string | null> {
 
     // Use Capacitor HTTP for native apps to bypass CORS
     if (isNativePlatform()) {
-      console.log('[ImageCache] Using CapacitorHttp for:', url);
+      loggers.imageCache.debug('Using CapacitorHttp', { url });
       const response = await CapacitorHttp.get({
         url,
         responseType: 'blob', // Returns base64-encoded data
       });
 
       if (response.status !== 200) {
-        console.warn('[ImageCache] HTTP error:', response.status, url);
+        loggers.imageCache.warn('HTTP error', { status: response.status, url });
         return null;
       }
 
@@ -146,7 +147,7 @@ export async function cacheImage(url: string): Promise<string | null> {
 
       request.onsuccess = () => {
         const blobUrl = URL.createObjectURL(blob);
-        console.log('[ImageCache] Cached:', url);
+        loggers.imageCache.debug('Cached', { url });
         resolve(blobUrl);
 
         // Clean up old entries if needed
@@ -159,7 +160,7 @@ export async function cacheImage(url: string): Promise<string | null> {
     });
   } catch (error) {
     // CORS or network error - return original URL
-    console.warn('[ImageCache] Failed to cache image:', url, error);
+    loggers.imageCache.warn('Failed to cache image', { url, error });
     return null;
   }
 }
@@ -174,7 +175,7 @@ async function deleteFromCache(url: string): Promise<void> {
     const store = transaction.objectStore(STORE_NAME);
     store.delete(url);
   } catch (error) {
-    console.error('[ImageCache] Error deleting from cache:', error);
+    loggers.imageCache.error('Error deleting from cache', { error });
   }
 }
 
@@ -208,7 +209,7 @@ async function cleanupOldEntries(): Promise<void> {
       }
     };
   } catch (error) {
-    console.error('[ImageCache] Error cleaning up cache:', error);
+    loggers.imageCache.error('Error cleaning up cache', { error });
   }
 }
 
@@ -221,9 +222,9 @@ export async function clearImageCache(): Promise<void> {
     const transaction = database.transaction(STORE_NAME, 'readwrite');
     const store = transaction.objectStore(STORE_NAME);
     store.clear();
-    console.log('[ImageCache] Cache cleared');
+    loggers.imageCache.info('Cache cleared');
   } catch (error) {
-    console.error('[ImageCache] Error clearing cache:', error);
+    loggers.imageCache.error('Error clearing cache', { error });
   }
 }
 
@@ -234,7 +235,7 @@ export async function preloadImages(urls: string[]): Promise<void> {
   if (!isNativePlatform()) return; // Only preload on native
 
   const validUrls = urls.filter(url => url && url.startsWith('http'));
-  console.log(`[ImageCache] Preloading ${validUrls.length} images`);
+  loggers.imageCache.debug('Preloading images', { count: validUrls.length });
 
   // Process in batches to avoid overwhelming the network
   const batchSize = 10;

@@ -4,19 +4,13 @@ import path, { dirname } from "path";
 import { fileURLToPath } from "url";
 import { db } from "./db";
 import { settings } from "@shared/schema";
+import { loggers } from './lib/logger';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
 export function log(message: string, source = "express") {
-  const formattedTime = new Date().toLocaleTimeString("en-US", {
-    hour: "numeric",
-    minute: "2-digit",
-    second: "2-digit",
-    hour12: true,
-  });
-
-  console.log(`${formattedTime} [${source}] ${message}`);
+  loggers.express.info(message);
 }
 
 export function serveStatic(app: Express) {
@@ -134,7 +128,7 @@ export function serveStatic(app: Express) {
 
       res.send(html);
     } catch (error) {
-      console.error('Error serving dynamic HTML:', error);
+      loggers.static.error('Error serving dynamic HTML', { error });
       // Fallback to static file
       res.sendFile(path.resolve(distPath, "index.html"));
     }

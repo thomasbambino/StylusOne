@@ -1,6 +1,7 @@
 import { Preferences } from '@capacitor/preferences';
 import { LocalNotifications } from '@capacitor/local-notifications';
 import { isNativePlatform } from './capacitor';
+import { loggers } from '@/lib/logger';
 
 const STORAGE_KEY = 'program_reminders';
 
@@ -51,7 +52,7 @@ function generateNotificationId(reminderId: string, offset: number): number {
  * Get LocalNotifications - use static import
  */
 function getLocalNotifications() {
-  console.log('[Reminders] Getting LocalNotifications (static import)');
+  loggers.reminders.debug('Getting LocalNotifications (static import)');
   return LocalNotifications;
 }
 
@@ -69,17 +70,17 @@ export const reminderService = {
    * Request notification permissions with timeout
    */
   async requestPermissions(): Promise<boolean> {
-    console.log('[Reminders] requestPermissions called');
+    loggers.reminders.debug('requestPermissions called');
     if (!isNativePlatform()) {
-      console.log('[Reminders] Not on native platform, skipping permission request');
+      loggers.reminders.debug('Not on native platform, skipping permission request');
       return false;
     }
 
     try {
-      console.log('[Reminders] Getting LocalNotifications for permission check...');
+      loggers.reminders.debug('Getting LocalNotifications for permission check');
       const LocalNotifications = getLocalNotifications();
       if (!LocalNotifications) {
-        console.log('[Reminders] LocalNotifications not available for permission check');
+        loggers.reminders.debug('LocalNotifications not available for permission check');
         return false;
       }
 
@@ -93,41 +94,41 @@ export const reminderService = {
         ]);
       };
 
-      console.log('[Reminders] Checking current permissions...');
+      loggers.reminders.debug('Checking current permissions');
       let status;
       try {
         status = await withTimeout(LocalNotifications.checkPermissions(), 5000, 'checkPermissions');
-        console.log('[Reminders] Current permission status:', status.display);
+        loggers.reminders.debug('Current permission status', { status: status.display });
       } catch (timeoutError) {
-        console.error('[Reminders] checkPermissions timed out, trying requestPermissions directly');
+        loggers.reminders.error('checkPermissions timed out, trying requestPermissions directly', { error: timeoutError });
         // If checkPermissions times out, try requesting directly
         try {
           const result = await withTimeout(LocalNotifications.requestPermissions(), 10000, 'requestPermissions');
-          console.log('[Reminders] Direct request result:', result.display);
+          loggers.reminders.debug('Direct request result', { status: result.display });
           return result.display === 'granted';
         } catch (reqError) {
-          console.error('[Reminders] requestPermissions also failed:', reqError);
+          loggers.reminders.error('requestPermissions also failed', { error: reqError });
           return false;
         }
       }
 
       if (status.display === 'granted') {
-        console.log('[Reminders] Permissions already granted');
+        loggers.reminders.debug('Permissions already granted');
         return true;
       }
 
       if (status.display === 'denied') {
-        console.log('[Reminders] Permissions denied, cannot request');
+        loggers.reminders.debug('Permissions denied, cannot request');
         return false;
       }
 
       // Request permissions
-      console.log('[Reminders] Requesting permissions...');
+      loggers.reminders.debug('Requesting permissions');
       const result = await withTimeout(LocalNotifications.requestPermissions(), 10000, 'requestPermissions');
-      console.log('[Reminders] Permission request result:', result.display);
+      loggers.reminders.debug('Permission request result', { status: result.display });
       return result.display === 'granted';
     } catch (error) {
-      console.error('[Reminders] Error requesting permissions:', error);
+      loggers.reminders.error('Error requesting permissions', { error });
       return false;
     }
   },
@@ -158,7 +159,7 @@ export const reminderService = {
       if (!value) return [];
       return JSON.parse(value) as ProgramReminder[];
     } catch (error) {
-      console.error('[Reminders] Error reading reminders:', error);
+      loggers.reminders.error('Error reading reminders', { error });
       return [];
     }
   },
@@ -173,7 +174,7 @@ export const reminderService = {
         value: JSON.stringify(reminders)
       });
     } catch (error) {
-      console.error('[Reminders] Error saving reminders:', error);
+      loggers.reminders.error('Error saving reminders', { error });
     }
   },
 
@@ -195,38 +196,38 @@ export const reminderService = {
     programTitle: string;
     programStart: string;
   }): Promise<boolean> {
-    console.log('[Reminders] setReminder called for:', data.programTitle);
+    loggers.reminders.debug('setReminder called', { programTitle: data.programTitle });
 
     if (!isNativePlatform()) {
-      console.log('[Reminders] Not on native platform');
+      loggers.reminders.debug('Not on native platform');
       return false;
     }
-    console.log('[Reminders] Is native platform, using LocalNotifications...');
+    loggers.reminders.debug('Is native platform, using LocalNotifications');
 
     // First check current permission status
-    console.log('[Reminders] Checking current permission status...');
+    loggers.reminders.debug('Checking current permission status');
     try {
       const checkResult = await LocalNotifications.checkPermissions();
-      console.log('[Reminders] Current status:', checkResult.display);
+      loggers.reminders.debug('Current status', { status: checkResult.display });
 
       if (checkResult.display === 'granted') {
-        console.log('[Reminders] Already have permission, proceeding...');
+        loggers.reminders.debug('Already have permission, proceeding');
       } else if (checkResult.display === 'denied') {
-        console.log('[Reminders] Permission denied, cannot proceed');
+        loggers.reminders.debug('Permission denied, cannot proceed');
         return false;
       } else {
         // Need to request permissions
-        console.log('[Reminders] Requesting permissions...');
+        loggers.reminders.debug('Requesting permissions');
         const permResult = await LocalNotifications.requestPermissions();
-        console.log('[Reminders] Permission result:', permResult.display);
+        loggers.reminders.debug('Permission result', { status: permResult.display });
 
         if (permResult.display !== 'granted') {
-          console.log('[Reminders] Permissions not granted');
+          loggers.reminders.debug('Permissions not granted');
           return false;
         }
       }
     } catch (error) {
-      console.error('[Reminders] Permission check/request failed:', error);
+      loggers.reminders.error('Permission check/request failed', { error });
       return false;
     }
 
@@ -278,14 +279,14 @@ export const reminderService = {
     }
 
     if (notifications.length === 0) {
-      console.log('[Reminders] Program starts too soon, no reminders scheduled');
+      loggers.reminders.debug('Program starts too soon, no reminders scheduled');
       return false;
     }
 
     try {
       // Schedule the notifications
       await LocalNotifications.schedule({ notifications });
-      console.log('[Reminders] Scheduled notifications:', notifications.length);
+      loggers.reminders.info('Scheduled notifications', { count: notifications.length });
 
       // Save to storage
       const reminders = await this.getReminders();
@@ -303,10 +304,10 @@ export const reminderService = {
       filtered.push(newReminder);
       await this.saveReminders(filtered);
 
-      console.log('[Reminders] Reminder saved:', reminderId);
+      loggers.reminders.info('Reminder saved', { reminderId });
       return true;
     } catch (error) {
-      console.error('[Reminders] Error scheduling notifications:', error);
+      loggers.reminders.error('Error scheduling notifications', { error });
       return false;
     }
   },
@@ -326,17 +327,17 @@ export const reminderService = {
           await LocalNotifications.cancel({
             notifications: reminder.notificationIds.map(id => ({ id }))
           });
-          console.log('[Reminders] Cancelled notifications for:', reminderId);
+          loggers.reminders.info('Cancelled notifications', { reminderId });
         }
       } catch (error) {
-        console.error('[Reminders] Error cancelling notifications:', error);
+        loggers.reminders.error('Error cancelling notifications', { error });
       }
     }
 
     // Remove from storage
     const filtered = reminders.filter(r => r.id !== reminderId);
     await this.saveReminders(filtered);
-    console.log('[Reminders] Reminder removed:', reminderId);
+    loggers.reminders.info('Reminder removed', { reminderId });
   },
 
   /**
@@ -353,12 +354,13 @@ export const reminderService = {
       });
 
       if (activeReminders.length !== reminders.length) {
-        console.log('[Reminders] Cleaning up expired reminders:',
-          reminders.length - activeReminders.length, 'removed');
+        loggers.reminders.info('Cleaning up expired reminders', {
+          removed: reminders.length - activeReminders.length
+        });
         await this.saveReminders(activeReminders);
       }
     } catch (error) {
-      console.error('[Reminders] Error cleaning up reminders:', error);
+      loggers.reminders.error('Error cleaning up reminders', { error });
     }
   },
 
@@ -382,27 +384,27 @@ export const reminderService = {
     try {
       const LocalNotifications = getLocalNotifications();
       if (!LocalNotifications) {
-        console.log('[Reminders] LocalNotifications not available, skipping listener setup');
+        loggers.reminders.debug('LocalNotifications not available, skipping listener setup');
         return;
       }
 
       // Listen for notification taps
       await LocalNotifications.addListener('localNotificationActionPerformed', (notification) => {
-        console.log('[Reminders] Notification tapped:', notification);
+        loggers.reminders.debug('Notification tapped', { notification });
 
         const extra = notification.notification.extra as Record<string, unknown> | undefined;
         if (extra) {
           const channelId = this.getChannelFromNotification(extra);
           if (channelId) {
-            console.log('[Reminders] Setting pending channel:', channelId);
+            loggers.reminders.info('Setting pending channel', { channelId });
             setPendingChannel(channelId);
           }
         }
       });
 
-      console.log('[Reminders] Notification listeners initialized');
+      loggers.reminders.info('Notification listeners initialized');
     } catch (error) {
-      console.error('[Reminders] Error initializing listeners:', error);
+      loggers.reminders.error('Error initializing listeners', { error });
     }
   }
 };

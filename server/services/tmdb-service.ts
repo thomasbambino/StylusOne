@@ -1,6 +1,7 @@
 import fetch from 'node-fetch';
 import * as fs from 'fs';
 import * as path from 'path';
+import { loggers } from '../lib/logger';
 
 /**
  * TMDB (The Movie Database) service for fetching TV show and movie artwork
@@ -81,9 +82,9 @@ export class TMDBService {
   constructor() {
     this.apiKey = process.env.TMDB_API_KEY || '';
     if (this.apiKey) {
-      console.log(`[TMDB] Service initialized with API key (${this.apiKey.substring(0, 4)}...)`);
+      loggers.tmdb.info(`Service initialized with API key (${this.apiKey.substring(0, 4)}...)`);
     } else {
-      console.log('[TMDB] No API key configured - thumbnails disabled');
+      loggers.tmdb.debug('No API key configured - thumbnails disabled');
     }
 
     // Load cache from disk
@@ -113,15 +114,15 @@ export class TMDBService {
             loaded++;
           }
 
-          console.log(`[TMDB] Loaded ${loaded} cached entries from disk (${expired} expired entries removed)`);
+          loggers.tmdb.info(`Loaded ${loaded} cached entries from disk (${expired} expired entries removed)`);
         } else {
-          console.log('[TMDB] Cache version mismatch, starting fresh');
+          loggers.tmdb.debug('Cache version mismatch, starting fresh');
         }
       } else {
-        console.log('[TMDB] No cache file found, starting fresh');
+        loggers.tmdb.debug('No cache file found, starting fresh');
       }
     } catch (error) {
-      console.error('[TMDB] Error loading cache:', error);
+      loggers.tmdb.error('Error loading cache', { error });
     }
   }
 
@@ -158,9 +159,9 @@ export class TMDBService {
 
       fs.writeFileSync(CACHE_FILE, JSON.stringify(data, null, 2));
       this.isDirty = false;
-      console.log(`[TMDB] Saved ${this.cache.size} entries to disk`);
+      loggers.tmdb.debug(`Saved ${this.cache.size} entries to disk`);
     } catch (error) {
-      console.error('[TMDB] Error saving cache:', error);
+      loggers.tmdb.error('Error saving cache', { error });
     }
   }
 
@@ -240,17 +241,17 @@ export class TMDBService {
    */
   startAfterEPGReady(getFavoriteTitles?: GetFavoriteTitlesCallback): void {
     if (!this.apiKey) {
-      console.log('[TMDB] Worker not starting - no API key');
+      loggers.tmdb.debug('Worker not starting - no API key');
       return;
     }
     if (this.workerTimer) {
-      console.log('[TMDB] Worker already running');
+      loggers.tmdb.debug('Worker already running');
       return;
     }
     if (getFavoriteTitles) {
       this.getFavoriteTitles = getFavoriteTitles;
     }
-    console.log('[TMDB] Starting background worker...');
+    loggers.tmdb.info('Starting background worker...');
     this.startWorker();
     setTimeout(() => this.refreshFavorites(), 5000);
   }
@@ -264,11 +265,11 @@ export class TMDBService {
     try {
       const titles = await this.getFavoriteTitles();
       if (titles.length > 0) {
-        console.log(`[TMDB] Refreshing thumbnails for ${titles.length} favorite program titles`);
+        loggers.tmdb.debug(`Refreshing thumbnails for ${titles.length} favorite program titles`);
         this.queueTitles(titles);
       }
     } catch (error) {
-      console.error('[TMDB] Error refreshing favorites:', error);
+      loggers.tmdb.error('Error refreshing favorites', { error });
     }
   }
 
@@ -291,7 +292,7 @@ export class TMDBService {
       }
     }, WORKER_INTERVAL);
 
-    console.log(`[TMDB] Background worker started (interval: ${WORKER_INTERVAL / 1000}s, batch: ${TITLES_PER_RUN} titles)`);
+    loggers.tmdb.info(`Background worker started (interval: ${WORKER_INTERVAL / 1000}s, batch: ${TITLES_PER_RUN} titles)`);
   }
 
   /**
@@ -302,7 +303,7 @@ export class TMDBService {
       clearInterval(this.workerTimer);
       this.workerTimer = null;
       this.saveCache(); // Save on shutdown
-      console.log('TMDB background worker stopped');
+      loggers.tmdb.info('Background worker stopped');
     }
   }
 
@@ -315,7 +316,7 @@ export class TMDBService {
     this.isProcessing = true;
     const titlesToProcess = Array.from(this.queue).slice(0, TITLES_PER_RUN);
 
-    console.log(`[TMDB Worker] Processing ${titlesToProcess.length} titles (${this.queue.size} in queue)`);
+    loggers.tmdb.debug(`Worker processing ${titlesToProcess.length} titles (${this.queue.size} in queue)`);
 
     for (const title of titlesToProcess) {
       try {
@@ -333,7 +334,7 @@ export class TMDBService {
         await this.fetchAndCacheImage(title);
 
       } catch (error) {
-        console.error(`[TMDB Worker] Error processing "${title}":`, error instanceof Error ? error.message : error);
+        loggers.tmdb.error(`Worker error processing "${title}"`, { error: error instanceof Error ? error.message : error });
       }
     }
 
@@ -458,11 +459,11 @@ export class TMDBService {
     const cleanedTitle = this.cleanTitle(title);
 
     if (title !== cleanedTitle) {
-      console.log(`[TMDB] Title cleaned: "${title}" -> "${cleanedTitle}"`);
+      loggers.tmdb.trace(`Title cleaned: "${title}" -> "${cleanedTitle}"`);
     }
 
     if (!cleanedTitle || cleanedTitle.length < 2) {
-      console.log(`[TMDB] Skipping empty/short title: "${title}"`);
+      loggers.tmdb.trace(`Skipping empty/short title: "${title}"`);
       this.cacheResult(cacheKey, null, null);
       return null;
     }
@@ -472,7 +473,7 @@ export class TMDBService {
       const searchData = await this.rateLimitedFetch(searchUrl);
 
       if (!searchData.results || searchData.results.length === 0) {
-        console.log(`[TMDB] No results found for "${cleanedTitle}"`);
+        loggers.tmdb.trace(`No results found for "${cleanedTitle}"`);
         this.cacheResult(cacheKey, null, null);
         return null;
       }
@@ -483,7 +484,7 @@ export class TMDBService {
       );
 
       if (mediaResults.length === 0) {
-        console.log(`[TMDB] No TV/movie results for "${cleanedTitle}" (got ${searchData.results.length} person results)`);
+        loggers.tmdb.trace(`No TV/movie results for "${cleanedTitle}" (got ${searchData.results.length} person results)`);
         this.cacheResult(cacheKey, null, null);
         return null;
       }
@@ -508,7 +509,7 @@ export class TMDBService {
       if (!bestMatch || bestScore < MIN_SIMILARITY_SCORE) {
         const topResult = mediaResults[0];
         const topName = topResult.name || topResult.title || '';
-        console.log(`[TMDB] Rejected match for "${cleanedTitle}" -> "${topName}" (similarity: ${(bestScore * 100).toFixed(0)}% < ${MIN_SIMILARITY_SCORE * 100}% required)`);
+        loggers.tmdb.trace(`Rejected match for "${cleanedTitle}" -> "${topName}" (similarity: ${(bestScore * 100).toFixed(0)}% < ${MIN_SIMILARITY_SCORE * 100}% required)`);
         this.cacheResult(cacheKey, null, null);
         return null;
       }
@@ -534,7 +535,7 @@ export class TMDBService {
       }
 
       if (!imagePath) {
-        console.log(`[TMDB] No image found for "${cleanedTitle}" (matched: ${bestName})`);
+        loggers.tmdb.trace(`No image found for "${cleanedTitle}" (matched: ${bestName})`);
         this.cacheResult(cacheKey, null, bestName);
         return null;
       }
@@ -542,7 +543,7 @@ export class TMDBService {
       const imageUrl = `${this.imageBaseUrl}/w780${imagePath}`;
 
       this.cacheResult(cacheKey, imageUrl, bestName);
-      console.log(`[TMDB] Found ${mediaType} thumbnail for "${cleanedTitle}" -> ${bestName} (${(bestScore * 100).toFixed(0)}% match)`);
+      loggers.tmdb.trace(`Found ${mediaType} thumbnail for "${cleanedTitle}" -> ${bestName} (${(bestScore * 100).toFixed(0)}% match)`);
 
       return imageUrl;
     } catch (error) {

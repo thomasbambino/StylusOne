@@ -1,4 +1,5 @@
 import { storage } from "./storage.js";
+import { loggers } from './lib/logger';
 
 const baseTemplate = `
 <!DOCTYPE html>
@@ -222,23 +223,23 @@ const templates = [
 
 export async function setupDefaultTemplates() {
   try {
-    console.log('Setting up default email templates...');
+    loggers.email.info('Setting up default email templates...');
 
     for (const template of templates) {
       // Check if template already exists
       const existing = await storage.getEmailTemplateByName(template.name);
 
       if (!existing) {
-        console.log(`Creating template: ${template.name}`);
+        loggers.email.debug(`Creating template: ${template.name}`);
         await storage.createEmailTemplate(template);
       } else {
-        console.log(`Template already exists: ${template.name}`);
+        loggers.email.debug(`Template already exists: ${template.name}`);
       }
     }
 
-    console.log('Default email templates setup complete');
+    loggers.email.info('Default email templates setup complete');
   } catch (error) {
-    console.error('Error setting up default templates:', error);
+    loggers.email.error('Error setting up default templates', { error });
     throw error;
   }
 }

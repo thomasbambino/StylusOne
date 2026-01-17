@@ -6,6 +6,7 @@ import { useToast } from "@/hooks/use-toast";
 import { Loader2 } from "lucide-react";
 import { CapacitorHttp, Capacitor } from '@capacitor/core';
 import { queryClient } from "@/lib/queryClient";
+import { loggers } from "@/lib/logger";
 
 // Check if Google Auth is configured for the current platform
 const isGoogleAuthConfigured = () => {
@@ -38,13 +39,13 @@ export function GoogleAuthButton() {
         }
 
         // Use native Google Sign-In on mobile
-        console.log('Starting native Google sign-in...');
+        loggers.oauth.info('Starting native Google sign-in');
         const result = await GoogleAuth.signIn();
-        console.log('Native sign-in completed, result:', result);
+        loggers.oauth.debug('Native sign-in completed', { result });
 
         // Send ID token to backend using CapacitorHttp (required for native platforms)
         const url = buildApiUrl('/api/auth/google');
-        console.log('Sending ID token to backend:', url);
+        loggers.oauth.debug('Sending ID token to backend', { url });
 
         const response = await CapacitorHttp.post({
           url,
@@ -52,8 +53,7 @@ export function GoogleAuthButton() {
           data: { token: result.authentication.idToken },
         });
 
-        console.log('Auth response:', response.status);
-        console.log('Auth response data:', JSON.stringify(response.data, null, 2));
+        loggers.oauth.debug('Auth response', { status: response.status, data: response.data });
 
         if (response.status !== 200) {
           if (response.status === 403 && response.data?.requiresApproval) {
@@ -65,15 +65,12 @@ export function GoogleAuthButton() {
         }
 
         // Success - manually update the user in the query cache
-        console.log('Authentication successful!');
-        console.log('User data:', JSON.stringify(response.data, null, 2));
-        console.log('User role:', response.data.role);
-        console.log('User approved:', response.data.approved);
+        loggers.oauth.info('Authentication successful', { role: response.data.role, approved: response.data.approved });
         queryClient.setQueryData(["/api/user"], response.data);
 
         // Reload to trigger auth state update - check for redirect parameter
         const redirectTo = new URLSearchParams(window.location.search).get('redirect') || '/';
-        console.log('Redirecting to:', redirectTo);
+        loggers.oauth.debug('Redirecting', { to: redirectTo });
         window.location.href = redirectTo;
       } else {
         // Use web OAuth flow - pass redirect parameter if present
@@ -82,14 +79,11 @@ export function GoogleAuthButton() {
         window.location.href = redirectParam ? `${authUrl}?redirect=${encodeURIComponent(redirectParam)}` : authUrl;
       }
     } catch (error) {
-      console.error('Google Sign-In error:', error);
-      console.error('Error details:', JSON.stringify(error, null, 2));
+      loggers.oauth.error('Google Sign-In error', { error });
 
       let errorMessage = "Failed to sign in with Google";
       if (error instanceof Error) {
         errorMessage = error.message;
-        console.error('Error message:', error.message);
-        console.error('Error stack:', error.stack);
       }
 
       toast({

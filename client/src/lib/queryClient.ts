@@ -3,6 +3,7 @@ import { buildApiUrl, isNativePlatform } from "./capacitor";
 import { CapacitorHttp, HttpResponse } from '@capacitor/core';
 import { nativeStorage } from "./nativeStorage";
 import { preloadImages } from "./imageCache";
+import { loggers } from "./logger";
 
 // Endpoints that should be cached for offline/startup performance
 const CACHEABLE_ENDPOINTS: Record<string, string> = {
@@ -24,7 +25,7 @@ function preloadChannelLogos(data: any) {
         .filter((logo: string) => logo && logo.startsWith('http'));
 
       if (logos.length > 0) {
-        console.log(`[QueryClient] Preloading ${logos.length} channel logos`);
+        loggers.queryClient.debug('Preloading channel logos', { count: logos.length });
         preloadImages(logos);
       }
     }
@@ -36,12 +37,12 @@ function preloadChannelLogos(data: any) {
         .filter((logo: string) => logo && logo.startsWith('http'));
 
       if (logos.length > 0) {
-        console.log(`[QueryClient] Preloading ${logos.length} favorite logos`);
+        loggers.queryClient.debug('Preloading favorite logos', { count: logos.length });
         preloadImages(logos);
       }
     }
   } catch (e) {
-    console.warn('[QueryClient] Error preloading logos:', e);
+    loggers.queryClient.warn('Error preloading logos', { error: e });
   }
 }
 
@@ -60,12 +61,12 @@ export async function apiRequest(
   // Convert relative URLs to absolute URLs when running in native app
   const fullUrl = buildApiUrl(url);
 
-  console.log('[API Request]', method, fullUrl);
+  loggers.queryClient.debug('API Request', { method, url: fullUrl });
 
   try {
     // Use Capacitor HTTP for native apps to bypass CORS
     if (isNativePlatform()) {
-      console.log('[Using CapacitorHttp for native request]');
+      loggers.queryClient.debug('Using CapacitorHttp for native request');
       const options = {
         url: fullUrl,
         method: method as any,
@@ -79,7 +80,7 @@ export async function apiRequest(
       };
 
       const response: HttpResponse = await CapacitorHttp.request(options);
-      console.log('[Capacitor HTTP Response]', method, fullUrl, 'Status:', response.status);
+      loggers.queryClient.debug('Capacitor HTTP Response', { method, url: fullUrl, status: response.status });
 
       // Convert CapacitorHttp response to fetch Response format
       const headers = new Headers(response.headers || {});
@@ -101,11 +102,11 @@ export async function apiRequest(
       credentials: "include",
     });
 
-    console.log('[API Response]', method, fullUrl, 'Status:', res.status);
+    loggers.queryClient.debug('API Response', { method, url: fullUrl, status: res.status });
     await throwIfResNotOk(res);
     return res;
   } catch (error) {
-    console.error('[API Error]', method, fullUrl, error);
+    loggers.queryClient.error('API Error', { method, url: fullUrl, error });
     throw error;
   }
 }
@@ -132,18 +133,18 @@ export const getQueryFn: <T>(options: {
     const fullUrl = buildApiUrl(endpoint);
     const cacheKey = getCacheKey(endpoint);
 
-    console.log('[Query Request]', fullUrl, cacheKey ? `(cacheable: ${cacheKey})` : '');
+    loggers.queryClient.debug('Query Request', { url: fullUrl, cacheKey });
 
     try {
       // Use Capacitor HTTP for native apps to bypass CORS
       if (isNativePlatform()) {
-        console.log('[Using CapacitorHttp for native query]');
+        loggers.queryClient.debug('Using CapacitorHttp for native query');
         const response: HttpResponse = await CapacitorHttp.get({
           url: fullUrl,
           responseType: 'json',
         });
 
-        console.log('[Capacitor HTTP Query Response]', fullUrl, 'Status:', response.status);
+        loggers.queryClient.debug('Capacitor HTTP Query Response', { url: fullUrl, status: response.status });
 
         if (unauthorizedBehavior === "returnNull" && response.status === 401) {
           return null;
@@ -172,7 +173,7 @@ export const getQueryFn: <T>(options: {
         credentials: "include",
       });
 
-      console.log('[Query Response]', fullUrl, 'Status:', res.status);
+      loggers.queryClient.debug('Query Response', { url: fullUrl, status: res.status });
 
       if (unauthorizedBehavior === "returnNull" && res.status === 401) {
         return null;
@@ -194,13 +195,13 @@ export const getQueryFn: <T>(options: {
 
       return data;
     } catch (error) {
-      console.error('[Query Error]', fullUrl, error);
+      loggers.queryClient.error('Query Error', { url: fullUrl, error });
 
       // Try to return cached data on error for cacheable endpoints
       if (cacheKey) {
         const cached = await nativeStorage.get(cacheKey);
         if (cached) {
-          console.log('[Query] Returning cached data due to error:', cacheKey);
+          loggers.queryClient.debug('Returning cached data due to error', { cacheKey });
           return cached;
         }
       }

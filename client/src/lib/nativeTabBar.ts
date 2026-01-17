@@ -2,6 +2,7 @@ import { registerPlugin } from '@capacitor/core';
 import type { PluginListenerHandle } from '@capacitor/core';
 import { isNativePlatform } from './capacitor';
 import { Capacitor } from '@capacitor/core';
+import { loggers } from './logger';
 
 export interface NativeTabBarPlugin {
   show(): Promise<{ visible: boolean }>;
@@ -29,7 +30,7 @@ export const showNativeTabBar = async (): Promise<boolean> => {
     const result = await NativeTabBar.show();
     return result.visible;
   } catch (e) {
-    console.warn('[NativeTabBar] Failed to show:', e);
+    loggers.nativeTabBar.warn('Failed to show', { error: e });
     return false;
   }
 };
@@ -40,7 +41,7 @@ export const hideNativeTabBar = async (): Promise<boolean> => {
     const result = await NativeTabBar.hide();
     return !result.visible;
   } catch (e) {
-    console.warn('[NativeTabBar] Failed to hide:', e);
+    loggers.nativeTabBar.warn('Failed to hide', { error: e });
     return false;
   }
 };
@@ -50,7 +51,7 @@ export const setNativeTabBarSelected = async (tabId: string): Promise<void> => {
   try {
     await NativeTabBar.setSelectedTab({ tabId });
   } catch (e) {
-    console.warn('[NativeTabBar] Failed to set selected tab:', e);
+    loggers.nativeTabBar.warn('Failed to set selected tab', { error: e });
   }
 };
 
@@ -63,7 +64,7 @@ export const addNativeTabBarListener = async (
       callback(event.tabId);
     });
   } catch (e) {
-    console.warn('[NativeTabBar] Failed to add listener:', e);
+    loggers.nativeTabBar.warn('Failed to add listener', { error: e });
     return null;
   }
 };
@@ -74,7 +75,7 @@ export const setNativeTabBarTabs = async (tabs: string[]): Promise<boolean> => {
     await NativeTabBar.setTabs({ tabs });
     return true;
   } catch (e) {
-    console.warn('[NativeTabBar] Failed to set tabs:', e);
+    loggers.nativeTabBar.warn('Failed to set tabs', { error: e });
     return false;
   }
 };

@@ -60,8 +60,8 @@ export function AuthenticatedImage({ src, alt, onError, ...props }: Authenticate
 
         const url = URL.createObjectURL(blob);
         setBlobUrl(url);
-      } catch (err) {
-        console.error('Failed to load authenticated image:', src, err);
+      } catch {
+        // Image load failure - showing fallback
         if (!cancelled) {
           setError(true);
           if (onError) {

@@ -5,6 +5,7 @@
  */
 
 import fetch from 'node-fetch';
+import { loggers } from '../lib/logger';
 
 export interface M3UChannel {
   streamId: string;       // Generated unique ID
@@ -117,7 +118,7 @@ function parseExtInf(line: string): Partial<M3UChannel> {
  * Fetch and parse M3U from URL
  */
 export async function fetchAndParseM3U(url: string): Promise<M3UParseResult> {
-  console.log(`[M3U Parser] Fetching M3U from: ${url}`);
+  loggers.iptv.debug('Fetching M3U', { url });
 
   const response = await fetch(url, {
     headers: {
@@ -131,10 +132,10 @@ export async function fetchAndParseM3U(url: string): Promise<M3UParseResult> {
   }
 
   const content = await response.text();
-  console.log(`[M3U Parser] Downloaded ${content.length} bytes`);
+  loggers.iptv.debug('Downloaded M3U', { bytes: content.length });
 
   const result = parseM3UContent(content);
-  console.log(`[M3U Parser] Parsed ${result.totalCount} channels in ${result.categories.length} categories`);
+  loggers.iptv.info('Parsed M3U playlist', { channelCount: result.totalCount, categoryCount: result.categories.length });
 
   return result;
 }
@@ -144,7 +145,7 @@ export async function fetchAndParseM3U(url: string): Promise<M3UParseResult> {
  * Returns channel ID to EPG data mapping
  */
 export async function fetchXMLTV(url: string): Promise<Map<string, { name: string; icon?: string }>> {
-  console.log(`[M3U Parser] Fetching XMLTV from: ${url}`);
+  loggers.iptv.debug('Fetching XMLTV', { url });
 
   const response = await fetch(url, {
     headers: {
@@ -158,7 +159,7 @@ export async function fetchXMLTV(url: string): Promise<Map<string, { name: strin
   }
 
   const content = await response.text();
-  console.log(`[M3U Parser] Downloaded XMLTV: ${content.length} bytes`);
+  loggers.iptv.debug('Downloaded XMLTV', { bytes: content.length });
 
   // Simple XML parsing for channel info (just extract channel IDs and names)
   const channelMap = new Map<string, { name: string; icon?: string }>();
@@ -183,7 +184,7 @@ export async function fetchXMLTV(url: string): Promise<Map<string, { name: strin
     }
   }
 
-  console.log(`[M3U Parser] Parsed ${channelMap.size} channels from XMLTV`);
+  loggers.iptv.info('Parsed XMLTV', { channelCount: channelMap.size });
   return channelMap;
 }
 

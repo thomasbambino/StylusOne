@@ -1,15 +1,17 @@
+import { loggers } from '../lib/logger';
+
 async function getIpInfo(ip: string) {
-  console.log('Getting IP info for:', ip);
+  loggers.api.debug('Getting IP info', { ip });
   try {
     // Use the free IP-API endpoint
     const response = await fetch(`http://ip-api.com/json/${ip}`);
     const data = await response.json();
 
-    console.log('Received IP info:', data);
+    loggers.api.debug('Received IP info', { data });
 
     // Check for error responses
     if (data.status === 'fail') {
-      console.error('ip-api.com error:', data.message);
+      loggers.api.error('ip-api.com error', { message: data.message });
       return {
         ip,
         isp: null,
@@ -27,7 +29,7 @@ async function getIpInfo(ip: string) {
       country: data.country || null,
     };
   } catch (error) {
-    console.error('Failed to get IP info:', error);
+    loggers.api.error('Failed to get IP info', { error });
     return {
       ip,
       isp: null,

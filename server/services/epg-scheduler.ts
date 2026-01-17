@@ -2,6 +2,7 @@ import * as cron from 'node-cron';
 import { spawn } from 'child_process';
 import * as path from 'path';
 import * as fs from 'fs';
+import { loggers } from '../lib/logger';
 
 export class EPGScheduler {
   private task: cron.ScheduledTask | null = null;
@@ -9,11 +10,11 @@ export class EPGScheduler {
   start() {
     // Schedule EPG updates at 3 AM and 6 AM daily
     this.task = cron.schedule('0 3,6 * * *', async () => {
-      console.log('Running scheduled EPG update...');
+      loggers.epg.info('Running scheduled EPG update');
       await this.updateEPGData();
     });
-    
-    console.log('EPG Scheduler started - will update at 3 AM and 6 AM daily');
+
+    loggers.epg.info('EPG Scheduler started - will update at 3 AM and 6 AM daily');
     
     // Check if data is stale on startup and update if needed
     this.checkAndUpdateIfStale();
@@ -23,7 +24,7 @@ export class EPGScheduler {
     if (this.task) {
       this.task.stop();
       this.task = null;
-      console.log('EPG Scheduler stopped');
+      loggers.epg.info('EPG Scheduler stopped');
     }
   }
   
@@ -37,17 +38,17 @@ export class EPGScheduler {
         
         // Update if file is older than 24 hours
         if (hoursSinceUpdate > 24) {
-          console.log(`EPG data is ${hoursSinceUpdate.toFixed(1)} hours old, updating...`);
+          loggers.epg.info(`EPG data is ${hoursSinceUpdate.toFixed(1)} hours old, updating`);
           await this.updateEPGData();
         } else {
-          console.log(`EPG data is ${hoursSinceUpdate.toFixed(1)} hours old, still fresh`);
+          loggers.epg.debug(`EPG data is ${hoursSinceUpdate.toFixed(1)} hours old, still fresh`);
         }
       } else {
-        console.log('EPG data file not found, fetching...');
+        loggers.epg.info('EPG data file not found, fetching');
         await this.updateEPGData();
       }
     } catch (error) {
-      console.error('Error checking EPG data freshness:', error);
+      loggers.epg.error('Error checking EPG data freshness', { error });
     }
   }
   
@@ -81,16 +82,16 @@ export class EPGScheduler {
         fs.appendFileSync(logPath, logEntry);
         
         if (code === 0) {
-          console.log('EPG data updated successfully');
+          loggers.epg.info('EPG data updated successfully');
           resolve();
         } else {
-          console.error('EPG update failed:', stderr);
+          loggers.epg.error('EPG update failed', { stderr, code });
           reject(new Error(`EPG update failed with code ${code}`));
         }
       });
-      
+
       child.on('error', (error) => {
-        console.error('Failed to start EPG update process:', error);
+        loggers.epg.error('Failed to start EPG update process', { error });
         reject(error);
       });
     });
@@ -98,7 +99,7 @@ export class EPGScheduler {
   
   // Manual update method that can be called from an API endpoint
   async manualUpdate(): Promise<void> {
-    console.log('Manual EPG update triggered');
+    loggers.epg.info('Manual EPG update triggered');
     return this.updateEPGData();
   }
 }

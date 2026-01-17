@@ -6,6 +6,7 @@ import { eq } from "drizzle-orm";
 import { services, gameServers } from "@shared/schema";
 import axios from 'axios';
 import { ampService } from './amp-service';
+import { loggers } from '../lib/logger';
 
 /**
  * Service for checking the status of services and game servers
@@ -22,20 +23,20 @@ export class ServiceCheckerService implements IService {
    */
   async initialize(): Promise<void> {
     if (this.initialized) {
-      console.warn('Service checker already initialized, skipping');
+      loggers.service.warn('Service checker already initialized, skipping');
       return;
     }
 
-    console.log('Starting service checker...');
+    loggers.service.info('Starting service checker...');
     
     // Initial check
     try {
       const allServices = await db.select().from(services);
       const allGameServers = await db.select().from(gameServers);
-      console.log(`Found ${allServices.length} services and ${allGameServers.length} game servers to check`);
+      loggers.service.info(`Found ${allServices.length} services and ${allGameServers.length} game servers to check`);
       await this.checkServicesWithRateLimit(allServices, allGameServers);
     } catch (error) {
-      console.error('Error in initial service check:', error);
+      loggers.service.error('Error in initial service check', { error });
     }
 
     // Check game server metrics periodically
@@ -44,7 +45,7 @@ export class ServiceCheckerService implements IService {
         const allGameServers = await db.select().from(gameServers);
         await this.updateGameServerMetrics(allGameServers);
       } catch (error) {
-        console.error('Error updating game server metrics:', error);
+        loggers.service.error('Error updating game server metrics', { error });
       }
     }, this.gameServerInterval);
     
@@ -57,14 +58,14 @@ export class ServiceCheckerService implements IService {
         const allGameServers = await db.select().from(gameServers);
         await this.checkServicesWithRateLimit(allServices, allGameServers);
       } catch (error) {
-        console.error('Error checking services:', error);
+        loggers.service.error('Error checking services', { error });
       }
     }, this.serviceCheckInterval);
     
     this.intervalIds.push(serviceIntervalId);
     
     this.initialized = true;
-    console.log('Service checker initialized successfully');
+    loggers.service.info('Service checker initialized successfully');
   }
 
   /**
@@ -110,7 +111,7 @@ export class ServiceCheckerService implements IService {
       
       return { status: response.status >= 200 && response.status < 400 };
     } catch (error) {
-      console.error(`Error checking HTTP service at ${url}:`, error);
+      loggers.service.error(`Error checking HTTP service at ${url}`, { error });
       
       let errorMessage = 'Connection failed';
       if (axios.isAxiosError(error)) {
@@ -171,7 +172,7 @@ export class ServiceCheckerService implements IService {
         }
       }
     } catch (error) {
-      console.error(`Error updating service status for ${service.name}:`, error);
+      loggers.service.error(`Error updating service status for ${service.name}`, { error });
     }
   }
 
@@ -184,7 +185,7 @@ export class ServiceCheckerService implements IService {
       const ampInstances = await ampService.getInstances();
       
       if (!ampInstances || ampInstances.length === 0) {
-        console.warn('No AMP instances found when updating metrics');
+        loggers.service.warn('No AMP instances found when updating metrics');
         return;
       }
       
@@ -194,7 +195,7 @@ export class ServiceCheckerService implements IService {
         // Find matching AMP instance
         const instance = ampInstances.find(i => i.InstanceID === server.instanceId);
         if (!instance) {
-          console.warn(`No matching AMP instance found for server ${server.name} (${server.instanceId})`);
+          loggers.service.warn(`No matching AMP instance found for server ${server.name} (${server.instanceId})`);
           continue;
         }
         
@@ -229,7 +230,7 @@ export class ServiceCheckerService implements IService {
             });
           }
         } catch (error) {
-          console.error(`Error getting metrics for server ${server.name}:`, error);
+          loggers.service.error(`Error getting metrics for server ${server.name}`, { error });
           
           // If we encounter an error, mark the server as offline
           if (server.status !== false) {
@@ -241,7 +242,7 @@ export class ServiceCheckerService implements IService {
         }
       }
     } catch (error) {
-      console.error('Error updating game server metrics:', error);
+      loggers.service.error('Error updating game server metrics', { error });
     }
   }
 
@@ -259,7 +260,7 @@ export class ServiceCheckerService implements IService {
             lastStatusCheck: new Date()
           });
         } catch (error) {
-          console.error(`Error updating game server ${server.name}:`, error);
+          loggers.service.error(`Error updating game server ${server.name}`, { error });
         }
       }
     }

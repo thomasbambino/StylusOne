@@ -1,6 +1,7 @@
 import { useQuery, useQueries, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Settings } from "@shared/schema";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { loggers } from '@/lib/logger';
 import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -833,7 +834,7 @@ export default function LiveTVPage() {
     queryKey: [`/api/epg/current/${encodeURIComponent(selectedChannelKey || '')}`],
     queryFn: getQueryFn({ on401: "returnNull" }),
     select: (data: any) => {
-      console.log('[CurrentProgram] Received program data:', data);
+      loggers.tv.debug('Received program data', { data });
       return data?.program as EPGProgram | null;
     },
     staleTime: 5 * 60 * 1000, // 5 minutes
@@ -982,7 +983,7 @@ export default function LiveTVPage() {
       // Load more when scrolled 70% down and there are more channels to load
       if (scrollPercentage > 0.7 && remainingChannels > 0) {
         const newCount = Math.min(visibleChannelCount + 50, filteredChannels.length);
-        console.log(`📺 Loading more channels: ${visibleChannelCount} → ${newCount}`);
+        loggers.tv.debug('Loading more channels', { from: visibleChannelCount, to: newCount });
         setVisibleChannelCount(newCount);
       }
     };
@@ -1007,7 +1008,7 @@ export default function LiveTVPage() {
 
       // Debug logging every 50 attempts (every 5 seconds)
       if (attempts % 50 === 0 && attempts > 0) {
-        console.log(`🔍 Cast SDK check (${attempts/10}s): cast=${!!cast}, cast.framework=${!!cast?.framework}`);
+        loggers.tv.debug('Cast SDK check', { elapsedSeconds: attempts/10, castExists: !!cast, frameworkExists: !!cast?.framework });
       }
 
       if (!cast || !cast.framework) {
@@ -1015,7 +1016,7 @@ export default function LiveTVPage() {
       }
 
       try {
-        console.log('✅ Cast SDK is now available, initializing...');
+        loggers.tv.info('Cast SDK is now available, initializing');
         const castContext = cast.framework.CastContext.getInstance();
 
         // Use custom receiver app ID if configured, otherwise use default
@@ -1024,7 +1025,7 @@ export default function LiveTVPage() {
         const customAppId = import.meta.env.VITE_CAST_RECEIVER_APP_ID;
         const receiverAppId = customAppId || (window as any).chrome.cast.media.DEFAULT_MEDIA_RECEIVER_APP_ID;
 
-        console.log(`Using Cast receiver: ${customAppId ? 'Custom (Stylus One)' : 'Default'}`);
+        loggers.tv.debug('Using Cast receiver', { receiverType: customAppId ? 'Custom (Stylus One)' : 'Default' });
 
         castContext.setOptions({
           receiverApplicationId: receiverAppId,
@@ -1035,14 +1036,14 @@ export default function LiveTVPage() {
         castContext.addEventListener(
           cast.framework.CastContextEventType.SESSION_STATE_CHANGED,
           (event: any) => {
-            console.log('Cast session state changed:', event);
+            loggers.tv.debug('Cast session state changed', { event });
             const session = castContext.getCurrentSession();
             setCastSession(session);
             setIsCasting(!!session);
 
             // Resume local playback when casting ends
             if (!session && event.sessionState === 'SESSION_ENDED' && selectedChannel) {
-              console.log('🔄 Resuming local playback after cast ended');
+              loggers.tv.info('Resuming local playback after cast ended');
               // Reload the channel in the browser
               if (selectedChannel.source === 'iptv') {
                 handlePlayIPTVChannel(selectedChannel);
@@ -1053,23 +1054,23 @@ export default function LiveTVPage() {
 
             // Only load media when session is starting/started, not when ending
             if (session && selectedChannel && event.sessionState === 'SESSION_STARTED') {
-              console.log('Loading media to cast device for channel:', selectedChannel.GuideName);
+              loggers.tv.info('Loading media to cast device', { channelName: selectedChannel.GuideName });
 
               // Request a stream token for Chromecast authentication
               (async () => {
                 try {
-                  console.log('🔑 Requesting stream token for Chromecast...');
+                  loggers.tv.debug('Requesting stream token for Chromecast');
                   const tokenResponse = await apiRequest('POST', '/api/iptv/generate-token', {
                     streamId: selectedChannel.iptvId,
                     deviceType: getPlatform()
                   });
 
                   const { token } = await tokenResponse.json();
-                  console.log('✅ Stream token received');
+                  loggers.tv.debug('Stream token received');
 
                   // Load media to cast device with token
                   const streamUrl = buildApiUrl(`/api/iptv/stream/${selectedChannel.iptvId}.m3u8?token=${token}`);
-                  console.log('Stream URL with token:', streamUrl.replace(/token=[^&]+/, 'token=***'));
+                  loggers.tv.debug('Stream URL with token', { streamUrl: streamUrl.replace(/token=[^&]+/, 'token=***') });
 
                   const chromecast = (window as any).chrome.cast;
                   const mediaInfo = new chromecast.media.MediaInfo(streamUrl, 'application/x-mpegurl');
@@ -1091,7 +1092,7 @@ export default function LiveTVPage() {
 
                   session.loadMedia(request).then(
                     () => {
-                      console.log('✅ Media loaded successfully to cast device');
+                      loggers.tv.info('Media loaded successfully to cast device');
 
                       // Listen for media status updates
                       const media = session.getMediaSession();
@@ -1101,7 +1102,7 @@ export default function LiveTVPage() {
 
                         media.addUpdateListener((isAlive: boolean) => {
                           if (!isAlive) {
-                            console.log('Media session ended');
+                            loggers.tv.debug('Media session ended');
                             if (bufferingTimeout) {
                               clearTimeout(bufferingTimeout);
                               bufferingTimeout = null;
@@ -1110,7 +1111,7 @@ export default function LiveTVPage() {
                             const playerState = media.playerState;
                             const isBuffering = playerState === 'BUFFERING';
 
-                            console.log('Media status:', {
+                            loggers.tv.debug('Media status', {
                               playerState: playerState,
                               idleReason: media.idleReason,
                               currentTime: media.getEstimatedTime()
@@ -1118,14 +1119,14 @@ export default function LiveTVPage() {
 
                             // Detect stuck buffering
                             if (isBuffering && !lastBufferingState) {
-                              console.log('⏳ Started buffering...');
+                              loggers.tv.debug('Started buffering');
                               // Set timeout to detect if buffering too long
                               bufferingTimeout = setTimeout(() => {
-                                console.error('❌ Buffering timeout - stream may be stuck');
+                                loggers.tv.error('Buffering timeout - stream may be stuck');
                                 // Could potentially try to reload here, but for now just log
                               }, 15000); // 15 second buffering timeout
                             } else if (!isBuffering && lastBufferingState) {
-                              console.log('✅ Buffering complete');
+                              loggers.tv.debug('Buffering complete');
                               if (bufferingTimeout) {
                                 clearTimeout(bufferingTimeout);
                                 bufferingTimeout = null;
@@ -1138,46 +1139,44 @@ export default function LiveTVPage() {
                       }
 
                       // Stop local playback when casting
-                      console.log('🛑 Stopping local playback for Chromecast');
+                      loggers.tv.info('Stopping local playback for Chromecast');
                       if (videoRef.current) {
                         videoRef.current.pause();
                         videoRef.current.src = ''; // Clear the source
                       }
                       // Also destroy HLS instance if using HLS
                       if (hlsRef.current) {
-                        console.log('🛑 Destroying HLS instance');
+                        loggers.tv.debug('Destroying HLS instance');
                         hlsRef.current.destroy();
                         hlsRef.current = null;
                       }
                     },
                     (error: any) => {
-                      console.error('❌ Error loading media to cast device:', error);
-                      console.error('Error code:', error?.code);
-                      console.error('Error details:', error?.description || error?.message);
+                      loggers.tv.error('Error loading media to cast device', { error, code: error?.code, details: error?.description || error?.message });
                     }
                   );
                 } catch (error) {
-                  console.error('❌ Error generating stream token:', error);
+                  loggers.tv.error('Error generating stream token', { error });
                 }
               })();
             }
           }
         );
 
-        console.log('✅ Cast API initialized successfully');
+        loggers.tv.info('Cast API initialized successfully');
         if (pollInterval) {
           clearInterval(pollInterval);
           pollInterval = null;
         }
         return true;
       } catch (error) {
-        console.error('❌ Error initializing cast:', error);
+        loggers.tv.error('Error initializing cast', { error });
         return false;
       }
     };
 
     // Poll for Cast SDK availability
-    console.log('🔄 Polling for Cast SDK...');
+    loggers.tv.debug('Polling for Cast SDK');
     pollInterval = setInterval(() => {
       attempts++;
 
@@ -1190,8 +1189,7 @@ export default function LiveTVPage() {
       } else if (attempts >= maxAttempts) {
         // Timeout - give up
         const cast = (window as any).cast;
-        console.warn('⚠️ Cast SDK did not load after 15 seconds');
-        console.warn(`   cast: ${!!cast}, cast.framework: ${!!cast?.framework}`);
+        loggers.tv.warn('Cast SDK did not load after 15 seconds', { castExists: !!cast, frameworkExists: !!cast?.framework });
         if (pollInterval) {
           clearInterval(pollInterval);
           pollInterval = null;
@@ -1201,7 +1199,7 @@ export default function LiveTVPage() {
 
     // Also set up the callback as fallback
     (window as any).__onGCastApiAvailable = (isAvailable: boolean) => {
-      console.log('📢 Cast SDK availability callback fired:', isAvailable);
+      loggers.tv.debug('Cast SDK availability callback fired', { isAvailable });
       if (isAvailable) {
         setTimeout(() => {
           if (initializeCast() && pollInterval) {
@@ -1224,7 +1222,7 @@ export default function LiveTVPage() {
           const castContext = cast.framework.CastContext.getInstance();
           const session = castContext.getCurrentSession();
           if (session) {
-            console.log('Cleaning up cast session');
+            loggers.tv.debug('Cleaning up cast session');
             session.endSession(false);
           }
         } catch (e) {
@@ -1252,8 +1250,7 @@ export default function LiveTVPage() {
   useEffect(() => {
     return () => {
       if (hlsRef.current) {
-        console.log('🏠 Destroying HLS instance on component unmount');
-        console.log('🏠 Unmount stack trace:', new Error().stack);
+        loggers.tv.debug('Destroying HLS instance on component unmount', { stack: new Error().stack });
         hlsRef.current.destroy();
       }
     };
@@ -1274,7 +1271,7 @@ export default function LiveTVPage() {
             body: data,
             keepalive: true,
             credentials: 'include',
-          }).catch(console.error);
+          }).catch((error) => loggers.tv.error('Error releasing session on beforeunload', { error }));
         }
       }
       // Release IPTV session
@@ -1305,9 +1302,7 @@ export default function LiveTVPage() {
       document.removeEventListener('visibilitychange', handleVisibilityChange);
 
       if (hlsRef.current) {
-        console.log('💀 FOUND IT! About to destroy HLS in session release');
-        console.log('💀 releaseCurrentSession execution stack:', new Error().stack);
-        console.log('Destroying HLS instance during session release');
+        loggers.tv.debug('Destroying HLS instance during session release', { stack: new Error().stack });
         hlsRef.current.destroy();
       }
 
@@ -1350,7 +1345,7 @@ export default function LiveTVPage() {
         videoRef.current.play().then(() => {
           setIsPlaying(true);
         }).catch((error) => {
-          console.error('Error playing video:', error);
+          loggers.tv.error('Error playing video', { error });
           setIsPlaying(false);
         });
       }
@@ -1373,16 +1368,16 @@ export default function LiveTVPage() {
   };
 
   const handleCast = () => {
-    console.log('Cast button clicked');
-    console.log('Checking Cast SDK status...');
-    console.log('window.cast exists:', !!(window as any).cast);
-    console.log('window.cast.framework exists:', !!(window as any).cast?.framework);
-    console.log('SDK load error:', (window as any).__castSdkLoadError);
+    loggers.tv.debug('Cast button clicked', {
+      castExists: !!(window as any).cast,
+      frameworkExists: !!(window as any).cast?.framework,
+      sdkLoadError: (window as any).__castSdkLoadError
+    });
 
     const cast = (window as any).cast;
     if (!cast || !cast.framework) {
       const loadError = (window as any).__castSdkLoadError;
-      console.error('❌ Cast API not available');
+      loggers.tv.error('Cast API not available');
 
       if (loadError === 'CDN Error') {
         alert('Failed to load Chromecast SDK from Google. Check your internet connection or firewall settings.');
@@ -1394,8 +1389,7 @@ export default function LiveTVPage() {
         const isChrome = /Chrome/.test(userAgent) && /Google Inc/.test(navigator.vendor);
         const isEdge = /Edg/.test(userAgent);
 
-        console.log('Browser detection - Chrome:', isChrome, 'Edge:', isEdge);
-        console.log('User Agent:', userAgent);
+        loggers.tv.debug('Browser detection', { isChrome, isEdge, userAgent });
 
         if (!isChrome && !isEdge) {
           alert('Chromecast is only available in Chrome or Microsoft Edge browsers.');
@@ -1412,24 +1406,24 @@ export default function LiveTVPage() {
 
       if (session) {
         // Stop casting
-        console.log('Stopping cast session');
+        loggers.tv.debug('Stopping cast session');
         session.endSession(true);
       } else {
         // Start casting
-        console.log('Requesting cast session');
+        loggers.tv.debug('Requesting cast session');
         castContext.requestSession().then(() => {
-          console.log('✅ Cast session started successfully');
+          loggers.tv.info('Cast session started successfully');
         }).catch((error: any) => {
-          console.error('❌ Error starting cast:', error);
+          loggers.tv.error('Error starting cast', { error });
           if (error === 'cancel') {
-            console.log('User cancelled cast session');
+            loggers.tv.debug('User cancelled cast session');
           } else {
             alert('Failed to connect to Chromecast device. Make sure your device is on the same network.');
           }
         });
       }
     } catch (error) {
-      console.error('❌ Error in handleCast:', error);
+      loggers.tv.error('Error in handleCast', { error });
       alert('Chromecast is still initializing. Please wait a moment and try again.');
     }
   };
@@ -1473,7 +1467,7 @@ export default function LiveTVPage() {
         } else if ((element as any).msRequestFullscreen) {
           await (element as any).msRequestFullscreen();
         } else {
-          console.warn('Fullscreen API not supported on this device');
+          loggers.tv.warn('Fullscreen API not supported on this device');
           // Fallback: try to make the video element go fullscreen on mobile
           if (videoRef.current && (videoRef.current as any).webkitEnterFullscreen) {
             (videoRef.current as any).webkitEnterFullscreen();
@@ -1481,19 +1475,19 @@ export default function LiveTVPage() {
         }
       }
     } catch (error) {
-      console.error('Error toggling fullscreen:', error);
-      
+      loggers.tv.error('Error toggling fullscreen', { error });
+
       // Mobile Safari fallback - try the video element directly
       if (videoRef.current) {
         try {
           if ((videoRef.current as any).webkitEnterFullscreen) {
-            console.log('Trying iOS Safari video fullscreen fallback');
+            loggers.tv.debug('Trying iOS Safari video fullscreen fallback');
             (videoRef.current as any).webkitEnterFullscreen();
           } else if ((videoRef.current as any).requestFullscreen) {
             await (videoRef.current as any).requestFullscreen();
           }
         } catch (fallbackError) {
-          console.error('Fullscreen fallback also failed:', fallbackError);
+          loggers.tv.error('Fullscreen fallback also failed', { error: fallbackError });
         }
       }
     }
@@ -1517,12 +1511,12 @@ export default function LiveTVPage() {
     
     // Clean up existing HLS instance
     if (hlsRef.current) {
-      console.log('🔥 Destroying existing HLS instance for direct stream');
+      loggers.tv.debug('Destroying existing HLS instance for direct stream');
       hlsRef.current.destroy();
       hlsRef.current = null;
     }
-    
-    console.log('Loading direct stream:', streamUrl);
+
+    loggers.tv.debug('Loading direct stream', { streamUrl });
     
     if (Hls.isSupported()) {
       // Use HLS.js for browsers that support it
@@ -1560,23 +1554,23 @@ export default function LiveTVPage() {
       hlsRef.current = hls;
 
       hls.on(Hls.Events.MEDIA_ATTACHED, () => {
-        console.log('Direct stream HLS media attached to video element');
+        loggers.tv.debug('Direct stream HLS media attached to video element');
       });
 
       hls.on(Hls.Events.MANIFEST_LOADING, () => {
-        console.log('Direct stream HLS manifest loading started');
+        loggers.tv.debug('Direct stream HLS manifest loading started');
         setIsLoading(true);
       });
 
       hls.on(Hls.Events.MANIFEST_LOADED, (event, data) => {
-        console.log('Direct stream HLS manifest loaded:', data);
+        loggers.tv.debug('Direct stream HLS manifest loaded', { data });
       });
 
       // Track if we've started playback to avoid duplicate play() calls
       let playbackStarted = false;
 
       hls.on(Hls.Events.MANIFEST_PARSED, () => {
-        console.log('Direct stream HLS manifest parsed');
+        loggers.tv.debug('Direct stream HLS manifest parsed');
         // Don't start playback here - wait for FRAG_BUFFERED for faster startup
       });
 
@@ -1584,23 +1578,23 @@ export default function LiveTVPage() {
       hls.on(Hls.Events.FRAG_BUFFERED, () => {
         if (!playbackStarted) {
           playbackStarted = true;
-          console.log('First fragment buffered, starting playback');
+          loggers.tv.debug('First fragment buffered, starting playback');
           video.play().then(() => {
-            console.log('Direct stream started playing successfully');
+            loggers.tv.info('Direct stream started playing successfully');
             setIsPlaying(true);
             setIsLoading(false);
             setIsBuffering(false);
           }).catch(error => {
-            console.error('Direct stream play error:', error);
+            loggers.tv.error('Direct stream play error', { error });
             // Try again with muted autoplay as fallback
             video.muted = true;
             video.play().then(() => {
-              console.log('Direct stream playing muted');
+              loggers.tv.debug('Direct stream playing muted');
               setIsPlaying(true);
               setIsLoading(false);
               setIsBuffering(false);
             }).catch(err => {
-              console.error('Direct stream muted play also failed:', err);
+              loggers.tv.error('Direct stream muted play also failed', { error: err });
               setIsLoading(false);
               setIsBuffering(false);
             });
@@ -1609,9 +1603,9 @@ export default function LiveTVPage() {
       });
 
       hls.on(Hls.Events.ERROR, (event, data) => {
-        console.error('Direct stream HLS error:', data);
+        loggers.tv.error('Direct stream HLS error', { data });
         if (data.fatal) {
-          console.log('Fatal direct stream error, destroying HLS instance');
+          loggers.tv.debug('Fatal direct stream error, destroying HLS instance');
           hls.destroy();
           setIsLoading(false);
           setIsBuffering(false);
@@ -1620,39 +1614,38 @@ export default function LiveTVPage() {
 
       // Add video event listeners
       video.addEventListener('play', () => {
-        console.log('Direct stream video play event');
+        loggers.tv.debug('Direct stream video play event');
         setIsPlaying(true);
       });
 
       video.addEventListener('waiting', () => {
-        console.log('Video buffering started');
+        loggers.tv.debug('Video buffering started');
         setIsBuffering(true);
       });
 
       video.addEventListener('playing', () => {
-        console.log('Video playing after buffering');
+        loggers.tv.debug('Video playing after buffering');
         setIsBuffering(false);
         setIsLoading(false);
       });
 
       video.addEventListener('canplay', () => {
-        console.log('Video can play');
+        loggers.tv.debug('Video can play');
         setIsBuffering(false);
         setIsLoading(false);
       });
       video.addEventListener('pause', () => {
-        console.log('Direct stream video pause event');
+        loggers.tv.debug('Direct stream video pause event');
         setIsPlaying(false);
       });
       video.addEventListener('waiting', () => {
-        console.log('Direct stream video waiting/buffering');
+        loggers.tv.debug('Direct stream video waiting/buffering');
       });
       video.addEventListener('canplay', () => {
-        console.log('Direct stream video can play');
+        loggers.tv.debug('Direct stream video can play');
       });
       video.addEventListener('error', (e) => {
-        console.error('Direct stream video error:', e);
-        console.error('Direct stream video error code:', video.error?.code);
+        loggers.tv.error('Direct stream video error', { event: e, errorCode: video.error?.code });
       });
 
       hls.attachMedia(video);
@@ -1668,19 +1661,19 @@ export default function LiveTVPage() {
           setIsLoading(false);
           setIsBuffering(false);
         }).catch(error => {
-          console.error('Safari direct stream error:', error);
+          loggers.tv.error('Safari direct stream error', { error });
           setIsLoading(false);
           setIsBuffering(false);
         });
       });
 
       video.addEventListener('error', () => {
-        console.error('Safari direct stream playback error');
+        loggers.tv.error('Safari direct stream playback error');
         setIsLoading(false);
         setIsBuffering(false);
       });
     } else {
-      console.error('HLS is not supported in this browser for direct stream');
+      loggers.tv.error('HLS is not supported in this browser for direct stream');
       setIsLoading(false);
       setIsBuffering(false);
     }
@@ -1702,13 +1695,13 @@ export default function LiveTVPage() {
 
       // Release current HDHomeRun session in background (don't await - let it happen async)
       if (currentSession) {
-        releaseCurrentSession().catch(err => console.error('Error releasing session:', err));
+        releaseCurrentSession().catch(err => loggers.tv.error('Error releasing session', { error: err }));
       }
 
       // Check if this is a static channel or IPTV channel
       if (channel.source === 'static' || channel.source === 'iptv') {
         // Static channels and IPTV don't need tuner manager, play directly
-        console.log(`Playing ${channel.source} channel: ${channel.GuideName} directly`);
+        loggers.tv.info('Playing channel directly', { source: channel.source, channelName: channel.GuideName });
 
         let streamUrl = buildApiUrl(channel.URL);
 
@@ -1720,16 +1713,16 @@ export default function LiveTVPage() {
         // On native platforms, IPTV streams need a token for authentication
         if (isNativePlatform() && channel.source === 'iptv' && channel.iptvId) {
           try {
-            console.log('🔐 Generating stream token for native platform');
+            loggers.tv.debug('Generating stream token for native platform');
             const tokenResponse = await apiRequest('POST', '/api/iptv/generate-token', {
               streamId: channel.iptvId,
               deviceType: getPlatform()
             });
             const { token } = await tokenResponse.json();
             streamUrl = `${streamUrl}?token=${token}`;
-            console.log('✅ Stream token generated for native playback');
+            loggers.tv.info('Stream token generated for native playback');
           } catch (error) {
-            console.error('❌ Failed to generate stream token:', error);
+            loggers.tv.error('Failed to generate stream token', { error });
             // Continue anyway, might work with session auth
           }
         }
@@ -1743,7 +1736,7 @@ export default function LiveTVPage() {
       await releaseIptvSession();
 
       // Request stream through tuner manager for HDHomeRun channels only
-      console.log('Requesting stream for HDHomeRun channel:', channel.GuideNumber);
+      loggers.tv.info('Requesting stream for HDHomeRun channel', { guideNumber: channel.GuideNumber });
       const res = await fetch(buildApiUrl('/api/tuner/request-stream'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -1752,7 +1745,7 @@ export default function LiveTVPage() {
       });
 
       const data = await res.json();
-      console.log('Stream request response:', data);
+      loggers.tv.debug('Stream request response', { data });
       
       if (!res.ok) {
         if (data.message === 'All tuners are busy') {
@@ -1767,29 +1760,28 @@ export default function LiveTVPage() {
       
       // Start heartbeat
       startHeartbeat(session.id);
-      
-      console.log('Stream session:', session);
-      console.log('Stream URL:', session.streamUrl);
+
+      loggers.tv.debug('Stream session established', { session, streamUrl: session.streamUrl });
 
       // Set a simple 30-second timeout as fallback (not dependent on React state)
       if (playbackTimeoutRef.current) {
         clearTimeout(playbackTimeoutRef.current);
       }
       playbackTimeoutRef.current = setTimeout(() => {
-        console.log('30-second fallback timeout - checking if video started');
+        loggers.tv.debug('30-second fallback timeout - checking if video started');
         // Only release if session still exists and video element shows it's not playing
         if (currentSession && videoRef.current && videoRef.current.paused && videoRef.current.currentTime === 0) {
-          console.log('Video never started playing, releasing session as fallback');
+          loggers.tv.warn('Video never started playing, releasing session as fallback');
           releaseCurrentSession();
         } else {
-          console.log('Video appears to be working, keeping session');
+          loggers.tv.debug('Video appears to be working, keeping session');
         }
       }, 30000);
 
       // Clear timeout when video starts playing
       const handleCanPlay = () => {
         if (playbackTimeoutRef.current) {
-          console.log('Video can play - clearing playback timeout');
+          loggers.tv.debug('Video can play - clearing playback timeout');
           clearTimeout(playbackTimeoutRef.current);
           playbackTimeoutRef.current = null;
         }
@@ -1804,8 +1796,7 @@ export default function LiveTVPage() {
         
         // Clean up existing HLS instance
         if (hlsRef.current) {
-          console.log('🔥 Destroying existing HLS instance for new channel');
-          console.log('🔥 Channel cleanup stack trace:', new Error().stack);
+          loggers.tv.debug('Destroying existing HLS instance for new channel', { stack: new Error().stack });
           hlsRef.current.destroy();
           hlsRef.current = null;
         }
@@ -1841,14 +1832,14 @@ export default function LiveTVPage() {
           hlsRef.current = hls;
           
           hls.on(Hls.Events.MEDIA_ATTACHED, () => {
-            console.log('HLS media attached');
+            loggers.tv.debug('HLS media attached');
           });
 
           // Track if we've started playback to avoid duplicate play() calls
           let playbackStarted = false;
 
           hls.on(Hls.Events.MANIFEST_PARSED, () => {
-            console.log('HLS manifest parsed');
+            loggers.tv.debug('HLS manifest parsed');
             // Don't start playback here - wait for FRAG_BUFFERED for faster startup
           });
 
@@ -1856,7 +1847,7 @@ export default function LiveTVPage() {
           hls.on(Hls.Events.FRAG_BUFFERED, () => {
             if (!playbackStarted) {
               playbackStarted = true;
-              console.log('First fragment buffered, starting playback');
+              loggers.tv.debug('First fragment buffered, starting playback');
               setIsLoading(false);
 
               // Try to play the video with detailed error handling
@@ -1864,21 +1855,19 @@ export default function LiveTVPage() {
 
               if (playPromise !== undefined) {
                 playPromise.then(() => {
-                  console.log('Video started playing successfully');
+                  loggers.tv.info('Video started playing successfully');
                   setIsPlaying(true);
                 }).catch(error => {
-                  console.error('Video play promise rejected:', error);
-                  console.error('Error name:', error.name);
-                  console.error('Error message:', error.message);
+                  loggers.tv.error('Video play promise rejected', { error, errorName: error.name, errorMessage: error.message });
 
                   // Only release session for genuine fatal errors
                   // Don't release for AbortError or autoplay issues since video might still work
                   if (error.name === 'NotAllowedError') {
-                    console.log('Autoplay blocked - user interaction required');
+                    loggers.tv.debug('Autoplay blocked - user interaction required');
                   } else if (error.name === 'AbortError') {
-                    console.log('Video play was aborted - this is usually not fatal, continuing...');
+                    loggers.tv.debug('Video play was aborted - this is usually not fatal, continuing');
                   } else {
-                    console.log('Genuine play error - releasing session');
+                    loggers.tv.warn('Genuine play error - releasing session');
                     releaseCurrentSession();
                   }
                   setIsLoading(false);
@@ -1886,68 +1875,63 @@ export default function LiveTVPage() {
               }
             }
           });
-          
+
           hls.on(Hls.Events.MANIFEST_LOADING, (event, data) => {
-            console.log('Loading HLS manifest:', data.url);
-            console.log('Video element ready state:', video.readyState);
-            console.log('Video element network state:', video.networkState);
+            loggers.tv.debug('Loading HLS manifest', { url: data.url, readyState: video.readyState, networkState: video.networkState });
           });
 
           hls.on(Hls.Events.MANIFEST_LOADED, (event, data) => {
-            console.log('HLS manifest loaded successfully:', data);
-            console.log('Manifest details - levels:', data.levels?.length, 'url:', data.url);
-            console.log('Video element after manifest load - ready state:', video.readyState);
+            loggers.tv.debug('HLS manifest loaded successfully', { data, levels: data.levels?.length, url: data.url, readyState: video.readyState });
           });
-          
+
           hls.on(Hls.Events.LEVEL_LOADING, (event, data) => {
-            console.log('HLS level loading:', data);
+            loggers.tv.debug('HLS level loading', { data });
           });
           hls.on(Hls.Events.LEVEL_LOADED, (event, data) => {
-            console.log('HLS level loaded:', data);
+            loggers.tv.debug('HLS level loaded', { data });
           });
-          
+
           hls.on(Hls.Events.FRAG_LOADING, (event, data) => {
-            console.log('Loading HLS fragment:', data.frag?.url);
+            loggers.tv.debug('Loading HLS fragment', { url: data.frag?.url });
           });
 
           hls.on(Hls.Events.FRAG_LOADED, (event, data) => {
-            console.log('HLS fragment loaded successfully');
+            loggers.tv.debug('HLS fragment loaded successfully');
           });
-          
+
           hls.on(Hls.Events.ERROR, (event, data) => {
-            console.error('HLS error:', data);
+            loggers.tv.error('HLS error', { data });
             if (data.fatal) {
               switch (data.type) {
                 case Hls.ErrorTypes.NETWORK_ERROR:
-                  console.log('Fatal network error, trying to recover');
+                  loggers.tv.warn('Fatal network error, trying to recover');
                   hls.startLoad();
                   break;
                 case Hls.ErrorTypes.MEDIA_ERROR:
-                  console.log('Fatal media error, trying to recover');
+                  loggers.tv.warn('Fatal media error, trying to recover');
                   hls.recoverMediaError();
                   break;
                 default:
-                  console.log('Fatal error, cannot recover - releasing session');
+                  loggers.tv.error('Fatal error, cannot recover - releasing session');
                   // Release session on fatal errors
                   if (currentSession) {
                     releaseCurrentSession();
                   }
-                  console.log('⚠️ Destroying HLS instance due to fatal error');
-                  console.log('⚠️ Fatal error stack trace:', new Error().stack);
+                  loggers.tv.debug('Destroying HLS instance due to fatal error', { stack: new Error().stack });
                   hls.destroy();
                   setIsLoading(false);
                   break;
               }
             }
           });
-          
+
           // Add video event listeners
           video.addEventListener('play', () => {
-            console.log('Video play event fired');
+            loggers.tv.debug('Video play event fired');
             setIsPlaying(true);
           });
           video.addEventListener('pause', () => {
-            console.log('Video pause event fired');
+            loggers.tv.debug('Video pause event fired');
             setIsPlaying(false);
           });
           video.addEventListener('volumechange', () => {
@@ -1956,57 +1940,54 @@ export default function LiveTVPage() {
           });
           video.addEventListener('contextmenu', (e) => e.preventDefault());
           video.addEventListener('loadstart', () => {
-            console.log('Video loadstart event');
+            loggers.tv.debug('Video loadstart event');
             video.controls = false;
           });
           video.addEventListener('loadedmetadata', () => {
-            console.log('Video loadedmetadata event');
+            loggers.tv.debug('Video loadedmetadata event');
             video.controls = false;
           });
           video.addEventListener('canplay', () => {
-            console.log('Video canplay event');
+            loggers.tv.debug('Video canplay event');
             video.controls = false;
-            
+
             // Try to play again when canplay fires (in case autoplay failed)
             if (video.paused && !isPlaying) {
-              console.log('Video is ready, attempting play again');
+              loggers.tv.debug('Video is ready, attempting play again');
               video.play().catch(error => {
-                console.log('Second play attempt failed:', error.name);
+                loggers.tv.debug('Second play attempt failed', { errorName: error.name });
               });
             }
           });
           video.addEventListener('error', (e) => {
-            console.error('Video element error:', e);
-            console.error('Video error code:', video.error?.code);
-            console.error('Video error message:', video.error?.message);
+            loggers.tv.error('Video element error', { event: e, errorCode: video.error?.code, errorMessage: video.error?.message });
           });
 
           video.addEventListener('waiting', () => {
-            console.log('IPTV video buffering started');
+            loggers.tv.debug('IPTV video buffering started');
             setIsBuffering(true);
           });
 
           video.addEventListener('playing', () => {
-            console.log('IPTV video playing after buffering');
+            loggers.tv.debug('IPTV video playing after buffering');
             setIsBuffering(false);
           });
 
 
-          console.log('Loading HLS source:', session.streamUrl);
-          
+          loggers.tv.debug('Loading HLS source', { streamUrl: session.streamUrl });
+
           // Test direct access to manifest before HLS loading
-          console.log('Testing direct manifest access:', session.streamUrl);
+          loggers.tv.debug('Testing direct manifest access', { streamUrl: session.streamUrl });
           fetch(session.streamUrl)
             .then(response => {
-              console.log('Direct fetch success:', response.status, response.statusText);
-              console.log('Response headers:', [...response.headers.entries()]);
+              loggers.tv.debug('Direct fetch success', { status: response.status, statusText: response.statusText, headers: [...response.headers.entries()] });
               return response.text();
             })
             .then(content => {
-              console.log('Manifest content preview:', content.substring(0, 200));
+              loggers.tv.debug('Manifest content preview', { content: content.substring(0, 200) });
             })
             .catch(error => {
-              console.error('Direct fetch failed:', error);
+              loggers.tv.error('Direct fetch failed', { error });
             });
 
           hls.attachMedia(video);
@@ -2021,14 +2002,14 @@ export default function LiveTVPage() {
               setIsPlaying(true);
               setIsLoading(false);
             }).catch(error => {
-              console.error('Error playing video:', error);
+              loggers.tv.error('Error playing video', { error });
               releaseCurrentSession();
               setIsLoading(false);
             });
           };
 
           const handleError = () => {
-            console.error('Safari HLS playback error');
+            loggers.tv.error('Safari HLS playback error');
             releaseCurrentSession();
             setIsLoading(false);
           };
@@ -2036,15 +2017,13 @@ export default function LiveTVPage() {
           video.addEventListener('loadedmetadata', handleLoadedMetadata);
           video.addEventListener('error', handleError);
         } else {
-          console.error('HLS is not supported in this browser');
+          loggers.tv.error('HLS is not supported in this browser');
           releaseCurrentSession();
           setIsLoading(false);
         }
       }
-    } catch (error) {
-      console.error('❌ Error starting stream:', error);
-      console.error('❌ Error stack trace:', error.stack);
-      console.log('❌ This catch block is releasing the session due to error');
+    } catch (error: any) {
+      loggers.tv.error('Error starting stream', { error, stack: error?.stack });
       if (currentSession) {
         await releaseCurrentSession();
       }
@@ -2071,18 +2050,17 @@ export default function LiveTVPage() {
         });
 
         if (!res.ok) {
-          console.error('Failed to send heartbeat');
+          loggers.tv.error('Failed to send heartbeat');
           clearInterval(heartbeatIntervalRef.current!);
         }
       } catch (error) {
-        console.error('Error sending heartbeat:', error);
+        loggers.tv.error('Error sending heartbeat', { error });
       }
     }, 30000);
   };
 
   const releaseCurrentSession = async () => {
-    console.log('🚨 releaseCurrentSession called, current session:', currentSession);
-    console.log('🚨 Call stack:', new Error().stack);
+    loggers.tv.debug('releaseCurrentSession called', { currentSession, stack: new Error().stack });
     if (!currentSession) return;
 
     try {
@@ -2101,10 +2079,10 @@ export default function LiveTVPage() {
       });
 
       if (!res.ok) {
-        console.error('Failed to release session');
+        loggers.tv.error('Failed to release session');
       }
     } catch (error) {
-      console.error('Error releasing session:', error);
+      loggers.tv.error('Error releasing session', { error });
     } finally {
       setCurrentSession(null);
     }
@@ -2125,7 +2103,7 @@ export default function LiveTVPage() {
           sessionToken: iptvSessionToken.current
         });
       } catch (e) {
-        console.log('[IPTV] Error releasing stream:', e);
+        loggers.tv.debug('IPTV error releasing stream', { error: e });
       }
       iptvSessionToken.current = null;
     }
@@ -2138,7 +2116,7 @@ export default function LiveTVPage() {
 
     try {
       const platform = getPlatform();
-      console.log('[IPTV] Acquiring stream - Platform:', platform, 'isNative:', isNativePlatform());
+      loggers.tv.debug('IPTV acquiring stream', { platform, isNative: isNativePlatform() });
       const response = await apiRequest('POST', '/api/iptv/stream/acquire', {
         streamId,
         deviceType: platform
@@ -2154,14 +2132,14 @@ export default function LiveTVPage() {
               sessionToken: iptvSessionToken.current
             });
           } catch (e) {
-            console.log('[IPTV] Heartbeat error:', e);
+            loggers.tv.debug('IPTV heartbeat error', { error: e });
           }
         }
       }, 30000);
 
-      console.log('[IPTV] Stream session acquired with platform:', platform);
+      loggers.tv.info('IPTV stream session acquired', { platform });
     } catch (e) {
-      console.log('[IPTV] Could not acquire stream session:', e);
+      loggers.tv.debug('IPTV could not acquire stream session', { error: e });
       // Continue anyway - stream might still work for users without subscription
     }
   };

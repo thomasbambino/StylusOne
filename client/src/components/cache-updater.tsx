@@ -13,7 +13,7 @@ export function CacheUpdater() {
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.addEventListener('message', (event) => {
         if (event.data.type === 'CACHE_UPDATED') {
-          console.log('[CacheUpdater] Received update notification:', event.data.version);
+          // Update notification received - showing banner
           
           // Auto-refresh after a short delay to show the toast
           toast({
@@ -59,7 +59,7 @@ export function CacheUpdater() {
 
       // Listen for new service worker waiting
       navigator.serviceWorker.addEventListener('controllerchange', () => {
-        console.log('[CacheUpdater] New service worker activated');
+        // Service worker activated
       });
     }
   }, [toast]);

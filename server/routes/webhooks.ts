@@ -4,6 +4,7 @@ import Stripe from 'stripe';
 import { db } from '../db';
 import { userSubscriptions, invoices, paymentMethods, users } from '@shared/schema';
 import { eq, and } from 'drizzle-orm';
+import { loggers } from '../lib/logger';
 
 const router = Router();
 
@@ -28,7 +29,7 @@ router.post('/stripe', async (req: Request, res: Response) => {
   }
 
   if (!webhookSecret) {
-    console.error('STRIPE_WEBHOOK_SECRET not configured');
+    loggers.stripe.error('STRIPE_WEBHOOK_SECRET not configured');
     return res.status(500).send('Webhook secret not configured');
   }
 
@@ -38,11 +39,11 @@ router.post('/stripe', async (req: Request, res: Response) => {
     // Verify webhook signature
     event = stripe.webhooks.constructEvent(req.body, sig, webhookSecret);
   } catch (err) {
-    console.error('Webhook signature verification failed:', err);
+    loggers.stripe.error('Webhook signature verification failed', { error: err });
     return res.status(400).send(`Webhook Error: ${err instanceof Error ? err.message : 'Unknown error'}`);
   }
 
-  console.log(`[Webhook] Received event: ${event.type}`);
+  loggers.stripe.info(`Webhook received event: ${event.type}`);
 
   try {
     // Handle different event types
@@ -76,12 +77,12 @@ router.post('/stripe', async (req: Request, res: Response) => {
         break;
 
       default:
-        console.log(`[Webhook] Unhandled event type: ${event.type}`);
+        loggers.stripe.debug(`Webhook unhandled event type: ${event.type}`);
     }
 
     res.json({ received: true });
   } catch (error) {
-    console.error('[Webhook] Error processing event:', error);
+    loggers.stripe.error('Webhook error processing event', { error });
     res.status(500).json({
       error: error instanceof Error ? error.message : 'Failed to process webhook'
     });
@@ -92,7 +93,7 @@ router.post('/stripe', async (req: Request, res: Response) => {
  * Handle subscription.created event
  */
 async function handleSubscriptionCreated(subscription: Stripe.Subscription) {
-  console.log(`[Webhook] Processing subscription.created: ${subscription.id}`);
+  loggers.stripe.info(`Webhook processing subscription.created: ${subscription.id}`);
 
   // Get customer email to find user
   const customer = await stripe.customers.retrieve(subscription.customer as string);
@@ -119,7 +120,7 @@ async function handleSubscriptionCreated(subscription: Stripe.Subscription) {
     .limit(1);
 
   if (existing.length > 0) {
-    console.log('[Webhook] Subscription already exists, skipping creation');
+    loggers.stripe.debug('Webhook subscription already exists, skipping creation');
     return;
   }
 
@@ -144,14 +145,14 @@ async function handleSubscriptionCreated(subscription: Stripe.Subscription) {
     updated_at: new Date(),
   });
 
-  console.log(`[Webhook] Created subscription for user ${user.id}`);
+  loggers.stripe.info(`Webhook created subscription for user ${user.id}`);
 }
 
 /**
  * Handle subscription.updated event
  */
 async function handleSubscriptionUpdated(subscription: Stripe.Subscription) {
-  console.log(`[Webhook] Processing subscription.updated: ${subscription.id}`);
+  loggers.stripe.info(`Webhook processing subscription.updated: ${subscription.id}`);
 
   // Find existing subscription
   const [existing] = await db
@@ -161,7 +162,7 @@ async function handleSubscriptionUpdated(subscription: Stripe.Subscription) {
     .limit(1);
 
   if (!existing) {
-    console.log('[Webhook] Subscription not found, creating new record');
+    loggers.stripe.debug('Webhook subscription not found, creating new record');
     await handleSubscriptionCreated(subscription);
     return;
   }
@@ -179,14 +180,14 @@ async function handleSubscriptionUpdated(subscription: Stripe.Subscription) {
     })
     .where(eq(userSubscriptions.id, existing.id));
 
-  console.log(`[Webhook] Updated subscription ${existing.id}`);
+  loggers.stripe.info(`Webhook updated subscription ${existing.id}`);
 }
 
 /**
  * Handle subscription.deleted event
  */
 async function handleSubscriptionDeleted(subscription: Stripe.Subscription) {
-  console.log(`[Webhook] Processing subscription.deleted: ${subscription.id}`);
+  loggers.stripe.info(`Webhook processing subscription.deleted: ${subscription.id}`);
 
   await db
     .update(userSubscriptions)
@@ -197,17 +198,17 @@ async function handleSubscriptionDeleted(subscription: Stripe.Subscription) {
     })
     .where(eq(userSubscriptions.stripe_subscription_id, subscription.id));
 
-  console.log(`[Webhook] Marked subscription as canceled`);
+  loggers.stripe.info(`Webhook marked subscription as canceled`);
 }
 
 /**
  * Handle invoice.paid event
  */
 async function handleInvoicePaid(invoice: Stripe.Invoice) {
-  console.log(`[Webhook] Processing invoice.paid: ${invoice.id}`);
+  loggers.stripe.info(`Webhook processing invoice.paid: ${invoice.id}`);
 
   if (!invoice.subscription) {
-    console.log('[Webhook] Invoice has no subscription, skipping');
+    loggers.stripe.debug('Webhook invoice has no subscription, skipping');
     return;
   }
 
@@ -219,7 +220,7 @@ async function handleInvoicePaid(invoice: Stripe.Invoice) {
     .limit(1);
 
   if (!subscription) {
-    console.log('[Webhook] Subscription not found');
+    loggers.stripe.debug('Webhook subscription not found');
     return;
   }
 
@@ -231,7 +232,7 @@ async function handleInvoicePaid(invoice: Stripe.Invoice) {
     .limit(1);
 
   if (existing.length > 0) {
-    console.log('[Webhook] Invoice already exists, updating');
+    loggers.stripe.debug('Webhook invoice already exists, updating');
     await db
       .update(invoices)
       .set({
@@ -267,17 +268,17 @@ async function handleInvoicePaid(invoice: Stripe.Invoice) {
       .where(eq(userSubscriptions.id, subscription.id));
   }
 
-  console.log(`[Webhook] Created invoice for user ${subscription.user_id}`);
+  loggers.stripe.info(`Webhook created invoice for user ${subscription.user_id}`);
 }
 
 /**
  * Handle invoice.payment_failed event
  */
 async function handleInvoicePaymentFailed(invoice: Stripe.Invoice) {
-  console.log(`[Webhook] Processing invoice.payment_failed: ${invoice.id}`);
+  loggers.stripe.info(`Webhook processing invoice.payment_failed: ${invoice.id}`);
 
   if (!invoice.subscription) {
-    console.log('[Webhook] Invoice has no subscription, skipping');
+    loggers.stripe.debug('Webhook invoice has no subscription, skipping');
     return;
   }
 
@@ -290,17 +291,17 @@ async function handleInvoicePaymentFailed(invoice: Stripe.Invoice) {
     })
     .where(eq(userSubscriptions.stripe_subscription_id, invoice.subscription as string));
 
-  console.log(`[Webhook] Marked subscription as past_due`);
+  loggers.stripe.info(`Webhook marked subscription as past_due`);
 }
 
 /**
  * Handle payment_method.attached event
  */
 async function handlePaymentMethodAttached(paymentMethod: Stripe.PaymentMethod) {
-  console.log(`[Webhook] Processing payment_method.attached: ${paymentMethod.id}`);
+  loggers.stripe.info(`Webhook processing payment_method.attached: ${paymentMethod.id}`);
 
   if (!paymentMethod.customer) {
-    console.log('[Webhook] Payment method has no customer, skipping');
+    loggers.stripe.debug('Webhook payment method has no customer, skipping');
     return;
   }
 
@@ -318,7 +319,7 @@ async function handlePaymentMethodAttached(paymentMethod: Stripe.PaymentMethod) 
   // Find user by email
   const [user] = await db.select().from(users).where(eq(users.email, email)).limit(1);
   if (!user) {
-    console.log(`[Webhook] User not found for email: ${email}`);
+    loggers.stripe.debug(`Webhook user not found for email: ${email}`);
     return;
   }
 
@@ -330,7 +331,7 @@ async function handlePaymentMethodAttached(paymentMethod: Stripe.PaymentMethod) 
     .limit(1);
 
   if (existing.length > 0) {
-    console.log('[Webhook] Payment method already exists, skipping');
+    loggers.stripe.debug('Webhook payment method already exists, skipping');
     return;
   }
 
@@ -347,7 +348,7 @@ async function handlePaymentMethodAttached(paymentMethod: Stripe.PaymentMethod) 
       created_at: new Date(),
     });
 
-    console.log(`[Webhook] Created payment method for user ${user.id}`);
+    loggers.stripe.info(`Webhook created payment method for user ${user.id}`);
   }
 }
 
@@ -355,14 +356,14 @@ async function handlePaymentMethodAttached(paymentMethod: Stripe.PaymentMethod) 
  * Handle payment_method.detached event
  */
 async function handlePaymentMethodDetached(paymentMethod: Stripe.PaymentMethod) {
-  console.log(`[Webhook] Processing payment_method.detached: ${paymentMethod.id}`);
+  loggers.stripe.info(`Webhook processing payment_method.detached: ${paymentMethod.id}`);
 
   // Delete payment method record
   await db
     .delete(paymentMethods)
     .where(eq(paymentMethods.stripe_payment_method_id, paymentMethod.id));
 
-  console.log(`[Webhook] Deleted payment method`);
+  loggers.stripe.info(`Webhook deleted payment method`);
 }
 
 export default router;

@@ -2,6 +2,7 @@ import { Request, Response, NextFunction } from 'express';
 import { db } from '../db';
 import { userSubscriptions, subscriptionPlans } from '@shared/schema';
 import { eq, and } from 'drizzle-orm';
+import { loggers } from '../lib/logger';
 
 /**
  * Feature flags that can be checked
@@ -76,7 +77,7 @@ export function requireFeature(feature: Feature) {
       // Feature access granted
       next();
     } catch (error) {
-      console.error('[Feature Gate] Error checking feature access:', error);
+      loggers.api.error('Error checking feature access', { error });
       res.status(500).json({
         error: 'Failed to verify feature access',
       });
@@ -118,7 +119,7 @@ export function requireActiveSubscription(req: Request, res: Response, next: Nex
 
       next();
     } catch (error) {
-      console.error('[Feature Gate] Error checking subscription:', error);
+      loggers.api.error('Error checking subscription', { error });
       res.status(500).json({
         error: 'Failed to verify subscription',
       });

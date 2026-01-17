@@ -8,6 +8,7 @@ import { insertUserSchema, User as SelectUser, InsertUser } from "@shared/schema
 import { getQueryFn, apiRequest, queryClient } from "../lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { useLocation } from "wouter";
+import { loggers } from "@/lib/logger";
 
 // Extend SelectUser type to include the requires_password_change field
 type AuthUser = SelectUser & {
@@ -51,11 +52,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (!res.ok) {
         throw new Error("Login failed");
       }
-      console.log("Login response:", data);
+      loggers.auth.debug('Login response', { data });
       return data;
     },
     onSuccess: (user: AuthUser) => {
-      console.log("Setting user data with requires_password_change:", user.requires_password_change);
+      loggers.auth.debug('Setting user data', { requiresPasswordChange: user.requires_password_change });
       queryClient.setQueryData(["/api/user"], user);
     },
     onError: (error: Error) => {

@@ -1,9 +1,10 @@
 import express, { type Request, Response, NextFunction } from "express";
 import helmet from "helmet";
 import { registerRoutes } from "./routes";
-import { initializeServices } from "./services";
-import { log, serveStatic } from "./static";
+import { serveStatic } from "./static";
 import webhookRoutes from "./routes/webhooks";
+import { initializeWithDisplay, finalizeStartup } from "./lib/startup";
+import { loggers } from "./lib/logger";
 
 const app = express();
 
@@ -76,14 +77,14 @@ app.use((req, res, next) => {
     if (path.startsWith("/api")) {
       let logLine = `${req.method} ${path} ${res.statusCode} in ${duration}ms`;
       if (capturedJsonResponse) {
-        logLine += ` :: ${JSON.stringify(capturedJsonResponse)}`;
+        const jsonStr = JSON.stringify(capturedJsonResponse);
+        if (jsonStr.length > 50) {
+          logLine += ` :: ${jsonStr.slice(0, 47)}...`;
+        } else {
+          logLine += ` :: ${jsonStr}`;
+        }
       }
-
-      if (logLine.length > 80) {
-        logLine = logLine.slice(0, 79) + "…";
-      }
-
-      log(logLine);
+      loggers.api.debug(logLine);
     }
   });
 
@@ -91,8 +92,8 @@ app.use((req, res, next) => {
 });
 
 (async () => {
-  // Initialize all services
-  await initializeServices();
+  // Initialize all services with startup display
+  await initializeWithDisplay();
 
   const server = await registerRoutes(app);
 
@@ -103,7 +104,7 @@ app.use((req, res, next) => {
     res.status(status).json({ message });
     throw err;
   });
-  
+
 
   // Use production static server without vite
   serveStatic(app);
@@ -114,7 +115,8 @@ app.use((req, res, next) => {
     host: "0.0.0.0",
     reusePort: true,
   }, () => {
-    log(`serving on port ${port}`);
+    // Render the startup display
+    finalizeStartup(port);
   });
 
   // Handle graceful shutdown

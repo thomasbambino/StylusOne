@@ -140,12 +140,11 @@ export default function BooksPage() {
   });
 
   // Fetch Kindle settings
-  const { data: kindleSettings, error: kindleError } = useQuery({
+  const { data: kindleSettings } = useQuery({
     queryKey: ['/api/books/kindle-settings'],
     queryFn: async () => {
       const response = await fetch('/api/books/kindle-settings');
       if (!response.ok) {
-        console.error('Kindle settings fetch failed:', response.status, response.statusText);
         // If unauthorized, still return a fallback
         if (response.status === 401) {
           return { kindleEmail: null, senderEmail: 'kindle@stylus.services' };
@@ -158,17 +157,9 @@ export default function BooksPage() {
     staleTime: 5 * 60 * 1000, // 5 minutes
   });
 
-  // Log any query errors
-  useEffect(() => {
-    if (kindleError) {
-      console.error('Kindle settings query error:', kindleError);
-    }
-  }, [kindleError]);
-
   // Update local state when Kindle settings data changes
   useEffect(() => {
     if (kindleSettings) {
-      console.log('Kindle settings received:', kindleSettings);
       setKindleEmail(kindleSettings.kindleEmail || '');
       // Only update sender email if we get a valid value from the API
       if (kindleSettings.senderEmail) {

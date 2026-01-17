@@ -1,5 +1,6 @@
 import axios from 'axios';
 import { IService } from './interfaces';
+import { loggers } from '../lib/logger';
 
 /**
  * Interface for HD HomeRun device information
@@ -61,7 +62,7 @@ export class HDHomeRunService implements IService {
    */
   async initialize(): Promise<void> {
     if (!this.baseUrl) {
-      console.log('HD HomeRun URL not configured, skipping initialization');
+      loggers.hdHomeRun.debug('HD HomeRun URL not configured, skipping initialization');
       this.initialized = false;
       return;
     }
@@ -70,9 +71,9 @@ export class HDHomeRunService implements IService {
       // Test connection by getting device info
       await this.getDeviceInfo();
       this.initialized = true;
-      console.log('HD HomeRun service initialized successfully');
+      loggers.hdHomeRun.info('HD HomeRun service initialized successfully');
     } catch (error) {
-      console.error('Failed to initialize HD HomeRun service:', error);
+      loggers.hdHomeRun.error('Failed to initialize HD HomeRun service', { error });
       this.initialized = false;
     }
   }
@@ -99,7 +100,7 @@ export class HDHomeRunService implements IService {
       });
       return response.status === 200;
     } catch (error) {
-      console.error('HD HomeRun health check failed:', error);
+      loggers.hdHomeRun.error('HD HomeRun health check failed', { error });
       return false;
     }
   }
@@ -118,7 +119,7 @@ export class HDHomeRunService implements IService {
       });
       return response.data;
     } catch (error) {
-      console.error('Error fetching HD HomeRun device info:', error);
+      loggers.hdHomeRun.error('Error fetching HD HomeRun device info', { error });
       throw new Error('Failed to fetch device information');
     }
   }
@@ -137,7 +138,7 @@ export class HDHomeRunService implements IService {
       });
       return response.data;
     } catch (error) {
-      console.error('Error fetching HD HomeRun channel lineup:', error);
+      loggers.hdHomeRun.error('Error fetching HD HomeRun channel lineup', { error });
       throw new Error('Failed to fetch channel lineup');
     }
   }
@@ -198,7 +199,7 @@ export class HDHomeRunService implements IService {
 
       return tuners;
     } catch (error) {
-      console.error('Error fetching HD HomeRun tuner status:', error);
+      loggers.hdHomeRun.error('Error fetching HD HomeRun tuner status', { error });
       throw new Error('Failed to fetch tuner status');
     }
   }

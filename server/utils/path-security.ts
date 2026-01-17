@@ -1,5 +1,6 @@
 import path from 'path';
 import fs from 'fs';
+import { loggers } from '../lib/logger';
 
 /**
  * Security utility for safe file path handling
@@ -55,13 +56,13 @@ export function validatePath(requestedPath: string, allowedBase: string): string
     
     // Check if the requested path is within the allowed base
     if (!resolvedPath.startsWith(resolvedBase)) {
-      console.error(`Path validation failed: ${resolvedPath} is not within ${resolvedBase}`);
+      loggers.storage.error('Path validation failed', { resolvedPath, resolvedBase });
       return null;
     }
     
     return resolvedPath;
   } catch (error) {
-    console.error('Path validation error:', error);
+    loggers.storage.error('Path validation error', { error });
     return null;
   }
 }
@@ -74,7 +75,7 @@ export function safeFileExists(basePath: string, filePath: string): boolean {
     const safePath = safeJoin(basePath, filePath);
     return fs.existsSync(safePath);
   } catch (error) {
-    console.error('Safe file exists check failed:', error);
+    loggers.storage.error('Safe file exists check failed', { error });
     return false;
   }
 }

@@ -1,6 +1,7 @@
 import express from 'express';
 import multer from 'multer';
 import { db } from '../db';
+import { loggers } from '../lib/logger';
 import { books, users, type InsertBook } from '@shared/schema';
 import { eq, desc, sql } from 'drizzle-orm';
 import { epubService } from '../services/epub-service';
@@ -61,7 +62,7 @@ router.get('/', async (req, res) => {
 
     res.json(allBooks);
   } catch (error) {
-    console.error('Error fetching books:', error);
+    loggers.book.error('Error fetching books', { error });
     res.status(500).json({ error: 'Failed to fetch books' });
   }
 });
@@ -86,7 +87,7 @@ router.get('/:id', async (req, res) => {
 
     res.json(book);
   } catch (error) {
-    console.error('Error fetching book:', error);
+    loggers.book.error('Error fetching book', { error });
     res.status(500).json({ error: 'Failed to fetch book' });
   }
 });
@@ -119,7 +120,7 @@ router.post('/upload', uploadEpub.single('epub'), async (req, res) => {
     // Parse EPUB metadata - validate path security
     const safePath = validateBookPath(filePath);
     if (!safePath) {
-      console.error('Invalid EPUB file path:', filePath);
+      loggers.book.error('Invalid EPUB file path', { filePath });
       return res.status(400).json({ error: 'Invalid file path' });
     }
     const metadata = await epubService.parseEpub(safePath);
@@ -159,7 +160,7 @@ router.post('/upload', uploadEpub.single('epub'), async (req, res) => {
 
         newBook.cover_path = coverPath;
       } catch (coverError) {
-        console.warn('Failed to save cover image:', coverError);
+        loggers.book.warn('Failed to save cover image', { error: coverError });
       }
     }
 
@@ -169,7 +170,7 @@ router.post('/upload', uploadEpub.single('epub'), async (req, res) => {
     });
 
   } catch (error) {
-    console.error('Error uploading book:', error);
+    loggers.book.error('Error uploading book', { error });
     
     if (error.message.includes('EPUB parsing error')) {
       return res.status(400).json({ error: 'Failed to parse EPUB file' });
@@ -227,7 +228,7 @@ router.patch('/:id', async (req, res) => {
     });
 
   } catch (error) {
-    console.error('Error updating book:', error);
+    loggers.book.error('Error updating book', { error });
     res.status(500).json({ error: 'Failed to update book' });
   }
 });
@@ -290,7 +291,7 @@ router.post('/:id/cover', uploadImage.single('cover'), async (req, res) => {
     });
 
   } catch (error) {
-    console.error('Error uploading cover:', error);
+    loggers.book.error('Error uploading cover', { error });
     res.status(500).json({ error: 'Failed to upload cover' });
   }
 });
@@ -326,7 +327,7 @@ router.post('/kindle-settings', async (req, res) => {
     });
 
   } catch (error) {
-    console.error('Error updating Kindle settings:', error);
+    loggers.book.error('Error updating Kindle settings', { error });
     res.status(500).json({ error: 'Failed to update Kindle settings' });
   }
 });
@@ -342,7 +343,7 @@ router.get('/kindle-settings', async (req, res) => {
 
     // Validate user exists and has ID
     if (!user || !user.id) {
-      console.error('Invalid user session - user:', user);
+      loggers.book.error('Invalid user session', { user });
       return res.json({
         kindleEmail: null,
         senderEmail: 'kindle@stylus.services'
@@ -361,7 +362,7 @@ router.get('/kindle-settings', async (req, res) => {
     });
 
   } catch (error) {
-    console.error('Error fetching Kindle settings:', error);
+    loggers.book.error('Error fetching Kindle settings', { error });
     // Return default values instead of 500 error
     res.json({
       kindleEmail: null,
@@ -404,7 +405,7 @@ router.delete('/:id', async (req, res) => {
     res.json({ message: 'Book deleted successfully' });
 
   } catch (error) {
-    console.error('Error deleting book:', error);
+    loggers.book.error('Error deleting book', { error });
     res.status(500).json({ error: 'Failed to delete book' });
   }
 });
@@ -430,7 +431,7 @@ router.get('/:id/download', async (req, res) => {
     // Validate the book file path to prevent path traversal
     const safePath = validateBookPath(book.file_path);
     if (!safePath) {
-      console.error('Invalid book file path:', book.file_path);
+      loggers.book.error('Invalid book file path', { filePath: book.file_path });
       return res.status(404).json({ error: 'Invalid file path' });
     }
 
@@ -447,7 +448,7 @@ router.get('/:id/download', async (req, res) => {
     fileStream.pipe(res);
 
   } catch (error) {
-    console.error('Error downloading book:', error);
+    loggers.book.error('Error downloading book', { error });
     res.status(500).json({ error: 'Failed to download book' });
   }
 });
@@ -472,7 +473,7 @@ router.get('/:id/cover', async (req, res) => {
     // Validate the book cover path to prevent path traversal
     const safePath = validateBookPath(book.cover_path);
     if (!safePath) {
-      console.error('Invalid book cover path:', book.cover_path);
+      loggers.book.error('Invalid book cover path', { coverPath: book.cover_path });
       return res.status(404).json({ error: 'Invalid cover path' });
     }
 
@@ -489,7 +490,7 @@ router.get('/:id/cover', async (req, res) => {
     fileStream.pipe(res);
 
   } catch (error) {
-    console.error('Error serving cover:', error);
+    loggers.book.error('Error serving cover', { error });
     res.status(500).json({ error: 'Failed to serve cover' });
   }
 });
@@ -515,7 +516,7 @@ router.get('/search/:query', async (req, res) => {
     res.json(searchResults);
 
   } catch (error) {
-    console.error('Error searching books:', error);
+    loggers.book.error('Error searching books', { error });
     res.status(500).json({ error: 'Failed to search books' });
   }
 });
@@ -555,7 +556,7 @@ router.post('/:id/send-to-kindle', async (req, res) => {
     // Validate the book file path to prevent path traversal
     const safePath = validateBookPath(book.file_path);
     if (!safePath) {
-      console.error('Invalid book file path:', book.file_path);
+      loggers.book.error('Invalid book file path', { filePath: book.file_path });
       return res.status(404).json({ error: 'Invalid file path' });
     }
 
@@ -587,13 +588,13 @@ router.post('/:id/send-to-kindle', async (req, res) => {
     const emailSent = await emailService.sendEmail(emailParams);
 
     if (!emailSent) {
-      console.error('Failed to send book to Kindle:', userData.kindle_email);
+      loggers.book.error('Failed to send book to Kindle', { kindleEmail: userData.kindle_email });
       return res.status(500).json({ 
         error: 'Failed to send book to Kindle. Please check your email configuration.' 
       });
     }
 
-    console.log(`Book "${book.title}" sent successfully to ${userData.kindle_email}`);
+    loggers.book.info(`Book "${book.title}" sent successfully to ${userData.kindle_email}`);
     
     res.json({
       message: `Book "${book.title}" sent to ${userData.kindle_email}`,
@@ -606,7 +607,7 @@ router.post('/:id/send-to-kindle', async (req, res) => {
     });
 
   } catch (error) {
-    console.error('Error sending book to Kindle:', error);
+    loggers.book.error('Error sending book to Kindle', { error });
     res.status(500).json({ error: 'Failed to send book to Kindle' });
   }
 });

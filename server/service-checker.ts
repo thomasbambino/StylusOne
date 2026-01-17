@@ -3,6 +3,7 @@ import { storage } from "./storage";
 import { db } from "./db";
 import { eq } from "drizzle-orm";
 import { services, gameServers } from "@shared/schema";
+import { loggers } from './lib/logger';
 
 // Cache to store the last known status of each service
 const statusCache = new Map<number, { status: boolean; lastCheck: number; consecutiveFailures: number }>();
@@ -27,7 +28,7 @@ async function checkHttpService(url: string): Promise<{ status: boolean; error?:
     };
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
-    console.log(`Service check failed for URL ${url}:`, errorMessage);
+    loggers.serviceChecker.debug(`Service check failed for URL ${url}`, { error: errorMessage });
 
     // Simple error categorization
     const isNetworkError = errorMessage.includes('fetch failed') || 
@@ -65,7 +66,7 @@ async function updateServiceStatus(service: Service) {
   const { status, error } = await checkHttpService(service.url);
   // Only log errors or status changes, not successful checks
   if (error || status !== cachedStatus.status) {
-    console.log(`Service ${service.name} status check:`, { status, error });
+    loggers.serviceChecker.debug(`Service ${service.name} status check`, { status, error });
   }
 
   // Update consecutive failures count
@@ -95,18 +96,14 @@ async function updateServiceStatus(service: Service) {
         })
         .where(eq(services.id, service.id));
 
-      console.log(`Service status updated in database for ${service.name}`);
+      loggers.serviceChecker.info(`Service status updated in database for ${service.name}`);
     } catch (error) {
-      console.error('Error updating service status:', error);
-      if (error instanceof Error) {
-        console.error('Error details:', {
-          message: error.message,
-          stack: error.stack,
-          serviceId: service.id,
-          serviceName: service.name,
-          status: currentStatus
-        });
-      }
+      loggers.serviceChecker.error('Error updating service status', {
+        error,
+        serviceId: service.id,
+        serviceName: service.name,
+        status: currentStatus
+      });
     }
   } else {
     // Only update lastChecked if significant time has passed (every 5 minutes)
@@ -129,7 +126,7 @@ async function updateServiceStatus(service: Service) {
           })
           .where(eq(services.id, service.id));
       } catch (error) {
-        console.error('Error updating lastChecked timestamp:', error);
+        loggers.serviceChecker.error('Error updating lastChecked timestamp', { error });
       }
     }
   }
@@ -155,12 +152,9 @@ async function updateGameServerMetrics(gameServers: GameServer[]) {
             id: server.id,
             lastStatusCheck: new Date()
           });
-          // Reduced logging - only for debugging
-          // console.log(`Updated metrics for game server ${server.name}`);
-        }
-        // Removed skipping log message to reduce console clutter
+          }
       } catch (error) {
-        console.error(`Error updating game server ${server.name} metrics:`, error);
+        loggers.serviceChecker.error(`Error updating game server ${server.name} metrics`, { error });
       }
     }
   }
@@ -177,7 +171,7 @@ async function checkServicesWithRateLimit(services: Service[], gameServers: Game
           lastStatusCheck: new Date()
         });
       } catch (error) {
-        console.error(`Error updating game server ${server.name}:`, error);
+        loggers.serviceChecker.error(`Error updating game server ${server.name}`, { error });
       }
     }
   }
@@ -193,16 +187,16 @@ async function checkServicesWithRateLimit(services: Service[], gameServers: Game
 }
 
 export async function startServiceChecker() {
-  console.log('Starting service checker...');
+  loggers.serviceChecker.info('Starting service checker...');
 
   // Initial check
   try {
     const allServices = await db.select().from(services);
     const allGameServers = await db.select().from(gameServers);
-    console.log(`Found ${allServices.length} services and ${allGameServers.length} game servers to check`);
+    loggers.serviceChecker.info(`Found ${allServices.length} services and ${allGameServers.length} game servers to check`);
     await checkServicesWithRateLimit(allServices, allGameServers);
   } catch (error) {
-    console.error('Error in initial service check:', error);
+    loggers.serviceChecker.error('Error in initial service check', { error });
   }
 
   // Check game server metrics every 30 seconds (increased from 10)
@@ -211,7 +205,7 @@ export async function startServiceChecker() {
       const allGameServers = await db.select().from(gameServers);
       await updateGameServerMetrics(allGameServers);
     } catch (error) {
-      console.error('Error updating game server metrics:', error);
+      loggers.serviceChecker.error('Error updating game server metrics', { error });
     }
   }, 30000); // Increased from 10000 to 30000 for less frequent updates
 
@@ -222,7 +216,7 @@ export async function startServiceChecker() {
       const allGameServers = await db.select().from(gameServers);
       await checkServicesWithRateLimit(allServices, allGameServers);
     } catch (error) {
-      console.error('Error checking services:', error);
+      loggers.serviceChecker.error('Error checking services', { error });
     }
   }, 15000); // Increased from 3000 to 15000 for less frequent checks
 }

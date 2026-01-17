@@ -191,3 +191,99 @@ git reset --soft HEAD~1
 git checkout feature-branch
 git merge main
 ```
+
+## Logging System
+
+### Architecture
+- **Server Logger**: `server/lib/logger.ts` - Console-based with level filtering
+- **Client Logger**: `client/src/lib/logger.ts` - Browser console wrapper
+- **Shared Types**: `shared/lib/logger/types.ts` - LogLevel, LogModule, Logger interface
+- **Startup Display**: `server/lib/startup.ts` - Pretty box display on server start
+
+### Log Levels (6 levels, ordered by verbosity)
+1. `trace` - Very detailed debugging (rarely used)
+2. `debug` - Development debugging info (hidden in production)
+3. `info` - General operational messages
+4. `warn` - Warning conditions
+5. `error` - Error conditions
+6. `fatal` - Critical failures
+
+### Environment Filtering
+- **Production**: Shows `info` and above (hides debug/trace)
+- **Development**: Shows `debug` and above
+
+### Usage Pattern
+```typescript
+// Server-side
+import { loggers } from './lib/logger';
+loggers.epg.info('Loaded 240 channels');
+loggers.auth.error('Login failed', { userId: 123 });
+
+// Client-side
+import { loggers } from '@/lib/logger';
+loggers.tv.debug('Playing channel', { channelId: 5 });
+```
+
+### Adding a New Module
+1. Add module name to `shared/lib/logger/types.ts` in `LogModule` type
+2. Add pre-created logger to `server/lib/logger.ts` in `loggers` object
+3. Add pre-created logger to `client/src/lib/logger.ts` in `loggers` object
+
+### Adding a Service to Startup Display
+Edit `server/lib/startup.ts`:
+
+1. **Add environment check function**:
+```typescript
+function checkMyService(): ServiceInfo {
+  const apiKey = process.env.MY_SERVICE_API_KEY;
+  if (!apiKey) {
+    return { name: 'My Service', status: 'skipped', message: 'not configured' };
+  }
+  return { name: 'My Service', status: 'success', message: 'connected' };
+}
+```
+
+2. **Add to `initializeWithDisplay()`**:
+```typescript
+display.addService('Media Services', checkMyService());  // or await for async
+```
+
+3. **For async health checks**:
+```typescript
+async function checkMyService(): Promise<ServiceInfo> {
+  if (!process.env.MY_SERVICE_URL) {
+    return { name: 'My Service', status: 'skipped', message: 'not configured' };
+  }
+  try {
+    const response = await fetch(process.env.MY_SERVICE_URL + '/health');
+    if (response.ok) {
+      return { name: 'My Service', status: 'success', message: 'healthy' };
+    }
+    return { name: 'My Service', status: 'failed', error: 'unhealthy' };
+  } catch (error) {
+    return { name: 'My Service', status: 'failed', error: 'connection failed' };
+  }
+}
+```
+
+### Service Categories (in display order)
+- `Infrastructure` - Database, Session Store
+- `Authentication` - Firebase, Google OAuth
+- `Media Services` - Plex, Tautulli, TMDB
+- `Payment & Email` - Stripe, Mailgun, SendGrid
+- `Live TV & IPTV` - HD HomeRun, Xtream Codes, EPG
+- `Game Servers` - AMP
+- `Background Tasks` - Stream Tracker, Provider Health, etc.
+- `Server` - Express, Routes, Static Assets, Listening
+
+### Status Indicators
+- `success` (✓ green) - Service initialized and healthy
+- `failed` (✗ red) - Service failed to initialize
+- `pending` (⟳ yellow) - Service initializing in background
+- `skipped` (- gray) - Not configured (env vars missing)
+
+### Log Format
+```
+14:30:45 [INFO ] [EPG] Loaded 240 channels
+14:30:45 [ERROR] [Auth] Login failed { userId: 123 }
+```

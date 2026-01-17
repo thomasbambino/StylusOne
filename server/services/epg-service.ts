@@ -7,6 +7,7 @@ import { tmdbService } from './tmdb-service';
 import { db } from '../db';
 import { iptvProviders } from '@shared/schema';
 import { eq, and, isNotNull } from 'drizzle-orm';
+import { loggers } from '../lib/logger';
 
 // EPG cache directory and file
 const EPG_CACHE_DIR = path.join(process.cwd(), 'data', 'epg-cache');
@@ -97,13 +98,13 @@ export class EPGService implements IService {
 
     if (fs.existsSync(epgSharePath)) {
       this.xmltvPath = epgSharePath;
-      console.log(`EPG Service using real data from: ${this.xmltvPath}`);
+      loggers.epg.info(`Using real data from: ${this.xmltvPath}`);
     } else if (fs.existsSync(fallbackPath)) {
       this.xmltvPath = fallbackPath;
-      console.log(`EPG Service using fallback data from: ${this.xmltvPath}`);
+      loggers.epg.info(`Using fallback data from: ${this.xmltvPath}`);
     } else {
       this.xmltvPath = '';
-      console.log('EPG Service: No local XMLTV file');
+      loggers.epg.info('No local XMLTV file');
     }
   }
 
@@ -119,11 +120,11 @@ export class EPGService implements IService {
         const hoursSinceLastFetch = this.lastFetch
           ? (Date.now() - this.lastFetch.getTime()) / (1000 * 60 * 60)
           : Infinity;
-        console.log(`[EPG] Loaded ${this.programCache.size} channels from disk cache (${hoursSinceLastFetch.toFixed(1)} hours old)`);
+        loggers.epg.info(`Loaded ${this.programCache.size} channels from disk cache (${hoursSinceLastFetch.toFixed(1)} hours old)`);
 
         // If no channel name mappings were loaded from cache (old cache format), build from local file
         if (this.channelNameToId.size === 0) {
-          console.log('[EPG] No channel name mappings in cache, building from local XMLTV...');
+          loggers.epg.info('No channel name mappings in cache, building from local XMLTV...');
           await this.buildChannelNameMapping();
         }
 
@@ -132,13 +133,13 @@ export class EPGService implements IService {
         // If we have lots of channels but few name mappings, trigger a refresh to rebuild mappings
         // This handles upgrading from old cache format that didn't save mappings
         if (this.programCache.size > 100 && this.channelNameToId.size < 100) {
-          console.log(`[EPG] Too few channel name mappings (${this.channelNameToId.size}) for ${this.programCache.size} channels - triggering refresh to rebuild`);
+          loggers.epg.info(`Too few channel name mappings (${this.channelNameToId.size}) for ${this.programCache.size} channels - triggering refresh to rebuild`);
           // Don't await - let it run in background
-          this.fetchAndMergeEPGData().catch(err => console.error('[EPG] Background refresh error:', err));
+          this.fetchAndMergeEPGData().catch(err => loggers.epg.error('Background refresh error', { error: err }));
         }
       } else {
         // No disk cache, need to fetch
-        console.log('[EPG] No disk cache found, fetching from provider...');
+        loggers.epg.info('No disk cache found, fetching from provider...');
 
         // Load local XMLTV if available
         if (this.xmltvPath && fs.existsSync(this.xmltvPath)) {
@@ -159,9 +160,9 @@ export class EPGService implements IService {
         this.queueTitlesForTMDB();
       }
 
-      console.log(`[EPG] Service initialized with ${this.programCache.size} channels, ${this.getTotalProgramCount()} programs`);
+      loggers.epg.info(`Service initialized with ${this.programCache.size} channels, ${this.getTotalProgramCount()} programs`);
     } catch (error) {
-      console.error('[EPG] Failed to initialize:', error);
+      loggers.epg.error('Failed to initialize', { error });
       this.initialized = false;
     }
   }
@@ -181,7 +182,7 @@ export class EPGService implements IService {
         : Infinity;
 
       if (hoursSinceLastFetch >= 6) {
-        console.log(`[EPG] Background refresh triggered (${hoursSinceLastFetch.toFixed(1)} hours since last fetch)`);
+        loggers.epg.info(`Background refresh triggered (${hoursSinceLastFetch.toFixed(1)} hours since last fetch)`);
         await this.fetchAndMergeEPGData();
       }
     }, this.CLEANUP_INTERVAL_MS); // Check every hour
@@ -191,7 +192,7 @@ export class EPGService implements IService {
       this.cleanupOldPrograms();
     }, this.CLEANUP_INTERVAL_MS);
 
-    console.log('[EPG] Background refresh will run when 6+ hours have passed since last fetch');
+    loggers.epg.debug('Background refresh will run when 6+ hours have passed since last fetch');
   }
 
   /**
@@ -203,7 +204,7 @@ export class EPGService implements IService {
       const xmltvPath = this.xmltvPath || path.join(process.cwd(), 'data', 'epgshare_guide.xmltv');
 
       if (!fs.existsSync(xmltvPath)) {
-        console.log('[EPG] No local XMLTV file for channel name mapping');
+        loggers.epg.debug('No local XMLTV file for channel name mapping');
         return;
       }
 
@@ -212,7 +213,7 @@ export class EPGService implements IService {
       const result = await parser.parseStringPromise(xmlData);
 
       if (!result.tv?.channel) {
-        console.log('[EPG] No channel data in XMLTV file');
+        loggers.epg.debug('No channel data in XMLTV file');
         return;
       }
 
@@ -235,9 +236,9 @@ export class EPGService implements IService {
         }
       }
 
-      console.log(`[EPG] Built channel name mapping: ${this.channelNameToId.size} entries`);
+      loggers.epg.info(`Built channel name mapping: ${this.channelNameToId.size} entries`);
     } catch (error) {
-      console.error('[EPG] Error building channel name mapping:', error);
+      loggers.epg.error('Error building channel name mapping', { error });
     }
   }
 
@@ -279,9 +280,9 @@ export class EPGService implements IService {
       }
 
       fs.writeFileSync(EPG_CACHE_FILE, JSON.stringify(cacheData), 'utf-8');
-      console.log(`[EPG] Saved ${this.programCache.size} channels, ${this.getTotalProgramCount()} programs, ${this.channelNameToId.size} name mappings to disk`);
+      loggers.epg.info(`Saved ${this.programCache.size} channels, ${this.getTotalProgramCount()} programs, ${this.channelNameToId.size} name mappings to disk`);
     } catch (error) {
-      console.error('[EPG] Error saving to disk:', error);
+      loggers.epg.error('Error saving to disk', { error });
     }
   }
 
@@ -316,12 +317,12 @@ export class EPGService implements IService {
         for (const [name, id] of Object.entries(data.channelNameMapping)) {
           this.channelNameToId.set(name, id);
         }
-        console.log(`[EPG] Loaded ${this.channelNameToId.size} channel name mappings from disk`);
+        loggers.epg.debug(`Loaded ${this.channelNameToId.size} channel name mappings from disk`);
       }
 
       return true;
     } catch (error) {
-      console.error('[EPG] Error loading from disk:', error);
+      loggers.epg.error('Error loading from disk', { error });
       return false;
     }
   }
@@ -336,16 +337,16 @@ export class EPGService implements IService {
       const password = process.env.XTREAM_PASSWORD;
 
       if (!serverUrl || !username || !password) {
-        console.log('[EPG] IPTV credentials not configured, skipping fetch');
+        loggers.epg.debug('IPTV credentials not configured, skipping fetch');
         return;
       }
 
       const epgUrl = `${serverUrl}/xmltv.php?username=${username}&password=${password}`;
-      console.log('[EPG] Fetching from provider (rate-limited)...');
+      loggers.epg.info('Fetching from provider (rate-limited)...');
 
       const response = await fetch(epgUrl, { timeout: 60000 });
       if (!response.ok) {
-        console.error(`[EPG] Failed to fetch: ${response.status}`);
+        loggers.epg.error(`Failed to fetch: ${response.status}`);
         return;
       }
 
@@ -354,7 +355,7 @@ export class EPGService implements IService {
       const result = await parser.parseStringPromise(xmlData);
 
       if (!result.tv || !result.tv.programme) {
-        console.log('[EPG] No programs in response');
+        loggers.epg.warn('No programs in response');
         return;
       }
 
@@ -376,7 +377,7 @@ export class EPGService implements IService {
             }
           }
         }
-        console.log(`[EPG] Built channel name mapping: ${this.channelNameToId.size} entries`);
+        loggers.epg.info(`Built channel name mapping: ${this.channelNameToId.size} entries`);
       }
 
       const now = new Date();
@@ -471,9 +472,9 @@ export class EPGService implements IService {
       // Queue program titles for TMDB thumbnail fetching
       this.queueTitlesForTMDB();
 
-      console.log(`[EPG] Fetched ${newProgramCount} programs, merged ${mergedProgramCount} new, total: ${this.getTotalProgramCount()}`);
+      loggers.epg.info(`Fetched ${newProgramCount} programs, merged ${mergedProgramCount} new, total: ${this.getTotalProgramCount()}`);
     } catch (error) {
-      console.error('[EPG] Error fetching from provider:', error);
+      loggers.epg.error('Error fetching from provider', { error });
     }
 
     // Also fetch from M3U providers with XMLTV URLs
@@ -502,17 +503,17 @@ export class EPGService implements IService {
         );
 
       if (m3uProviders.length === 0) {
-        console.log('[EPG] No M3U providers with XMLTV URLs found');
+        loggers.epg.debug('No M3U providers with XMLTV URLs found');
         return;
       }
 
-      console.log(`[EPG] Found ${m3uProviders.length} M3U providers with XMLTV URLs`);
+      loggers.epg.info(`Found ${m3uProviders.length} M3U providers with XMLTV URLs`);
 
       for (const provider of m3uProviders) {
         if (!provider.xmltvUrl) continue;
 
         try {
-          console.log(`[EPG] Fetching XMLTV from M3U provider "${provider.name}": ${provider.xmltvUrl}`);
+          loggers.epg.info(`Fetching XMLTV from M3U provider "${provider.name}": ${provider.xmltvUrl}`);
 
           const response = await fetch(provider.xmltvUrl, {
             headers: {
@@ -522,18 +523,18 @@ export class EPGService implements IService {
           });
 
           if (!response.ok) {
-            console.error(`[EPG] Failed to fetch XMLTV from ${provider.name}: ${response.status}`);
+            loggers.epg.error(`Failed to fetch XMLTV from ${provider.name}: ${response.status}`);
             continue;
           }
 
           const xmlData = await response.text();
-          console.log(`[EPG] Received ${xmlData.length} bytes from ${provider.name}`);
+          loggers.epg.debug(`Received ${xmlData.length} bytes from ${provider.name}`);
 
           const parser = new xml2js.Parser();
           const result = await parser.parseStringPromise(xmlData);
 
           if (!result.tv) {
-            console.log(`[EPG] No TV data in XMLTV from ${provider.name}`);
+            loggers.epg.warn(`No TV data in XMLTV from ${provider.name}`);
             continue;
           }
 
@@ -618,19 +619,19 @@ export class EPGService implements IService {
               }
             }
 
-            console.log(`[EPG] Added ${programCount} programs from M3U provider "${provider.name}"`);
+            loggers.epg.info(`Added ${programCount} programs from M3U provider "${provider.name}"`);
           }
         } catch (error) {
-          console.error(`[EPG] Error fetching XMLTV from ${provider.name}:`, error);
+          loggers.epg.error(`Error fetching XMLTV from ${provider.name}`, { error });
         }
       }
 
       // Save updated cache to disk
       this.saveToDisk();
 
-      console.log(`[EPG] M3U provider XMLTV fetch complete. Total channels: ${this.programCache.size}, name mappings: ${this.channelNameToId.size}`);
+      loggers.epg.info(`M3U provider XMLTV fetch complete. Total channels: ${this.programCache.size}, name mappings: ${this.channelNameToId.size}`);
     } catch (error) {
-      console.error('[EPG] Error fetching M3U provider XMLTV:', error);
+      loggers.epg.error('Error fetching M3U provider XMLTV', { error });
     }
   }
 
@@ -653,7 +654,7 @@ export class EPGService implements IService {
 
     if (removedCount > 0) {
       this.lastCleanup = new Date();
-      console.log(`[EPG] Cleaned up ${removedCount} expired programs`);
+      loggers.epg.debug(`Cleaned up ${removedCount} expired programs`);
       this.saveToDisk();
     }
   }
@@ -682,7 +683,7 @@ export class EPGService implements IService {
     }
 
     if (uniqueTitles.size > 0) {
-      console.log(`[EPG] Queuing ${uniqueTitles.size} unique titles for TMDB thumbnail fetch`);
+      loggers.epg.debug(`Queuing ${uniqueTitles.size} unique titles for TMDB thumbnail fetch`);
       tmdbService.queueTitles(Array.from(uniqueTitles));
     }
   }
@@ -715,7 +716,7 @@ export class EPGService implements IService {
    */
   private async loadXMLTVData(): Promise<void> {
     try {
-      console.log(`[EPG] Loading XMLTV data from: ${this.xmltvPath}`);
+      loggers.epg.info(`Loading XMLTV data from: ${this.xmltvPath}`);
       const xmlData = fs.readFileSync(this.xmltvPath, 'utf-8');
       const parser = new xml2js.Parser();
       const result = await parser.parseStringPromise(xmlData);
@@ -770,10 +771,10 @@ export class EPGService implements IService {
           programCount++;
         }
 
-        console.log(`[EPG] Loaded ${programCount} programs from local XMLTV`);
+        loggers.epg.info(`Loaded ${programCount} programs from local XMLTV`);
       }
     } catch (error) {
-      console.error('[EPG] Error loading XMLTV data:', error);
+      loggers.epg.error('Error loading XMLTV data', { error });
     }
   }
 
@@ -926,13 +927,13 @@ export class EPGService implements IService {
 
     if (!epgChannelId) {
       // Log first few failures for debugging
-      console.log(`[EPG] No match for name "${channelName}" (normalized: ${normalized}, mapping size: ${this.channelNameToId.size})`);
+      loggers.epg.debug(`No match for name "${channelName}" (normalized: ${normalized}, mapping size: ${this.channelNameToId.size})`);
       return [];
     }
 
     const programs = this.getUpcomingPrograms(epgChannelId, hours);
     if (programs.length > 0) {
-      console.log(`[EPG] Found ${programs.length} programs for "${channelName}" -> ${epgChannelId} (${matchType})`);
+      loggers.epg.trace(`Found ${programs.length} programs for "${channelName}" -> ${epgChannelId} (${matchType})`);
     }
     return programs;
   }
@@ -1006,7 +1007,7 @@ export class EPGService implements IService {
    * Force a refresh of EPG data from provider
    */
   async forceRefresh(): Promise<void> {
-    console.log('[EPG] Manual refresh triggered');
+    loggers.epg.info('Manual refresh triggered');
     await this.fetchAndMergeEPGData();
   }
 

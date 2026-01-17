@@ -146,14 +146,12 @@ export default function LiveTVPhone() {
             setIsPlaying(true);
             setIsLoading(false);
             resetControlsTimer();
-          }).catch(err => {
-            console.error('Playback error:', err);
+          }).catch(() => {
             setIsLoading(false);
           });
         });
 
-        hls.on(Hls.Events.ERROR, (event, data) => {
-          console.error('HLS error:', data);
+        hls.on(Hls.Events.ERROR, (_event, data) => {
           if (data.fatal) {
             hls.destroy();
             setIsLoading(false);
@@ -168,13 +166,11 @@ export default function LiveTVPhone() {
           setIsPlaying(true);
           setIsLoading(false);
           resetControlsTimer();
-        }).catch(err => {
-          console.error('Playback error:', err);
+        }).catch(() => {
           setIsLoading(false);
         });
       }
-    } catch (error) {
-      console.error('Stream playback error:', error);
+    } catch {
       setIsLoading(false);
     }
   }, [resetControlsTimer]);

@@ -99,8 +99,8 @@ export function LPMetadataProvider({ children }: MetadataProviderProps) {
             preconnectLink.href = logoOrigin;
             head.appendChild(preconnectLink);
           }
-        } catch (e) {
-          console.error('Failed to parse logo URL:', e);
+        } catch {
+          // Invalid logo URL - skipping preconnect
         }
       }
 

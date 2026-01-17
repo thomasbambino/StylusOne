@@ -6,6 +6,7 @@ import { Book } from '@shared/schema';
 import AdmZip from 'adm-zip';
 import * as xml2js from 'xml2js';
 import { sanitizeFilename, safeJoin, getUploadsPath, validateBookPath } from '../utils/path-security';
+import { loggers } from '../lib/logger';
 
 interface EpubMetadata {
   title: string;
@@ -45,7 +46,7 @@ export class EpubService implements IService {
     }
     
     this.initialized = true;
-    console.log('EPUB service initialized');
+    loggers.book.info('EPUB service initialized');
   }
 
   /**
@@ -108,16 +109,16 @@ export class EpubService implements IService {
 
       // Extract cover image
       try {
-        console.log('Attempting to extract cover image...');
+        loggers.book.debug('Attempting to extract cover image...');
         const coverBuffer = await this.extractCoverFromZip(zip, opfData);
         if (coverBuffer) {
-          console.log('Cover image extracted successfully, size:', coverBuffer.length);
+          loggers.book.debug('Cover image extracted successfully', { size: coverBuffer.length });
           result.cover = coverBuffer;
         } else {
-          console.log('No cover image found');
+          loggers.book.debug('No cover image found');
         }
       } catch (error) {
-        console.warn('Failed to extract cover image:', error);
+        loggers.book.warn('Failed to extract cover image', { error });
       }
 
       // Get approximate page count from spine
@@ -187,7 +188,7 @@ export class EpubService implements IService {
         }
       }
     } catch (error) {
-      console.error('Error deleting book files:', error);
+      loggers.book.error('Error deleting book files', { error });
       throw new Error('Failed to delete book files');
     }
   }
@@ -223,24 +224,24 @@ export class EpubService implements IService {
    */
   private async extractCoverFromZip(zip: AdmZip, opfData: any): Promise<Buffer | null> {
     try {
-      console.log('Starting cover extraction...');
-      
+      loggers.book.debug('Starting cover extraction...');
+
       // Look for cover in metadata
       const metadata = opfData.package.metadata[0];
       const manifest = opfData.package.manifest[0].item;
-      
-      console.log('Available entries in ZIP:', zip.getEntries().map(e => e.entryName));
-      console.log('Manifest items:', manifest.length);
-      
+
+      loggers.book.trace('Available entries in ZIP', { entries: zip.getEntries().map(e => e.entryName) });
+      loggers.book.trace('Manifest items count', { count: manifest.length });
+
       // Try to find cover-image meta tag
       let coverImageId: string | undefined;
-      
+
       if (metadata.meta) {
-        console.log('Checking meta tags for cover...');
+        loggers.book.debug('Checking meta tags for cover...');
         for (const meta of metadata.meta) {
           if (meta['$'] && meta['$'].name === 'cover') {
             coverImageId = meta['$'].content;
-            console.log('Found cover meta tag with ID:', coverImageId);
+            loggers.book.debug('Found cover meta tag', { id: coverImageId });
             break;
           }
         }
@@ -289,7 +290,7 @@ export class EpubService implements IService {
       
       return null;
     } catch (error) {
-      console.warn('Error extracting cover image:', error);
+      loggers.book.warn('Error extracting cover image', { error });
       return null;
     }
   }

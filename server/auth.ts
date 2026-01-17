@@ -11,6 +11,7 @@ import { User as SelectUser } from "@shared/schema";
 import { sendEmail } from "./email";
 import { getIpInfo } from './utils/ip';
 import { OAuth2Client } from 'google-auth-library';
+import { loggers } from './lib/logger';
 
 const scryptAsync = promisify(scrypt);
 
@@ -22,7 +23,7 @@ try {
   // Delete any existing apps
   const apps = admin.apps;
   if (apps.length) {
-    console.log('Cleaning up existing Firebase Admin apps...');
+    loggers.auth.debug('Cleaning up existing Firebase Admin apps...');
     apps.forEach(app => app && app.delete());
   }
 
@@ -35,9 +36,9 @@ try {
     }),
   });
 
-  console.log('Firebase Admin initialized successfully with project ID:', process.env.VITE_FIREBASE_PROJECT_ID);
+  loggers.auth.info('Firebase Admin initialized successfully with project ID:', { projectId: process.env.VITE_FIREBASE_PROJECT_ID });
 } catch (error) {
-  console.error('Error initializing Firebase Admin:', error);
+  loggers.auth.error('Error initializing Firebase Admin', { error });
 }
 
 const RATE_LIMIT = {
@@ -76,7 +77,7 @@ async function checkRateLimit(req: Request, res: Response, next: NextFunction) {
 
     next();
   } catch (error) {
-    console.error('Rate limit check error:', error);
+    loggers.auth.error('Rate limit check error', { error });
     next(error);
   }
 }
@@ -123,7 +124,7 @@ async function getClientIp(req: Request) {
     const ip = Array.isArray(forwardedFor)
       ? forwardedFor[0].split(',')[0].trim()
       : forwardedFor.split(',')[0].trim();
-    console.log('Found forwarded IP:', ip, 'from x-forwarded-for:', forwardedFor);
+    loggers.auth.debug('Found forwarded IP', { ip, forwardedFor });
     return ip;
   }
 
@@ -136,12 +137,12 @@ async function getClientIp(req: Request) {
   for (const header of proxyHeaders) {
     const proxyIp = req.headers[header];
     if (proxyIp) {
-      console.log(`Found IP in ${header}:`, proxyIp);
+      loggers.auth.debug('Found IP in proxy header', { header, ip: proxyIp });
       return Array.isArray(proxyIp) ? proxyIp[0] : proxyIp;
     }
   }
 
-  console.log('Using direct IP:', req.ip);
+  loggers.auth.debug('Using direct IP', { ip: req.ip });
   return req.ip;
 }
 
@@ -176,10 +177,10 @@ export function setupAuth(app: Express) {
       // Only regenerate if session has a version AND it's different (old session)
       // Don't regenerate if version is undefined (new session from login)
       if (req.session.version && req.session.version !== SESSION_VERSION) {
-        console.log(`Session version mismatch (expected: ${SESSION_VERSION}, got: ${req.session.version}), regenerating session`);
+        loggers.session.debug('Session version mismatch, regenerating session', { expected: SESSION_VERSION, got: req.session.version });
         req.session.regenerate((err) => {
           if (err) {
-            console.error('Session regenerate error:', err);
+            loggers.session.error('Session regenerate error', { error: err });
             return next(err);
           }
           // Set the new version on the regenerated session
@@ -199,7 +200,7 @@ export function setupAuth(app: Express) {
   passport.use(
     new LocalStrategy(async (username, password, done) => {
       try {
-        console.log("Attempting login for username:", username);
+        loggers.auth.debug("Attempting login for username", { username });
 
         let user = await storage.getUserByUsername(username);
         if (!user) {
@@ -207,26 +208,26 @@ export function setupAuth(app: Express) {
         }
 
         if (!user) {
-          console.log("No user found with username/email:", username);
+          loggers.auth.debug("No user found with username/email", { username });
           return done(null, false);
         }
 
         const passwordMatches = await comparePasswords(password, user.password);
-        console.log("Password comparison result:", passwordMatches);
+        loggers.auth.debug("Password comparison result", { passwordMatches });
 
         if (!passwordMatches) {
           return done(null, false);
         }
 
         if (!user.approved) {
-          console.log("User not approved:", username);
+          loggers.auth.debug("User not approved", { username });
           return done(null, false);
         }
 
-        console.log("Login successful. Temp password status:", user.temp_password);
+        loggers.auth.debug("Login successful", { tempPassword: user.temp_password });
         return done(null, user);
       } catch (error) {
-        console.error("Login error:", error);
+        loggers.auth.error("Login error", { error });
         return done(error);
       }
     }),
@@ -268,15 +269,15 @@ export function setupAuth(app: Express) {
 
             return done(null, user);
           } catch (error) {
-            console.error('Google OAuth error:', error);
+            loggers.auth.error('Google OAuth error', { error });
             return done(error as Error);
           }
         }
       )
     );
-    console.log('Google OAuth strategy configured');
+    loggers.auth.info('Google OAuth strategy configured');
   } else {
-    console.log('Google OAuth not configured - VITE_GOOGLE_CLIENT_ID not set');
+    loggers.auth.info('Google OAuth not configured - VITE_GOOGLE_CLIENT_ID not set');
   }
 
   passport.serializeUser((user, done) => {
@@ -324,7 +325,7 @@ export function setupAuth(app: Express) {
       const clientIp = await getClientIp(req);
       const type = 'login';
 
-      console.log("Login attempt - IP:", clientIp, "Username:", identifier);
+      loggers.auth.info("Login attempt", { ip: clientIp, username: identifier });
 
       passport.authenticate("local", async (err: any, user: any, info: any) => {
         if (err) return next(err);
@@ -344,7 +345,7 @@ export function setupAuth(app: Express) {
               user_agent: req.headers['user-agent'] || null
             });
           } catch (error) {
-            console.error('Failed to record login attempt with geolocation:', error);
+            loggers.auth.error('Failed to record login attempt with geolocation', { error });
             await storage.addLoginAttempt({
               identifier,
               ip: clientIp,
@@ -387,7 +388,7 @@ export function setupAuth(app: Express) {
               requires_password_change: user.temp_password
             });
           } catch (error) {
-            console.error('Failed to update user IP with geolocation:', error);
+            loggers.auth.error('Failed to update user IP with geolocation', { error });
             res.json({
               ...user,
               requires_password_change: user.temp_password
@@ -396,7 +397,7 @@ export function setupAuth(app: Express) {
         });
       })(req, res, next);
     } catch (error) {
-      console.error('Login error:', error);
+      loggers.auth.error('Login error', { error });
       next(error);
     }
   });
@@ -418,7 +419,7 @@ export function setupAuth(app: Express) {
 
       res.json({ message: "Password updated successfully" });
     } catch (error) {
-      console.error('Password change error:', error);
+      loggers.auth.error('Password change error', { error });
       res.status(500).json({ message: "Failed to update password" });
     }
   });
@@ -464,7 +465,7 @@ export function setupAuth(app: Express) {
 
       res.json({ message: "If an account exists with this identifier, a password reset email has been sent." });
     } catch (error) {
-      console.error('Reset request error:', error);
+      loggers.auth.error('Reset request error', { error });
       res.status(500).json({ message: "An error occurred processing your request" });
     }
   });
@@ -476,7 +477,7 @@ export function setupAuth(app: Express) {
       // Destroy the session completely
       req.session.destroy((destroyErr) => {
         if (destroyErr) {
-          console.error('Session destroy error:', destroyErr);
+          loggers.auth.error('Session destroy error', { error: destroyErr });
         }
 
         // Clear the session cookie explicitly
@@ -508,7 +509,7 @@ export function setupAuth(app: Express) {
 
       res.json({ success: true });
     } catch (error) {
-      console.error('Error marking first-time dialog as seen:', error);
+      loggers.auth.error('Error marking first-time dialog as seen', { error });
       res.status(500).json({ error: 'Failed to update user' });
     }
   });
@@ -606,7 +607,7 @@ export function setupAuth(app: Express) {
         return res.status(500).json({ message: "Failed to delete user" });
       }
     } catch (error) {
-      console.error('Error deleting user:', error);
+      loggers.auth.error('Error deleting user', { error });
       return res.status(500).json({
         message: "Failed to delete user",
         error: error instanceof Error ? error.message : "Unknown error"
@@ -624,7 +625,7 @@ export function setupAuth(app: Express) {
       const settings = await storage.getSettings();
       res.json(settings);
     } catch (error) {
-      console.error('Error fetching settings:', error);
+      loggers.auth.error('Error fetching settings', { error });
       res.status(500).json({ message: "Failed to fetch settings" });
     }
   });
@@ -638,7 +639,7 @@ export function setupAuth(app: Express) {
       });
       res.json(settings);
     } catch (error) {
-      console.error('Error updating settings:', error);
+      loggers.auth.error('Error updating settings', { error });
       res.status(500).json({ message: "Failed to update settings" });
     }
   });
@@ -755,13 +756,13 @@ export function setupAuth(app: Express) {
         const user = req.user as SelectUser;
 
         if (!user) {
-          console.error('[Google OAuth] No user in session after auth');
+          loggers.auth.error('[Google OAuth] No user in session after auth');
           return res.redirect('/auth?error=no_user');
         }
 
         // Check if user needs approval
         if (!user.approved) {
-          console.log('[Google OAuth] User not approved:', user.email);
+          loggers.auth.info('[Google OAuth] User not approved', { email: user.email });
           return res.redirect('/auth?pending=true');
         }
 
@@ -775,15 +776,15 @@ export function setupAuth(app: Express) {
               redirectTo = decoded.redirect;
             }
           } catch (e) {
-            console.error('[Google OAuth] Failed to decode state:', e);
+            loggers.auth.error('[Google OAuth] Failed to decode state', { error: e });
           }
         }
 
         // User is authenticated via passport, redirect
-        console.log('[Google OAuth] Login successful for:', user.email, 'redirecting to:', redirectTo);
+        loggers.auth.info('[Google OAuth] Login successful', { email: user.email, redirectTo });
         res.redirect(redirectTo);
       } catch (error) {
-        console.error('[Google OAuth] Callback error:', error);
+        loggers.auth.error('[Google OAuth] Callback error', { error });
         res.redirect('/auth?error=auth_failed');
       }
     }
@@ -794,22 +795,22 @@ export function setupAuth(app: Express) {
     try {
       const { token } = req.body;
       if (!token) {
-        console.error('No token provided in request');
+        loggers.auth.error('No token provided in request');
         return res.status(400).json({ message: "No token provided" });
       }
 
       const clientIp = await getClientIp(req);
-      console.log('Attempting to verify token');
+      loggers.auth.debug('Attempting to verify token');
 
       let decodedToken: any;
 
       // Try to verify as Firebase ID token first
       try {
         decodedToken = await admin.auth().verifyIdToken(token);
-        console.log('Verified as Firebase ID token');
+        loggers.auth.debug('Verified as Firebase ID token');
       } catch (firebaseError) {
         // If Firebase verification fails, try verifying as Google ID token
-        console.log('Not a Firebase token, trying Google ID token verification');
+        loggers.auth.debug('Not a Firebase token, trying Google ID token verification');
         try {
           const client = new OAuth2Client();
 
@@ -826,9 +827,9 @@ export function setupAuth(app: Express) {
             uid: payload.sub,
             email_verified: payload.email_verified
           };
-          console.log('Verified as Google ID token');
+          loggers.auth.debug('Verified as Google ID token');
         } catch (googleError) {
-          console.error('Token verification failed for both Firebase and Google:', {
+          loggers.auth.error('Token verification failed for both Firebase and Google', {
             firebaseError,
             googleError
           });
@@ -837,7 +838,7 @@ export function setupAuth(app: Express) {
       }
 
       if (!decodedToken.email) {
-        console.error('No email in decoded token:', decodedToken);
+        loggers.auth.error('No email in decoded token', { decodedToken });
 
         try {
           const ipInfo = await getIpInfo(clientIp);
@@ -852,18 +853,18 @@ export function setupAuth(app: Express) {
             country: ipInfo.country || null
           });
         } catch (error) {
-          console.error('Failed to record failed login attempt:', error);
+          loggers.auth.error('Failed to record failed login attempt', { error });
         }
 
         return res.status(401).json({ message: "Invalid token: no email found" });
       }
 
-      console.log('Token verified successfully for email:', decodedToken.email);
+      loggers.auth.debug('Token verified successfully', { email: decodedToken.email });
 
       let user = await storage.getUserByEmail(decodedToken.email);
 
       if (!user) {
-        console.log('Creating new user for email:', decodedToken.email);
+        loggers.auth.info('Creating new user for email', { email: decodedToken.email });
         const randomPassword = randomBytes(32).toString('hex');
 
         // Get default role from settings
@@ -909,7 +910,7 @@ export function setupAuth(app: Express) {
             country: ipInfo.country || null
           });
         } catch (error) {
-          console.error('Failed to record failed login attempt:', error);
+          loggers.auth.error('Failed to record failed login attempt', { error });
         }
 
         return res.status(403).json({
@@ -926,7 +927,7 @@ export function setupAuth(app: Express) {
 
       req.login(user, async (err) => {
         if (err) {
-          console.error('Login error:', err);
+          loggers.auth.error('Login error', { error: err });
           return res.status(500).json({ message: "Error logging in" });
         }
 
@@ -967,14 +968,14 @@ export function setupAuth(app: Express) {
           });
 
         } catch (error) {
-          console.error('Failed to record successful login attempt:', error);
+          loggers.auth.error('Failed to record successful login attempt', { error });
         }
 
         res.json(user);
       });
 
     } catch (error) {
-      console.error('Google auth error:', error);
+      loggers.auth.error('Google auth error', { error });
 
       try {
         const clientIp = await getClientIp(req);
@@ -990,7 +991,7 @@ export function setupAuth(app: Express) {
           country: ipInfo.country || null
         });
       } catch (recordError) {
-        console.error('Failed to record failed login attempt:', recordError);
+        loggers.auth.error('Failed to record failed login attempt', { error: recordError });
       }
 
       res.status(401).json({
@@ -1005,7 +1006,7 @@ export async function hashPassword(password: string) {
   const salt = randomBytes(16).toString("hex");
   const buf = (await scryptAsync(password, salt, 32)) as Buffer;
   const hashedPassword = `${buf.toString("hex")}.${salt}`;
-  console.log("Generated hash length:", buf.length, "Generated hash:", hashedPassword);
+  loggers.auth.debug("Generated hash", { hashLength: buf.length, hash: hashedPassword });
   return hashedPassword;
 }
 
@@ -1013,17 +1014,17 @@ async function comparePasswords(supplied: string, stored: string) {
   try {
     const [hash, salt] = stored.split(".");
     if (!hash || !salt) {
-      console.error('Invalid stored password format:', stored);
+      loggers.auth.error('Invalid stored password format', { stored });
       return false;
     }
     const hashedBuf = Buffer.from(hash, "hex");
     const suppliedBuf = (await scryptAsync(supplied, salt, 32)) as Buffer;
-    console.log("Stored hash length:", hashedBuf.length, "Supplied hash length:", suppliedBuf.length);
-    console.log("Stored hash:", hash);
-    console.log("Supplied hash:", suppliedBuf.toString("hex"));
+    loggers.auth.debug("Password comparison", { storedHashLength: hashedBuf.length, suppliedHashLength: suppliedBuf.length });
+    loggers.auth.debug("Stored hash", { hash });
+    loggers.auth.debug("Supplied hash", { hash: suppliedBuf.toString("hex") });
     return timingSafeEqual(hashedBuf, suppliedBuf);
   } catch (error) {
-    console.error('Password comparison error:', error);
+    loggers.auth.error('Password comparison error', { error });
     return false;
   }
 }
@@ -1031,7 +1032,7 @@ async function comparePasswords(supplied: string, stored: string) {
 async function generateHashForTest() {
   const password = "admin123";
   const hashedPassword = await hashPassword(password);
-  console.log("Test hash generated for 'admin123':", hashedPassword);
+  loggers.auth.debug("Test hash generated for 'admin123'", { hashedPassword });
   return hashedPassword;
 }
 
@@ -1041,13 +1042,13 @@ async function createAdminUser(username: string, password: string, email: string
     const hasSuperAdmin = users.some(user => user.role === 'superadmin');
 
     if (hasSuperAdmin) {
-      console.log("A superadmin already exists in the system, skipping admin creation");
+      loggers.auth.info("A superadmin already exists in the system, skipping admin creation");
       return null;
     }
 
     const existingUser = await storage.getUserByUsername(username);
     if (existingUser) {
-      console.log("Admin user already exists, skipping creation");
+      loggers.auth.info("Admin user already exists, skipping creation");
       return existingUser;
     }
 
@@ -1059,10 +1060,10 @@ async function createAdminUser(username: string, password: string, email: string
       role: 'superadmin',
       approved: true
     });
-    console.log("New admin user created:", newUser);
+    loggers.auth.info("New admin user created", { user: newUser });
     return newUser;
   } catch (error) {
-    console.error("Error in createAdminUser:", error);
+    loggers.auth.error("Error in createAdminUser", { error });
     return null;
   }
 }

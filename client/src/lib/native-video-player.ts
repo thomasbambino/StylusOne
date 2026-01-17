@@ -1,5 +1,6 @@
 import { Capacitor } from '@capacitor/core';
 import { CapacitorVideoPlayer } from 'capacitor-video-player';
+import { loggers } from './logger';
 
 export interface NativePlayerOptions {
   url: string;
@@ -31,7 +32,7 @@ class NativeVideoPlayerService {
    */
   async play(options: NativePlayerOptions): Promise<boolean> {
     if (!this.shouldUseNativePlayer()) {
-      console.log('Native player not available on this platform');
+      loggers.nativeVideo.debug('Native player not available on this platform');
       return false;
     }
 
@@ -41,7 +42,7 @@ class NativeVideoPlayerService {
 
       this.currentOptions = options;
 
-      console.log('🎬 Starting native video player:', options.url);
+      loggers.nativeVideo.info('Starting native video player', { url: options.url });
 
       // Set up event listeners
       this.setupListeners();
@@ -63,16 +64,16 @@ class NativeVideoPlayerService {
 
       if (result.result) {
         this.isPlaying = true;
-        console.log('🎬 Native player started successfully');
+        loggers.nativeVideo.info('Native player started successfully');
         options.onReady?.();
         return true;
       } else {
-        console.error('🎬 Failed to start native player:', result.message);
+        loggers.nativeVideo.error('Failed to start native player', { message: result.message });
         options.onError?.(result.message || 'Failed to start player');
         return false;
       }
     } catch (error) {
-      console.error('🎬 Native player error:', error);
+      loggers.nativeVideo.error('Native player error', { error });
       options.onError?.(String(error));
       return false;
     }
@@ -89,9 +90,9 @@ class NativeVideoPlayerService {
       await CapacitorVideoPlayer.stopAllPlayers();
       this.isPlaying = false;
       this.currentOptions = null;
-      console.log('🎬 Native player stopped');
+      loggers.nativeVideo.debug('Native player stopped');
     } catch (error) {
-      console.error('🎬 Error stopping native player:', error);
+      loggers.nativeVideo.error('Error stopping native player', { error });
     }
   }
 
@@ -104,9 +105,9 @@ class NativeVideoPlayerService {
     try {
       await CapacitorVideoPlayer.exitPlayer();
       this.isPlaying = false;
-      console.log('🎬 Native player exited');
+      loggers.nativeVideo.debug('Native player exited');
     } catch (error) {
-      console.error('🎬 Error exiting native player:', error);
+      loggers.nativeVideo.error('Error exiting native player', { error });
     }
   }
 
@@ -119,7 +120,7 @@ class NativeVideoPlayerService {
     try {
       await CapacitorVideoPlayer.pause({ playerId: 'stylusPlayer' });
     } catch (error) {
-      console.error('🎬 Error pausing:', error);
+      loggers.nativeVideo.error('Error pausing', { error });
     }
   }
 
@@ -132,7 +133,7 @@ class NativeVideoPlayerService {
     try {
       await CapacitorVideoPlayer.play({ playerId: 'stylusPlayer' });
     } catch (error) {
-      console.error('🎬 Error resuming:', error);
+      loggers.nativeVideo.error('Error resuming', { error });
     }
   }
 
@@ -146,20 +147,20 @@ class NativeVideoPlayerService {
   private setupListeners(): void {
     // Listen for player exit (user dismisses fullscreen)
     this.exitListener = CapacitorVideoPlayer.addListener('jeepCapVideoPlayerExit', (info: any) => {
-      console.log('🎬 Player exit event:', info);
+      loggers.nativeVideo.debug('Player exit event', { info });
       this.isPlaying = false;
       this.currentOptions?.onExit?.(info.currentTime || 0);
     });
 
     // Listen for video ended
     this.endedListener = CapacitorVideoPlayer.addListener('jeepCapVideoPlayerEnded', (info: any) => {
-      console.log('🎬 Player ended event:', info);
+      loggers.nativeVideo.debug('Player ended event', { info });
       this.currentOptions?.onEnded?.();
     });
 
     // Listen for player ready
     this.readyListener = CapacitorVideoPlayer.addListener('jeepCapVideoPlayerReady', (info: any) => {
-      console.log('🎬 Player ready event:', info);
+      loggers.nativeVideo.debug('Player ready event', { info });
     });
   }
 

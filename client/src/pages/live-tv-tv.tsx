@@ -16,6 +16,7 @@ import { useFeatureAccess } from '@/lib/feature-gate';
 import { getCachedEPG, cacheEPG, cleanupExpiredCache, prefetchEPG, clearAllCache } from '@/lib/epgCache';
 import { useReminders } from '@/contexts/ReminderContext';
 import { useToast } from '@/hooks/use-toast';
+import { loggers } from '@/lib/logger';
 
 // ============================================================================
 // TYPES & INTERFACES
@@ -172,7 +173,7 @@ const updateMediaSession = (channel: Channel | null, program: EPGProgram | null)
     // Set playback state
     navigator.mediaSession.playbackState = 'playing';
   } catch (e) {
-    console.log('[MediaSession] Error updating metadata:', e);
+    loggers.mediaSession.warn('Error updating metadata', { error: e });
   }
 };
 
@@ -475,7 +476,7 @@ const FavoritesPopup = memo(({
     try {
       localStorage.setItem('favoriteOrder', JSON.stringify(newOrder));
     } catch (e) {
-      console.warn('[TV] Failed to save favorite order:', e);
+      loggers.tv.warn('Failed to save favorite order', { error: e });
     }
 
     // Trigger re-render
@@ -855,10 +856,10 @@ const GuideChannelRow = memo(({
           e.preventDefault();
           // Don't trigger if user was scrolling
           if (wasScrolling?.()) {
-            console.log('[Guide] Ignoring fallback tap - was scrolling');
+            loggers.tv.debug('Ignoring fallback tap - was scrolling');
             return;
           }
-          console.log('[Guide] FALLBACK TAP - no EPG data, playing channel');
+          loggers.tv.debug('FALLBACK TAP - no EPG data, playing channel');
           onSelect(); // Play channel when no program info available
         };
         return (
@@ -899,15 +900,15 @@ const GuideChannelRow = memo(({
       e.preventDefault();
       // Don't trigger if user was scrolling
       if (wasScrolling?.()) {
-        console.log('[Guide] Ignoring program tap - was scrolling');
+        loggers.tv.debug('Ignoring program tap - was scrolling');
         return;
       }
-      console.log('[Guide] PROGRAM TAP - program:', program.title, 'onProgramClick exists:', !!onProgramClick);
+      loggers.tv.debug('PROGRAM TAP', { program: program.title, hasOnProgramClick: !!onProgramClick });
       if (onProgramClick) {
-        console.log('[Guide] Calling onProgramClick for:', program.title);
+        loggers.tv.debug('Calling onProgramClick', { program: program.title });
         onProgramClick(program);
       } else {
-        console.log('[Guide] NO onProgramClick, falling back to onSelect');
+        loggers.tv.debug('NO onProgramClick, falling back to onSelect');
         onSelect();
       }
     };
@@ -955,8 +956,8 @@ const GuideChannelRow = memo(({
 
         {/* Channel Info - clicking this plays the channel */}
         <div
-          onClick={() => { console.log('[Guide] CHANNEL INFO CLICK'); onSelect(); }}
-          onTouchEnd={(e) => { e.preventDefault(); console.log('[Guide] CHANNEL INFO TOUCH'); onSelect(); }}
+          onClick={() => { loggers.tv.debug('CHANNEL INFO CLICK'); onSelect(); }}
+          onTouchEnd={(e) => { e.preventDefault(); loggers.tv.debug('CHANNEL INFO TOUCH'); onSelect(); }}
           className={cn(
             "w-40 shrink-0 flex items-center gap-2 px-2 border-r border-white/10 cursor-pointer",
             isPlaying && "bg-red-600/20"
@@ -1087,7 +1088,7 @@ export default function LiveTVTvPage() {
         }
       }
     } catch (e) {
-      console.warn('[Guide] Failed to load hidden packages from localStorage:', e);
+      loggers.tv.warn('Failed to load hidden packages from localStorage', { error: e });
     }
     return new Set();
   });
@@ -1147,7 +1148,7 @@ export default function LiveTVTvPage() {
     try {
       localStorage.setItem('guideHiddenPackages', JSON.stringify(Array.from(hiddenPackages)));
     } catch (e) {
-      console.warn('[Guide] Failed to save hidden packages to localStorage:', e);
+      loggers.tv.warn('Failed to save hidden packages to localStorage', { error: e });
     }
   }, [hiddenPackages]);
 
@@ -1331,13 +1332,13 @@ export default function LiveTVTvPage() {
     const shouldKeepAwake = selectedChannel !== null || isLoading;
 
     if (shouldKeepAwake) {
-      KeepAwake.keepAwake().catch(console.warn);
+      KeepAwake.keepAwake().catch((e) => loggers.tv.warn('Failed to keep awake', { error: e }));
     } else {
-      KeepAwake.allowSleep().catch(console.warn);
+      KeepAwake.allowSleep().catch((e) => loggers.tv.warn('Failed to allow sleep', { error: e }));
     }
 
     return () => {
-      KeepAwake.allowSleep().catch(console.warn);
+      KeepAwake.allowSleep().catch((e) => loggers.tv.warn('Failed to allow sleep on cleanup', { error: e }));
     };
   }, [selectedChannel, isLoading]);
 
@@ -1383,7 +1384,7 @@ export default function LiveTVTvPage() {
           timestamp: Date.now()
         }));
       } catch (e) {
-        console.warn('[TV] Failed to cache channels:', e);
+        loggers.tv.warn('Failed to cache channels', { error: e });
       }
 
       return processed;
@@ -1397,12 +1398,12 @@ export default function LiveTVTvPage() {
         const age = Date.now() - timestamp;
         // Use cache if less than 24 hours old
         if (age < 24 * 60 * 60 * 1000 && Array.isArray(cachedChannels)) {
-          console.log('[TV] Using cached channels from', Math.round(age / 60000), 'minutes ago');
+          loggers.tv.debug('Using cached channels', { ageMinutes: Math.round(age / 60000) });
           return cachedChannels;
         }
       }
     } catch (e) {
-      console.warn('[TV] Failed to load cached channels:', e);
+      loggers.tv.warn('Failed to load cached channels', { error: e });
     }
 
     return [];
@@ -1415,7 +1416,7 @@ export default function LiveTVTvPage() {
     if (!isNativePlatform() || channels.length === 0 || prefetchStartedRef.current) return;
 
     prefetchStartedRef.current = true;
-    console.log(`[TV] Starting background EPG prefetch for ${channels.length} channels...`);
+    loggers.tv.info('Starting background EPG prefetch', { channelCount: channels.length });
 
     // Get all unique epgIds
     const epgIds = [...new Set(channels.map((ch: Channel) => ch.epgId).filter(Boolean))] as string[];
@@ -1423,7 +1424,7 @@ export default function LiveTVTvPage() {
     // Clear old IndexedDB cache first to ensure we get fresh data with TMDB thumbnails
     // Server's TMDB cache is now persisted to disk, so thumbnails won't be lost
     clearAllCache().then(() => {
-      console.log('[TV] Cleared old EPG cache, fetching fresh data...');
+      loggers.tv.debug('Cleared old EPG cache, fetching fresh data');
 
       // Prefetch in background - don't await
       return prefetchEPG(epgIds, async (epgId: string) => {
@@ -1446,7 +1447,7 @@ export default function LiveTVTvPage() {
         return [];
       });
     }).then(() => {
-      console.log('[TV] Background EPG prefetch complete - invalidating EPG queries');
+      loggers.tv.info('Background EPG prefetch complete - invalidating EPG queries');
       // Invalidate all EPG queries so they re-fetch from IndexedDB cache
       queryClient.invalidateQueries({
         predicate: (query) => {
@@ -1632,10 +1633,12 @@ export default function LiveTVTvPage() {
   // Debug logging for sports packages
   useEffect(() => {
     if (userPackages.length > 0 && viewMode === 'home') {
-      console.log('[Sports] User packages:', userPackages.map(p => p.packageName));
-      console.log('[Sports] NFL package:', nflPackage?.packageName || 'NOT FOUND');
-      console.log('[Sports] NBA package:', nbaPackage?.packageName || 'NOT FOUND');
-      console.log('[Sports] MLB package:', mlbPackage?.packageName || 'NOT FOUND');
+      loggers.tv.debug('User packages loaded', {
+        packages: userPackages.map(p => p.packageName),
+        nflPackage: nflPackage?.packageName || 'NOT FOUND',
+        nbaPackage: nbaPackage?.packageName || 'NOT FOUND',
+        mlbPackage: mlbPackage?.packageName || 'NOT FOUND'
+      });
     }
   }, [userPackages, nflPackage, nbaPackage, mlbPackage, viewMode]);
 
@@ -1706,7 +1709,7 @@ export default function LiveTVTvPage() {
       try {
         localStorage.setItem('cachedFavorites', JSON.stringify(favoritesData));
       } catch (e) {
-        console.warn('[TV] Failed to cache favorites:', e);
+        loggers.tv.warn('Failed to cache favorites', { error: e });
       }
       return favoritesData;
     }
@@ -1721,7 +1724,7 @@ export default function LiveTVTvPage() {
         }
       }
     } catch (e) {
-      console.warn('[TV] Failed to load cached favorites:', e);
+      loggers.tv.warn('Failed to load cached favorites', { error: e });
     }
 
     return [];
@@ -1792,7 +1795,7 @@ export default function LiveTVTvPage() {
 
       // Enable AirPlay on the video element if not already enabled
       if (!airPlayEnabled) {
-        console.log('[AirPlay] Enabling AirPlay on video element');
+        loggers.tv.debug('Enabling AirPlay on video element');
         video.setAttribute('x-webkit-airplay', 'allow');
         setAirPlayEnabled(true);
       }
@@ -1800,10 +1803,10 @@ export default function LiveTVTvPage() {
       // Small delay to let the attribute take effect, then show picker
       setTimeout(() => {
         if (video.webkitShowPlaybackTargetPicker) {
-          console.log('📺 Showing AirPlay picker');
+          loggers.tv.debug('Showing AirPlay picker');
           video.webkitShowPlaybackTargetPicker();
         } else {
-          console.log('AirPlay picker not available');
+          loggers.tv.debug('AirPlay picker not available');
         }
       }, 100);
     }
@@ -1819,22 +1822,22 @@ export default function LiveTVTvPage() {
       // Check if already in PiP
       if (document.pictureInPictureElement === video) {
         await document.exitPictureInPicture();
-        console.log('📺 Exited PiP');
+        loggers.tv.debug('Exited PiP');
       } else if (video.webkitSupportsPresentationMode && typeof video.webkitSetPresentationMode === 'function') {
         // Safari/iOS specific PiP
         video.webkitSetPresentationMode(
           video.webkitPresentationMode === 'picture-in-picture' ? 'inline' : 'picture-in-picture'
         );
-        console.log('📺 Toggled Safari PiP');
+        loggers.tv.debug('Toggled Safari PiP');
       } else if (document.pictureInPictureEnabled && video.requestPictureInPicture) {
         // Standard PiP API
         await video.requestPictureInPicture();
-        console.log('📺 Entered PiP');
+        loggers.tv.debug('Entered PiP');
       } else {
-        console.log('PiP not supported');
+        loggers.tv.debug('PiP not supported');
       }
     } catch (err) {
-      console.error('PiP error:', err);
+      loggers.tv.error('PiP error', { error: err });
     }
   }, []);
 
@@ -1944,7 +1947,7 @@ export default function LiveTVTvPage() {
 
           // Cache the data for native apps
           if (isNativePlatform() && data?.programs?.length > 0) {
-            cacheEPG(epgId, data.programs).catch(console.error);
+            cacheEPG(epgId, data.programs).catch((err) => loggers.tv.error('Failed to cache EPG', { error: err, epgId }));
           }
 
           return data;
@@ -2054,36 +2057,36 @@ export default function LiveTVTvPage() {
 
     const handleAirPlayChange = async () => {
       const isWireless = (video as any).webkitCurrentPlaybackTargetIsWireless;
-      console.log('[AirPlay] Wireless playback changed:', isWireless, 'was:', wasAirPlaying);
+      loggers.tv.debug('Wireless playback changed', { isWireless, wasAirPlaying });
       setIsAirPlaying(!!isWireless);
 
       if (isWireless && !wasAirPlaying) {
         // Just connected to AirPlay - try to ensure playback
-        console.log('[AirPlay] Connected - ensuring playback');
+        loggers.tv.info('AirPlay connected - ensuring playback');
         try {
           if (video.paused) {
             await video.play();
-            console.log('[AirPlay] Play succeeded after connect');
+            loggers.tv.debug('Play succeeded after AirPlay connect');
           }
         } catch (e) {
-          console.error('[AirPlay] Play failed after connect:', e);
+          loggers.tv.error('Play failed after AirPlay connect', { error: e });
         }
       } else if (!isWireless && wasAirPlaying) {
         // Just disconnected from AirPlay - reload the stream
-        console.log('[AirPlay] Disconnected - reloading stream');
+        loggers.tv.info('AirPlay disconnected - reloading stream');
         if (selectedChannel) {
           // Show loading spinner
           setIsLoading(true);
           // Small delay to let the video element settle
           setTimeout(() => {
             if (videoRef.current && selectedChannel) {
-              console.log('[AirPlay] Restarting local playback');
+              loggers.tv.debug('Restarting local playback');
               // Reload the current source
               const currentSrc = videoRef.current.src;
               if (currentSrc) {
                 videoRef.current.load();
                 videoRef.current.play().catch(e => {
-                  console.error('[AirPlay] Failed to restart playback:', e);
+                  loggers.tv.error('Failed to restart playback', { error: e });
                   setIsLoading(false);
                 });
               } else {
@@ -2133,7 +2136,7 @@ export default function LiveTVTvPage() {
           sessionToken: streamSessionToken.current
         });
       } catch (e) {
-        console.log('[TV] Error releasing stream:', e);
+        loggers.tv.debug('Error releasing stream', { error: e });
       }
       streamSessionToken.current = null;
     }
@@ -2186,7 +2189,7 @@ export default function LiveTVTvPage() {
         if (isNative) {
           // Native platforms: need token for URL (generate-token also does acquire internally)
           try {
-            console.log('[TV] Getting stream token for:', channel.iptvId, 'platform:', getPlatform());
+            loggers.tv.debug('Getting stream token', { channelId: channel.iptvId, platform: getPlatform() });
             const tokenResponse = await apiRequest('POST', '/api/iptv/generate-token', {
               streamId: channel.iptvId,
               deviceType: getPlatform()
@@ -2212,25 +2215,25 @@ export default function LiveTVTvPage() {
                       sessionToken: streamSessionToken.current
                     });
                   } catch (e) {
-                    console.log('[TV] Heartbeat error:', e);
+                    loggers.tv.debug('Heartbeat error', { error: e });
                   }
                 }
               }, 30000);
             }
           } catch (e) {
-            console.log('[TV] Could not generate token:', e);
+            loggers.tv.debug('Could not generate token', { error: e });
             // Continue anyway - stream might work without token
           }
         } else {
           // Web: acquire stream session for tracking
           try {
-            console.log('[TV] Acquiring stream session for:', channel.iptvId);
+            loggers.tv.debug('Acquiring stream session', { channelId: channel.iptvId });
             const acquireResponse = await apiRequest('POST', '/api/iptv/stream/acquire', {
               streamId: channel.iptvId,
               deviceType: getPlatform() // 'ios', 'android', or 'web'
             });
             const data = await acquireResponse.json();
-            console.log('[TV] Stream acquire response:', data);
+            loggers.tv.debug('Stream acquire response', { data });
             const { sessionToken } = data;
             streamSessionToken.current = sessionToken;
 
@@ -2242,12 +2245,12 @@ export default function LiveTVTvPage() {
                     sessionToken: streamSessionToken.current
                   });
                 } catch (e) {
-                  console.log('[TV] Heartbeat error:', e);
+                  loggers.tv.debug('Heartbeat error', { error: e });
                 }
               }
             }, 30000);
           } catch (e) {
-            console.log('[TV] Could not acquire stream session:', e);
+            loggers.tv.debug('Could not acquire stream session', { error: e });
             // Continue anyway - stream might still work
           }
         }
@@ -2257,7 +2260,7 @@ export default function LiveTVTvPage() {
       const canPlayNativeHLS = video.canPlayType('application/vnd.apple.mpegurl');
       const useNativeHLS = isNativePlatform() && canPlayNativeHLS;
 
-      console.log('[TV] Playback decision:', {
+      loggers.tv.debug('Playback decision', {
         isNative: isNativePlatform(),
         canPlayNativeHLS,
         useNativeHLS,
@@ -2267,29 +2270,31 @@ export default function LiveTVTvPage() {
 
       if (useNativeHLS) {
         // Native iOS HLS - supports AirPlay with video
-        console.log('[TV] 📱 Using NATIVE HLS for AirPlay support');
-        console.log('[TV] Stream URL:', streamUrl);
+        loggers.tv.info('Using native HLS for AirPlay support');
+        loggers.tv.debug('Stream URL', { streamUrl });
 
         // Add error handlers before setting src
         // All handlers check thisVersion to prevent stale updates from rapid channel changes
         const handleError = (e: Event) => {
           // Ignore events from previous channel
           if (channelVersionRef.current !== thisVersion) {
-            console.log('[TV] Ignoring error from stale channel version');
+            loggers.tv.debug('Ignoring error from stale channel version');
             return;
           }
           const mediaError = video.error;
-          console.error('[TV] Native HLS error event:', e);
-          console.error('[TV] Video error code:', mediaError?.code);
-          console.error('[TV] Video error message:', mediaError?.message);
-          console.error('[TV] Network state:', video.networkState);
-          console.error('[TV] Ready state:', video.readyState);
+          loggers.tv.error('Native HLS error', {
+            event: e,
+            errorCode: mediaError?.code,
+            errorMessage: mediaError?.message,
+            networkState: video.networkState,
+            readyState: video.readyState
+          });
 
           // Trigger retry with exponential backoff
           if (retryCountRef.current < MAX_RETRIES) {
             retryCountRef.current++;
             const delay = Math.min(1000 * Math.pow(2, retryCountRef.current - 1), 10000);
-            console.log(`[TV] Retrying stream in ${delay}ms (attempt ${retryCountRef.current}/${MAX_RETRIES})`);
+            loggers.tv.info('Retrying stream', { delayMs: delay, attempt: retryCountRef.current, maxRetries: MAX_RETRIES });
             setStreamError(`Reconnecting... (${retryCountRef.current}/${MAX_RETRIES})`);
             setIsLoading(true);
 
@@ -2308,20 +2313,20 @@ export default function LiveTVTvPage() {
 
         const handleLoadStart = () => {
           if (channelVersionRef.current !== thisVersion) return;
-          console.log('[TV] Native HLS: loadstart - video is attempting to load');
-          console.log('[TV] Current src:', video.src);
+          loggers.tv.debug('Native HLS loadstart - video attempting to load', { src: video.src });
         };
 
         const handleLoadedMetadata = () => {
           if (channelVersionRef.current !== thisVersion) return;
-          console.log('[TV] Native HLS: metadata loaded');
-          console.log('[TV] Duration:', video.duration);
-          console.log('[TV] Video dimensions:', video.videoWidth, 'x', video.videoHeight);
+          loggers.tv.debug('Native HLS metadata loaded', {
+            duration: video.duration,
+            dimensions: `${video.videoWidth}x${video.videoHeight}`
+          });
         };
 
         const handleCanPlay = () => {
           if (channelVersionRef.current !== thisVersion) return;
-          console.log('[TV] Native HLS: can play');
+          loggers.tv.debug('Native HLS can play');
           // Cancel pending loading spinner and hide immediately
           if (loadingTimeoutRef.current) {
             clearTimeout(loadingTimeoutRef.current);
@@ -2331,16 +2336,16 @@ export default function LiveTVTvPage() {
           setStreamError(null); // Clear any error when stream is ready
           // Now safe to play - video has enough data
           video.play().then(() => {
-            console.log('[TV] Native HLS: play() succeeded');
+            loggers.tv.debug('Native HLS play() succeeded');
             setIsPlaying(true);
           }).catch((err) => {
-            console.error('[TV] Native HLS play() error in canplay:', err);
+            loggers.tv.error('Native HLS play() error in canplay', { error: err });
           });
         };
 
         const handlePlaying = () => {
           if (channelVersionRef.current !== thisVersion) return;
-          console.log('[TV] Native HLS: playing');
+          loggers.tv.debug('Native HLS playing');
           // Cancel pending loading spinner and hide immediately
           if (loadingTimeoutRef.current) {
             clearTimeout(loadingTimeoutRef.current);
@@ -2358,7 +2363,7 @@ export default function LiveTVTvPage() {
           if (!loadingTimeoutRef.current) {
             loadingTimeoutRef.current = setTimeout(() => {
               if (channelVersionRef.current === thisVersion) {
-                console.log('[TV] Native HLS: waiting/buffering (showing spinner)');
+                loggers.tv.debug('Native HLS waiting/buffering (showing spinner)');
                 setIsLoading(true);
               }
               loadingTimeoutRef.current = null;
@@ -2372,7 +2377,7 @@ export default function LiveTVTvPage() {
           if (!loadingTimeoutRef.current) {
             loadingTimeoutRef.current = setTimeout(() => {
               if (channelVersionRef.current === thisVersion) {
-                console.log('[TV] Native HLS: stalled (showing spinner)');
+                loggers.tv.debug('Native HLS stalled (showing spinner)');
                 setIsLoading(true);
               }
               loadingTimeoutRef.current = null;
@@ -2415,13 +2420,13 @@ export default function LiveTVTvPage() {
         video.addEventListener('stalled', handleStalled);
         video.addEventListener('timeupdate', handleTimeUpdate);
 
-        console.log('[TV] Setting video.src to:', streamUrl);
+        loggers.tv.debug('Setting video.src', { streamUrl });
         video.src = streamUrl;
-        console.log('[TV] Calling video.load()');
+        loggers.tv.debug('Calling video.load()');
         video.load(); // Explicitly load - play() will be called in handleCanPlay
-        console.log('[TV] video.load() called, waiting for canplay event...');
+        loggers.tv.debug('video.load() called, waiting for canplay event');
       } else if (Hls.isSupported()) {
-        console.log('[TV] Using HLS.js');
+        loggers.tv.debug('Using HLS.js');
         const hls = new Hls({
           lowLatencyMode: false,
           backBufferLength: 90,
@@ -2459,7 +2464,7 @@ export default function LiveTVTvPage() {
         hls.loadSource(streamUrl);
       } else if (canPlayNativeHLS) {
         // Fallback for non-native platforms with native HLS support (Safari desktop)
-        console.log('[TV] Using native HLS fallback');
+        loggers.tv.debug('Using native HLS fallback');
         video.src = streamUrl;
         video.play().then(() => {
           setIsPlaying(true);
@@ -2467,7 +2472,7 @@ export default function LiveTVTvPage() {
         }).catch(() => setIsLoading(false));
       }
     } catch (error) {
-      console.error('[TV] Stream error:', error);
+      loggers.tv.error('Stream error', { error });
       handleStreamError('Failed to start stream');
     }
   }, [releaseCurrentStream]);
@@ -2476,7 +2481,7 @@ export default function LiveTVTvPage() {
   const retryStream = useCallback(() => {
     if (!selectedChannel) return;
     if (retryCountRef.current >= MAX_RETRIES) {
-      console.log('[TV] Max retries reached, giving up');
+      loggers.tv.warn('Max retries reached, giving up');
       setStreamError('Unable to connect. Please try again later.');
       haptics.error();
       return;
@@ -2484,7 +2489,7 @@ export default function LiveTVTvPage() {
 
     retryCountRef.current++;
     const delay = Math.min(1000 * Math.pow(2, retryCountRef.current - 1), 10000); // 1s, 2s, 4s, 8s, 10s
-    console.log(`[TV] Retrying stream in ${delay}ms (attempt ${retryCountRef.current}/${MAX_RETRIES})`);
+    loggers.tv.info('Retrying stream', { delayMs: delay, attempt: retryCountRef.current, maxRetries: MAX_RETRIES });
 
     setStreamError(`Reconnecting... (${retryCountRef.current}/${MAX_RETRIES})`);
 
@@ -2495,7 +2500,7 @@ export default function LiveTVTvPage() {
 
   // Handle stream errors with retry
   const handleStreamError = useCallback((errorMessage: string) => {
-    console.error('[TV] Stream error:', errorMessage);
+    loggers.tv.error('Stream error', { message: errorMessage });
     setIsLoading(false);
 
     if (retryCountRef.current < MAX_RETRIES) {
@@ -2510,7 +2515,7 @@ export default function LiveTVTvPage() {
   // Retry stream when coming back online after error
   useEffect(() => {
     if (isOnline && streamError && selectedChannel) {
-      console.log('[TV] Back online, retrying stream...');
+      loggers.tv.info('Back online, retrying stream');
       setStreamError(null);
       retryCountRef.current = 0;
       playStream(selectedChannel);
@@ -2584,13 +2589,13 @@ export default function LiveTVTvPage() {
   // Handle pending channel from notification tap - auto-play the channel
   useEffect(() => {
     if (pendingChannel && channels.length > 0) {
-      console.log('[LiveTV] Handling pending channel from notification:', pendingChannel);
+      loggers.tv.info('Handling pending channel from notification', { pendingChannel });
       const channel = channels.find((ch: Channel) => ch.iptvId === pendingChannel);
       if (channel) {
-        console.log('[LiveTV] Found channel, starting playback:', channel.GuideName);
+        loggers.tv.info('Found channel, starting playback', { channelName: channel.GuideName });
         selectChannelFromGuide(channel);
       } else {
-        console.warn('[LiveTV] Channel not found for pending ID:', pendingChannel);
+        loggers.tv.warn('Channel not found for pending ID', { pendingChannel });
       }
       clearPendingChannel();
     }
@@ -2600,11 +2605,11 @@ export default function LiveTVTvPage() {
   const handleSetReminder = useCallback(async (program: EPGProgram, channel: Channel) => {
     // Prevent concurrent calls using ref
     if (isSettingReminderRef.current) {
-      console.log('[Reminder] Already setting reminder, ignoring duplicate call');
+      loggers.tv.debug('Already setting reminder, ignoring duplicate call');
       return;
     }
 
-    console.log('[Reminder] Setting reminder for:', program.title, 'on', channel.GuideName);
+    loggers.tv.info('Setting reminder', { programTitle: program.title, channelName: channel.GuideName });
     isSettingReminderRef.current = true;
 
     try {
@@ -2614,7 +2619,7 @@ export default function LiveTVTvPage() {
         programTitle: program.title,
         programStart: program.startTime
       });
-      console.log('[Reminder] Set reminder result:', success);
+      loggers.tv.info('Set reminder result', { success });
       if (success) {
         haptics.notification('success');
         toast({
@@ -2632,7 +2637,7 @@ export default function LiveTVTvPage() {
         });
       }
     } catch (error) {
-      console.error('[Reminder] Error setting reminder:', error);
+      loggers.tv.error('Error setting reminder', { error });
       haptics.notification('error');
       toast({
         title: 'Error',
@@ -2645,7 +2650,7 @@ export default function LiveTVTvPage() {
   }, [setReminder, toast]);
 
   const handleCancelReminder = useCallback(async (channelId: string, programStart: string) => {
-    console.log('[Reminder] Cancelling reminder for channel:', channelId);
+    loggers.tv.info('Cancelling reminder', { channelId });
     try {
       await cancelReminder(channelId, programStart);
       haptics.notification('warning');
@@ -2656,7 +2661,7 @@ export default function LiveTVTvPage() {
       // Close the modal after cancelling
       setGuideInfoModal(null);
     } catch (error) {
-      console.error('[Reminder] Error cancelling reminder:', error);
+      loggers.tv.error('Error cancelling reminder', { error });
     }
   }, [cancelReminder, toast]);
 
@@ -2870,7 +2875,7 @@ export default function LiveTVTvPage() {
         });
       } catch (e) {
         // Fallback to window events if Capacitor API fails
-        console.log('ScreenOrientation API not available, using fallback');
+        loggers.tv.debug('ScreenOrientation API not available, using fallback');
       }
     };
     setupOrientationListener();
@@ -3025,7 +3030,7 @@ export default function LiveTVTvPage() {
     }
     tabs.push('guide', 'profile');
 
-    console.log('[TabBar] Setting tabs based on events access:', hasEventsAccess, tabs);
+    loggers.tv.debug('Setting tabs based on events access', { hasEventsAccess, tabs });
     setNativeTabBarTabs(tabs);
   }, [hasEventsAccess, eventsAccessLoading]);
 
@@ -3043,13 +3048,13 @@ export default function LiveTVTvPage() {
         try {
           await ScreenOrientation.lock({ orientation: 'portrait' });
         } catch (e) {
-          console.log('[Orientation] Failed to lock:', e);
+          loggers.tv.debug('Failed to lock orientation', { error: e });
         }
       } else {
         try {
           await ScreenOrientation.unlock();
         } catch (e) {
-          console.log('[Orientation] Failed to unlock:', e);
+          loggers.tv.debug('Failed to unlock orientation', { error: e });
         }
       }
     };
@@ -3801,15 +3806,15 @@ export default function LiveTVTvPage() {
                 setViewMode('player');
                 setGuideSearchQuery('');
                 setGuideTimeOffset(0);
-                console.log('[Guide] Closing guide, setting tab to nowplaying');
-                setNativeTabBarSelected('nowplaying').then(() => console.log('[Guide] Tab selection complete'));
+                loggers.tv.debug('Closing guide, setting tab to nowplaying');
+                setNativeTabBarSelected('nowplaying').then(() => loggers.tv.debug('Tab selection complete'));
               }}
               onClick={() => {
                 setViewMode('player');
                 setGuideSearchQuery('');
                 setGuideTimeOffset(0);
-                console.log('[Guide] Closing guide, setting tab to nowplaying');
-                setNativeTabBarSelected('nowplaying').then(() => console.log('[Guide] Tab selection complete'));
+                loggers.tv.debug('Closing guide, setting tab to nowplaying');
+                setNativeTabBarSelected('nowplaying').then(() => loggers.tv.debug('Tab selection complete'));
               }}
               className="p-2 bg-white/10 rounded-full active:bg-white/20 shrink-0"
             >
@@ -4047,7 +4052,7 @@ export default function LiveTVTvPage() {
                       onClick={() => {
                         // Ignore clicks on mobile - handled by onTouchEnd
                         if ('ontouchstart' in window) return;
-                        console.log('[Portrait Guide] LOGO TAP - playing channel:', channel.GuideName);
+                        loggers.tv.debug('Portrait guide logo tap - playing channel', { channelName: channel.GuideName });
                         playStream(channel);
                         setViewMode('player');
                         setGuideSearchQuery('');
@@ -4057,10 +4062,10 @@ export default function LiveTVTvPage() {
                         e.stopPropagation();
                         // Don't trigger if user was scrolling
                         if (guideDidScroll.current) {
-                          console.log('[Portrait Guide] Ignoring logo touch - was scrolling');
+                          loggers.tv.debug('Ignoring logo touch - was scrolling');
                           return;
                         }
-                        console.log('[Portrait Guide] LOGO TOUCH - playing channel:', channel.GuideName);
+                        loggers.tv.debug('Portrait guide logo touch - playing channel', { channelName: channel.GuideName });
                         playStream(channel);
                         setViewMode('player');
                         setGuideSearchQuery('');
@@ -4091,10 +4096,10 @@ export default function LiveTVTvPage() {
                           // Ignore clicks on mobile - handled by onTouchEnd
                           if ('ontouchstart' in window) return;
                           if (shiftedCurrentProgram) {
-                            console.log('[Portrait Guide] PROGRAM TAP - opening info for:', shiftedCurrentProgram.title);
+                            loggers.tv.debug('Portrait guide program tap - opening info', { programTitle: shiftedCurrentProgram.title });
                             setGuideInfoModal({ program: shiftedCurrentProgram, channel });
                           } else {
-                            console.log('[Portrait Guide] NO PROGRAM - playing channel:', channel.GuideName);
+                            loggers.tv.debug('Portrait guide no program - playing channel', { channelName: channel.GuideName });
                             playStream(channel);
                             setViewMode('player');
                             setGuideSearchQuery('');
@@ -4105,14 +4110,14 @@ export default function LiveTVTvPage() {
                           e.stopPropagation();
                           // Don't trigger if user was scrolling
                           if (guideDidScroll.current) {
-                            console.log('[Portrait Guide] Ignoring touch - was scrolling');
+                            loggers.tv.debug('Ignoring touch - was scrolling');
                             return;
                           }
                           if (shiftedCurrentProgram) {
-                            console.log('[Portrait Guide] PROGRAM TOUCH - opening info for:', shiftedCurrentProgram.title);
+                            loggers.tv.debug('Portrait guide program touch - opening info', { programTitle: shiftedCurrentProgram.title });
                             setGuideInfoModal({ program: shiftedCurrentProgram, channel });
                           } else {
-                            console.log('[Portrait Guide] NO PROGRAM TOUCH - playing channel:', channel.GuideName);
+                            loggers.tv.debug('Portrait guide no program touch - playing channel', { channelName: channel.GuideName });
                             playStream(channel);
                             setViewMode('player');
                             setGuideSearchQuery('');
@@ -4142,7 +4147,7 @@ export default function LiveTVTvPage() {
                           onClick={() => {
                             // Ignore clicks on mobile - handled by onTouchEnd
                             if ('ontouchstart' in window) return;
-                            console.log('[Portrait Guide] NEXT PROGRAM TAP - opening info for:', shiftedNextProgram.title);
+                            loggers.tv.debug('Portrait guide next program tap - opening info', { programTitle: shiftedNextProgram.title });
                             setGuideInfoModal({ program: shiftedNextProgram, channel });
                           }}
                           onTouchEnd={(e) => {
@@ -4150,10 +4155,10 @@ export default function LiveTVTvPage() {
                             e.stopPropagation();
                             // Don't trigger if user was scrolling
                             if (guideDidScroll.current) {
-                              console.log('[Portrait Guide] Ignoring touch - was scrolling');
+                              loggers.tv.debug('Ignoring touch - was scrolling');
                               return;
                             }
-                            console.log('[Portrait Guide] NEXT PROGRAM TOUCH - opening info for:', shiftedNextProgram.title);
+                            loggers.tv.debug('Portrait guide next program touch - opening info', { programTitle: shiftedNextProgram.title });
                             setGuideInfoModal({ program: shiftedNextProgram, channel });
                           }}
                           className="w-36 shrink-0 text-left py-1.5 px-2.5 rounded-lg border border-white/5 bg-white/5 cursor-pointer active:ring-2 active:ring-white/30"

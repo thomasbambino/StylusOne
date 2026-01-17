@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import { storage } from '../storage';
+import { loggers } from '../lib/logger';
 
 const router = Router();
 
@@ -36,7 +37,7 @@ router.get('/code', requireAuth, async (req, res) => {
 
     res.json(referralCode);
   } catch (error) {
-    console.error('Error getting referral code:', error);
+    loggers.referral.error('Error getting referral code', { error });
     res.status(500).json({ error: 'Failed to get referral code' });
   }
 });
@@ -66,7 +67,7 @@ router.post('/validate', async (req, res) => {
     if (error instanceof z.ZodError) {
       return res.status(400).json({ error: 'Invalid request', details: error.errors });
     }
-    console.error('Error validating referral code:', error);
+    loggers.referral.error('Error validating referral code', { error });
     res.status(500).json({ error: 'Failed to validate referral code' });
   }
 });
@@ -83,7 +84,7 @@ router.get('/stats', requireAuth, async (req, res) => {
 
     res.json(stats);
   } catch (error) {
-    console.error('Error getting referral stats:', error);
+    loggers.referral.error('Error getting referral stats', { error });
     res.status(500).json({ error: 'Failed to get referral statistics' });
   }
 });
@@ -100,7 +101,7 @@ router.get('/list', requireAuth, async (req, res) => {
 
     res.json(referrals);
   } catch (error) {
-    console.error('Error getting referrals list:', error);
+    loggers.referral.error('Error getting referrals list', { error });
     res.status(500).json({ error: 'Failed to get referrals list' });
   }
 });
@@ -117,7 +118,7 @@ router.get('/credits', requireAuth, async (req, res) => {
 
     res.json(credits);
   } catch (error) {
-    console.error('Error getting referral credits:', error);
+    loggers.referral.error('Error getting referral credits', { error });
     res.status(500).json({ error: 'Failed to get referral credits' });
   }
 });

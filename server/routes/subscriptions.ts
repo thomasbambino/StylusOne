@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import { db } from '../db';
+import { loggers } from '../lib/logger';
 import {
   subscriptionPlans,
   userSubscriptions,
@@ -63,7 +64,7 @@ router.get('/plans', requireAuth, async (req, res) => {
 
     res.json(plans);
   } catch (error) {
-    console.error('Error fetching subscription plans:', error);
+    loggers.stripe.error('Error fetching subscription plans', { error });
     res.status(500).json({ error: 'Failed to fetch subscription plans' });
   }
 });
@@ -109,7 +110,7 @@ router.post('/checkout', requireAuth, async (req, res) => {
 
     res.json({ url: session.url });
   } catch (error: any) {
-    console.error('Error creating checkout session:', error);
+    loggers.stripe.error('Error creating checkout session', { error });
     res.status(500).json({ message: error.message || 'Failed to create checkout session' });
   }
 });
@@ -151,7 +152,7 @@ router.get('/current', requireAuth, async (req, res) => {
 
     res.json(subscription[0]);
   } catch (error) {
-    console.error('Error fetching current subscription:', error);
+    loggers.stripe.error('Error fetching current subscription', { error });
     res.status(500).json({ error: 'Failed to fetch subscription' });
   }
 });
@@ -207,7 +208,7 @@ router.get('/packages', requireAuth, async (req, res) => {
 
     res.json(packagesWithCounts);
   } catch (error) {
-    console.error('Error fetching user packages:', error);
+    loggers.stripe.error('Error fetching user packages', { error });
     res.status(500).json({ error: 'Failed to fetch packages' });
   }
 });
@@ -304,7 +305,7 @@ router.get('/packages/:packageId/channels', requireAuth, async (req, res) => {
 
     res.json(channels);
   } catch (error) {
-    console.error('Error fetching package channels:', error);
+    loggers.stripe.error('Error fetching package channels', { error });
     res.status(500).json({ error: 'Failed to fetch channels' });
   }
 });
@@ -367,7 +368,7 @@ router.post('/create', requireAuth, async (req, res) => {
     if (error instanceof z.ZodError) {
       return res.status(400).json({ error: error.errors });
     }
-    console.error('Error creating subscription:', error);
+    loggers.stripe.error('Error creating subscription', { error });
     res.status(500).json({
       error: error instanceof Error ? error.message : 'Failed to create subscription'
     });
@@ -394,7 +395,7 @@ router.post('/upgrade', requireAuth, async (req, res) => {
     if (error instanceof z.ZodError) {
       return res.status(400).json({ error: error.errors });
     }
-    console.error('Error updating subscription:', error);
+    loggers.stripe.error('Error updating subscription', { error });
     res.status(500).json({
       error: error instanceof Error ? error.message : 'Failed to update subscription'
     });
@@ -414,7 +415,7 @@ router.post('/cancel', requireAuth, async (req, res) => {
 
     res.json({ success: true });
   } catch (error) {
-    console.error('Error canceling subscription:', error);
+    loggers.stripe.error('Error canceling subscription', { error });
     res.status(500).json({
       error: error instanceof Error ? error.message : 'Failed to cancel subscription'
     });
@@ -433,7 +434,7 @@ router.post('/reactivate', requireAuth, async (req, res) => {
 
     res.json({ success: true });
   } catch (error) {
-    console.error('Error reactivating subscription:', error);
+    loggers.stripe.error('Error reactivating subscription', { error });
     res.status(500).json({
       error: error instanceof Error ? error.message : 'Failed to reactivate subscription'
     });
@@ -456,7 +457,7 @@ router.post('/payment-method', requireAuth, async (req, res) => {
     if (error instanceof z.ZodError) {
       return res.status(400).json({ error: error.errors });
     }
-    console.error('Error updating payment method:', error);
+    loggers.stripe.error('Error updating payment method', { error });
     res.status(500).json({
       error: error instanceof Error ? error.message : 'Failed to update payment method'
     });
@@ -479,7 +480,7 @@ router.get('/payment-methods', requireAuth, async (req, res) => {
 
     res.json(methods);
   } catch (error) {
-    console.error('Error fetching payment methods:', error);
+    loggers.stripe.error('Error fetching payment methods', { error });
     res.status(500).json({ error: 'Failed to fetch payment methods' });
   }
 });
@@ -500,7 +501,7 @@ router.get('/invoices', requireAuth, async (req, res) => {
 
     res.json(userInvoices);
   } catch (error) {
-    console.error('Error fetching invoices:', error);
+    loggers.stripe.error('Error fetching invoices', { error });
     res.status(500).json({ error: 'Failed to fetch invoices' });
   }
 });
@@ -538,7 +539,7 @@ router.get('/invoices/:id/download', requireAuth, async (req, res) => {
     // Redirect to Stripe-hosted PDF
     res.redirect(invoice.invoice_pdf_url);
   } catch (error) {
-    console.error('Error downloading invoice:', error);
+    loggers.stripe.error('Error downloading invoice', { error });
     res.status(500).json({ error: 'Failed to download invoice' });
   }
 });
@@ -575,7 +576,7 @@ router.get('/has-feature/:feature', requireAuth, async (req, res) => {
 
     res.json({ hasAccess });
   } catch (error) {
-    console.error('Error checking feature access:', error);
+    loggers.stripe.error('Error checking feature access', { error });
     res.status(500).json({ error: 'Failed to check feature access' });
   }
 });
@@ -629,7 +630,7 @@ router.get('/admin/users', requireAuth, async (req, res) => {
 
     res.json(usersWithSubscriptions);
   } catch (error) {
-    console.error('Error fetching users with subscriptions:', error);
+    loggers.stripe.error('Error fetching users with subscriptions', { error });
     res.status(500).json({ error: 'Failed to fetch users' });
   }
 });
@@ -736,7 +737,7 @@ router.post('/admin/assign', requireAuth, async (req, res) => {
       });
     }
   } catch (error) {
-    console.error('Error assigning subscription:', error);
+    loggers.stripe.error('Error assigning subscription', { error });
     res.status(500).json({ error: 'Failed to assign subscription' });
   }
 });
@@ -759,7 +760,7 @@ router.get('/admin/plans', requireAuth, async (req, res) => {
 
     res.json(plans);
   } catch (error) {
-    console.error('Error fetching all subscription plans:', error);
+    loggers.stripe.error('Error fetching all subscription plans', { error });
     res.status(500).json({ error: 'Failed to fetch subscription plans' });
   }
 });
@@ -807,7 +808,7 @@ router.patch('/admin/plans/:planId/toggle', requireAuth, async (req, res) => {
       plan: updatedPlan,
     });
   } catch (error) {
-    console.error('Error toggling plan status:', error);
+    loggers.stripe.error('Error toggling plan status', { error });
     res.status(500).json({ error: 'Failed to toggle plan status' });
   }
 });
@@ -857,7 +858,7 @@ router.delete('/admin/remove/:userId', requireAuth, async (req, res) => {
 
     res.json({ message: 'Subscription removed successfully' });
   } catch (error) {
-    console.error('Error removing subscription:', error);
+    loggers.stripe.error('Error removing subscription', { error });
     res.status(500).json({ error: 'Failed to remove subscription' });
   }
 });

@@ -1,5 +1,6 @@
 import { initializeApp } from 'firebase/app';
 import { getAuth, GoogleAuthProvider, inMemoryPersistence, setPersistence } from 'firebase/auth';
+import { loggers } from './logger';
 
 // Verify Firebase configuration values
 const firebaseConfig = {
@@ -11,11 +12,10 @@ const firebaseConfig = {
   measurementId: undefined
 };
 
-console.log('Initializing Firebase with config:', {
-  ...firebaseConfig,
-  apiKey: firebaseConfig.apiKey ? '[REDACTED]' : undefined,
+loggers.firebase.debug('Initializing Firebase', {
   projectId: firebaseConfig.projectId,
-  authDomain: firebaseConfig.authDomain
+  authDomain: firebaseConfig.authDomain,
+  hasApiKey: !!firebaseConfig.apiKey
 });
 
 // Initialize Firebase with error handling
@@ -39,7 +39,7 @@ async function initializeAuth() {
     // This prevents Firebase from trying to store auth state in localStorage/indexedDB
     // IMPORTANT: This must complete BEFORE any auth operations
     await setPersistence(auth, inMemoryPersistence);
-    console.log('Firebase initialized successfully with in-memory persistence');
+    loggers.firebase.info('Firebase initialized with in-memory persistence');
 
     // Configure Google Provider after Firebase is initialized
     try {
@@ -49,15 +49,15 @@ async function initializeAuth() {
       googleProvider.setCustomParameters({
         prompt: 'select_account'
       });
-      console.log('Google Provider configured successfully');
+      loggers.firebase.debug('Google Provider configured');
     } catch (error) {
-      console.error('Failed to configure Google Provider:', error);
+      loggers.firebase.error('Failed to configure Google Provider', { error });
     }
 
     authInitialized = true;
   } catch (error) {
-    console.error('Firebase initialization failed:', error);
-    console.warn('Running in fallback mode without Firebase authentication');
+    loggers.firebase.error('Firebase initialization failed', { error });
+    loggers.firebase.warn('Running in fallback mode without Firebase authentication');
 
     // Create mock auth object for fallback
     auth = {
@@ -82,9 +82,9 @@ export { app, auth, googleProvider, authInitialized };
 if (auth && typeof auth.onAuthStateChanged === 'function') {
   auth.onAuthStateChanged((user: any) => {
     if (user) {
-      console.log('Firebase Auth: User signed in', { email: user.email });
+      loggers.firebase.debug('User signed in', { email: user.email });
     } else {
-      console.log('Firebase Auth: User signed out');
+      loggers.firebase.debug('User signed out');
     }
   });
 }

@@ -8,6 +8,7 @@ import {
   users
 } from '@shared/schema';
 import { eq, and } from 'drizzle-orm';
+import { loggers } from '../lib/logger';
 
 /**
  * Stripe Service
@@ -20,7 +21,7 @@ export class StripeService {
   constructor() {
     const secretKey = process.env.STRIPE_SECRET_KEY;
     if (!secretKey) {
-      console.warn('STRIPE_SECRET_KEY not configured - Stripe service disabled');
+      loggers.stripe.warn('STRIPE_SECRET_KEY not configured - Stripe service disabled');
       this.stripe = null as any;
       return;
     }
@@ -31,7 +32,7 @@ export class StripeService {
     });
 
     this.initialized = true;
-    console.log('Stripe service initialized');
+    loggers.stripe.info('Stripe service initialized');
   }
 
   /**

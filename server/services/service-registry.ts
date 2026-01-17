@@ -1,4 +1,5 @@
 import { IService, IServiceRegistry } from './interfaces';
+import { loggers } from '../lib/logger';
 
 /**
  * Service registry implementation that manages all services
@@ -13,7 +14,7 @@ export class ServiceRegistry implements IServiceRegistry {
    */
   register(name: string, service: IService): void {
     if (this.services.has(name)) {
-      console.warn(`Service with name "${name}" is already registered. It will be overwritten.`);
+      loggers.service.warn(`Service with name "${name}" is already registered. It will be overwritten.`);
     }
     this.services.set(name, service);
   }
@@ -37,10 +38,10 @@ export class ServiceRegistry implements IServiceRegistry {
   async initializeAll(): Promise<void> {
     for (const [name, service] of this.services.entries()) {
       try {
-        console.log(`Initializing service: ${name}`);
+        loggers.service.info(`Initializing service: ${name}`);
         await service.initialize();
       } catch (error) {
-        console.error(`Failed to initialize service "${name}":`, error);
+        loggers.service.error(`Failed to initialize service "${name}"`, { error });
       }
     }
   }

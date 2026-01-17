@@ -1,5 +1,6 @@
 import { queryClient } from "./queryClient";
 import { PlexServerInfo } from "../components/plex-streams";
+import { loggers } from "./logger";
 
 // The query key for Plex server data
 export const PLEX_QUERY_KEY = "/api/services/plex/details";
@@ -29,9 +30,9 @@ export async function prefetchPlexData(): Promise<void> {
       queryKey: [PLEX_QUERY_KEY],
       staleTime: 10000, // 10 seconds - make it stale faster to encourage refreshes
     });
-    console.log("Plex data prefetched successfully");
+    loggers.plexCache.debug('Plex data prefetched successfully');
   } catch (error) {
-    console.error("Failed to prefetch Plex data", error);
+    loggers.plexCache.error('Failed to prefetch Plex data', { error });
   }
 }
 
@@ -41,8 +42,8 @@ export async function prefetchPlexData(): Promise<void> {
 export async function refreshPlexData(): Promise<void> {
   try {
     await queryClient.invalidateQueries({ queryKey: [PLEX_QUERY_KEY] });
-    console.log("Plex data refreshed");
+    loggers.plexCache.debug('Plex data refreshed');
   } catch (error) {
-    console.error("Failed to refresh Plex data", error);
+    loggers.plexCache.error('Failed to refresh Plex data', { error });
   }
 }

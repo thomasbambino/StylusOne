@@ -1,6 +1,7 @@
 import formData from 'form-data';
 import Mailgun from 'mailgun.js';
 import { storage } from './storage';
+import { loggers } from './lib/logger';
 
 const MAILGUN_CONFIGURED = !!(
   process.env.MAILGUN_API_KEY && 
@@ -17,9 +18,9 @@ if (MAILGUN_CONFIGURED) {
     username: 'api',
     key: process.env.MAILGUN_API_KEY!,
   });
-  console.log('Mailgun email service initialized');
+  loggers.mailgun.info('Mailgun email service initialized');
 } else {
-  console.warn('Mailgun not configured - email functionality will be disabled');
+  loggers.mailgun.warn('Mailgun not configured - email functionality will be disabled');
 }
 
 interface EmailParams {
@@ -38,7 +39,7 @@ function getAbsoluteUrl(path: string): string {
     return path;
   }
   // Log the URL conversion for debugging
-  console.log('Converting relative URL to absolute:', {
+  loggers.email.debug('Converting relative URL to absolute', {
     path,
     baseUrl,
     result: `${baseUrl}${path.startsWith('/') ? '' : '/'}${path}`
@@ -67,7 +68,7 @@ export async function sendEmail(params: EmailParams): Promise<boolean> {
         logoUrl: getAbsoluteUrl(params.templateData?.logoUrl || '/logo.png')
       };
 
-      console.log('Sending email with template data:', templateData);
+      loggers.email.debug('Sending email with template data', { templateData });
       html = compileTemplate(template.template, templateData);
     }
 
@@ -89,7 +90,7 @@ export async function sendEmail(params: EmailParams): Promise<boolean> {
     });
     return true;
   } catch (error) {
-    console.error('Mailgun email error:', error);
+    loggers.mailgun.error('Mailgun email error', { error });
     return false;
   }
 }
@@ -99,7 +100,7 @@ export function compileTemplate(template: string, data: Record<string, any>): st
   return template.replace(/\{\{(\w+)\}\}/g, (match, key) => {
     const value = data[key];
     if (value === undefined) {
-      console.warn(`Template variable "${key}" not found in data`);
+      loggers.email.warn(`Template variable "${key}" not found in data`);
       return match; // Keep the placeholder if no value is found
     }
     return String(value);
@@ -128,7 +129,7 @@ export async function getCompiledTemplate(templateId: number, data: Record<strin
       html: compiledHtml
     };
   } catch (error) {
-    console.error('Error compiling template:', error);
+    loggers.email.error('Error compiling template', { error });
     return null;
   }
 }

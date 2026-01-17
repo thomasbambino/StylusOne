@@ -254,8 +254,8 @@ export default function HomePage() {
               const data = await response.json();
               programs[channelId] = data.program;
             }
-          } catch (error) {
-            console.error(`Failed to fetch EPG for ${channelId}:`, error);
+          } catch {
+            // EPG fetch failed silently - UI shows fallback
           }
         })
       );

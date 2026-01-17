@@ -3,6 +3,7 @@ import { db } from '../db';
 import { activeIptvStreams, iptvCredentials, iptvChannels, viewingHistory } from '@shared/schema';
 import { eq, and, lt } from 'drizzle-orm';
 import { getSharedEPGService } from './epg-singleton';
+import { loggers } from '../lib/logger';
 
 /**
  * Service for tracking active IPTV streams and enforcing concurrent stream limits
@@ -24,11 +25,11 @@ export class StreamTrackerService {
       try {
         await this.cleanupStaleStreams();
       } catch (error) {
-        console.error('Error cleaning up stale streams:', error);
+        loggers.stream.error('Error cleaning up stale streams', { error });
       }
     }, 30000);
 
-    console.log('Stream tracker cleanup interval started');
+    loggers.stream.debug('Stream tracker cleanup interval started');
   }
 
   /**
@@ -65,7 +66,7 @@ export class StreamTrackerService {
       .where(eq(iptvCredentials.id, credentialId));
 
     if (!credential) {
-      console.error(`Credential ${credentialId} not found`);
+      loggers.stream.error(`Credential ${credentialId} not found`);
       return null;
     }
 
@@ -75,7 +76,7 @@ export class StreamTrackerService {
       .where(eq(activeIptvStreams.credentialId, credentialId));
 
     if (activeStreams.length >= credential.maxConnections) {
-      console.log(`Credential ${credentialId} at max capacity (${credential.maxConnections})`);
+      loggers.stream.debug(`Credential ${credentialId} at max capacity (${credential.maxConnections})`);
       return null;
     }
 
@@ -126,10 +127,10 @@ export class StreamTrackerService {
         startProgramTitle
       });
 
-      console.log(`Stream acquired: user=${userId}, credential=${credentialId}, stream=${streamId}`);
+      loggers.stream.info(`Stream acquired: user=${userId}, credential=${credentialId}, stream=${streamId}`);
       return sessionToken;
     } catch (error) {
-      console.error('Error acquiring stream:', error);
+      loggers.stream.error('Error acquiring stream', { error });
       return null;
     }
   }
@@ -194,7 +195,7 @@ export class StreamTrackerService {
       startProgramTitle
     });
 
-    console.log(`M3U stream acquired: user=${userId}, stream=${streamId}`);
+    loggers.stream.info(`M3U stream acquired: user=${userId}, stream=${streamId}`);
     return sessionToken;
   }
 
@@ -241,9 +242,9 @@ export class StreamTrackerService {
       // Log program info
       if (programTitle || endProgramTitle) {
         if (programTitle === endProgramTitle || !endProgramTitle) {
-          console.log(`[EPG] Program: ${programTitle || endProgramTitle}`);
+          loggers.epg.debug(`Program: ${programTitle || endProgramTitle}`);
         } else {
-          console.log(`[EPG] Started: ${programTitle || 'unknown'} → Ended: ${endProgramTitle}`);
+          loggers.epg.debug(`Started: ${programTitle || 'unknown'} → Ended: ${endProgramTitle}`);
         }
       }
 
@@ -261,9 +262,9 @@ export class StreamTrackerService {
         deviceType: stream.deviceType,
       });
 
-      console.log(`Viewing history saved: user=${stream.userId}, channel=${stream.streamId}, duration=${durationSeconds}s`);
+      loggers.stream.debug(`Viewing history saved: user=${stream.userId}, channel=${stream.streamId}, duration=${durationSeconds}s`);
     } catch (error) {
-      console.error('Error saving to viewing history:', error);
+      loggers.stream.error('Error saving to viewing history', { error });
     }
   }
 
@@ -279,12 +280,12 @@ export class StreamTrackerService {
       if (result.length > 0) {
         // Save to viewing history
         await this.saveToViewingHistory(result[0]);
-        console.log(`Stream released: token=${sessionToken.substring(0, 8)}...`);
+        loggers.stream.debug(`Stream released: token=${sessionToken.substring(0, 8)}...`);
         return true;
       }
       return false;
     } catch (error) {
-      console.error('Error releasing stream:', error);
+      loggers.stream.error('Error releasing stream', { error });
       return false;
     }
   }
@@ -301,7 +302,7 @@ export class StreamTrackerService {
 
       return result.length > 0;
     } catch (error) {
-      console.error('Error updating heartbeat:', error);
+      loggers.stream.error('Error updating heartbeat', { error });
       return false;
     }
   }
@@ -322,12 +323,12 @@ export class StreamTrackerService {
         for (const stream of result) {
           await this.saveToViewingHistory(stream);
         }
-        console.log(`Cleaned up ${result.length} stale streams`);
+        loggers.stream.info(`Cleaned up ${result.length} stale streams`);
       }
 
       return result.length;
     } catch (error) {
-      console.error('Error cleaning up stale streams:', error);
+      loggers.stream.error('Error cleaning up stale streams', { error });
       return 0;
     }
   }
@@ -374,12 +375,12 @@ export class StreamTrackerService {
         for (const stream of result) {
           await this.saveToViewingHistory(stream);
         }
-        console.log(`Released ${result.length} streams for user ${userId}`);
+        loggers.stream.info(`Released ${result.length} streams for user ${userId}`);
       }
 
       return result.length;
     } catch (error) {
-      console.error('Error releasing user streams:', error);
+      loggers.stream.error('Error releasing user streams', { error });
       return 0;
     }
   }
@@ -398,12 +399,12 @@ export class StreamTrackerService {
         for (const stream of result) {
           await this.saveToViewingHistory(stream);
         }
-        console.log(`Released ${result.length} streams for credential ${credentialId}`);
+        loggers.stream.info(`Released ${result.length} streams for credential ${credentialId}`);
       }
 
       return result.length;
     } catch (error) {
-      console.error('Error releasing credential streams:', error);
+      loggers.stream.error('Error releasing credential streams', { error });
       return 0;
     }
   }

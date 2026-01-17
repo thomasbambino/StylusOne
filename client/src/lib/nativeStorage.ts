@@ -1,5 +1,6 @@
 import { Preferences } from '@capacitor/preferences';
 import { isNativePlatform } from './capacitor';
+import { loggers } from './logger';
 
 interface CachedData<T> {
   data: T;
@@ -38,7 +39,7 @@ export const nativeStorage = {
         };
         localStorage.setItem(`cache_${key}`, JSON.stringify(cached));
       } catch (e) {
-        console.warn('[NativeStorage] localStorage error:', e);
+        loggers.nativeStorage.warn('localStorage error', { error: e });
       }
       return;
     }
@@ -54,9 +55,9 @@ export const nativeStorage = {
         key: `cache_${key}`,
         value: JSON.stringify(cached),
       });
-      console.log(`[NativeStorage] Cached ${key}`);
+      loggers.nativeStorage.debug('Cached', { key });
     } catch (error) {
-      console.error(`[NativeStorage] Error caching ${key}:`, error);
+      loggers.nativeStorage.error('Error caching', { key, error });
     }
   },
 
@@ -90,14 +91,14 @@ export const nativeStorage = {
       // Check if expired
       if (Date.now() > cached.expiresAt) {
         await this.remove(key);
-        console.log(`[NativeStorage] Cache expired for ${key}`);
+        loggers.nativeStorage.debug('Cache expired', { key });
         return null;
       }
 
-      console.log(`[NativeStorage] Cache hit for ${key}`);
+      loggers.nativeStorage.debug('Cache hit', { key });
       return cached.data;
     } catch (error) {
-      console.error(`[NativeStorage] Error reading ${key}:`, error);
+      loggers.nativeStorage.error('Error reading', { key, error });
       return null;
     }
   },
@@ -114,7 +115,7 @@ export const nativeStorage = {
     try {
       await Preferences.remove({ key: `cache_${key}` });
     } catch (error) {
-      console.error(`[NativeStorage] Error removing ${key}:`, error);
+      loggers.nativeStorage.error('Error removing', { key, error });
     }
   },
 
@@ -134,9 +135,9 @@ export const nativeStorage = {
       for (const key of cacheKeys) {
         await Preferences.remove({ key });
       }
-      console.log('[NativeStorage] Cleared all cache');
+      loggers.nativeStorage.info('Cleared all cache');
     } catch (error) {
-      console.error('[NativeStorage] Error clearing cache:', error);
+      loggers.nativeStorage.error('Error clearing cache', { error });
     }
   },
 
@@ -171,7 +172,7 @@ export async function fetchWithCache<T>(
     // On error, try to return cached data
     const cached = await nativeStorage.get<T>(key);
     if (cached) {
-      console.log(`[FetchWithCache] Using cached data for ${key} due to fetch error`);
+      loggers.nativeStorage.debug('Using cached data due to fetch error', { key });
       return cached;
     }
     throw error;

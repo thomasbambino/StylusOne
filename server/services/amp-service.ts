@@ -1,5 +1,6 @@
 import { IService } from './interfaces';
 import axios from 'axios';
+import { loggers } from '../lib/logger';
 
 /**
  * Interface for AMP instance information
@@ -54,14 +55,14 @@ export class AMPService implements IService {
       try {
         await this.login();
         this.initialized = true;
-        console.log('AMP Service initialized successfully');
+        loggers.amp.info('Service initialized successfully');
       } catch (error) {
-        console.error('Failed to initialize AMP Service:', error);
-        console.warn('AMP Service will continue to work in degraded mode');
+        loggers.amp.error('Failed to initialize service', { error });
+        loggers.amp.warn('Service will continue to work in degraded mode');
         // Don't throw error to prevent blocking other services
       }
     } else {
-      console.warn('AMP Service not fully configured - missing credentials');
+      loggers.amp.warn('Service not fully configured - missing credentials');
     }
   }
 
@@ -87,7 +88,7 @@ export class AMPService implements IService {
       await this.ensureAuthenticated();
       return true;
     } catch (error) {
-      console.error('AMP Service health check failed:', error);
+      loggers.amp.error('Service health check failed', { error });
       return false;
     }
   }
@@ -132,7 +133,7 @@ export class AMPService implements IService {
       return data.result !== undefined ? data.result : data;
     } catch (error) {
       // Don't log the full error which might contain credentials
-      console.error(`Error calling AMP API at ${endpoint}:`, error.message || 'Connection failed');
+      loggers.amp.error(`Error calling API at ${endpoint}`, { error: error.message || 'Connection failed' });
       throw error;
     }
   }
@@ -154,10 +155,10 @@ export class AMPService implements IService {
       // Set session expiry to 1 hour from now
       this.sessionExpiry = new Date();
       this.sessionExpiry.setHours(this.sessionExpiry.getHours() + 1);
-      
-      console.log('Successfully logged in to AMP');
+
+      loggers.amp.info('Successfully logged in');
     } catch (error) {
-      console.error('Failed to login to AMP:', error.message || 'Authentication failed');
+      loggers.amp.error('Failed to login', { error: error.message || 'Authentication failed' });
       throw error;
     }
   }
@@ -183,32 +184,32 @@ export class AMPService implements IService {
    * Start an AMP instance
    */
   async startInstance(instanceId: string): Promise<void> {
-    console.log(`AMP Service: Starting instance ${instanceId}`);
+    loggers.amp.info(`Starting instance ${instanceId}`);
     try {
       // Try multiple possible AMP API endpoints for starting instances
       let result;
-      
+
       // First try the ADSModule endpoint (for AMP controller)
       try {
         result = await this.callAPI(`ADSModule/StartInstance`, { InstanceName: instanceId });
-        console.log(`AMP Service: Start result via ADSModule/StartInstance for ${instanceId}:`, result);
+        loggers.amp.debug(`Start result via ADSModule/StartInstance for ${instanceId}`, { result });
       } catch (adsError) {
-        console.log(`ADSModule/StartInstance failed, trying direct Core/Start: ${adsError.message}`);
-        
+        loggers.amp.debug(`ADSModule/StartInstance failed, trying direct Core/Start: ${adsError.message}`);
+
         // Try direct Core API call
         try {
           result = await this.callAPI(`Core/Start`, {});
-          console.log(`AMP Service: Start result via Core/Start for ${instanceId}:`, result);
+          loggers.amp.debug(`Start result via Core/Start for ${instanceId}`, { result });
         } catch (coreError) {
-          console.log(`Core/Start failed, trying instance-specific endpoint: ${coreError.message}`);
-          
+          loggers.amp.debug(`Core/Start failed, trying instance-specific endpoint: ${coreError.message}`);
+
           // Try the original endpoint format
           result = await this.callAPI(`ADSModule/Servers/${instanceId}/API/Core/Start`, {});
-          console.log(`AMP Service: Start result via ADSModule/Servers endpoint for ${instanceId}:`, result);
+          loggers.amp.debug(`Start result via ADSModule/Servers endpoint for ${instanceId}`, { result });
         }
       }
     } catch (error) {
-      console.error(`AMP Service: All start methods failed for ${instanceId}:`, error);
+      loggers.amp.error(`All start methods failed for ${instanceId}`, { error });
       throw error;
     }
   }
@@ -217,32 +218,32 @@ export class AMPService implements IService {
    * Stop an AMP instance
    */
   async stopInstance(instanceId: string): Promise<void> {
-    console.log(`AMP Service: Stopping instance ${instanceId}`);
+    loggers.amp.info(`Stopping instance ${instanceId}`);
     try {
       // Try multiple possible AMP API endpoints for stopping instances
       let result;
-      
+
       // First try the ADSModule endpoint (for AMP controller)
       try {
         result = await this.callAPI(`ADSModule/StopInstance`, { InstanceName: instanceId });
-        console.log(`AMP Service: Stop result via ADSModule/StopInstance for ${instanceId}:`, result);
+        loggers.amp.debug(`Stop result via ADSModule/StopInstance for ${instanceId}`, { result });
       } catch (adsError) {
-        console.log(`ADSModule/StopInstance failed, trying direct Core/Stop: ${adsError.message}`);
-        
+        loggers.amp.debug(`ADSModule/StopInstance failed, trying direct Core/Stop: ${adsError.message}`);
+
         // Try direct Core API call
         try {
           result = await this.callAPI(`Core/Stop`, {});
-          console.log(`AMP Service: Stop result via Core/Stop for ${instanceId}:`, result);
+          loggers.amp.debug(`Stop result via Core/Stop for ${instanceId}`, { result });
         } catch (coreError) {
-          console.log(`Core/Stop failed, trying instance-specific endpoint: ${coreError.message}`);
-          
+          loggers.amp.debug(`Core/Stop failed, trying instance-specific endpoint: ${coreError.message}`);
+
           // Try the original endpoint format
           result = await this.callAPI(`ADSModule/Servers/${instanceId}/API/Core/Stop`, {});
-          console.log(`AMP Service: Stop result via ADSModule/Servers endpoint for ${instanceId}:`, result);
+          loggers.amp.debug(`Stop result via ADSModule/Servers endpoint for ${instanceId}`, { result });
         }
       }
     } catch (error) {
-      console.error(`AMP Service: All stop methods failed for ${instanceId}:`, error);
+      loggers.amp.error(`All stop methods failed for ${instanceId}`, { error });
       throw error;
     }
   }
@@ -266,44 +267,44 @@ export class AMPService implements IService {
    */
   async getInstances(): Promise<AMPInstance[]> {
     try {
-      console.log('Fetching AMP instances');
+      loggers.amp.debug('Fetching instances');
       const result = await this.callAPI('ADSModule/GetInstances', {});
-      
-      console.log('Raw AMP instances:', result);
-      
+
+      loggers.amp.trace('Raw instances', { result });
+
       if (!Array.isArray(result)) {
-        console.error('Expected array of instances but got:', result);
+        loggers.amp.error('Expected array of instances but got unexpected structure', { result });
         return [];
       }
-      
+
       // Check if the result contains AvailableInstances (AMP controller structure)
       let instances: AMPInstance[] = [];
-      
+
       if (result.length > 0 && result[0].AvailableInstances) {
         // This is an AMP controller response with nested instances
-        console.log('Detected AMP controller structure with AvailableInstances');
+        loggers.amp.debug('Detected AMP controller structure with AvailableInstances');
         instances = result[0].AvailableInstances;
-        console.log(`Found ${instances.length} available instances in controller`);
+        loggers.amp.debug(`Found ${instances.length} available instances in controller`);
       } else if (result.length > 0 && result[0].InstanceID) {
         // This is a direct array of instances
-        console.log('Detected direct array of instances');
+        loggers.amp.debug('Detected direct array of instances');
         instances = result;
       } else {
-        console.error('Unrecognized AMP response structure:', result);
+        loggers.amp.error('Unrecognized response structure', { result });
         return [];
       }
-      
-      console.log(`Retrieved ${instances.length} AMP instances`);
-      console.log('Instance summary:', instances.map(i => ({
+
+      loggers.amp.debug(`Retrieved ${instances.length} instances`);
+      loggers.amp.trace('Instance summary', { instances: instances.map(i => ({
         id: i.InstanceID,
         name: i.FriendlyName,
         running: i.Running,
-        module: i.Module || i.ModuleDisplayName
-      })));
-      
+        module: (i as any).Module || (i as any).ModuleDisplayName
+      }))});
+
       return instances;
     } catch (error) {
-      console.error('Error getting AMP instances:', error);
+      loggers.amp.error('Error getting instances', { error });
       return [];
     }
   }
@@ -340,7 +341,7 @@ export class AMPService implements IService {
         maxPlayers
       };
     } catch (error) {
-      console.error(`Error getting metrics for instance ${instanceId}:`, error);
+      loggers.amp.error(`Error getting metrics for instance ${instanceId}`, { error });
       return {
         cpu: 0,
         memory: 0,
@@ -358,13 +359,13 @@ export class AMPService implements IService {
       const result = await this.callAPI(`ADSModule/Servers/${instanceId}/API/Core/GetUserList`, {});
       
       if (!Array.isArray(result)) {
-        console.warn(`Expected array of users for instance ${instanceId} but got:`, result);
+        loggers.amp.warn(`Expected array of users for instance ${instanceId} but got unexpected structure`, { result });
         return [];
       }
-      
+
       return result;
     } catch (error) {
-      console.error(`Error getting user list for instance ${instanceId}:`, error);
+      loggers.amp.error(`Error getting user list for instance ${instanceId}`, { error });
       return [];
     }
   }
@@ -377,7 +378,7 @@ export class AMPService implements IService {
       const users = await this.getUserList(instanceId);
       return users.length;
     } catch (error) {
-      console.error(`Error getting active player count for instance ${instanceId}:`, error);
+      loggers.amp.error(`Error getting active player count for instance ${instanceId}`, { error });
       return 0;
     }
   }
@@ -387,19 +388,19 @@ export class AMPService implements IService {
    */
   async debugPlayerCount(instanceId: string): Promise<void> {
     try {
-      console.log(`DEBUG: Getting status for instance ${instanceId}`);
+      loggers.amp.debug(`DEBUG: Getting status for instance ${instanceId}`);
       const status = await this.getInstanceStatus(instanceId);
-      console.log('Status:', JSON.stringify(status, null, 2));
-      
-      console.log(`DEBUG: Getting user list for instance ${instanceId}`);
+      loggers.amp.debug('Status', { status });
+
+      loggers.amp.debug(`DEBUG: Getting user list for instance ${instanceId}`);
       const users = await this.getUserList(instanceId);
-      console.log('Users:', users);
-      
-      console.log(`DEBUG: Getting metrics for instance ${instanceId}`);
+      loggers.amp.debug('Users', { users });
+
+      loggers.amp.debug(`DEBUG: Getting metrics for instance ${instanceId}`);
       const metrics = await this.getMetrics(instanceId);
-      console.log('Metrics:', metrics);
+      loggers.amp.debug('Metrics', { metrics });
     } catch (error) {
-      console.error(`Error during player count debugging for instance ${instanceId}:`, error);
+      loggers.amp.error(`Error during player count debugging for instance ${instanceId}`, { error });
     }
   }
 
@@ -418,23 +419,23 @@ export class AMPService implements IService {
       const result = await this.callAPI('Core/GetAPISpec', {});
       return result;
     } catch (error) {
-      console.error('Error getting API spec:', error);
-      
+      loggers.amp.error('Error getting API spec', { error });
+
       try {
-        console.log('Trying GetAPISpecification instead...');
+        loggers.amp.debug('Trying GetAPISpecification instead...');
         const result = await this.callAPI('Core/GetAPISpecification', {});
         return result;
       } catch (innerError) {
-        console.error('Also failed to get API specification:', innerError);
-        
+        loggers.amp.error('Also failed to get API specification', { innerError });
+
         // If GetAPISpec also doesn't exist, try a different approach
         try {
-          console.log('Trying to get module info instead...');
+          loggers.amp.debug('Trying to get module info instead...');
           const moduleInfo = await this.callAPI('Core/GetModuleInfo', {});
-          console.log('Module info (might contain API hints):', moduleInfo);
+          loggers.amp.debug('Module info (might contain API hints)', { moduleInfo });
           return moduleInfo;
         } catch (innerError) {
-          console.error('Also failed to get module info:', innerError);
+          loggers.amp.error('Also failed to get module info', { innerError });
           throw new Error('Cannot determine available API methods');
         }
       }

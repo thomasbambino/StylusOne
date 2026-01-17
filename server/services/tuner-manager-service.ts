@@ -1,4 +1,5 @@
 import { EventEmitter } from 'events';
+import { loggers } from '../lib/logger';
 
 export interface TunerSession {
   id: string;
@@ -107,7 +108,7 @@ export class TunerManagerService extends EventEmitter {
 
     for (const [sessionId, session] of this.sessions) {
       if (session.lastHeartbeat.getTime() < timeoutThreshold) {
-        console.log(`Session ${sessionId} timed out, releasing tuner`);
+        loggers.stream.debug(`Session ${sessionId} timed out, releasing tuner`);
         this.releaseSession(sessionId);
       }
     }
@@ -130,7 +131,7 @@ export class TunerManagerService extends EventEmitter {
           now.getTime() - tuner.lastActivity.getTime() > 60000) { // 1 minute cooldown
         tuner.status = 'available';
         tuner.failureCount = 0;
-        console.log(`Reset failed tuner ${tunerId}`);
+        loggers.stream.debug(`Reset failed tuner ${tunerId}`);
       }
     }
   }
@@ -220,7 +221,7 @@ export class TunerManagerService extends EventEmitter {
       tuner.failureCount++;
       if (tuner.failureCount >= this.config.maxFailures) {
         tuner.status = 'failed';
-        console.error(`Tuner ${tuner.id} marked as failed after ${tuner.failureCount} failures`);
+        loggers.stream.error(`Tuner ${tuner.id} marked as failed after ${tuner.failureCount} failures`);
       }
       throw error;
     }
@@ -353,18 +354,18 @@ export class TunerManagerService extends EventEmitter {
       
       // Get the raw stream URL from HDHomeRun
       const sourceUrl = hdhrService.getChannelStreamUrl(channelNumber);
-      console.log(`HD HomeRun stream request for channel ${channelNumber}, source URL: ${sourceUrl}`);
+      loggers.stream.debug(`HD HomeRun stream request for channel ${channelNumber}`, { sourceUrl });
       
       // Import streaming service
       const { streamingService } = await import('./streaming-service');
-      
+
       // Start HLS conversion
-      console.log(`Starting HLS stream conversion for channel ${channelNumber}`);
+      loggers.stream.debug(`Starting HLS stream conversion for channel ${channelNumber}`);
       const streamUrl = await streamingService.startHLSStream(channelNumber, sourceUrl);
       
       return streamUrl;
     } catch (error) {
-      console.error(`Error generating stream URL for channel ${channelNumber}:`, error);
+      loggers.stream.error(`Error generating stream URL for channel ${channelNumber}`, { error });
       // Fallback to default pattern
       return `/streams/channel_${channelNumber.replace('.', '_')}/playlist.m3u8`;
     }
@@ -374,10 +375,10 @@ export class TunerManagerService extends EventEmitter {
     try {
       const { streamingService } = await import('./streaming-service');
       const streamId = `channel_${channelNumber.replace('.', '_')}`;
-      console.log(`Stopping FFmpeg stream for channel ${channelNumber} (streamId: ${streamId})`);
+      loggers.stream.debug(`Stopping FFmpeg stream for channel ${channelNumber}`, { streamId });
       streamingService.stopStream(streamId);
     } catch (error) {
-      console.error(`Error stopping stream for channel ${channelNumber}:`, error);
+      loggers.stream.error(`Error stopping stream for channel ${channelNumber}`, { error });
     }
   }
 

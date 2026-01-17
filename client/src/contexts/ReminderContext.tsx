@@ -1,5 +1,6 @@
 import { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
 import { isNativePlatform } from '@/lib/capacitor';
+import { loggers } from '@/lib/logger';
 
 // Types
 interface ReminderData {
@@ -30,7 +31,7 @@ async function loadReminderModule() {
     reminderModule = await import('@/lib/reminders');
     return reminderModule;
   } catch (e) {
-    console.error('[ReminderContext] Failed to load reminder module:', e);
+    loggers.reminders.error('Failed to load reminder module', { error: e });
     return null;
   }
 }
@@ -55,12 +56,12 @@ export function ReminderProvider({ children }: { children: ReactNode }) {
         const existingReminders = await module.reminderService.getReminders();
         const reminderIds = new Set(existingReminders.map(r => r.id));
         setReminders(reminderIds);
-        console.log('[ReminderContext] Loaded reminders:', reminderIds.size);
+        loggers.reminders.info('Loaded reminders', { count: reminderIds.size });
 
         // Cleanup expired reminders
         await module.reminderService.cleanupExpiredReminders();
       } catch (error) {
-        console.error('[ReminderContext] Error initializing reminders:', error);
+        loggers.reminders.error('Error initializing reminders', { error });
       }
     };
 
@@ -77,11 +78,11 @@ export function ReminderProvider({ children }: { children: ReactNode }) {
         if (!module) return;
         const channelId = module.getPendingChannel();
         if (channelId) {
-          console.log('[ReminderContext] Found pending channel:', channelId);
+          loggers.reminders.info('Found pending channel', { channelId });
           setPendingChannel(channelId);
         }
       } catch (error) {
-        console.error('[ReminderContext] Error checking pending channel:', error);
+        loggers.reminders.error('Error checking pending channel', { error });
       }
     };
 
@@ -107,27 +108,27 @@ export function ReminderProvider({ children }: { children: ReactNode }) {
   }, [reminders]);
 
   const setReminderFn = useCallback(async (data: ReminderData): Promise<boolean> => {
-    console.log('[ReminderContext] setReminderFn called with:', data.programTitle);
+    loggers.reminders.debug('setReminderFn called', { programTitle: data.programTitle });
     try {
-      console.log('[ReminderContext] Loading reminder module...');
+      loggers.reminders.debug('Loading reminder module');
       const module = await loadReminderModule();
-      console.log('[ReminderContext] Module loaded:', !!module);
+      loggers.reminders.debug('Module loaded', { loaded: !!module });
       if (!module) {
-        console.log('[ReminderContext] No module available');
+        loggers.reminders.debug('No module available');
         return false;
       }
 
-      console.log('[ReminderContext] Calling reminderService.setReminder...');
+      loggers.reminders.debug('Calling reminderService.setReminder');
       const success = await module.reminderService.setReminder(data);
-      console.log('[ReminderContext] setReminder returned:', success);
+      loggers.reminders.debug('setReminder returned', { success });
       if (success) {
         const reminderId = `${data.channelId}-${data.programStart}`;
         setReminders(prev => new Set([...prev, reminderId]));
-        console.log('[ReminderContext] Reminder set:', reminderId);
+        loggers.reminders.info('Reminder set', { reminderId });
       }
       return success;
     } catch (error) {
-      console.error('[ReminderContext] Error setting reminder:', error);
+      loggers.reminders.error('Error setting reminder', { error });
       return false;
     }
   }, []);
@@ -144,9 +145,9 @@ export function ReminderProvider({ children }: { children: ReactNode }) {
         newSet.delete(reminderId);
         return newSet;
       });
-      console.log('[ReminderContext] Reminder cancelled:', reminderId);
+      loggers.reminders.info('Reminder cancelled', { reminderId });
     } catch (error) {
-      console.error('[ReminderContext] Error cancelling reminder:', error);
+      loggers.reminders.error('Error cancelling reminder', { error });
     }
   }, []);
 

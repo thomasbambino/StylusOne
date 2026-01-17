@@ -6,6 +6,7 @@ import { List, Volume2, VolumeX, Menu, Play, Pause, Maximize, Cast } from "lucid
 import { buildApiUrl, isNativePlatform, getDeviceType, getPlatform } from "@/lib/capacitor";
 import { apiRequest, getQueryFn } from "@/lib/queryClient";
 import { Chromecast } from "@caprockapps/capacitor-chromecast";
+import { loggers } from '@/lib/logger';
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
@@ -55,7 +56,7 @@ const ChannelItem = memo(({
   return (
     <div
       onClick={() => {
-        console.log('[ChannelItem] Clicked:', channel.GuideName);
+        loggers.tv.debug('Channel item clicked', { channelName: channel.GuideName });
         onSelect(channel);
       }}
       className={cn(
@@ -148,7 +149,7 @@ export default function LiveTVSimple() {
   const { data: iptvChannels = [], isLoading: channelsLoading, error: channelsError } = useQuery<Channel[]>({
     queryKey: ["/api/iptv/channels"],
     select: (data: any) => {
-      console.log('[LiveTV] Raw channel data:', data);
+      loggers.tv.debug('Raw channel data received', { data });
       const channels = (data?.channels || []).filter((ch: any) => !ch.hidden).map((ch: any) => ({
         GuideName: ch.name,
         GuideNumber: ch.number,
@@ -158,7 +159,7 @@ export default function LiveTVSimple() {
         epgId: ch.epgId,
         logo: ch.logo
       }));
-      console.log('[LiveTV] Processed channels:', channels.length, channels.slice(0, 3));
+      loggers.tv.debug('Processed channels', { count: channels.length, sample: channels.slice(0, 3) });
       return channels;
     },
     staleTime: 5 * 60 * 1000, // Cache for 5 minutes
@@ -168,8 +169,8 @@ export default function LiveTVSimple() {
   // React Query handles batching and rate limiting automatically
   const channelsForEPG = iptvChannels.slice(0, 100);
 
-  console.log('[LiveTV] Setting up EPG queries for', channelsForEPG.length, 'channels');
-  console.log('[LiveTV] First 3 channels for EPG:', channelsForEPG.slice(0, 3).map(c => ({ name: c.GuideName, epgId: c.epgId })));
+  loggers.tv.debug('Setting up EPG queries', { channelCount: channelsForEPG.length });
+  loggers.tv.debug('First channels for EPG', { channels: channelsForEPG.slice(0, 3).map(c => ({ name: c.GuideName, epgId: c.epgId })) });
 
   const epgQueries = useQueries({
     queries: channelsForEPG.map((channel) => {
@@ -205,7 +206,7 @@ export default function LiveTVSimple() {
     // Only process if we have channels and at least some queries are successful
     const successfulQueries = epgQueries.filter(q => q.isSuccess).length;
     if (channelsForEPG.length === 0 || successfulQueries === 0) {
-      console.log('[LiveTV] Skipping EPG processing - waiting for queries to complete');
+      loggers.tv.debug('Skipping EPG processing - waiting for queries to complete');
       return;
     }
 
@@ -233,7 +234,7 @@ export default function LiveTVSimple() {
 
   // Debug channel loading
   useEffect(() => {
-    console.log('[LiveTV] Channels state:', {
+    loggers.tv.debug('Channels state', {
       loading: channelsLoading,
       error: channelsError,
       count: channels.length,
@@ -256,8 +257,8 @@ export default function LiveTVSimple() {
 
   // Play stream function
   const playStream = useCallback(async (channel: Channel) => {
-    console.log('[LiveTV] ========== Starting playStream ==========');
-    console.log('[LiveTV] Channel:', {
+    loggers.tv.info('Starting playStream');
+    loggers.tv.debug('Channel details', {
       name: channel.GuideName,
       number: channel.GuideNumber,
       url: channel.URL,
@@ -266,12 +267,12 @@ export default function LiveTVSimple() {
     });
 
     if (!videoRef.current) {
-      console.error('[LiveTV] videoRef is null');
+      loggers.tv.error('videoRef is null');
       return;
     }
 
     const video = videoRef.current;
-    console.log('[LiveTV] Video element ready:', !!video);
+    loggers.tv.debug('Video element ready', { ready: !!video });
     setIsLoading(true);
     setSelectedChannel(channel);
     setShowChannelList(false);
@@ -283,37 +284,35 @@ export default function LiveTVSimple() {
     }
 
     try {
-      console.log('[LiveTV] Channel URL from API:', channel.URL);
+      loggers.tv.debug('Channel URL from API', { url: channel.URL });
       let streamUrl = buildApiUrl(channel.URL);
-      console.log('[LiveTV] Built stream URL:', streamUrl);
-      console.log('[LiveTV] Is native platform?', isNativePlatform());
-      console.log('[LiveTV] Channel source:', channel.source);
-      console.log('[LiveTV] Channel iptvId:', channel.iptvId);
+      loggers.tv.debug('Built stream URL', { streamUrl });
+      loggers.tv.debug('Platform info', { isNative: isNativePlatform(), source: channel.source, iptvId: channel.iptvId });
 
       // On native platforms, IPTV streams need a token for authentication
       if (isNativePlatform() && channel.source === 'iptv' && channel.iptvId) {
-        console.log('[LiveTV] Native platform detected, getting token for:', channel.iptvId);
+        loggers.tv.debug('Native platform detected, getting token', { iptvId: channel.iptvId });
         try {
           const tokenResponse = await apiRequest('POST', '/api/iptv/generate-token', {
             streamId: channel.iptvId,
             deviceType: getPlatform()
           });
-          console.log('[LiveTV] Token response status:', tokenResponse.status);
+          loggers.tv.debug('Token response received', { status: tokenResponse.status });
           const tokenData = await tokenResponse.json();
-          console.log('[LiveTV] Token data:', tokenData);
+          loggers.tv.debug('Token data', { tokenData });
           const { token } = tokenData;
           streamUrl = `${streamUrl}?token=${token}`;
-          console.log('[LiveTV] Final stream URL with token:', streamUrl);
+          loggers.tv.debug('Final stream URL with token', { streamUrl });
         } catch (tokenError) {
-          console.error('[LiveTV] Token generation failed:', tokenError);
+          loggers.tv.error('Token generation failed', { error: tokenError });
           throw tokenError;
         }
       } else {
-        console.log('[LiveTV] Using stream URL without token');
+        loggers.tv.debug('Using stream URL without token');
       }
 
       if (Hls.isSupported()) {
-        console.log('[LiveTV] HLS is supported, creating HLS instance');
+        loggers.tv.debug('HLS is supported, creating HLS instance');
         const hls = new Hls({
           debug: true,
           lowLatencyMode: false,
@@ -328,59 +327,59 @@ export default function LiveTVSimple() {
         hlsRef.current = hls;
 
         hls.on(Hls.Events.MANIFEST_PARSED, () => {
-          console.log('[LiveTV] HLS manifest parsed, starting playback');
+          loggers.tv.debug('HLS manifest parsed, starting playback');
           video.play().then(() => {
-            console.log('[LiveTV] Video playback started successfully');
+            loggers.tv.info('Video playback started successfully');
             setIsPlaying(true);
             setIsLoading(false);
             setIsInitialLoad(false);
             resetControlsTimer();
           }).catch(err => {
-            console.error('[LiveTV] Playback error:', err);
+            loggers.tv.error('Playback error', { error: err });
             setIsLoading(false);
           });
         });
 
         hls.on(Hls.Events.ERROR, (event, data) => {
-          console.error('[LiveTV] HLS error:', data);
+          loggers.tv.error('HLS error', { data });
           if (data.fatal) {
-            console.error('[LiveTV] Fatal HLS error, destroying instance');
+            loggers.tv.error('Fatal HLS error, destroying instance');
             hls.destroy();
             setIsLoading(false);
           }
         });
 
-        console.log('[LiveTV] Attaching HLS to video and loading source:', streamUrl);
+        loggers.tv.debug('Attaching HLS to video and loading source', { streamUrl });
         hls.attachMedia(video);
         hls.loadSource(streamUrl);
       } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
-        console.log('[LiveTV] Using native HLS support');
+        loggers.tv.debug('Using native HLS support');
         video.src = streamUrl;
         video.play().then(() => {
-          console.log('[LiveTV] Native playback started successfully');
+          loggers.tv.info('Native playback started successfully');
           setIsPlaying(true);
           setIsLoading(false);
           setIsInitialLoad(false);
           resetControlsTimer();
         }).catch(err => {
-          console.error('[LiveTV] Native playback error:', err);
+          loggers.tv.error('Native playback error', { error: err });
           setIsLoading(false);
         });
       } else {
-        console.error('[LiveTV] HLS not supported on this device');
+        loggers.tv.error('HLS not supported on this device');
         setIsLoading(false);
       }
     } catch (error) {
-      console.error('Stream playback error:', error);
+      loggers.tv.error('Stream playback error', { error });
       setIsLoading(false);
     }
   }, [resetControlsTimer]);
 
   // Auto-play first channel on load
   useEffect(() => {
-    console.log('[LiveTV] Auto-play effect:', { channelsCount: channels.length, hasSelectedChannel: !!selectedChannel, firstChannel: channels[0]?.GuideName });
+    loggers.tv.debug('Auto-play effect', { channelsCount: channels.length, hasSelectedChannel: !!selectedChannel, firstChannel: channels[0]?.GuideName });
     if (channels.length > 0 && !selectedChannel && channels[0]?.GuideName) {
-      console.log('[LiveTV] Auto-playing first channel:', channels[0].GuideName);
+      loggers.tv.info('Auto-playing first channel', { channelName: channels[0].GuideName });
       playStream(channels[0]);
     }
   }, [channels, selectedChannel]);
@@ -403,7 +402,7 @@ export default function LiveTVSimple() {
       videoRef.current.play().then(() => {
         setIsPaused(false);
         setIsPlaying(true);
-      }).catch(err => console.error('[LiveTV] Play error:', err));
+      }).catch(err => loggers.tv.error('Play error', { error: err }));
     } else {
       videoRef.current.pause();
       setIsPaused(true);
@@ -413,17 +412,17 @@ export default function LiveTVSimple() {
   }, [isPaused, resetControlsTimer]);
 
   const toggleFullscreen = useCallback(async () => {
-    console.log('[LiveTV] Fullscreen toggle clicked, current state:', isFullscreen);
+    loggers.tv.debug('Fullscreen toggle clicked', { currentState: isFullscreen });
     try {
       const video = videoRef.current;
       if (!video) {
-        console.error('[LiveTV] No video element');
+        loggers.tv.error('No video element');
         return;
       }
 
       // On mobile platforms, request fullscreen on the video element
       if (isNativePlatform()) {
-        console.log('[LiveTV] Native platform - toggling video fullscreen');
+        loggers.tv.debug('Native platform - toggling video fullscreen');
         const videoAny = video as any;
 
         // Check if currently in fullscreen
@@ -431,52 +430,52 @@ export default function LiveTVSimple() {
                                document.fullscreenElement === video ||
                                videoAny.fullscreenElement === video;
 
-        console.log('[LiveTV] Is currently fullscreen?', isInFullscreen);
+        loggers.tv.debug('Fullscreen check', { isInFullscreen });
 
         if (isInFullscreen) {
           // Exit fullscreen
-          console.log('[LiveTV] Attempting to exit fullscreen');
+          loggers.tv.debug('Attempting to exit fullscreen');
           if (videoAny.webkitExitFullscreen) {
-            console.log('[LiveTV] Using webkitExitFullscreen');
+            loggers.tv.debug('Using webkitExitFullscreen');
             videoAny.webkitExitFullscreen();
           } else if (document.exitFullscreen) {
-            console.log('[LiveTV] Using document.exitFullscreen');
+            loggers.tv.debug('Using document.exitFullscreen');
             await document.exitFullscreen();
           }
         } else {
           // Enter fullscreen
-          console.log('[LiveTV] Attempting to enter fullscreen');
+          loggers.tv.debug('Attempting to enter fullscreen');
           if (videoAny.webkitEnterFullscreen) {
-            console.log('[LiveTV] Using webkitEnterFullscreen');
+            loggers.tv.debug('Using webkitEnterFullscreen');
             videoAny.webkitEnterFullscreen();
           } else if (videoAny.requestFullscreen) {
-            console.log('[LiveTV] Using requestFullscreen');
+            loggers.tv.debug('Using requestFullscreen');
             await videoAny.requestFullscreen();
           } else if (videoAny.webkitRequestFullscreen) {
-            console.log('[LiveTV] Using webkitRequestFullscreen');
+            loggers.tv.debug('Using webkitRequestFullscreen');
             await videoAny.webkitRequestFullscreen();
           } else {
-            console.error('[LiveTV] No fullscreen API available');
+            loggers.tv.error('No fullscreen API available');
           }
         }
       } else {
         // Desktop: toggle document fullscreen
         if (!document.fullscreenElement) {
-          console.log('[LiveTV] Entering fullscreen');
+          loggers.tv.debug('Entering fullscreen');
           await document.documentElement.requestFullscreen();
         } else {
-          console.log('[LiveTV] Exiting fullscreen');
+          loggers.tv.debug('Exiting fullscreen');
           await document.exitFullscreen();
         }
       }
     } catch (err) {
-      console.error('[LiveTV] Fullscreen error:', err);
+      loggers.tv.error('Fullscreen error', { error: err });
     }
     resetControlsTimer();
   }, [resetControlsTimer, isFullscreen]);
 
   const initiateCast = useCallback(async () => {
-    console.log('[LiveTV] Cast button clicked');
+    loggers.tv.debug('Cast button clicked');
 
     // Use native Chromecast on Android/iOS
     if (isNativePlatform()) {
@@ -485,13 +484,13 @@ export default function LiveTVSimple() {
           // Stop casting - for now just update state
           // The plugin doesn't have a stopSession method, user can stop from notification
           setIsCasting(false);
-          console.log('[LiveTV] Casting stopped');
+          loggers.tv.info('Casting stopped');
           return;
         }
 
-        console.log('[LiveTV] Requesting native cast session');
+        loggers.tv.debug('Requesting native cast session');
         await Chromecast.requestSession();
-        console.log('[LiveTV] Cast session started');
+        loggers.tv.info('Cast session started');
         setIsCasting(true);
 
         // Launch media if we have a selected channel
@@ -508,16 +507,16 @@ export default function LiveTVSimple() {
               const { token } = await tokenResponse.json();
               streamUrl = `${streamUrl}?token=${token}`;
             } catch (tokenError) {
-              console.error('[LiveTV] Failed to get stream token for cast:', tokenError);
+              loggers.tv.error('Failed to get stream token for cast', { error: tokenError });
             }
           }
 
-          console.log('[LiveTV] Launching media on cast device:', streamUrl);
+          loggers.tv.debug('Launching media on cast device', { streamUrl });
           const success = await Chromecast.launchMedia(streamUrl);
-          console.log('[LiveTV] Cast media launch result:', success);
+          loggers.tv.debug('Cast media launch result', { success });
         }
       } catch (err) {
-        console.error('[LiveTV] Native cast error:', err);
+        loggers.tv.error('Native cast error', { error: err });
         setIsCasting(false);
       }
       resetControlsTimer();
@@ -526,7 +525,7 @@ export default function LiveTVSimple() {
 
     // Web Cast API fallback
     if (!window.chrome || !window.chrome.cast || !window.chrome.cast.isAvailable) {
-      console.warn('[LiveTV] Cast API not available');
+      loggers.tv.warn('Cast API not available');
       return;
     }
 
@@ -556,17 +555,17 @@ export default function LiveTVSimple() {
 
               const request = new window.chrome.cast.media.LoadRequest(mediaInfo);
               session.loadMedia(request).then(
-                () => console.log('[LiveTV] Media loaded on Cast device'),
-                (err: any) => console.error('[LiveTV] Cast media load error:', err)
+                () => loggers.tv.info('Media loaded on Cast device'),
+                (err: any) => loggers.tv.error('Cast media load error', { error: err })
               );
             }
           }
         }).catch((err: any) => {
-          console.error('[LiveTV] Cast session error:', err);
+          loggers.tv.error('Cast session error', { error: err });
         });
       }
     } catch (err) {
-      console.error('[LiveTV] Cast error:', err);
+      loggers.tv.error('Cast error', { error: err });
     }
     resetControlsTimer();
   }, [resetControlsTimer, selectedChannel, isCasting]);
@@ -596,7 +595,7 @@ export default function LiveTVSimple() {
         document.fullscreenElement ||
         video?.webkitDisplayingFullscreen
       );
-      console.log('[LiveTV] Fullscreen state changed:', isInFullscreen);
+      loggers.tv.debug('Fullscreen state changed', { isInFullscreen });
       setIsFullscreen(isInFullscreen);
     };
 
@@ -606,11 +605,11 @@ export default function LiveTVSimple() {
 
     if (videoRef.current) {
       videoRef.current.addEventListener('webkitbeginfullscreen', () => {
-        console.log('[LiveTV] Webkit began fullscreen');
+        loggers.tv.debug('Webkit began fullscreen');
         setIsFullscreen(true);
       });
       videoRef.current.addEventListener('webkitendfullscreen', () => {
-        console.log('[LiveTV] Webkit ended fullscreen');
+        loggers.tv.debug('Webkit ended fullscreen');
         setIsFullscreen(false);
       });
     }
@@ -644,16 +643,16 @@ export default function LiveTVSimple() {
         // Track if this is a TV device
         if (deviceType === 'tv') {
           setIsTVDevice(true);
-          console.log('[LiveTV] TV device detected, skipping Chromecast init');
+          loggers.tv.info('TV device detected, skipping Chromecast init');
           return;
         }
 
-        console.log('[LiveTV] Initializing native Chromecast');
+        loggers.tv.debug('Initializing native Chromecast');
         await Chromecast.initialize({});
-        console.log('[LiveTV] Chromecast initialized');
+        loggers.tv.info('Chromecast initialized');
       } catch (err: any) {
         // Don't crash if Chromecast isn't available (e.g., no Google Play Services)
-        console.warn('[LiveTV] Chromecast init skipped:', err?.message || err);
+        loggers.tv.warn('Chromecast init skipped', { error: err?.message || err });
       }
     }
 

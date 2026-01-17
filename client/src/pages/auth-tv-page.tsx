@@ -11,6 +11,7 @@ import { useAuth } from '@/hooks/use-auth';
 import { Redirect } from 'wouter';
 import { Settings } from '@shared/schema';
 import { cn } from '@/lib/utils';
+import { loggers } from '@/lib/logger';
 
 type AuthView = 'menu' | 'code' | 'email' | 'register' | 'pending';
 
@@ -170,7 +171,7 @@ export default function AuthTvPage() {
       // Start polling for verification
       startPolling(data.code);
     } catch (err) {
-      console.error('Error generating code:', err);
+      loggers.auth.error('Error generating code', { error: err });
       setError(err instanceof Error ? err.message : 'Failed to generate code');
     } finally {
       setIsLoading(false);
@@ -201,7 +202,7 @@ export default function AuthTvPage() {
           setError('Code expired or already used');
         }
       } catch (err) {
-        console.error('Polling error:', err);
+        loggers.auth.error('Polling error', { error: err });
       }
     }, 3000);
   };
@@ -237,7 +238,7 @@ export default function AuthTvPage() {
       // Redirect to home
       window.location.href = '/';
     } catch (err) {
-      console.error('Login error:', err);
+      loggers.auth.error('Login error', { error: err });
       setError(err instanceof Error ? err.message : 'Login failed');
       setView('menu');
     } finally {
@@ -277,7 +278,7 @@ export default function AuthTvPage() {
       queryClient.setQueryData(["/api/user"], response.data);
       window.location.href = '/';
     } catch (err) {
-      console.error('Google sign-in error:', err);
+      loggers.auth.error('Google sign-in error', { error: err });
       setError(err instanceof Error ? err.message : 'Google sign-in failed');
     } finally {
       setIsLoading(false);
@@ -312,7 +313,7 @@ export default function AuthTvPage() {
       queryClient.setQueryData(["/api/user"], response.data);
       window.location.href = '/';
     } catch (err) {
-      console.error('Email sign-in error:', err);
+      loggers.auth.error('Email sign-in error', { error: err });
       setError(err instanceof Error ? err.message : 'Sign in failed');
     } finally {
       setIsLoading(false);
@@ -364,7 +365,7 @@ export default function AuthTvPage() {
       queryClient.setQueryData(["/api/user"], response.data);
       window.location.href = '/';
     } catch (err) {
-      console.error('Registration error:', err);
+      loggers.auth.error('Registration error', { error: err });
       setError(err instanceof Error ? err.message : 'Registration failed');
     } finally {
       setIsLoading(false);

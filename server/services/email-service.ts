@@ -6,6 +6,7 @@ import { emailTemplates } from '@shared/schema';
 import { eq } from 'drizzle-orm';
 import axios from 'axios';
 import FormData from 'form-data';
+import { loggers } from '../lib/logger';
 
 /**
  * Interface for email attachment
@@ -59,20 +60,20 @@ export class EmailService implements IService {
     // Determine which email provider to use
     if (this.mailgunDomain && this.mailgunApiKey) {
       this.emailProvider = 'mailgun';
-      console.log('Using Mailgun for email delivery');
+      loggers.email.info('Using Mailgun for email delivery');
     } else if (this.sendgridApiKey) {
       this.emailProvider = 'sendgrid';
-      console.log('Using SendGrid for email delivery');
+      loggers.email.info('Using SendGrid for email delivery');
     } else {
       this.emailProvider = 'none';
-      console.warn('No email provider configured');
+      loggers.email.warn('No email provider configured');
     }
 
     // Create default email templates if they don't exist
     await this.setupDefaultTemplates();
-    
+
     this.initialized = true;
-    console.log('Email service initialized');
+    loggers.email.info('Email service initialized');
   }
 
   /**
@@ -129,7 +130,7 @@ export class EmailService implements IService {
 
     // Validate required fields
     if (!params.to || !params.subject || (!params.text && !params.html)) {
-      console.error('Missing required email fields');
+      loggers.email.error('Missing required email fields');
       return false;
     }
 
@@ -140,7 +141,7 @@ export class EmailService implements IService {
       case 'sendgrid':
         return this.sendWithSendgrid(params);
       default:
-        console.warn('No email provider configured, email not sent');
+        loggers.email.warn('No email provider configured, email not sent');
         return false;
     }
   }
@@ -150,11 +151,12 @@ export class EmailService implements IService {
    */
   private async sendWithMailgun(params: EmailParams): Promise<boolean> {
     try {
-      console.log('Sending email via Mailgun:');
-      console.log('  From:', `${this.fromName} <${this.fromEmail}>`);
-      console.log('  To:', params.to);
-      console.log('  Subject:', params.subject);
-      console.log('  Attachments:', params.attachments?.length || 0);
+      loggers.mailgun.debug('Sending email via Mailgun', {
+        from: `${this.fromName} <${this.fromEmail}>`,
+        to: params.to,
+        subject: params.subject,
+        attachments: params.attachments?.length || 0
+      });
       
       const formData = new FormData();
       formData.append('from', `${this.fromName} <${this.fromEmail}>`);
@@ -194,14 +196,16 @@ export class EmailService implements IService {
         headers: formData.getHeaders()
       });
 
-      console.log('Mailgun API response:', response.data);
+      loggers.mailgun.debug('Mailgun API response', { response: response.data });
       return true;
     } catch (error: any) {
-      console.error('Error sending email with Mailgun:', error);
+      loggers.mailgun.error('Error sending email with Mailgun', { error });
       if (error.response) {
-        console.error('Mailgun error response status:', error.response.status);
-        console.error('Mailgun error response data:', error.response.data);
-        console.error('Mailgun error response headers:', error.response.headers);
+        loggers.mailgun.error('Mailgun error response', {
+          status: error.response.status,
+          data: error.response.data,
+          headers: error.response.headers
+        });
       }
       return false;
     }
@@ -247,10 +251,10 @@ export class EmailService implements IService {
         }
       });
 
-      console.log('SendGrid API response status:', response.status);
+      loggers.sendgrid.debug('SendGrid API response', { status: response.status });
       return true;
     } catch (error) {
-      console.error('Error sending email with SendGrid:', error);
+      loggers.sendgrid.error('Error sending email with SendGrid', { error });
       return false;
     }
   }
@@ -283,7 +287,7 @@ export class EmailService implements IService {
         .where(eq(emailTemplates.id, templateId));
 
       if (!template) {
-        console.error(`Email template with id ${templateId} not found`);
+        loggers.email.error(`Email template with id ${templateId} not found`);
         return null;
       }
 
@@ -292,7 +296,7 @@ export class EmailService implements IService {
 
       return { subject, html };
     } catch (error) {
-      console.error('Error getting compiled template:', error);
+      loggers.email.error('Error getting compiled template', { error });
       return null;
     }
   }
@@ -306,7 +310,7 @@ export class EmailService implements IService {
       
       // If we have no templates, create the default ones
       if (templates.length === 0) {
-        console.log('Creating default email templates');
+        loggers.email.info('Creating default email templates');
         
         const defaultTemplates = [
           {
@@ -365,10 +369,10 @@ export class EmailService implements IService {
           await db.insert(emailTemplates).values(template);
         }
         
-        console.log('Default email templates created');
+        loggers.email.info('Default email templates created');
       }
     } catch (error) {
-      console.error('Error setting up default email templates:', error);
+      loggers.email.error('Error setting up default email templates', { error });
     }
   }
 }

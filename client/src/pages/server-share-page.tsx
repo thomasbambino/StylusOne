@@ -23,6 +23,7 @@ import { getGameArtwork, getGameBanner, getGameIcon } from "@/lib/game-artwork";
 import { cn } from "@/lib/utils";
 import { motion } from "framer-motion";
 import { useToast } from "@/hooks/use-toast";
+import { loggers } from "@/lib/logger";
 
 interface GameServer {
   instanceId: string;
@@ -99,25 +100,19 @@ export default function ServerSharePage() {
 
   // Get game artwork - match exactly how server cards do it
   const serverType = server.type || 'Unknown';
-  console.log('🎮 Server type received:', serverType);
-  
+  loggers.serverShare.debug('Server type received', { serverType });
+
   const gameArtwork = getGameArtwork(serverType);
   const gameBanner = getGameBanner(serverType);
   const gameIcon = getGameIcon(serverType);
-  
-  console.log('🎨 Artwork URLs:', { 
-    serverType, 
-    gameIcon, 
-    gameBanner, 
-    gameArtworkLogo: gameArtwork.logo,
-    gameArtworkColor: gameArtwork.color 
+
+  loggers.serverShare.debug('Artwork URLs', {
+    serverType,
+    gameIcon,
+    gameBanner,
+    logo: gameArtwork.logo,
+    color: gameArtwork.color
   });
-  
-  // Test if images are accessible
-  console.log('🔍 Testing image access:');
-  console.log('Game Icon URL test:', gameIcon);
-  console.log('Game Banner URL test:', gameBanner);
-  console.log('Game Logo URL test:', gameArtwork.logo);
 
   // Get player data from AMP metrics (same as server cards)
   const currentPlayers = server.Metrics?.['Active Users']?.RawValue ?? 0;
@@ -173,7 +168,6 @@ export default function ServerSharePage() {
                 filter: 'blur(1px)'
               }}
             />
-            {console.log('🖼️ Background banner URL being used:', gameBanner)}
             
             {/* Dark overlay for better text readability */}
             <div className="absolute inset-0 bg-gradient-to-br from-background/90 via-background/80 to-background/60" />
@@ -210,13 +204,11 @@ export default function ServerSharePage() {
                         color: gameArtwork.color
                       }}
                     >
-                      <img 
-                        src={gameIcon} 
-                        alt={server.type} 
+                      <img
+                        src={gameIcon}
+                        alt={server.type}
                         className="h-4 w-4 mr-1 rounded-sm"
-                        onLoad={() => console.log('✅ Badge game icon loaded successfully:', gameIcon)}
                         onError={(e) => {
-                          console.log('❌ Badge game icon failed to load:', gameIcon);
                           const target = e.target as HTMLImageElement;
                           target.style.display = 'none';
                           const gamepadIcon = target.nextElementSibling as HTMLElement;
@@ -242,13 +234,11 @@ export default function ServerSharePage() {
 
                 {/* Game Logo */}
                 <div className="opacity-60 group-hover:opacity-80 transition-opacity">
-                  <img 
-                    src={gameArtwork.logo} 
+                  <img
+                    src={gameArtwork.logo}
                     alt={`${server.type} logo`}
                     className="h-16 w-auto max-w-32 object-contain"
-                    onLoad={() => console.log('✅ Main game logo loaded successfully:', gameArtwork.logo)}
                     onError={(e) => {
-                      console.log('❌ Main game logo failed to load:', gameArtwork.logo);
                       const target = e.target as HTMLImageElement;
                       target.style.display = 'none';
                       const fallback = target.nextElementSibling as HTMLElement;

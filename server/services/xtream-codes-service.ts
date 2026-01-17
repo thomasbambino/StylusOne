@@ -6,6 +6,7 @@ import { db } from '../db';
 import { iptvCredentials, planIptvCredentials, activeIptvStreams, userSubscriptions, subscriptionPlans, iptvChannels, planPackages, packageChannels, channelPackages, iptvProviders } from '@shared/schema';
 import { eq, and, inArray, desc } from 'drizzle-orm';
 import { decrypt, maskCredential } from '../utils/encryption';
+import { loggers } from '../lib/logger';
 
 // Cache directory for IPTV data
 const CACHE_DIR = path.join(process.cwd(), 'data', 'iptv-cache');
@@ -145,9 +146,9 @@ export class XtreamCodesClient {
         timestamp: this.cacheTimestamp
       };
       fs.writeFileSync(this.getCacheFilePath(), JSON.stringify(cacheData), 'utf-8');
-      console.log(`[IPTV Cache] Saved ${this.channelsCache?.length || 0} channels to disk`);
+      loggers.xtreamCodes.debug(`Saved ${this.channelsCache?.length || 0} channels to disk`);
     } catch (error) {
-      console.error('[IPTV Cache] Error saving to disk:', error);
+      loggers.xtreamCodes.error('Error saving to disk', { error });
     }
   }
 
@@ -168,14 +169,14 @@ export class XtreamCodesClient {
         this.categoriesCache = data.categories;
         this.channelsCache = data.channels;
         this.cacheTimestamp = data.timestamp;
-        console.log(`[IPTV Cache] Loaded ${this.channelsCache?.length || 0} channels from disk`);
+        loggers.xtreamCodes.debug(`Loaded ${this.channelsCache?.length || 0} channels from disk`);
         return true;
       }
 
-      console.log('[IPTV Cache] Disk cache expired, will refresh from provider');
+      loggers.xtreamCodes.debug('Disk cache expired, will refresh from provider');
       return false;
     } catch (error) {
-      console.error('[IPTV Cache] Error loading from disk:', error);
+      loggers.xtreamCodes.error('Error loading from disk', { error });
       return false;
     }
   }
@@ -202,7 +203,7 @@ export class XtreamCodesClient {
       this.authInfo = response.data;
       return response.data;
     } catch (error) {
-      console.error('Error authenticating with Xtream Codes:', error);
+      loggers.xtreamCodes.error('Error authenticating with Xtream Codes', { error });
       throw new Error('Failed to authenticate with Xtream Codes server');
     }
   }
@@ -232,7 +233,7 @@ export class XtreamCodesClient {
       await this.refreshCache();
       return this.categoriesCache || [];
     } catch (error) {
-      console.error('Error fetching categories:', error);
+      loggers.xtreamCodes.error('Error fetching categories', { error });
       if (this.categoriesCache) {
         return this.categoriesCache;
       }
@@ -248,7 +249,7 @@ export class XtreamCodesClient {
       try {
         await this.refreshCache();
       } catch (error) {
-        console.error('Error refreshing cache:', error);
+        loggers.xtreamCodes.error('Error refreshing cache', { error });
       }
     }
 
@@ -277,7 +278,7 @@ export class XtreamCodesClient {
       const response = await axios.get(url, { timeout: 10000 });
       return response.data.epg_listings || [];
     } catch (error) {
-      console.error(`Error fetching EPG for stream ${streamId}:`, error);
+      loggers.xtreamCodes.error(`Error fetching EPG for stream ${streamId}`, { error });
       throw new Error('Failed to fetch EPG data');
     }
   }
@@ -296,7 +297,7 @@ export class XtreamCodesClient {
         next: listings[1]
       };
     } catch (error) {
-      console.error(`Error fetching short EPG for stream ${streamId}:`, error);
+      loggers.xtreamCodes.error(`Error fetching short EPG for stream ${streamId}`, { error });
       return {};
     }
   }
@@ -311,7 +312,7 @@ export class XtreamCodesClient {
       const response = await axios.get(streamsUrl, { timeout: 30000 });
       return response.data || [];
     } catch (error) {
-      console.error('Error fetching raw live streams:', error);
+      loggers.xtreamCodes.error('Error fetching raw live streams', { error });
       throw new Error('Failed to fetch live streams from provider');
     }
   }
@@ -431,7 +432,7 @@ export class XtreamCodesClient {
       // Save to disk for persistence across restarts
       this.saveToDisk();
     } catch (error) {
-      console.error('Error refreshing Xtream Codes cache:', error);
+      loggers.xtreamCodes.error('Error refreshing Xtream Codes cache', { error });
       throw error;
     }
   }
@@ -468,9 +469,9 @@ export class XtreamCodesManager implements IService {
     if (this.envClient) {
       try {
         await this.envClient.authenticate();
-        console.log('Xtream Codes service initialized with environment credentials');
+        loggers.xtreamCodes.info('Xtream Codes service initialized with environment credentials');
       } catch (error) {
-        console.error('Failed to initialize env client:', error);
+        loggers.xtreamCodes.error('Failed to initialize env client', { error });
       }
     }
 
@@ -478,7 +479,7 @@ export class XtreamCodesManager implements IService {
     await this.loadCredentialsFromDatabase();
 
     this.initialized = true;
-    console.log(`Xtream Codes Manager initialized with ${this.clients.size} database credentials`);
+    loggers.xtreamCodes.info(`Xtream Codes Manager initialized with ${this.clients.size} database credentials`);
   }
 
   /**
@@ -509,13 +510,13 @@ export class XtreamCodesManager implements IService {
           });
 
           this.clients.set(cred.id, client);
-          console.log(`Loaded IPTV credential: ${cred.name} (ID: ${cred.id})`);
+          loggers.xtreamCodes.debug(`Loaded IPTV credential: ${cred.name} (ID: ${cred.id})`);
         } catch (error) {
-          console.error(`Failed to load credential ${cred.name}:`, error);
+          loggers.xtreamCodes.error(`Failed to load credential ${cred.name}`, { error });
         }
       }
     } catch (error) {
-      console.error('Error loading credentials from database:', error);
+      loggers.xtreamCodes.error('Error loading credentials from database', { error });
     }
   }
 
@@ -582,7 +583,7 @@ export class XtreamCodesManager implements IService {
       this.clients.set(cred.id, client);
       return client;
     } catch (error) {
-      console.error(`Failed to create client for credential ${credentialId}:`, error);
+      loggers.xtreamCodes.error(`Failed to create client for credential ${credentialId}`, { error });
       return null;
     }
   }
@@ -635,11 +636,11 @@ export class XtreamCodesManager implements IService {
 
     // If no database credentials, fallback to env client
     if (clients.length === 0 && this.envClient) {
-      console.log(`[IPTV] User ${userId} has no plan credentials, falling back to ENV`);
+      loggers.xtreamCodes.debug(`User ${userId} has no plan credentials, falling back to ENV`);
       return [this.envClient];
     }
 
-    console.log(`[IPTV] User ${userId} has ${clients.length} plan credential(s)`);
+    loggers.xtreamCodes.debug(`User ${userId} has ${clients.length} plan credential(s)`);
     return clients;
   }
 
@@ -728,7 +729,7 @@ export class XtreamCodesManager implements IService {
           decrypt(provider.serverUrl!);
           providerInfo.set(providerId, { type: 'xtream', hasCredentials: true });
         } catch (error) {
-          console.error(`[IPTV] Failed to decrypt credentials for provider ${providerId}:`, error);
+          loggers.xtreamCodes.error(`Failed to decrypt credentials for provider ${providerId}`, { error });
         }
       }
     }
@@ -773,7 +774,7 @@ export class XtreamCodesManager implements IService {
     // Sort alphabetically by name
     channels.sort((a, b) => a.name.localeCompare(b.name));
 
-    console.log(`[IPTV] User ${userId} has ${channels.length} channels from packages`);
+    loggers.xtreamCodes.debug(`User ${userId} has ${channels.length} channels from packages`);
     return channels;
   }
 
@@ -796,7 +797,7 @@ export class XtreamCodesManager implements IService {
 
     if (packageChannels.length > 0) {
       // User has package-based channels, use those
-      console.log(`[IPTV] Using package-based channels for user ${userId}`);
+      loggers.xtreamCodes.debug(`Using package-based channels for user ${userId}`);
 
       // Cache the result
       this.userChannelCache.set(userId, {
@@ -812,7 +813,7 @@ export class XtreamCodesManager implements IService {
     }
 
     // Fall back to legacy credential-based channels
-    console.log(`[IPTV] Falling back to legacy credentials for user ${userId}`);
+    loggers.xtreamCodes.debug(`Falling back to legacy credentials for user ${userId}`);
 
     const clients = await this.getClientsForUser(userId);
     if (clients.length === 0) {
@@ -931,7 +932,7 @@ export class XtreamCodesManager implements IService {
    * Supports both package-based and direct credential channels
    */
   async selectCredentialForStream(userId: number, streamId: string): Promise<number | null> {
-    console.log(`[IPTV] selectCredentialForStream called for user ${userId}, stream ${streamId}`);
+    loggers.xtreamCodes.debug(`selectCredentialForStream called for user ${userId}, stream ${streamId}`);
 
     // First, check if user already has an active stream for this exact streamId
     // This prevents the case where acquire creates a session, then the stream request
@@ -945,24 +946,24 @@ export class XtreamCodesManager implements IService {
       .limit(1);
 
     if (existingStream) {
-      console.log(`[IPTV] User ${userId} already has active stream ${streamId} on credential ${existingStream.credentialId}`);
+      loggers.xtreamCodes.debug(`User ${userId} already has active stream ${streamId} on credential ${existingStream.credentialId}`);
       return existingStream.credentialId;
     }
 
     // Next, check if this is a package-based channel
     const packageChannelCredential = await this.selectPackageChannelCredential(userId, streamId);
     if (packageChannelCredential !== null) {
-      console.log(`[IPTV] Found package credential ${packageChannelCredential} for stream ${streamId}`);
+      loggers.xtreamCodes.debug(`Found package credential ${packageChannelCredential} for stream ${streamId}`);
       return packageChannelCredential;
     }
 
-    console.log(`[IPTV] No package credential found, falling back to legacy for stream ${streamId}`);
+    loggers.xtreamCodes.debug(`No package credential found, falling back to legacy for stream ${streamId}`);
 
     // Fall back to legacy credential-based selection
     const clients = await this.getClientsForUser(userId);
     if (clients.length === 0) {
       // Use env client fallback (no stream tracking)
-      console.log(`[IPTV] User ${userId} using ENV CLIENT (no plan credentials)`);
+      loggers.xtreamCodes.debug(`User ${userId} using ENV CLIENT (no plan credentials)`);
       return this.envClient ? -1 : null;
     }
 
@@ -985,12 +986,12 @@ export class XtreamCodesManager implements IService {
         .where(eq(activeIptvStreams.credentialId, credentialId));
 
       if (activeStreams.length < cred.maxConnections) {
-        console.log(`[IPTV] User ${userId} using PLAN CREDENTIAL ${credentialId} (${cred.name}) for stream ${streamId}`);
+        loggers.xtreamCodes.debug(`User ${userId} using PLAN CREDENTIAL ${credentialId} (${cred.name}) for stream ${streamId}`);
         return credentialId;
       }
     }
 
-    console.log(`[IPTV] User ${userId} NO CAPACITY for stream ${streamId}`);
+    loggers.xtreamCodes.debug(`User ${userId} NO CAPACITY for stream ${streamId}`);
     return null; // No capacity available
   }
 
@@ -999,7 +1000,7 @@ export class XtreamCodesManager implements IService {
    * Returns credential ID if found and has capacity, null otherwise
    */
   private async selectPackageChannelCredential(userId: number, streamId: string): Promise<number | null> {
-    console.log(`[IPTV-PKG] Checking package credential for user ${userId}, stream ${streamId}`);
+    loggers.xtreamCodes.debug(`Checking package credential for user ${userId}, stream ${streamId}`);
 
     // Get user's active subscriptions
     const subscriptions = await db.select()
@@ -1011,12 +1012,12 @@ export class XtreamCodesManager implements IService {
       ));
 
     if (subscriptions.length === 0) {
-      console.log(`[IPTV-PKG] User ${userId} has no active subscriptions`);
+      loggers.xtreamCodes.debug(`User ${userId} has no active subscriptions`);
       return null;
     }
 
     const planIds = subscriptions.map(s => s.userSubscriptions.plan_id);
-    console.log(`[IPTV-PKG] User ${userId} has plans: ${planIds.join(', ')}`);
+    loggers.xtreamCodes.debug(`User ${userId} has plans: ${planIds.join(', ')}`);
 
     // Get packages assigned to those plans
     const assignedPackages = await db.select()
@@ -1028,12 +1029,12 @@ export class XtreamCodesManager implements IService {
       ));
 
     if (assignedPackages.length === 0) {
-      console.log(`[IPTV-PKG] No packages assigned to user ${userId}'s plans`);
+      loggers.xtreamCodes.debug(`No packages assigned to user ${userId}'s plans`);
       return null;
     }
 
     const packageIds = Array.from(new Set(assignedPackages.map(p => p.channel_packages.id)));
-    console.log(`[IPTV-PKG] User ${userId} has packages: ${packageIds.join(', ')}`);
+    loggers.xtreamCodes.debug(`User ${userId} has packages: ${packageIds.join(', ')}`);
 
     // Check if streamId exists in user's packages
     const [channelInPackage] = await db.select({
@@ -1049,11 +1050,11 @@ export class XtreamCodesManager implements IService {
       .limit(1);
 
     if (!channelInPackage) {
-      console.log(`[IPTV-PKG] Channel ${streamId} not found in user ${userId}'s packages (or not enabled)`);
+      loggers.xtreamCodes.debug(`Channel ${streamId} not found in user ${userId}'s packages (or not enabled)`);
       return null; // Channel not found in user's packages
     }
 
-    console.log(`[IPTV-PKG] Found channel ${streamId} in package, provider: ${channelInPackage.channel.providerId}`);
+    loggers.xtreamCodes.debug(`Found channel ${streamId} in package, provider: ${channelInPackage.channel.providerId}`);
 
 
     const providerId = channelInPackage.channel.providerId;
@@ -1072,12 +1073,12 @@ export class XtreamCodesManager implements IService {
       ))
       .limit(1);
 
-    console.log(`[IPTV-PKG] Provider ${providerId} type: ${providerInfo?.providerType}, directStreamUrl: ${providerInfo?.directStreamUrl ? 'yes' : 'no'}`);
+    loggers.xtreamCodes.debug(`Provider ${providerId} type: ${providerInfo?.providerType}, directStreamUrl: ${providerInfo?.directStreamUrl ? 'yes' : 'no'}`);
 
     if (providerInfo?.providerType === 'm3u' || providerInfo?.directStreamUrl) {
       // M3U providers don't need credentials - they use direct URLs
       // Return -2 as a special marker indicating M3U stream is allowed
-      console.log(`[IPTV-PKG] M3U provider detected for channel ${streamId} - no credentials needed`);
+      loggers.xtreamCodes.debug(`M3U provider detected for channel ${streamId} - no credentials needed`);
       return -2;
     }
 
@@ -1090,7 +1091,7 @@ export class XtreamCodesManager implements IService {
       ));
 
     if (providerCredentials.length === 0) {
-      console.log(`[IPTV] No active credentials for provider ${providerId}`);
+      loggers.xtreamCodes.debug(`No active credentials for provider ${providerId}`);
       return null;
     }
 
@@ -1110,23 +1111,17 @@ export class XtreamCodesManager implements IService {
       }));
       allStreamsInfo.push({ credId: cred.id, name: cred.name, streams: streamInfo });
 
-      console.log(`[IPTV-PKG] Credential ${cred.id} (${cred.name}): ${activeStreams.length}/${cred.maxConnections} streams active`);
+      loggers.xtreamCodes.debug(`Credential ${cred.id} (${cred.name}): ${activeStreams.length}/${cred.maxConnections} streams active`);
 
       if (activeStreams.length < cred.maxConnections) {
-        console.log(`[IPTV] User ${userId} using PACKAGE CREDENTIAL ${cred.id} (${cred.name}) for stream ${streamId}`);
+        loggers.xtreamCodes.debug(`User ${userId} using PACKAGE CREDENTIAL ${cred.id} (${cred.name}) for stream ${streamId}`);
         return cred.id;
       }
     }
 
     // Log detailed info about what's blocking capacity
-    console.log(`[IPTV] User ${userId} NO CAPACITY for package stream ${streamId} (provider ${providerId})`);
-    console.log(`[IPTV] Active streams blocking capacity:`);
-    for (const info of allStreamsInfo) {
-      console.log(`  Credential ${info.credId} (${info.name}): ${info.streams.length} streams`);
-      for (const s of info.streams) {
-        console.log(`    - User ${s.userId}, stream ${s.streamId}, last heartbeat ${s.age}s ago`);
-      }
-    }
+    loggers.xtreamCodes.debug(`User ${userId} NO CAPACITY for package stream ${streamId} (provider ${providerId})`);
+    loggers.xtreamCodes.debug(`Active streams blocking capacity: ${JSON.stringify(allStreamsInfo)}`);
     return null;
   }
 
@@ -1149,7 +1144,7 @@ export class XtreamCodesManager implements IService {
     // M3U providers don't use clients - they use direct URLs
     // Returning null here is intentional - the stream endpoint checks for M3U first
     if (credentialId === -2) {
-      console.log(`[IPTV] M3U provider for stream ${streamId} - no client needed`);
+      loggers.xtreamCodes.debug(`M3U provider for stream ${streamId} - no client needed`);
       return null;
     }
 
@@ -1162,7 +1157,7 @@ export class XtreamCodesManager implements IService {
    * Used when failing over to a backup channel from a different provider
    */
   async getClientForBackupStream(streamId: string): Promise<XtreamCodesClient | null> {
-    console.log(`[IPTV-Backup] Looking for credential for backup stream ${streamId}`);
+    loggers.xtreamCodes.debug(`Looking for credential for backup stream ${streamId}`);
 
     // Look up the channel in the database to find its provider
     const [channel] = await db.select()
@@ -1171,12 +1166,12 @@ export class XtreamCodesManager implements IService {
       .limit(1);
 
     if (!channel) {
-      console.log(`[IPTV-Backup] Channel ${streamId} not found in database`);
+      loggers.xtreamCodes.debug(`Backup: Channel ${streamId} not found in database`);
       return null;
     }
 
     const providerId = channel.providerId;
-    console.log(`[IPTV-Backup] Channel ${streamId} belongs to provider ${providerId}`);
+    loggers.xtreamCodes.debug(`Backup: Channel ${streamId} belongs to provider ${providerId}`);
 
     // Get any active credential for this provider
     const providerCredentials = await db.select()
@@ -1187,7 +1182,7 @@ export class XtreamCodesManager implements IService {
       ));
 
     if (providerCredentials.length === 0) {
-      console.log(`[IPTV-Backup] No active credentials for provider ${providerId}`);
+      loggers.xtreamCodes.debug(`Backup: No active credentials for provider ${providerId}`);
       return null;
     }
 
@@ -1197,16 +1192,16 @@ export class XtreamCodesManager implements IService {
         .from(activeIptvStreams)
         .where(eq(activeIptvStreams.credentialId, cred.id));
 
-      console.log(`[IPTV-Backup] Credential ${cred.id} (${cred.name}): ${activeStreams.length}/${cred.maxConnections} streams`);
+      loggers.xtreamCodes.debug(`Backup: Credential ${cred.id} (${cred.name}): ${activeStreams.length}/${cred.maxConnections} streams`);
 
       if (activeStreams.length < cred.maxConnections) {
-        console.log(`[IPTV-Backup] Using credential ${cred.id} (${cred.name}) for backup stream ${streamId}`);
+        loggers.xtreamCodes.debug(`Backup: Using credential ${cred.id} (${cred.name}) for backup stream ${streamId}`);
         return this.getClient(cred.id);
       }
     }
 
     // If all credentials are at capacity, use the first one anyway for backup (best effort)
-    console.log(`[IPTV-Backup] All credentials at capacity, using first available for backup`);
+    loggers.xtreamCodes.debug(`Backup: All credentials at capacity, using first available for backup`);
     return this.getClient(providerCredentials[0].id);
   }
 
@@ -1237,7 +1232,7 @@ export class XtreamCodesManager implements IService {
         });
         this.clients.set(cred.id, client);
       } catch (error) {
-        console.error(`Failed to reload credential ${credentialId}:`, error);
+        loggers.xtreamCodes.error(`Failed to reload credential ${credentialId}`, { error });
       }
     }
 
@@ -1320,14 +1315,14 @@ export class XtreamCodesManager implements IService {
       try {
         await client.getChannels();
       } catch (error) {
-        console.error('Error refreshing client cache:', error);
+        loggers.xtreamCodes.error('Error refreshing client cache', { error });
       }
     }
     if (this.envClient) {
       try {
         await this.envClient.getChannels();
       } catch (error) {
-        console.error('Error refreshing env client cache:', error);
+        loggers.xtreamCodes.error('Error refreshing env client cache', { error });
       }
     }
   }

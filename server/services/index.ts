@@ -24,6 +24,7 @@ import { xtreamCodesService } from './xtream-codes-service';
 import { streamTrackerService } from './stream-tracker-service';
 import { providerHealthService } from './provider-health-service';
 import { getSharedEPGService } from './epg-singleton';
+import { loggers } from '../lib/logger';
 
 /**
  * Initialize all services and register them with the service registry
@@ -46,12 +47,12 @@ export async function initializeServices(): Promise<void> {
   providerHealthService.startHealthChecks();
 
   // Initialize EPG service on startup to build 7-day cache
-  console.log('[EPG] Initializing EPG service on startup...');
+  loggers.epg.info('Initializing EPG service on startup...');
   getSharedEPGService().then(() => {
-    console.log('[EPG] EPG service initialized and caching started');
+    loggers.epg.info('EPG service initialized and caching started');
   }).catch((err) => {
-    console.error('[EPG] Failed to initialize EPG service:', err);
+    loggers.epg.error('Failed to initialize EPG service', { error: err });
   });
 
-  console.log('All services initialized');
+  loggers.express.info('All services initialized');
 }

@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import { db } from '../db';
+import { loggers } from '../lib/logger';
 import {
   iptvProviders,
   iptvCredentials,
@@ -55,13 +56,13 @@ function convertLogoToProxy(logoUrl: string | null): string | null {
 
 // Debug logging for all requests to this router
 router.use((req, res, next) => {
-  console.log(`[ADMIN-IPTV] ${req.method} ${req.path} (full: ${req.originalUrl})`);
+  loggers.adminIptv.debug(`${req.method} ${req.path}`, { fullUrl: req.originalUrl });
   next();
 });
 
 // Debug test endpoint - no auth required
 router.get('/debug-test', (req, res) => {
-  console.log('[ADMIN-IPTV] Debug test endpoint hit!');
+  loggers.adminIptv.debug('Debug test endpoint hit');
   res.json({ success: true, message: 'Admin IPTV router is working', timestamp: new Date().toISOString() });
 });
 
@@ -162,12 +163,12 @@ const bulkUpdateChannelsSchema = z.object({
  * Middleware to check if user is super admin
  */
 function requireSuperAdmin(req: any, res: any, next: any) {
-  console.log(`[REQUIRE-SUPERADMIN] Checking user:`, req.user?.username, req.user?.role);
+  loggers.adminIptv.trace('Checking superadmin access', { username: req.user?.username, role: req.user?.role });
   if (!req.user || req.user.role !== 'superadmin') {
-    console.log(`[REQUIRE-SUPERADMIN] Access denied - user: ${req.user?.username}, role: ${req.user?.role}`);
+    loggers.adminIptv.warn('Access denied', { username: req.user?.username, role: req.user?.role });
     return res.status(403).json({ error: 'Super admin access required' });
   }
-  console.log(`[REQUIRE-SUPERADMIN] Access granted for ${req.user.username}`);
+  loggers.adminIptv.trace('Access granted', { username: req.user?.username });
   next();
 }
 
@@ -241,7 +242,7 @@ router.get('/iptv-providers', requireSuperAdmin, async (req, res) => {
 
     res.json(providersWithStats);
   } catch (error) {
-    console.error('Error fetching IPTV providers:', error);
+    loggers.adminIptv.error('Error fetching IPTV providers', { error });
     res.status(500).json({ error: 'Failed to fetch IPTV providers' });
   }
 });
@@ -282,7 +283,7 @@ router.get('/iptv-providers/:id', requireSuperAdmin, async (req, res) => {
       updatedAt: provider.updatedAt,
     });
   } catch (error) {
-    console.error('Error fetching IPTV provider:', error);
+    loggers.adminIptv.error('Error fetching IPTV provider', { error });
     res.status(500).json({ error: 'Failed to fetch IPTV provider' });
   }
 });
@@ -320,7 +321,7 @@ router.post('/iptv-providers', requireSuperAdmin, async (req, res) => {
     if (error instanceof z.ZodError) {
       return res.status(400).json({ error: error.errors });
     }
-    console.error('Error creating IPTV provider:', error);
+    loggers.adminIptv.error('Error creating IPTV provider', { error });
     res.status(500).json({ error: 'Failed to create IPTV provider' });
   }
 });
@@ -380,7 +381,7 @@ router.put('/iptv-providers/:id', requireSuperAdmin, async (req, res) => {
     if (error instanceof z.ZodError) {
       return res.status(400).json({ error: error.errors });
     }
-    console.error('Error updating IPTV provider:', error);
+    loggers.adminIptv.error('Error updating IPTV provider', { error });
     res.status(500).json({ error: 'Failed to update IPTV provider' });
   }
 });
@@ -420,7 +421,7 @@ router.delete('/iptv-providers/:id', requireSuperAdmin, async (req, res) => {
 
     res.json({ success: true });
   } catch (error) {
-    console.error('Error deleting IPTV provider:', error);
+    loggers.adminIptv.error('Error deleting IPTV provider', { error });
     res.status(500).json({ error: 'Failed to delete IPTV provider' });
   }
 });
@@ -469,7 +470,7 @@ router.get('/iptv-providers/:id/credentials', requireSuperAdmin, async (req, res
 
     res.json(credentialsWithStats);
   } catch (error) {
-    console.error('Error fetching provider credentials:', error);
+    loggers.adminIptv.error('Error fetching provider credentials', { error });
     res.status(500).json({ error: 'Failed to fetch provider credentials' });
   }
 });
@@ -530,7 +531,7 @@ router.post('/iptv-providers/:id/credentials', requireSuperAdmin, async (req, re
     if (error instanceof z.ZodError) {
       return res.status(400).json({ error: error.errors });
     }
-    console.error('Error adding credential to provider:', error);
+    loggers.adminIptv.error('Error adding credential to provider', { error });
     res.status(500).json({ error: 'Failed to add credential to provider' });
   }
 });
@@ -567,7 +568,7 @@ router.post('/iptv-providers/:id/sync', requireSuperAdmin, async (req, res) => {
         return res.status(400).json({ error: 'M3U URL not configured for this provider' });
       }
 
-      console.log(`[IPTV Sync] Syncing M3U provider ${providerId}: ${provider.m3uUrl}`);
+      loggers.adminIptv.info('Syncing M3U provider', { providerId, m3uUrl: provider.m3uUrl });
 
       // Fetch and parse M3U
       const m3uResult = await m3uParserService.fetchAndParseM3U(provider.m3uUrl);
@@ -579,14 +580,19 @@ router.post('/iptv-providers/:id/sync', requireSuperAdmin, async (req, res) => {
         try {
           epgMap = await m3uParserService.fetchXMLTV(provider.xmltvUrl);
         } catch (err) {
-          console.error(`[IPTV Sync] Failed to fetch XMLTV for provider ${providerId}:`, err);
+          loggers.adminIptv.error('Failed to fetch XMLTV for provider', { providerId, error: err });
         }
       }
 
       // Log first 5 channels
-      console.log(`[IPTV Sync] First 5 M3U channels from provider ${providerId}:`);
-      m3uResult.channels.slice(0, 5).forEach((ch, i) => {
-        console.log(`  ${i + 1}. ${ch.name} | streamId: ${ch.streamId} | epgId: "${ch.epgId || 'NULL'}"`);
+      loggers.adminIptv.debug('First 5 M3U channels from provider', {
+        providerId,
+        channels: m3uResult.channels.slice(0, 5).map((ch, i) => ({
+          index: i + 1,
+          name: ch.name,
+          streamId: ch.streamId,
+          epgId: ch.epgId || null
+        }))
       });
 
       // Upsert channels
@@ -678,9 +684,14 @@ router.post('/iptv-providers/:id/sync', requireSuperAdmin, async (req, res) => {
       totalChannels = liveStreams.length;
 
       // Log first 5 streams
-      console.log(`[IPTV Sync] First 5 streams from provider ${providerId}:`);
-      liveStreams.slice(0, 5).forEach((s: any, i: number) => {
-        console.log(`  ${i + 1}. ${s.name} | stream_id: ${s.stream_id} | epg_channel_id: "${s.epg_channel_id || 'NULL'}"`);
+      loggers.adminIptv.debug('First 5 streams from provider', {
+        providerId,
+        streams: liveStreams.slice(0, 5).map((s: any, i: number) => ({
+          index: i + 1,
+          name: s.name,
+          streamId: s.stream_id,
+          epgChannelId: s.epg_channel_id || null
+        }))
       });
 
       for (const stream of liveStreams) {
@@ -739,7 +750,7 @@ router.post('/iptv-providers/:id/sync', requireSuperAdmin, async (req, res) => {
       .set({ lastChannelSync: new Date(), updatedAt: new Date() })
       .where(eq(iptvProviders.id, providerId));
 
-    console.log(`[IPTV Sync] Provider ${providerId}: ${totalChannels} total, ${withEpgCount} have EPG`);
+    loggers.adminIptv.info('Channel sync completed', { providerId, totalChannels, channelsWithEpg: withEpgCount });
 
     res.json({
       success: true,
@@ -749,7 +760,7 @@ router.post('/iptv-providers/:id/sync', requireSuperAdmin, async (req, res) => {
       channelsWithEpg: withEpgCount,
     });
   } catch (error) {
-    console.error('Error syncing channels from provider:', error);
+    loggers.adminIptv.error('Error syncing channels from provider', { error });
     res.status(500).json({ error: 'Failed to sync channels from provider' });
   }
 });
@@ -824,7 +835,7 @@ router.get('/iptv-channels', requireSuperAdmin, async (req, res) => {
       },
     });
   } catch (error) {
-    console.error('Error fetching channels:', error);
+    loggers.adminIptv.error('Error fetching channels', { error });
     res.status(500).json({ error: 'Failed to fetch channels' });
   }
 });
@@ -853,7 +864,7 @@ router.get('/iptv-channels/categories', requireSuperAdmin, async (req, res) => {
 
     res.json(categories);
   } catch (error) {
-    console.error('Error fetching categories:', error);
+    loggers.adminIptv.error('Error fetching categories', { error });
     res.status(500).json({ error: 'Failed to fetch categories' });
   }
 });
@@ -865,9 +876,9 @@ router.get('/iptv-channels/categories', requireSuperAdmin, async (req, res) => {
  */
 router.put('/iptv-channels/bulk', requireSuperAdmin, async (req, res) => {
   try {
-    console.log('[IPTV-BULK] Request body:', JSON.stringify(req.body));
+    loggers.adminIptv.debug('Bulk update request', { body: req.body });
     const validatedData = bulkUpdateChannelsSchema.parse(req.body);
-    console.log('[IPTV-BULK] Validated:', validatedData.channelIds.length, 'channels, isEnabled:', validatedData.isEnabled);
+    loggers.adminIptv.debug('Bulk update validated', { channelCount: validatedData.channelIds.length, isEnabled: validatedData.isEnabled });
 
     if (validatedData.channelIds.length === 0) {
       return res.status(400).json({ error: 'No channels selected' });
@@ -879,14 +890,14 @@ router.put('/iptv-channels/bulk', requireSuperAdmin, async (req, res) => {
       .where(inArray(iptvChannels.id, validatedData.channelIds))
       .returning({ id: iptvChannels.id });
 
-    console.log('[IPTV-BULK] Updated', result.length, 'channels');
+    loggers.adminIptv.info('Bulk updated channels', { updatedCount: result.length });
     res.json({ success: true, updated: result.length });
   } catch (error) {
     if (error instanceof z.ZodError) {
-      console.error('[IPTV-BULK] Zod validation error:', error.errors);
+      loggers.adminIptv.warn('Bulk update validation error', { errors: error.errors });
       return res.status(400).json({ error: error.errors });
     }
-    console.error('[IPTV-BULK] Error bulk updating channels:', error);
+    loggers.adminIptv.error('Error bulk updating channels', { error });
     res.status(500).json({ error: 'Failed to bulk update channels' });
   }
 });
@@ -918,7 +929,7 @@ router.put('/iptv-channels/bulk-category', requireSuperAdmin, async (req, res) =
     if (error instanceof z.ZodError) {
       return res.status(400).json({ error: error.errors });
     }
-    console.error('Error bulk updating category:', error);
+    loggers.adminIptv.error('Error bulk updating category', { error });
     res.status(500).json({ error: 'Failed to bulk update category' });
   }
 });
@@ -963,7 +974,7 @@ router.put('/iptv-channels/:id', requireSuperAdmin, async (req, res) => {
     if (error instanceof z.ZodError) {
       return res.status(400).json({ error: error.errors });
     }
-    console.error('Error updating channel:', error);
+    loggers.adminIptv.error('Error updating channel', { error });
     res.status(500).json({ error: 'Failed to update channel' });
   }
 });
@@ -1007,7 +1018,7 @@ router.get('/channel-packages', requireSuperAdmin, async (req, res) => {
 
     res.json(packagesWithStats);
   } catch (error) {
-    console.error('Error fetching channel packages:', error);
+    loggers.adminIptv.error('Error fetching channel packages', { error });
     res.status(500).json({ error: 'Failed to fetch channel packages' });
   }
 });
@@ -1060,7 +1071,7 @@ router.get('/channel-packages/:id', requireSuperAdmin, async (req, res) => {
       channels: channelsWithProxiedLogos,
     });
   } catch (error) {
-    console.error('Error fetching channel package:', error);
+    loggers.adminIptv.error('Error fetching channel package', { error });
     res.status(500).json({ error: 'Failed to fetch channel package' });
   }
 });
@@ -1098,7 +1109,7 @@ router.post('/channel-packages', requireSuperAdmin, async (req, res) => {
     if (error instanceof z.ZodError) {
       return res.status(400).json({ error: error.errors });
     }
-    console.error('Error creating channel package:', error);
+    loggers.adminIptv.error('Error creating channel package', { error });
     res.status(500).json({ error: 'Failed to create channel package' });
   }
 });
@@ -1109,12 +1120,12 @@ router.post('/channel-packages', requireSuperAdmin, async (req, res) => {
  * Also supports POST for Cloudflare compatibility
  */
 router.put('/channel-packages/:id', requireSuperAdmin, async (req, res) => {
-  console.log('[CHANNEL-PKG] PUT /channel-packages/:id called, id:', req.params.id, 'body:', JSON.stringify(req.body));
+  loggers.adminIptv.debug('PUT /channel-packages/:id called', { id: req.params.id, body: req.body });
   handleUpdatePackage(req, res);
 });
 
 router.post('/channel-packages/:id/update', requireSuperAdmin, async (req, res) => {
-  console.log('[CHANNEL-PKG] POST /channel-packages/:id/update called, id:', req.params.id, 'body:', JSON.stringify(req.body));
+  loggers.adminIptv.debug('POST /channel-packages/:id/update called', { id: req.params.id, body: req.body });
   handleUpdatePackage(req, res);
 });
 
@@ -1153,7 +1164,7 @@ async function handleUpdatePackage(req: any, res: any) {
     if (error instanceof z.ZodError) {
       return res.status(400).json({ error: error.errors });
     }
-    console.error('Error updating channel package:', error);
+    loggers.adminIptv.error('Error updating channel package', { error });
     res.status(500).json({ error: 'Failed to update channel package' });
   }
 }
@@ -1180,7 +1191,7 @@ router.delete('/channel-packages/:id', requireSuperAdmin, async (req, res) => {
 
     res.json({ success: true });
   } catch (error) {
-    console.error('Error deleting channel package:', error);
+    loggers.adminIptv.error('Error deleting channel package', { error });
     res.status(500).json({ error: 'Failed to delete channel package' });
   }
 });
@@ -1260,14 +1271,14 @@ router.post('/channel-packages/:id/channels', requireSuperAdmin, async (req, res
 
     // Clear user channel cache so changes appear immediately
     await xtreamCodesService.forceRefreshCache();
-    console.log(`[CHANNEL-PKG] Added ${validIds.length} channels to package ${packageId}, cleared cache`);
+    loggers.adminIptv.info('Added channels to package', { packageId, addedCount: validIds.length });
 
     res.json({ success: true, added: validIds.length });
   } catch (error) {
     if (error instanceof z.ZodError) {
       return res.status(400).json({ error: error.errors });
     }
-    console.error('Error adding channels to package:', error);
+    loggers.adminIptv.error('Error adding channels to package', { error });
     res.status(500).json({ error: 'Failed to add channels to package' });
   }
 });
@@ -1301,13 +1312,13 @@ router.post('/channel-packages/:id/remove-channels', requireSuperAdmin, async (r
 
     // Clear user channel cache so changes appear immediately
     await xtreamCodesService.forceRefreshCache();
-    console.log(`[CHANNEL-PKG] Bulk removed ${result.length} channels from package ${packageId}, cleared cache`);
+    loggers.adminIptv.info('Bulk removed channels from package', { packageId, removedCount: result.length });
     res.json({ success: true, removed: result.length });
   } catch (error) {
     if (error instanceof z.ZodError) {
       return res.status(400).json({ error: error.errors });
     }
-    console.error('Error bulk removing channels:', error);
+    loggers.adminIptv.error('Error bulk removing channels', { error });
     res.status(500).json({ error: 'Failed to remove channels' });
   }
 });
@@ -1342,7 +1353,7 @@ router.delete('/channel-packages/:packageId/channels/:channelId', requireSuperAd
 
     res.json({ success: true });
   } catch (error) {
-    console.error('Error removing channel from package:', error);
+    loggers.adminIptv.error('Error removing channel from package', { error });
     res.status(500).json({ error: 'Failed to remove channel from package' });
   }
 });
@@ -1392,7 +1403,7 @@ router.get('/subscription-plans/:id/packages', requireSuperAdmin, async (req, re
 
     res.json(packagesWithCounts);
   } catch (error) {
-    console.error('Error fetching plan packages:', error);
+    loggers.adminIptv.error('Error fetching plan packages', { error });
     res.status(500).json({ error: 'Failed to fetch plan packages' });
   }
 });
@@ -1459,7 +1470,7 @@ router.post('/subscription-plans/:id/packages', requireSuperAdmin, async (req, r
     if (error instanceof z.ZodError) {
       return res.status(400).json({ error: error.errors });
     }
-    console.error('Error assigning package to plan:', error);
+    loggers.adminIptv.error('Error assigning package to plan', { error });
     res.status(500).json({ error: 'Failed to assign package to plan' });
   }
 });
@@ -1491,7 +1502,7 @@ router.delete('/subscription-plans/:planId/packages/:packageId', requireSuperAdm
 
     res.json({ success: true });
   } catch (error) {
-    console.error('Error removing package from plan:', error);
+    loggers.adminIptv.error('Error removing package from plan', { error });
     res.status(500).json({ error: 'Failed to remove package from plan' });
   }
 });
@@ -1539,7 +1550,7 @@ router.get('/iptv-credentials', requireSuperAdmin, async (req, res) => {
 
     res.json(credentialsWithStats);
   } catch (error) {
-    console.error('Error fetching IPTV credentials:', error);
+    loggers.adminIptv.error('Error fetching IPTV credentials', { error });
     res.status(500).json({ error: 'Failed to fetch IPTV credentials' });
   }
 });
@@ -1581,7 +1592,7 @@ router.get('/iptv-credentials/:id', requireSuperAdmin, async (req, res) => {
       updatedAt: credential.updatedAt,
     });
   } catch (error) {
-    console.error('Error fetching IPTV credential:', error);
+    loggers.adminIptv.error('Error fetching IPTV credential', { error });
     res.status(500).json({ error: 'Failed to fetch IPTV credential' });
   }
 });
@@ -1625,7 +1636,7 @@ router.post('/iptv-credentials', requireSuperAdmin, async (req, res) => {
     if (error instanceof z.ZodError) {
       return res.status(400).json({ error: error.errors });
     }
-    console.error('Error creating IPTV credential:', error);
+    loggers.adminIptv.error('Error creating IPTV credential', { error });
     res.status(500).json({ error: 'Failed to create IPTV credential' });
   }
 });
@@ -1695,7 +1706,7 @@ router.put('/iptv-credentials/:id', requireSuperAdmin, async (req, res) => {
     if (error instanceof z.ZodError) {
       return res.status(400).json({ error: error.errors });
     }
-    console.error('Error updating IPTV credential:', error);
+    loggers.adminIptv.error('Error updating IPTV credential', { error });
     res.status(500).json({ error: 'Failed to update IPTV credential' });
   }
 });
@@ -1729,7 +1740,7 @@ router.delete('/iptv-credentials/:id', requireSuperAdmin, async (req, res) => {
 
     res.json({ success: true });
   } catch (error) {
-    console.error('Error deleting IPTV credential:', error);
+    loggers.adminIptv.error('Error deleting IPTV credential', { error });
     res.status(500).json({ error: 'Failed to delete IPTV credential' });
   }
 });
@@ -1820,7 +1831,7 @@ router.post('/iptv-credentials/:id/test', requireSuperAdmin, async (req, res) =>
       });
     }
   } catch (error) {
-    console.error('Error testing IPTV credential:', error);
+    loggers.adminIptv.error('Error testing IPTV credential', { error });
     res.status(500).json({ error: 'Failed to test IPTV credential' });
   }
 });
@@ -1844,7 +1855,7 @@ router.get('/iptv-credentials/:id/streams', requireSuperAdmin, async (req, res) 
       capacity,
     });
   } catch (error) {
-    console.error('Error fetching credential streams:', error);
+    loggers.adminIptv.error('Error fetching credential streams', { error });
     res.status(500).json({ error: 'Failed to fetch credential streams' });
   }
 });
@@ -1864,7 +1875,7 @@ router.post('/iptv-credentials/:id/disconnect-all', requireSuperAdmin, async (re
 
     res.json({ success: true, disconnected: count });
   } catch (error) {
-    console.error('Error disconnecting streams:', error);
+    loggers.adminIptv.error('Error disconnecting streams', { error });
     res.status(500).json({ error: 'Failed to disconnect streams' });
   }
 });
@@ -1878,7 +1889,7 @@ router.post('/iptv-credentials/cleanup-stale', requireSuperAdmin, async (req, re
     const count = await streamTrackerService.cleanupStaleStreams();
     res.json({ success: true, cleaned: count });
   } catch (error) {
-    console.error('Error cleaning up stale streams:', error);
+    loggers.adminIptv.error('Error cleaning up stale streams', { error });
     res.status(500).json({ error: 'Failed to cleanup stale streams' });
   }
 });
@@ -1890,10 +1901,10 @@ router.post('/iptv-credentials/cleanup-stale', requireSuperAdmin, async (req, re
 router.post('/iptv-credentials/clear-all-streams', requireSuperAdmin, async (req, res) => {
   try {
     const result = await db.delete(activeIptvStreams).returning();
-    console.log(`Force cleared ${result.length} streams`);
+    loggers.adminIptv.info('Force cleared all streams', { clearedCount: result.length });
     res.json({ success: true, cleared: result.length });
   } catch (error) {
-    console.error('Error clearing all streams:', error);
+    loggers.adminIptv.error('Error clearing all streams', { error });
     res.status(500).json({ error: 'Failed to clear streams' });
   }
 });
@@ -1907,7 +1918,7 @@ router.get('/iptv-credentials/all-streams', requireSuperAdmin, async (req, res) 
     const streams = await streamTrackerService.getAllActiveStreams();
     res.json(streams);
   } catch (error) {
-    console.error('Error fetching all streams:', error);
+    loggers.adminIptv.error('Error fetching all streams', { error });
     res.status(500).json({ error: 'Failed to fetch streams' });
   }
 });
@@ -1944,7 +1955,7 @@ router.get('/subscription-plans/:id/iptv-credentials', requireSuperAdmin, async 
 
     res.json(assignments);
   } catch (error) {
-    console.error('Error fetching plan credentials:', error);
+    loggers.adminIptv.error('Error fetching plan credentials', { error });
     res.status(500).json({ error: 'Failed to fetch plan credentials' });
   }
 });
@@ -2015,7 +2026,7 @@ router.post('/subscription-plans/:id/iptv-credentials', requireSuperAdmin, async
     if (error instanceof z.ZodError) {
       return res.status(400).json({ error: error.errors });
     }
-    console.error('Error assigning credential to plan:', error);
+    loggers.adminIptv.error('Error assigning credential to plan', { error });
     res.status(500).json({ error: 'Failed to assign credential to plan' });
   }
 });
@@ -2053,7 +2064,7 @@ router.put('/subscription-plans/:planId/iptv-credentials/:credId', requireSuperA
     if (error instanceof z.ZodError) {
       return res.status(400).json({ error: error.errors });
     }
-    console.error('Error updating assignment:', error);
+    loggers.adminIptv.error('Error updating assignment', { error });
     res.status(500).json({ error: 'Failed to update assignment' });
   }
 });
@@ -2085,7 +2096,7 @@ router.delete('/subscription-plans/:planId/iptv-credentials/:credId', requireSup
 
     res.json({ success: true });
   } catch (error) {
-    console.error('Error removing credential from plan:', error);
+    loggers.adminIptv.error('Error removing credential from plan', { error });
     res.status(500).json({ error: 'Failed to remove credential from plan' });
   }
 });
@@ -2115,7 +2126,7 @@ router.get('/iptv-streams', requireSuperAdmin, async (req, res) => {
       totalActive: streams.length
     });
   } catch (error) {
-    console.error('Error fetching active streams:', error);
+    loggers.adminIptv.error('Error fetching active streams', { error });
     res.status(500).json({ error: 'Failed to fetch active streams' });
   }
 });
@@ -2127,13 +2138,13 @@ router.get('/iptv-streams', requireSuperAdmin, async (req, res) => {
 router.delete('/iptv-streams', requireSuperAdmin, async (req, res) => {
   try {
     const result = await db.delete(activeIptvStreams).returning();
-    console.log(`[ADMIN] Cleared ${result.length} active IPTV streams`);
+    loggers.adminIptv.info('Cleared active IPTV streams', { clearedCount: result.length });
     res.json({
       success: true,
       clearedCount: result.length
     });
   } catch (error) {
-    console.error('Error clearing active streams:', error);
+    loggers.adminIptv.error('Error clearing active streams', { error });
     res.status(500).json({ error: 'Failed to clear active streams' });
   }
 });
@@ -2157,10 +2168,10 @@ router.delete('/iptv-streams/:id', requireSuperAdmin, async (req, res) => {
       return res.status(404).json({ error: 'Stream not found' });
     }
 
-    console.log(`[ADMIN] Deleted stream ${streamId}`);
+    loggers.adminIptv.info('Deleted stream', { streamId });
     res.json({ success: true });
   } catch (error) {
-    console.error('Error deleting stream:', error);
+    loggers.adminIptv.error('Error deleting stream', { error });
     res.status(500).json({ error: 'Failed to delete stream' });
   }
 });
@@ -2177,7 +2188,7 @@ router.post('/iptv-streams/cleanup', requireSuperAdmin, async (req, res) => {
       cleanedCount
     });
   } catch (error) {
-    console.error('Error running stream cleanup:', error);
+    loggers.adminIptv.error('Error running stream cleanup', { error });
     res.status(500).json({ error: 'Failed to run stream cleanup' });
   }
 });
@@ -2200,7 +2211,7 @@ router.get('/channel-mappings', requireSuperAdmin, async (req, res) => {
       stats
     });
   } catch (error) {
-    console.error('Error fetching channel mappings:', error);
+    loggers.adminIptv.error('Error fetching channel mappings', { error });
     res.status(500).json({ error: 'Failed to fetch channel mappings' });
   }
 });
@@ -2226,7 +2237,7 @@ router.post('/channel-mappings', requireSuperAdmin, async (req, res) => {
 
     res.json({ mapping });
   } catch (error: any) {
-    console.error('Error creating channel mapping:', error);
+    loggers.adminIptv.error('Error creating channel mapping', { error });
     if (error.message?.includes('different providers') || error.message?.includes('not found')) {
       return res.status(400).json({ error: error.message });
     }
@@ -2255,7 +2266,7 @@ router.put('/channel-mappings/:id', requireSuperAdmin, async (req, res) => {
 
     res.json({ success: true });
   } catch (error) {
-    console.error('Error updating channel mapping:', error);
+    loggers.adminIptv.error('Error updating channel mapping', { error });
     res.status(500).json({ error: 'Failed to update channel mapping' });
   }
 });
@@ -2274,7 +2285,7 @@ router.delete('/channel-mappings/:id', requireSuperAdmin, async (req, res) => {
     await channelMappingService.deleteMapping(mappingId);
     res.json({ success: true });
   } catch (error) {
-    console.error('Error deleting channel mapping:', error);
+    loggers.adminIptv.error('Error deleting channel mapping', { error });
     res.status(500).json({ error: 'Failed to delete channel mapping' });
   }
 });
@@ -2313,7 +2324,7 @@ router.get('/channel-mappings/search-primary', requireSuperAdmin, async (req, re
 
     res.json(channels);
   } catch (error) {
-    console.error('Error searching primary channels:', error);
+    loggers.adminIptv.error('Error searching primary channels', { error });
     res.status(500).json({ error: 'Failed to search channels' });
   }
 });
@@ -2339,7 +2350,7 @@ router.get('/channel-mappings/search', requireSuperAdmin, async (req, res) => {
 
     res.json({ candidates });
   } catch (error) {
-    console.error('Error searching backup candidates:', error);
+    loggers.adminIptv.error('Error searching backup candidates', { error });
     res.status(500).json({ error: 'Failed to search backup candidates' });
   }
 });
@@ -2368,7 +2379,7 @@ router.post('/channel-mappings/suggest', requireSuperAdmin, async (req, res) => 
 
     res.json({ suggestions });
   } catch (error) {
-    console.error('Error suggesting mappings:', error);
+    loggers.adminIptv.error('Error suggesting mappings', { error });
     res.status(500).json({ error: 'Failed to suggest mappings' });
   }
 });
@@ -2439,7 +2450,7 @@ router.get('/channel-mappings/suggest-for-provider', requireSuperAdmin, async (r
       }))
     });
   } catch (error) {
-    console.error('Error suggesting mappings for provider:', error);
+    loggers.adminIptv.error('Error suggesting mappings for provider', { error });
     res.status(500).json({ error: 'Failed to suggest mappings' });
   }
 });
@@ -2478,7 +2489,7 @@ router.post('/channel-mappings/auto-suggest', requireSuperAdmin, async (req, res
       total: suggestions.length,
     });
   } catch (error) {
-    console.error('Error getting auto-mapping suggestions:', error);
+    loggers.adminIptv.error('Error getting auto-mapping suggestions', { error });
     res.status(500).json({ error: 'Failed to get auto-mapping suggestions' });
   }
 });
@@ -2594,7 +2605,7 @@ router.post('/channel-mappings/test-failover', requireSuperAdmin, async (req, re
       } : null,
     });
   } catch (error) {
-    console.error('Error testing failover:', error);
+    loggers.adminIptv.error('Error testing failover', { error });
     res.status(500).json({ error: 'Failed to test failover' });
   }
 });
@@ -2607,7 +2618,7 @@ router.post('/channel-mappings/test-failover', requireSuperAdmin, async (req, re
 router.post('/channel-mappings/test-mode', requireSuperAdmin, async (req, res) => {
   try {
     const { streamId, enabled } = req.body;
-    console.log(`[Test Mode] POST request received: streamId=${streamId}, enabled=${enabled}`);
+    loggers.adminIptv.debug('Test mode POST request received', { streamId, enabled });
 
     if (!streamId) {
       return res.status(400).json({ error: 'streamId is required' });
@@ -2619,11 +2630,10 @@ router.post('/channel-mappings/test-mode', requireSuperAdmin, async (req, res) =
 
     if (enabled) {
       testFailoverStreams.set(String(streamId), true);
-      console.log(`[Test Mode] ✅ Enabled test failover mode for stream ${streamId}`);
-      console.log(`[Test Mode] Current test modes: ${Array.from(testFailoverStreams.keys()).join(', ')}`);
+      loggers.adminIptv.info('Enabled test failover mode', { streamId, currentTestModes: Array.from(testFailoverStreams.keys()) });
     } else {
       testFailoverStreams.delete(String(streamId));
-      console.log(`[Test Mode] ❌ Disabled test failover mode for stream ${streamId}`);
+      loggers.adminIptv.info('Disabled test failover mode', { streamId });
     }
 
     // Clear any cached stream so the change takes effect immediately
@@ -2643,7 +2653,7 @@ router.post('/channel-mappings/test-mode', requireSuperAdmin, async (req, res) =
         : 'Test mode disabled - users will receive the primary stream',
     });
   } catch (error) {
-    console.error('Error toggling test mode:', error);
+    loggers.adminIptv.error('Error toggling test mode', { error });
     res.status(500).json({ error: 'Failed to toggle test mode' });
   }
 });
@@ -2664,7 +2674,7 @@ router.get('/channel-mappings/test-mode/:streamId', requireSuperAdmin, async (re
       testModeEnabled: testFailoverStreams.get(streamId) === true,
     });
   } catch (error) {
-    console.error('Error checking test mode:', error);
+    loggers.adminIptv.error('Error checking test mode', { error });
     res.status(500).json({ error: 'Failed to check test mode' });
   }
 });
@@ -2688,7 +2698,7 @@ router.get('/channel-mappings/test-mode-all', requireSuperAdmin, async (req, res
       count: activeTestModes.length,
     });
   } catch (error) {
-    console.error('Error getting test modes:', error);
+    loggers.adminIptv.error('Error getting test modes', { error });
     res.status(500).json({ error: 'Failed to get test modes' });
   }
 });
@@ -2713,7 +2723,7 @@ router.post('/channel-mappings/bulk-create', requireSuperAdmin, async (req, res)
       total: mappings.length,
     });
   } catch (error) {
-    console.error('Error bulk creating mappings:', error);
+    loggers.adminIptv.error('Error bulk creating mappings', { error });
     res.status(500).json({ error: 'Failed to create mappings' });
   }
 });
@@ -2750,7 +2760,7 @@ router.get('/channel-mappings/:channelId', requireSuperAdmin, async (req, res) =
       mappings
     });
   } catch (error) {
-    console.error('Error fetching channel mappings:', error);
+    loggers.adminIptv.error('Error fetching channel mappings', { error });
     res.status(500).json({ error: 'Failed to fetch channel mappings' });
   }
 });
@@ -2792,7 +2802,7 @@ router.get('/iptv-providers/:id/health', requireSuperAdmin, async (req, res) => 
       history
     });
   } catch (error) {
-    console.error('Error fetching provider health:', error);
+    loggers.adminIptv.error('Error fetching provider health', { error });
     res.status(500).json({ error: 'Failed to fetch provider health' });
   }
 });
@@ -2816,7 +2826,7 @@ router.post('/iptv-providers/:id/health-check', requireSuperAdmin, async (req, r
       checkedAt: new Date()
     });
   } catch (error: any) {
-    console.error('Error running health check:', error);
+    loggers.adminIptv.error('Error running health check', { error });
     res.status(500).json({ error: error.message || 'Failed to run health check' });
   }
 });
@@ -2830,7 +2840,7 @@ router.get('/provider-health-summary', requireSuperAdmin, async (req, res) => {
     const summary = await providerHealthService.getAllProvidersHealthSummary();
     res.json({ providers: summary });
   } catch (error) {
-    console.error('Error fetching health summary:', error);
+    loggers.adminIptv.error('Error fetching health summary', { error });
     res.status(500).json({ error: 'Failed to fetch health summary' });
   }
 });

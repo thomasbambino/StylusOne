@@ -4,6 +4,7 @@ import { db } from '../db';
 import { subscriptionPlans, userSubscriptions, users } from '@shared/schema';
 import { eq, desc, sql } from 'drizzle-orm';
 import { stripeService } from '../services/stripe-service';
+import { loggers } from '../lib/logger';
 
 const router = Router();
 
@@ -50,7 +51,7 @@ router.get('/subscription-plans', requireSuperAdmin, async (req, res) => {
 
     res.json(plans);
   } catch (error) {
-    console.error('Error fetching subscription plans:', error);
+    loggers.subscription.error('Error fetching subscription plans', { error });
     res.status(500).json({ error: 'Failed to fetch subscription plans' });
   }
 });
@@ -82,7 +83,7 @@ router.post('/subscription-plans', requireSuperAdmin, async (req, res) => {
 
         res.status(201).json(updatedPlan);
       } catch (stripeError) {
-        console.error('Error creating Stripe product:', stripeError);
+        loggers.subscription.error('Error creating Stripe product', { error: stripeError });
         // Delete the plan since Stripe creation failed
         await db.delete(subscriptionPlans).where(eq(subscriptionPlans.id, newPlan.id));
         res.status(500).json({ error: 'Failed to create Stripe product' });
@@ -94,7 +95,7 @@ router.post('/subscription-plans', requireSuperAdmin, async (req, res) => {
     if (error instanceof z.ZodError) {
       return res.status(400).json({ error: error.errors });
     }
-    console.error('Error creating subscription plan:', error);
+    loggers.subscription.error('Error creating subscription plan', { error });
     res.status(500).json({ error: 'Failed to create subscription plan' });
   }
 });
@@ -130,7 +131,7 @@ router.put('/subscription-plans/:id', requireSuperAdmin, async (req, res) => {
     if (error instanceof z.ZodError) {
       return res.status(400).json({ error: error.errors });
     }
-    console.error('Error updating subscription plan:', error);
+    loggers.subscription.error('Error updating subscription plan', { error });
     res.status(500).json({ error: 'Failed to update subscription plan' });
   }
 });
@@ -163,7 +164,7 @@ router.delete('/subscription-plans/:id', requireSuperAdmin, async (req, res) => 
 
     res.json({ success: true });
   } catch (error) {
-    console.error('Error deleting subscription plan:', error);
+    loggers.subscription.error('Error deleting subscription plan', { error });
     res.status(500).json({ error: 'Failed to delete subscription plan' });
   }
 });
@@ -199,7 +200,7 @@ router.get('/subscription-plans/:id/subscribers', requireSuperAdmin, async (req,
 
     res.json(subscribers);
   } catch (error) {
-    console.error('Error fetching subscribers:', error);
+    loggers.subscription.error('Error fetching subscribers', { error });
     res.status(500).json({ error: 'Failed to fetch subscribers' });
   }
 });
@@ -267,7 +268,7 @@ router.get('/analytics/mrr', requireSuperAdmin, async (req, res) => {
       }, {} as Record<string, number>),
     });
   } catch (error) {
-    console.error('Error calculating MRR:', error);
+    loggers.subscription.error('Error calculating MRR', { error });
     res.status(500).json({ error: 'Failed to calculate analytics' });
   }
 });
@@ -279,7 +280,7 @@ router.get('/analytics/mrr', requireSuperAdmin, async (req, res) => {
 router.get('/analytics/plans/:planId/users', requireSuperAdmin, async (req, res) => {
   try {
     const planId = parseInt(req.params.planId);
-    console.log('Fetching users for plan ID:', planId);
+    loggers.subscription.debug('Fetching users for plan', { planId });
 
     const planUsers = await db
       .select({
@@ -297,10 +298,10 @@ router.get('/analytics/plans/:planId/users', requireSuperAdmin, async (req, res)
       .where(eq(userSubscriptions.plan_id, planId))
       .orderBy(userSubscriptions.created_at);
 
-    console.log(`Found ${planUsers.length} users for plan ${planId}`);
+    loggers.subscription.debug('Found users for plan', { planId, count: planUsers.length });
     res.json(planUsers);
   } catch (error) {
-    console.error('Error fetching plan users:', error);
+    loggers.subscription.error('Error fetching plan users', { error });
     res.status(500).json({ error: 'Failed to fetch plan users' });
   }
 });

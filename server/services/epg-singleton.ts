@@ -1,4 +1,5 @@
 import { EPGService } from './epg-service';
+import { loggers } from '../lib/logger';
 
 // Single shared EPG service instance
 let epgServiceInstance: EPGService | null = null;
@@ -10,7 +11,7 @@ let initPromise: Promise<void> | null = null;
  */
 export async function getSharedEPGService(): Promise<EPGService> {
   if (!epgServiceInstance) {
-    console.log('[EPG-Singleton] Creating shared EPG service instance');
+    loggers.epg.debug('Creating shared EPG service instance');
     epgServiceInstance = new EPGService();
     initPromise = epgServiceInstance.initialize();
   }
