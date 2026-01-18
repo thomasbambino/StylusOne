@@ -323,7 +323,10 @@ router.post('/iptv-providers', requireSuperAdmin, async (req, res) => {
     });
   } catch (error) {
     if (error instanceof z.ZodError) {
-      return res.status(400).json({ error: error.errors });
+      // Extract first error message for display
+      const firstError = error.errors[0];
+      const errorMessage = firstError?.message || 'Validation failed';
+      return res.status(400).json({ error: errorMessage });
     }
     loggers.adminIptv.error('Error creating IPTV provider', { error });
     res.status(500).json({ error: 'Failed to create IPTV provider' });
