@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { getDeviceType, type DeviceType } from '@/lib/capacitor';
-import LiveTVTV from './live-tv-tv';
-import LiveTVPage from './live-tv-page'; // Fallback for web
+import LiveTVNative from './live-tv-native';
+import LiveTVPage from './live-tv-page';
 import { loggers } from '@/lib/logger';
 
 /**
@@ -39,7 +39,7 @@ export default function LiveTVAdaptive() {
     case 'tv':
     case 'tablet':
     case 'phone':
-      return <LiveTVTV />;
+      return <LiveTVNative />;
     case 'web':
     default:
       return <LiveTVPage />;
