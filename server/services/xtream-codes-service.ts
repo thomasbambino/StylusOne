@@ -708,9 +708,9 @@ export class XtreamCodesManager implements IService {
       const [provider] = await db.select().from(iptvProviders).where(eq(iptvProviders.id, providerId));
       if (!provider) continue;
 
-      // M3U providers don't need credentials
-      if (provider.providerType === 'm3u') {
-        providerInfo.set(providerId, { type: 'm3u', hasCredentials: true }); // M3U uses directStreamUrl on channel
+      // M3U and HDHomeRun providers don't need credentials
+      if (provider.providerType === 'm3u' || provider.providerType === 'hdhomerun') {
+        providerInfo.set(providerId, { type: provider.providerType, hasCredentials: true }); // Uses directStreamUrl on channel
         continue;
       }
 
@@ -1075,10 +1075,10 @@ export class XtreamCodesManager implements IService {
 
     loggers.xtreamCodes.debug(`Provider ${providerId} type: ${providerInfo?.providerType}, directStreamUrl: ${providerInfo?.directStreamUrl ? 'yes' : 'no'}`);
 
-    if (providerInfo?.providerType === 'm3u' || providerInfo?.directStreamUrl) {
-      // M3U providers don't need credentials - they use direct URLs
-      // Return -2 as a special marker indicating M3U stream is allowed
-      loggers.xtreamCodes.debug(`M3U provider detected for channel ${streamId} - no credentials needed`);
+    if (providerInfo?.providerType === 'm3u' || providerInfo?.providerType === 'hdhomerun' || providerInfo?.directStreamUrl) {
+      // M3U and HDHomeRun providers don't need credentials - they use direct URLs
+      // Return -2 as a special marker indicating direct stream is allowed
+      loggers.xtreamCodes.debug(`Direct stream provider (${providerInfo?.providerType}) detected for channel ${streamId} - no credentials needed`);
       return -2;
     }
 
