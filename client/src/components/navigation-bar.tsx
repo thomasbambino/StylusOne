@@ -1,4 +1,4 @@
-import { Users, Settings as SettingsIcon, LogOut, Menu, Search, CreditCard, Eye, Gift, Server, Tv, Package, BarChart3 } from "lucide-react"
+import { Users, Settings as SettingsIcon, LogOut, Menu, CreditCard, Gift, Server, Tv, Package, BarChart3 } from "lucide-react"
 import { Link, useLocation } from "wouter"
 import { Settings } from "@shared/schema"
 import { motion } from "framer-motion"
@@ -11,9 +11,7 @@ import {
 import { Separator } from "@/components/ui/separator"
 import { useAuth } from "@/hooks/use-auth"
 import { ThemeToggle } from "./theme-toggle"
-import { useEffect, useState } from "react"
 import { cn } from "@/lib/utils"
-import { FirstTimeLoginDialog } from "./first-time-login-dialog"
 
 interface NavigationBarProps {
   settings?: Settings;
@@ -25,7 +23,6 @@ export function NavigationBar({ settings, pageTitle }: NavigationBarProps) {
   const [location] = useLocation();
   const isAdmin = user?.role === 'admin';
   const isSuperAdmin = user?.role === 'superadmin';
-  const [showTestDialog, setShowTestDialog] = useState(false);
 
   // Navigation links
   const navLinks = [
@@ -158,6 +155,10 @@ export function NavigationBar({ settings, pageTitle }: NavigationBarProps) {
                             Subscription Plans
                           </DropdownMenuItem>
                         </Link>
+                        <Separator className="my-1" />
+                        <div className="px-2 py-1.5 text-xs font-medium text-muted-foreground">
+                          Live TV
+                        </div>
                         <Link href="/iptv-providers">
                           <DropdownMenuItem className="cursor-pointer">
                             <Server className="h-4 w-4 mr-2" />
@@ -176,13 +177,6 @@ export function NavigationBar({ settings, pageTitle }: NavigationBarProps) {
                             Channel Packages
                           </DropdownMenuItem>
                         </Link>
-                        <DropdownMenuItem
-                          className="cursor-pointer"
-                          onSelect={() => setShowTestDialog(true)}
-                        >
-                          <Eye className="h-4 w-4 mr-2" />
-                          Preview Welcome Dialog
-                        </DropdownMenuItem>
                       </>
                     )}
                     <Separator className="my-1" />
@@ -229,13 +223,6 @@ export function NavigationBar({ settings, pageTitle }: NavigationBarProps) {
           </div>
         </div>
       </div>
-
-      {/* Test Dialog for Superadmin */}
-      <FirstTimeLoginDialog
-        open={showTestDialog}
-        onOpenChange={setShowTestDialog}
-        forceShow={true}
-      />
     </nav>
   );
 }

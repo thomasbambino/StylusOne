@@ -7,7 +7,7 @@ import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useAuth } from "@/hooks/use-auth";
 import { Link } from "wouter";
-import { ArrowLeft, Loader2, Mail, RefreshCw, Trash2, AlertCircle, Tv, Server } from "lucide-react";
+import { ArrowLeft, Loader2, Mail, RefreshCw, Trash2, AlertCircle, Tv, Server, Eye } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Form, FormControl, FormField, FormItem, FormLabel } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
@@ -23,6 +23,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { EmailTemplateDialog } from "@/components/email-template-dialog";
 import { clearAllCaches, forceRefresh, getCurrentCacheVersion } from "@/utils/cache-helper";
 import { SystemDashboard } from "@/components/system-dashboard";
+import { FirstTimeLoginDialog } from "@/components/first-time-login-dialog";
 
 export default function SettingsPage() {
   const { toast } = useToast();
@@ -31,6 +32,7 @@ export default function SettingsPage() {
   const [isTestingConnection, setIsTestingConnection] = useState(false);
   const [currentTab, setCurrentTab] = useState("general");
   const [isUpdatingEPG, setIsUpdatingEPG] = useState(false);
+  const [showWelcomeDialog, setShowWelcomeDialog] = useState(false);
   const isSuperAdmin = user?.role === 'superadmin';
   const isAdmin = user?.role === 'admin' || user?.role === 'superadmin';
 
@@ -641,7 +643,42 @@ export default function SettingsPage() {
                         </CardContent>
                       </Card>
                     </div>
+
+                    <div>
+                      <h3 className="text-lg font-medium mb-2">Preview & Testing</h3>
+                      <p className="text-sm text-muted-foreground mb-4">
+                        Preview dialogs and components as they appear to users
+                      </p>
+
+                      <Card>
+                        <CardContent className="pt-6">
+                          <div className="flex items-start gap-3">
+                            <Eye className="h-5 w-5 text-purple-500 mt-0.5" />
+                            <div className="flex-1">
+                              <h4 className="font-medium mb-1">Welcome Dialog</h4>
+                              <p className="text-sm text-muted-foreground mb-4">
+                                Preview the welcome dialog that new users see when they first log in.
+                              </p>
+                              <Button
+                                onClick={() => setShowWelcomeDialog(true)}
+                                variant="outline"
+                                className="w-full"
+                              >
+                                <Eye className="h-4 w-4 mr-2" />
+                                Preview Welcome Dialog
+                              </Button>
+                            </div>
+                          </div>
+                        </CardContent>
+                      </Card>
+                    </div>
                   </div>
+
+                  <FirstTimeLoginDialog
+                    open={showWelcomeDialog}
+                    onOpenChange={setShowWelcomeDialog}
+                    forceShow={true}
+                  />
                 </TabsContent>
 
                 {isSuperAdmin && (
