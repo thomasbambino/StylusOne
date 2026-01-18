@@ -97,6 +97,116 @@ export class ProviderHealthService {
       throw new Error(`Provider ${providerId} not found`);
     }
 
+    // Route to appropriate health check based on provider type
+    if (provider.providerType === 'hdhomerun') {
+      return this.checkHDHomeRunHealth(providerId, provider);
+    } else if (provider.providerType === 'm3u') {
+      return this.checkM3UHealth(providerId, provider);
+    } else {
+      // Xtream provider
+      return this.checkXtreamHealth(providerId, provider);
+    }
+  }
+
+  /**
+   * Check health of HDHomeRun provider
+   */
+  private async checkHDHomeRunHealth(providerId: number, provider: any): Promise<HealthCheckResult> {
+    if (!provider.serverUrl) {
+      return this.logAndUpdateHealth(providerId, {
+        status: 'unhealthy',
+        responseTimeMs: null,
+        errorMessage: 'HDHomeRun device URL not configured'
+      });
+    }
+
+    const startTime = Date.now();
+
+    try {
+      const deviceUrl = decrypt(provider.serverUrl);
+      const response = await axios.get(`${deviceUrl}/discover.json`, { timeout: this.REQUEST_TIMEOUT_MS });
+      const responseTime = Date.now() - startTime;
+
+      // Check if response has device info
+      if (!response.data || !response.data.DeviceID) {
+        return this.logAndUpdateHealth(providerId, {
+          status: 'unhealthy',
+          responseTimeMs: responseTime,
+          errorMessage: 'Invalid HDHomeRun device response'
+        });
+      }
+
+      // Determine health based on response time
+      let status: 'healthy' | 'degraded' | 'unhealthy';
+      if (responseTime < this.HEALTHY_THRESHOLD_MS) {
+        status = 'healthy';
+      } else if (responseTime < this.DEGRADED_THRESHOLD_MS) {
+        status = 'degraded';
+      } else {
+        status = 'unhealthy';
+      }
+
+      return this.logAndUpdateHealth(providerId, {
+        status,
+        responseTimeMs: responseTime,
+        errorMessage: null
+      });
+    } catch (error: any) {
+      return this.handleHealthCheckError(providerId, error, Date.now() - startTime);
+    }
+  }
+
+  /**
+   * Check health of M3U provider
+   */
+  private async checkM3UHealth(providerId: number, provider: any): Promise<HealthCheckResult> {
+    if (!provider.m3uUrl) {
+      return this.logAndUpdateHealth(providerId, {
+        status: 'unhealthy',
+        responseTimeMs: null,
+        errorMessage: 'M3U URL not configured'
+      });
+    }
+
+    const startTime = Date.now();
+
+    try {
+      // Just do a HEAD request to check if M3U is accessible
+      const response = await axios.head(provider.m3uUrl, { timeout: this.REQUEST_TIMEOUT_MS });
+      const responseTime = Date.now() - startTime;
+
+      if (response.status !== 200) {
+        return this.logAndUpdateHealth(providerId, {
+          status: 'unhealthy',
+          responseTimeMs: responseTime,
+          errorMessage: `HTTP ${response.status}`
+        });
+      }
+
+      // Determine health based on response time
+      let status: 'healthy' | 'degraded' | 'unhealthy';
+      if (responseTime < this.HEALTHY_THRESHOLD_MS) {
+        status = 'healthy';
+      } else if (responseTime < this.DEGRADED_THRESHOLD_MS) {
+        status = 'degraded';
+      } else {
+        status = 'unhealthy';
+      }
+
+      return this.logAndUpdateHealth(providerId, {
+        status,
+        responseTimeMs: responseTime,
+        errorMessage: null
+      });
+    } catch (error: any) {
+      return this.handleHealthCheckError(providerId, error, Date.now() - startTime);
+    }
+  }
+
+  /**
+   * Check health of Xtream provider
+   */
+  private async checkXtreamHealth(providerId: number, provider: any): Promise<HealthCheckResult> {
     // Get one active credential for this provider
     const [credential] = await db.select()
       .from(iptvCredentials)
@@ -179,25 +289,31 @@ export class ProviderHealthService {
       });
 
     } catch (error: any) {
-      const responseTime = Date.now() - startTime;
-      let errorMessage = 'Connection failed';
-
-      if (error.code === 'ECONNREFUSED') {
-        errorMessage = 'Connection refused';
-      } else if (error.code === 'ETIMEDOUT' || error.code === 'ECONNABORTED') {
-        errorMessage = 'Connection timeout';
-      } else if (error.response?.status) {
-        errorMessage = `HTTP ${error.response.status}`;
-      } else if (error.message) {
-        errorMessage = error.message.substring(0, 100);
-      }
-
-      return this.logAndUpdateHealth(providerId, {
-        status: 'unhealthy',
-        responseTimeMs: responseTime < this.REQUEST_TIMEOUT_MS ? responseTime : null,
-        errorMessage
-      });
+      return this.handleHealthCheckError(providerId, error, Date.now() - startTime);
     }
+  }
+
+  /**
+   * Handle health check error and return appropriate result
+   */
+  private async handleHealthCheckError(providerId: number, error: any, responseTime: number): Promise<HealthCheckResult> {
+    let errorMessage = 'Connection failed';
+
+    if (error.code === 'ECONNREFUSED') {
+      errorMessage = 'Connection refused';
+    } else if (error.code === 'ETIMEDOUT' || error.code === 'ECONNABORTED') {
+      errorMessage = 'Connection timeout';
+    } else if (error.response?.status) {
+      errorMessage = `HTTP ${error.response.status}`;
+    } else if (error.message) {
+      errorMessage = error.message.substring(0, 100);
+    }
+
+    return this.logAndUpdateHealth(providerId, {
+      status: 'unhealthy',
+      responseTimeMs: responseTime < this.REQUEST_TIMEOUT_MS ? responseTime : null,
+      errorMessage
+    });
   }
 
   /**

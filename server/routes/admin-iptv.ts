@@ -22,6 +22,7 @@ import { streamTrackerService } from '../services/stream-tracker-service';
 import { providerHealthService } from '../services/provider-health-service';
 import { channelMappingService } from '../services/channel-mapping-service';
 import { m3uParserService } from '../services/m3u-parser-service';
+import { HDHomeRunService } from '../services/hdhomerun-service';
 
 const router = Router();
 
@@ -95,10 +96,10 @@ const assignCredentialSchema = z.object({
 // Provider validation schemas
 const createProviderSchema = z.object({
   name: z.string().min(1, 'Name is required'),
-  providerType: z.enum(['xtream', 'm3u']).default('xtream'),
-  serverUrl: z.string().url('Invalid server URL').optional(), // Required for xtream
+  providerType: z.enum(['xtream', 'm3u', 'hdhomerun']).default('xtream'),
+  serverUrl: z.string().url('Invalid server URL').optional(), // Required for xtream and hdhomerun
   m3uUrl: z.string().url('Invalid M3U URL').optional(), // Required for m3u
-  xmltvUrl: z.string().url('Invalid XMLTV URL').optional(), // Optional for m3u
+  xmltvUrl: z.string().url('Invalid XMLTV URL').optional(), // Optional for m3u and hdhomerun
   notes: z.string().optional(),
   isActive: z.boolean().default(true),
 }).refine(
@@ -109,9 +110,12 @@ const createProviderSchema = z.object({
     if (data.providerType === 'm3u') {
       return !!data.m3uUrl;
     }
+    if (data.providerType === 'hdhomerun') {
+      return !!data.serverUrl; // HDHomeRun uses serverUrl for device URL
+    }
     return true;
   },
-  { message: 'Xtream providers require serverUrl, M3U providers require m3uUrl' }
+  { message: 'Xtream/HDHomeRun providers require serverUrl, M3U providers require m3uUrl' }
 );
 
 const updateProviderSchema = z.object({
@@ -562,8 +566,91 @@ router.post('/iptv-providers/:id/sync', requireSuperAdmin, async (req, res) => {
     let withEpgCount = 0;
     let totalChannels = 0;
 
+    // Handle HDHomeRun providers
+    if (provider.providerType === 'hdhomerun') {
+      if (!provider.serverUrl) {
+        return res.status(400).json({ error: 'HDHomeRun device URL not configured for this provider' });
+      }
+
+      const deviceUrl = decrypt(provider.serverUrl);
+      loggers.adminIptv.info('Syncing HDHomeRun provider', { providerId, deviceUrl });
+
+      // Create HDHomeRun service instance for this device
+      const hdhrService = new HDHomeRunService();
+
+      try {
+        // Verify device is accessible
+        await hdhrService.getDeviceInfoFromUrl(deviceUrl);
+      } catch (err) {
+        return res.status(400).json({ error: 'Failed to connect to HDHomeRun device. Check the device URL.' });
+      }
+
+      // Get channels from HDHomeRun device
+      const channels = await hdhrService.getChannelsForProvider(deviceUrl);
+      totalChannels = channels.length;
+
+      // Log first 5 channels
+      loggers.adminIptv.debug('First 5 HDHomeRun channels from device', {
+        providerId,
+        channels: channels.slice(0, 5).map((ch, i) => ({
+          index: i + 1,
+          name: ch.name,
+          streamId: ch.streamId,
+          epgId: ch.epgChannelId
+        }))
+      });
+
+      // Upsert channels
+      for (const channel of channels) {
+        // HDHomeRun channels typically have EPG via OTA guide data
+        withEpgCount++;
+
+        // Check if channel exists
+        const [existing] = await db
+          .select({ id: iptvChannels.id })
+          .from(iptvChannels)
+          .where(and(
+            eq(iptvChannels.providerId, providerId),
+            eq(iptvChannels.streamId, channel.streamId)
+          ));
+
+        if (existing) {
+          // Update existing channel (don't change isEnabled)
+          await db
+            .update(iptvChannels)
+            .set({
+              name: channel.name,
+              categoryName: channel.categoryName,
+              epgChannelId: channel.epgChannelId,
+              directStreamUrl: channel.directStreamUrl,
+              quality: channel.quality,
+              hasEPG: true,
+              lastSeen: new Date(),
+            })
+            .where(eq(iptvChannels.id, existing.id));
+          updateCount++;
+        } else {
+          // Insert new channel (disabled by default)
+          await db
+            .insert(iptvChannels)
+            .values({
+              providerId,
+              streamId: channel.streamId,
+              name: channel.name,
+              categoryName: channel.categoryName,
+              epgChannelId: channel.epgChannelId,
+              directStreamUrl: channel.directStreamUrl,
+              isEnabled: false,
+              quality: channel.quality,
+              hasEPG: true,
+              lastSeen: new Date(),
+            });
+          insertCount++;
+        }
+      }
+    }
     // Handle M3U providers
-    if (provider.providerType === 'm3u') {
+    else if (provider.providerType === 'm3u') {
       if (!provider.m3uUrl) {
         return res.status(400).json({ error: 'M3U URL not configured for this provider' });
       }

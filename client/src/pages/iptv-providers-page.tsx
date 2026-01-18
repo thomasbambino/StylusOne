@@ -22,7 +22,7 @@ import { Progress } from '@/components/ui/progress';
 interface IptvProvider {
   id: number;
   name: string;
-  providerType: 'xtream' | 'm3u';
+  providerType: 'xtream' | 'm3u' | 'hdhomerun';
   serverUrl: string | null;
   m3uUrl: string | null;
   xmltvUrl: string | null;
@@ -131,7 +131,7 @@ interface ProviderHealthSummary {
 
 interface ProviderFormData {
   name: string;
-  providerType: 'xtream' | 'm3u';
+  providerType: 'xtream' | 'm3u' | 'hdhomerun';
   serverUrl: string;
   m3uUrl: string;
   xmltvUrl: string;
@@ -409,9 +409,9 @@ export default function IptvProvidersPage() {
         body: JSON.stringify({
           name: data.name,
           providerType: data.providerType,
-          serverUrl: data.providerType === 'xtream' ? data.serverUrl : undefined,
+          serverUrl: (data.providerType === 'xtream' || data.providerType === 'hdhomerun') ? data.serverUrl : undefined,
           m3uUrl: data.providerType === 'm3u' ? data.m3uUrl : undefined,
-          xmltvUrl: data.providerType === 'm3u' ? data.xmltvUrl : undefined,
+          xmltvUrl: (data.providerType === 'm3u' || data.providerType === 'hdhomerun') ? data.xmltvUrl : undefined,
           notes: data.notes || undefined,
           isActive: data.isActive,
         }),
@@ -443,9 +443,9 @@ export default function IptvProvidersPage() {
         body: JSON.stringify({
           name: data.name,
           providerType: data.providerType,
-          serverUrl: data.providerType === 'xtream' ? data.serverUrl : null,
+          serverUrl: (data.providerType === 'xtream' || data.providerType === 'hdhomerun') ? data.serverUrl : null,
           m3uUrl: data.providerType === 'm3u' ? data.m3uUrl : null,
-          xmltvUrl: data.providerType === 'm3u' ? data.xmltvUrl : null,
+          xmltvUrl: (data.providerType === 'm3u' || data.providerType === 'hdhomerun') ? data.xmltvUrl : null,
           notes: data.notes || null,
           isActive: data.isActive,
         }),
@@ -1817,7 +1817,7 @@ export default function IptvProvidersPage() {
               <Label htmlFor="providerType">Provider Type</Label>
               <Select
                 value={providerForm.providerType}
-                onValueChange={(value: 'xtream' | 'm3u') => setProviderForm({ ...providerForm, providerType: value })}
+                onValueChange={(value: 'xtream' | 'm3u' | 'hdhomerun') => setProviderForm({ ...providerForm, providerType: value })}
               >
                 <SelectTrigger>
                   <SelectValue placeholder="Select provider type" />
@@ -1825,6 +1825,7 @@ export default function IptvProvidersPage() {
                 <SelectContent>
                   <SelectItem value="xtream">Xtream Codes (requires credentials)</SelectItem>
                   <SelectItem value="m3u">M3U Playlist (direct URLs)</SelectItem>
+                  <SelectItem value="hdhomerun">HDHomeRun / OTA Antenna (no credentials)</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -1838,6 +1839,33 @@ export default function IptvProvidersPage() {
                   placeholder="http://example.com:8080"
                 />
               </div>
+            ) : providerForm.providerType === 'hdhomerun' ? (
+              <>
+                <div>
+                  <Label htmlFor="serverUrl">HDHomeRun Device URL</Label>
+                  <Input
+                    id="serverUrl"
+                    value={providerForm.serverUrl}
+                    onChange={(e) => setProviderForm({ ...providerForm, serverUrl: e.target.value })}
+                    placeholder="http://192.168.1.100"
+                  />
+                  <p className="text-xs text-muted-foreground mt-1">
+                    The IP address or hostname of your HDHomeRun device
+                  </p>
+                </div>
+                <div>
+                  <Label htmlFor="xmltvUrl">XMLTV EPG URL (optional)</Label>
+                  <Input
+                    id="xmltvUrl"
+                    value={providerForm.xmltvUrl}
+                    onChange={(e) => setProviderForm({ ...providerForm, xmltvUrl: e.target.value })}
+                    placeholder="http://example.com/epg.xml"
+                  />
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Optional: External EPG source for program guide data
+                  </p>
+                </div>
+              </>
             ) : (
               <>
                 <div>
@@ -1893,7 +1921,9 @@ export default function IptvProvidersPage() {
           <DialogHeader>
             <DialogTitle>Edit Provider</DialogTitle>
             <DialogDescription>
-              {providerForm.providerType === 'xtream' ? 'Xtream Codes Provider' : 'M3U Playlist Provider'}
+              {providerForm.providerType === 'xtream' ? 'Xtream Codes Provider' :
+               providerForm.providerType === 'hdhomerun' ? 'HDHomeRun / OTA Antenna Provider' :
+               'M3U Playlist Provider'}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
@@ -1914,6 +1944,25 @@ export default function IptvProvidersPage() {
                   onChange={(e) => setProviderForm({ ...providerForm, serverUrl: e.target.value })}
                 />
               </div>
+            ) : providerForm.providerType === 'hdhomerun' ? (
+              <>
+                <div>
+                  <Label htmlFor="edit-serverUrl">HDHomeRun Device URL</Label>
+                  <Input
+                    id="edit-serverUrl"
+                    value={providerForm.serverUrl}
+                    onChange={(e) => setProviderForm({ ...providerForm, serverUrl: e.target.value })}
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="edit-xmltvUrl">XMLTV EPG URL (optional)</Label>
+                  <Input
+                    id="edit-xmltvUrl"
+                    value={providerForm.xmltvUrl}
+                    onChange={(e) => setProviderForm({ ...providerForm, xmltvUrl: e.target.value })}
+                  />
+                </div>
+              </>
             ) : (
               <>
                 <div>

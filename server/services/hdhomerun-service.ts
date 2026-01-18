@@ -231,4 +231,61 @@ export class HDHomeRunService implements IService {
   isInitialized(): boolean {
     return this.initialized;
   }
+
+  /**
+   * Get channels formatted for IPTV provider sync
+   * Converts HDHomeRun lineup to format compatible with iptvChannels table
+   */
+  async getChannelsForProvider(deviceUrl?: string): Promise<Array<{
+    streamId: string;
+    name: string;
+    directStreamUrl: string;
+    quality: 'hd' | 'sd' | 'unknown';
+    categoryName: string;
+    epgChannelId: string;
+  }>> {
+    const url = deviceUrl || this.baseUrl;
+    if (!url) {
+      throw new Error('HD HomeRun URL not configured');
+    }
+
+    try {
+      const response = await axios.get(`${url}/lineup.json`, {
+        timeout: 10000
+      });
+      const lineup: HDHomeRunChannel[] = response.data;
+
+      // Generate stream URL base (port 5004 for HLS)
+      const baseUrlObj = new URL(url);
+      baseUrlObj.port = '5004';
+      const streamBase = baseUrlObj.origin;
+
+      return lineup.map(ch => ({
+        streamId: ch.GuideNumber,
+        name: ch.GuideName,
+        directStreamUrl: `${streamBase}/auto/v${ch.GuideNumber}`,
+        quality: ch.HD ? 'hd' as const : 'sd' as const,
+        categoryName: 'OTA Antenna',
+        epgChannelId: ch.GuideName, // Use GuideName for EPG matching
+      }));
+    } catch (error) {
+      loggers.hdHomeRun.error('Error fetching channels for provider sync', { error });
+      throw new Error('Failed to fetch HDHomeRun channels');
+    }
+  }
+
+  /**
+   * Get device info from a specific URL (for provider creation/health check)
+   */
+  async getDeviceInfoFromUrl(deviceUrl: string): Promise<HDHomeRunDevice> {
+    try {
+      const response = await axios.get(`${deviceUrl}/discover.json`, {
+        timeout: 10000
+      });
+      return response.data;
+    } catch (error) {
+      loggers.hdHomeRun.error('Error fetching HD HomeRun device info from URL', { error, deviceUrl });
+      throw new Error('Failed to connect to HDHomeRun device');
+    }
+  }
 }

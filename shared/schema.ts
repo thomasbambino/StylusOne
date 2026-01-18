@@ -292,8 +292,8 @@ export const tvCodes = pgTable("tvCodes", {
 export const iptvProviders = pgTable("iptv_providers", {
   id: serial("id").primaryKey(),
   name: text("name").notNull(), // Display name (e.g., "Provider X")
-  providerType: text("provider_type", { enum: ['xtream', 'm3u'] }).notNull().default('xtream'), // Provider type
-  serverUrl: text("server_url"), // Encrypted - Base URL for Xtream providers (nullable for M3U)
+  providerType: text("provider_type", { enum: ['xtream', 'm3u', 'hdhomerun'] }).notNull().default('xtream'), // Provider type
+  serverUrl: text("server_url"), // Encrypted - Base URL for Xtream/HDHomeRun providers (nullable for M3U)
   m3uUrl: text("m3u_url"), // M3U playlist URL (for M3U providers)
   xmltvUrl: text("xmltv_url"), // XMLTV EPG URL (for M3U providers)
   isActive: boolean("is_active").notNull().default(true),
