@@ -97,14 +97,19 @@ export class StreamTrackerService {
     // Look up channel name and current program (same way as channel guides)
     let startProgramTitle: string | null = null;
     try {
-      const [channel] = await db.select({ name: iptvChannels.name })
+      const [channel] = await db.select({
+        name: iptvChannels.name,
+        epgChannelId: iptvChannels.epgChannelId
+      })
         .from(iptvChannels)
         .where(eq(iptvChannels.streamId, streamId))
         .limit(1);
 
-      if (channel?.name) {
+      if (channel) {
         const epgService = await getSharedEPGService();
-        const program = epgService.getCurrentProgram(channel.name);
+        // Use epgChannelId if available, otherwise fall back to channel name
+        const epgLookupId = channel.epgChannelId || channel.name;
+        const program = epgService.getCurrentProgram(epgLookupId);
         if (program) {
           startProgramTitle = program.title;
           if (program.episodeTitle) {
@@ -166,14 +171,19 @@ export class StreamTrackerService {
     // Look up channel name and current program
     let startProgramTitle: string | null = null;
     try {
-      const [channel] = await db.select({ name: iptvChannels.name })
+      const [channel] = await db.select({
+        name: iptvChannels.name,
+        epgChannelId: iptvChannels.epgChannelId
+      })
         .from(iptvChannels)
         .where(eq(iptvChannels.streamId, streamId))
         .limit(1);
 
-      if (channel?.name) {
+      if (channel) {
         const epgService = await getSharedEPGService();
-        const program = epgService.getCurrentProgram(channel.name);
+        // Use epgChannelId if available, otherwise fall back to channel name
+        const epgLookupId = channel.epgChannelId || channel.name;
+        const program = epgService.getCurrentProgram(epgLookupId);
         if (program) {
           startProgramTitle = program.title;
           if (program.episodeTitle) {
@@ -208,26 +218,32 @@ export class StreamTrackerService {
       const startedAt = new Date(stream.startedAt);
       const durationSeconds = Math.floor((endedAt.getTime() - startedAt.getTime()) / 1000);
 
-      // Look up channel name from database
+      // Look up channel name and EPG channel ID from database
       let channelName: string | null = null;
-      const [channel] = await db.select({ name: iptvChannels.name })
+      let epgChannelId: string | null = null;
+      const [channel] = await db.select({
+        name: iptvChannels.name,
+        epgChannelId: iptvChannels.epgChannelId
+      })
         .from(iptvChannels)
         .where(eq(iptvChannels.streamId, stream.streamId))
         .limit(1);
 
       if (channel) {
         channelName = channel.name;
+        epgChannelId = channel.epgChannelId;
       }
 
       // Use startProgramTitle from stream record (captured when stream started)
       const programTitle = stream.startProgramTitle || null;
 
-      // Look up END program from EPG (same way as channel guides)
+      // Look up END program from EPG using epgChannelId if available
       let endProgramTitle: string | null = null;
-      if (channelName) {
+      const epgLookupId = epgChannelId || channelName;
+      if (epgLookupId) {
         try {
           const epgService = await getSharedEPGService();
-          const program = epgService.getCurrentProgram(channelName);
+          const program = epgService.getCurrentProgram(epgLookupId);
           if (program) {
             endProgramTitle = program.title;
             if (program.episodeTitle) {

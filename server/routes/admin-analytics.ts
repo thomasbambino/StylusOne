@@ -63,19 +63,27 @@ router.get('/active-streams', requireAdmin, async (req, res) => {
       .leftJoin(iptvCredentials, eq(activeIptvStreams.credentialId, iptvCredentials.id))
       .orderBy(desc(activeIptvStreams.startedAt));
 
-    // Enrich with channel names
+    // Enrich with channel names and logos
     const enrichedStreams = await Promise.all(
       streams.map(async (stream) => {
-        const [channel] = await db
-          .select({ name: iptvChannels.name, logo: iptvChannels.logo })
+        // Try to find channel by streamId first
+        let [channel] = await db
+          .select({
+            name: iptvChannels.name,
+            logo: iptvChannels.logo,
+            customLogo: iptvChannels.customLogo
+          })
           .from(iptvChannels)
           .where(eq(iptvChannels.streamId, stream.channelId))
           .limit(1);
 
+        // Use customLogo if available, otherwise fall back to logo
+        const channelLogo = channel?.customLogo || channel?.logo || null;
+
         return {
           ...stream,
           channelName: channel?.name || `Channel ${stream.channelId}`,
-          channelLogo: channel?.logo || null,
+          channelLogo,
         };
       })
     );
@@ -195,7 +203,7 @@ router.get('/channels', requireAdmin, async (req, res) => {
       .orderBy(desc(sql`SUM(duration_seconds)`))
       .limit(100);
 
-    // Add current viewer counts
+    // Add current viewer counts and channel logos
     const enrichedStats = await Promise.all(
       channelStats.map(async (stat) => {
         const [currentViewers] = await db
@@ -203,17 +211,39 @@ router.get('/channels', requireAdmin, async (req, res) => {
           .from(activeIptvStreams)
           .where(eq(activeIptvStreams.streamId, stat.channelId));
 
-        // Get channel logo
-        const [channel] = await db
-          .select({ logo: iptvChannels.logo })
+        // Try to find channel by streamId first
+        let [channel] = await db
+          .select({
+            name: iptvChannels.name,
+            logo: iptvChannels.logo,
+            customLogo: iptvChannels.customLogo
+          })
           .from(iptvChannels)
           .where(eq(iptvChannels.streamId, stat.channelId))
           .limit(1);
 
+        // If not found by streamId, try to find by channel name (for older viewing history)
+        if (!channel && stat.channelName) {
+          [channel] = await db
+            .select({
+              name: iptvChannels.name,
+              logo: iptvChannels.logo,
+              customLogo: iptvChannels.customLogo
+            })
+            .from(iptvChannels)
+            .where(eq(iptvChannels.name, stat.channelName))
+            .limit(1);
+        }
+
+        // Use customLogo if available, otherwise fall back to logo
+        const channelLogo = channel?.customLogo || channel?.logo || null;
+
         return {
           ...stat,
+          // Use channel name from database if found, otherwise use denormalized name from history
+          channelName: channel?.name || stat.channelName || `Channel ${stat.channelId}`,
           currentViewers: Number(currentViewers?.count) || 0,
-          channelLogo: channel?.logo || null,
+          channelLogo,
         };
       })
     );
