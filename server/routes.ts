@@ -2951,38 +2951,41 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const isHdHomeRun = directUrl.includes(':5004/auto/v');
 
       if (isHdHomeRun) {
-        // HDHomeRun streams are MPEG-TS, create synthetic HLS manifest
-        loggers.iptv.debug('Failover: HDHomeRun stream detected, creating synthetic manifest', { directUrl });
+        // HDHomeRun streams need FFmpeg transcoding to HLS
+        loggers.iptv.debug('Failover: HDHomeRun stream detected, starting FFmpeg transcoding', { directUrl });
 
-        // Store the TS URL so the segment proxy can use it
-        (global as any).m3uTsUrls = (global as any).m3uTsUrls || new Map();
-        (global as any).m3uTsUrls.set(streamId, directUrl);
+        try {
+          const { streamingService } = await import('./services/streaming-service');
+          const { readFileSync } = await import('fs');
+          const { join } = await import('path');
 
-        // Create a live HLS manifest that references our segment proxy
-        const syntheticManifest = `#EXTM3U
-#EXT-X-VERSION:3
-#EXT-X-TARGETDURATION:10
-#EXT-X-MEDIA-SEQUENCE:0
-#EXTINF:10.0,
-live.ts
-`;
+          // Start HLS stream conversion (waits for playlist to be ready)
+          const hlsUrl = await streamingService.startHLSStream(streamId, directUrl);
 
-        const mockResponse = {
-          ok: true,
-          status: 200,
-          url: `synthetic://${streamId}/playlist.m3u8`,
-          headers: new Map([['content-type', 'application/vnd.apple.mpegurl']]),
-        };
+          loggers.iptv.debug('Failover: HDHomeRun HLS stream started', { streamId, hlsUrl });
 
-        loggers.iptv.debug('Failover: HDHomeRun synthetic manifest created', { streamId });
-        return {
-          response: mockResponse as any,
-          manifestText: syntheticManifest,
-          streamUrl: `synthetic://${streamId}/playlist.m3u8`,
-          usedBackup: false,
-          isSynthetic: true,
-          tsUrl: directUrl
-        };
+          // Read the generated playlist
+          const playlistPath = join(process.cwd(), 'dist', 'public', hlsUrl);
+          const manifestText = readFileSync(playlistPath, 'utf8');
+
+          const mockResponse = {
+            ok: true,
+            status: 200,
+            url: hlsUrl,
+            headers: new Map([['content-type', 'application/vnd.apple.mpegurl']]),
+          };
+
+          return {
+            response: mockResponse as any,
+            manifestText,
+            streamUrl: hlsUrl,
+            usedBackup: false,
+            isHdHomeRun: true
+          };
+        } catch (error) {
+          loggers.iptv.error('Failover: HDHomeRun FFmpeg transcoding failed', { streamId, error });
+          // Fall through to try backup channels
+        }
       }
 
       // Convert MPEG-TS URLs to HLS format for streaming
