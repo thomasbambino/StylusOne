@@ -3522,10 +3522,34 @@ live.ts
         return res.status(503).send('Stream not available');
       }
 
-      const { response, manifestText, streamUrl, usedBackup, backupStreamId } = fetchResult;
+      const { response, manifestText, streamUrl, usedBackup, backupStreamId, isHdHomeRun } = fetchResult;
 
       if (usedBackup && backupStreamId) {
         loggers.iptv.debug('Using backup stream', { backupStreamId, requestedStreamId: streamId });
+      }
+
+      // HDHomeRun streams use FFmpeg-generated HLS files served directly from /streams/
+      // No URL rewriting needed - just serve the manifest as-is
+      if (isHdHomeRun) {
+        loggers.iptv.debug('Serving HDHomeRun HLS manifest directly', { streamId, streamUrl });
+
+        // Rewrite segment URLs to be relative to the streams directory
+        // FFmpeg outputs: segment0.ts, segment1.ts, etc.
+        // We need to serve them from /streams/channel_XX_X/segmentN.ts
+        const streamDir = streamUrl.replace('/playlist.m3u8', '');
+        const rewrittenManifest = manifestText.replace(
+          /^(segment\d+\.ts)$/gm,
+          `${streamDir}/$1`
+        );
+
+        res.set({
+          'Content-Type': 'application/vnd.apple.mpegurl',
+          'Access-Control-Allow-Origin': '*',
+          'Cross-Origin-Resource-Policy': 'cross-origin',
+          'Cache-Control': 'no-cache, no-store, must-revalidate'
+        });
+
+        return res.send(rewrittenManifest);
       }
 
       // Get the base URL for segments (directory of the manifest)
