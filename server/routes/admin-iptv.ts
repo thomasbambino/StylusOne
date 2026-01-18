@@ -99,7 +99,7 @@ const createProviderSchema = z.object({
   providerType: z.enum(['xtream', 'm3u', 'hdhomerun']).default('xtream'),
   serverUrl: z.string().url('Invalid server URL').optional(), // Required for xtream and hdhomerun
   m3uUrl: z.string().url('Invalid M3U URL').optional(), // Required for m3u
-  xmltvUrl: z.string().url('Invalid XMLTV URL').optional(), // Optional for m3u and hdhomerun
+  xmltvUrl: z.union([z.string().url('Invalid XMLTV URL'), z.literal('')]).optional(), // Optional, allow empty string
   notes: z.string().optional(),
   isActive: z.boolean().default(true),
 }).refine(
@@ -122,7 +122,7 @@ const updateProviderSchema = z.object({
   name: z.string().min(1, 'Name is required').optional(),
   serverUrl: z.string().url('Invalid server URL').optional(),
   m3uUrl: z.string().url('Invalid M3U URL').optional(),
-  xmltvUrl: z.string().url('Invalid XMLTV URL').optional().nullable(),
+  xmltvUrl: z.union([z.string().url('Invalid XMLTV URL'), z.literal('')]).optional().nullable(),
   notes: z.string().optional().nullable(),
   isActive: z.boolean().optional(),
 });
@@ -307,7 +307,7 @@ router.post('/iptv-providers', requireSuperAdmin, async (req, res) => {
         providerType: validatedData.providerType,
         serverUrl: validatedData.serverUrl ? encrypt(validatedData.serverUrl) : null,
         m3uUrl: validatedData.m3uUrl || null,
-        xmltvUrl: validatedData.xmltvUrl || null,
+        xmltvUrl: validatedData.xmltvUrl && validatedData.xmltvUrl.length > 0 ? validatedData.xmltvUrl : null,
         notes: validatedData.notes || null,
         isActive: validatedData.isActive,
       })
