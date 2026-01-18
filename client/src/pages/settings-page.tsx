@@ -7,8 +7,8 @@ import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useAuth } from "@/hooks/use-auth";
 import { Link } from "wouter";
-import { ArrowLeft, Loader2, Mail, RefreshCw, Trash2, AlertCircle, Tv } from "lucide-react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { ArrowLeft, Loader2, Mail, RefreshCw, Trash2, AlertCircle, Tv, Server } from "lucide-react";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Form, FormControl, FormField, FormItem, FormLabel } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -22,6 +22,7 @@ import { ImageUpload } from "@/components/ui/image-upload";
 import { Textarea } from "@/components/ui/textarea";
 import { EmailTemplateDialog } from "@/components/email-template-dialog";
 import { clearAllCaches, forceRefresh, getCurrentCacheVersion } from "@/utils/cache-helper";
+import { SystemDashboard } from "@/components/system-dashboard";
 
 export default function SettingsPage() {
   const { toast } = useToast();
@@ -31,6 +32,7 @@ export default function SettingsPage() {
   const [currentTab, setCurrentTab] = useState("general");
   const [isUpdatingEPG, setIsUpdatingEPG] = useState(false);
   const isSuperAdmin = user?.role === 'superadmin';
+  const isAdmin = user?.role === 'admin' || user?.role === 'superadmin';
 
   const { data: settings } = useQuery<Settings>({
     queryKey: ["/api/settings"],
@@ -229,17 +231,14 @@ export default function SettingsPage() {
     }
   };
 
-  return (
-    <PageTransition>
-      <div className="min-h-screen bg-background">
-
-        <main className="container mx-auto px-4 pb-6 space-y-6">
-          <Card className="border-0 shadow-none">
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle>Settings</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <Tabs defaultValue="general" className="space-y-4" onValueChange={setCurrentTab}>
+  // Settings tabs component (extracted for cleaner split layout)
+  const SettingsTabs = () => (
+    <Card className="border-0 shadow-none">
+      <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+        <CardTitle>Settings</CardTitle>
+      </CardHeader>
+      <CardContent>
+        <Tabs defaultValue="general" className="space-y-4" onValueChange={setCurrentTab}>
                 <TabsList className="grid w-full grid-cols-4">
                   <TabsTrigger value="general">General</TabsTrigger>
                   <TabsTrigger value="branding">Branding</TabsTrigger>
@@ -673,8 +672,40 @@ export default function SettingsPage() {
               </Tabs>
             </CardContent>
           </Card>
+  );
 
-          <Separator className="mx-auto w-full max-w-[calc(100%-2rem)] bg-border/60" />
+  return (
+    <PageTransition>
+      <div className="min-h-screen bg-background">
+        <main className="container mx-auto px-4 pb-6">
+          {isAdmin ? (
+            <div className="flex flex-col lg:flex-row gap-6">
+              {/* Left: System Dashboard (60%) */}
+              <div className="w-full lg:w-3/5">
+                <Card>
+                  <CardHeader>
+                    <div className="flex items-center gap-2">
+                      <Server className="h-5 w-5 text-muted-foreground" />
+                      <CardTitle>System Status</CardTitle>
+                    </div>
+                    <CardDescription>
+                      Monitor service health and background tasks
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <SystemDashboard />
+                  </CardContent>
+                </Card>
+              </div>
+
+              {/* Right: Settings Tabs (40%) */}
+              <div className="w-full lg:w-2/5">
+                <SettingsTabs />
+              </div>
+            </div>
+          ) : (
+            <SettingsTabs />
+          )}
         </main>
       </div>
     </PageTransition>

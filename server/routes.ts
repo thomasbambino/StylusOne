@@ -24,6 +24,7 @@ import subscriptionsRouter from './routes/subscriptions';
 import adminSubscriptionsRouter from './routes/admin-subscriptions';
 import adminIptvRouter from './routes/admin-iptv';
 import adminAnalyticsRouter from './routes/admin-analytics';
+import adminSystemRouter from './routes/admin-system';
 import stripeWebhooksRouter from './routes/stripe-webhooks';
 import referralsRouter from './routes/referrals';
 import { z } from "zod";
@@ -564,6 +565,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.use("/api/admin", adminSubscriptionsRouter);
   app.use("/api/admin", adminIptvRouter);
   app.use("/api/admin/analytics", adminAnalyticsRouter);
+  app.use("/api/admin/system", adminSystemRouter);
 
   // Referral routes
   app.use("/api/referrals", referralsRouter);
