@@ -3533,14 +3533,19 @@ live.ts
       if (isHdHomeRun) {
         loggers.iptv.debug('Serving HDHomeRun HLS manifest directly', { streamId, streamUrl });
 
-        // Rewrite segment URLs to be relative to the streams directory
-        // FFmpeg outputs: segment0.ts, segment1.ts, etc.
-        // We need to serve them from /streams/channel_XX_X/segmentN.ts
+        // Rewrite segment URLs to be absolute paths to the static /streams/ directory
+        // FFmpeg outputs: segment_1768723125.ts (with epoch timestamps due to -hls_start_number_source epoch)
+        // We need to serve them from /streams/channel_XX_X/segment_NNN.ts
         const streamDir = streamUrl.replace('/playlist.m3u8', '');
         const rewrittenManifest = manifestText.replace(
-          /^(segment\d+\.ts)$/gm,
+          /^(segment_\d+\.ts)$/gm,
           `${streamDir}/$1`
         );
+
+        loggers.iptv.debug('HDHomeRun manifest rewritten', {
+          streamDir,
+          sampleLine: rewrittenManifest.split('\n').find(l => l.includes('segment_'))
+        });
 
         res.set({
           'Content-Type': 'application/vnd.apple.mpegurl',
