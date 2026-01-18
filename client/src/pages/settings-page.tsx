@@ -238,7 +238,7 @@ export default function SettingsPage() {
         <CardTitle>Settings</CardTitle>
       </CardHeader>
       <CardContent>
-        <Tabs defaultValue="general" className="space-y-4" onValueChange={setCurrentTab}>
+        <Tabs value={currentTab} className="space-y-4" onValueChange={setCurrentTab}>
                 <TabsList className="grid w-full grid-cols-4">
                   <TabsTrigger value="general">General</TabsTrigger>
                   <TabsTrigger value="branding">Branding</TabsTrigger>
