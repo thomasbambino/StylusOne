@@ -2943,9 +2943,47 @@ export async function registerRoutes(app: Express): Promise<Server> {
       .limit(1);
 
     if (channel.length > 0 && channel[0].directStreamUrl) {
-      // M3U channel - use direct stream URL
+      // M3U or HDHomeRun channel - use direct stream URL
       let directUrl = channel[0].directStreamUrl;
-      loggers.iptv.debug('Failover: M3U channel detected', { directUrl });
+      loggers.iptv.debug('Failover: Direct stream channel detected', { directUrl });
+
+      // Detect HDHomeRun streams (format: http://device:5004/auto/vXX.X)
+      const isHdHomeRun = directUrl.includes(':5004/auto/v');
+
+      if (isHdHomeRun) {
+        // HDHomeRun streams are MPEG-TS, create synthetic HLS manifest
+        loggers.iptv.debug('Failover: HDHomeRun stream detected, creating synthetic manifest', { directUrl });
+
+        // Store the TS URL so the segment proxy can use it
+        (global as any).m3uTsUrls = (global as any).m3uTsUrls || new Map();
+        (global as any).m3uTsUrls.set(streamId, directUrl);
+
+        // Create a live HLS manifest that references our segment proxy
+        const syntheticManifest = `#EXTM3U
+#EXT-X-VERSION:3
+#EXT-X-TARGETDURATION:10
+#EXT-X-MEDIA-SEQUENCE:0
+#EXTINF:10.0,
+live.ts
+`;
+
+        const mockResponse = {
+          ok: true,
+          status: 200,
+          url: `synthetic://${streamId}/playlist.m3u8`,
+          headers: new Map([['content-type', 'application/vnd.apple.mpegurl']]),
+        };
+
+        loggers.iptv.debug('Failover: HDHomeRun synthetic manifest created', { streamId });
+        return {
+          response: mockResponse as any,
+          manifestText: syntheticManifest,
+          streamUrl: `synthetic://${streamId}/playlist.m3u8`,
+          usedBackup: false,
+          isSynthetic: true,
+          tsUrl: directUrl
+        };
+      }
 
       // Convert MPEG-TS URLs to HLS format for streaming
       // ErsatzTV and similar servers support both formats at the same endpoint
