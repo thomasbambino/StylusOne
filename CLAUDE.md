@@ -201,6 +201,10 @@ git checkout feature-branch
 git merge main
 ```
 
+## Code Quality Rules
+
+- **Always remove debugging logs after a bug is fixed** - Don't leave temporary console.log, loggers.debug, or other debug statements in the code after resolving an issue
+
 ## Logging System
 
 ### Architecture
