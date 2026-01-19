@@ -54,7 +54,7 @@ export class StreamingService {
         const content = readFileSync(playlistPath, 'utf8');
         // Check if playlist has valid segments (non-zero EXTINF)
         if (content.includes('.ts') && content.includes('#EXTINF:') && !content.includes('#EXTINF:0.0')) {
-          loggers.stream.debug(`Reusing existing HLS stream for channel ${channel}`);
+          loggers.stream.debug('Reusing existing HLS stream', { channel });
           // Update timestamp to prevent cleanup
           const existing = this.activeStreams.get(streamId);
           if (existing) {
@@ -69,7 +69,7 @@ export class StreamingService {
 
     // Stop existing stream if running but not valid
     if (this.activeStreams.has(streamId)) {
-      loggers.stream.debug(`Stopping stale stream for channel ${channel}`);
+      loggers.stream.debug('Stopping stale stream', { channel });
       this.stopStream(streamId);
     }
 
@@ -103,7 +103,7 @@ export class StreamingService {
       join(streamPath, 'playlist.m3u8')
     ];
 
-    loggers.stream.info(`Starting HLS stream for channel ${channel}`);
+    loggers.stream.info('Starting HLS stream', { channel });
     loggers.stream.debug('FFmpeg args', { streamPath, sourceUrl });
 
     const ffmpegProcess = spawn('ffmpeg', ffmpegArgs, {
@@ -112,12 +112,12 @@ export class StreamingService {
 
     // Handle process events
     ffmpegProcess.on('error', (error) => {
-      loggers.stream.error(`FFmpeg error for channel ${channel}`, { error });
+      loggers.stream.error('FFmpeg error', { channel, error });
       this.activeStreams.delete(streamId);
     });
 
     ffmpegProcess.on('exit', (code, signal) => {
-      loggers.stream.debug(`FFmpeg process for channel ${channel} exited`, { code, signal });
+      loggers.stream.debug('FFmpeg process exited', { channel, code, signal });
       this.activeStreams.delete(streamId);
     });
 
@@ -125,9 +125,9 @@ export class StreamingService {
     ffmpegProcess.stderr?.on('data', (data) => {
       const message = data.toString().trim();
       if (message.includes('error') || message.includes('Error')) {
-        loggers.stream.error(`FFmpeg stderr for channel ${channel}`, { message });
+        loggers.stream.error('FFmpeg stderr', { channel, message });
       } else if (message.includes('warning') || message.includes('Warning')) {
-        loggers.stream.warn(`FFmpeg warning for channel ${channel}`, { message });
+        loggers.stream.warn('FFmpeg warning', { channel, message });
       }
     });
 
@@ -168,7 +168,7 @@ export class StreamingService {
       await new Promise(resolve => setTimeout(resolve, 500));
     }
     
-    loggers.stream.warn(`Playlist not ready after ${maxWait}ms`, { playlistPath });
+    loggers.stream.warn('Playlist not ready after timeout', { playlistPath, maxWait });
   }
 
   /**
