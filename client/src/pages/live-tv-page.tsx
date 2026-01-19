@@ -816,10 +816,28 @@ export default function LiveTVPage() {
   const packageChannelsMap = useMemo(() => {
     const map = new Map<number, Set<string>>();
     userPackages.forEach((pkg, index) => {
-      const channels = packageChannelsQueries[index]?.data as Array<{ id: string }> | undefined;
-      if (channels) {
+      const queryResult = packageChannelsQueries[index];
+      // Debug the query result structure
+      if (index === 0) {
+        const data = queryResult?.data as Array<{ id: string }> | undefined;
+        loggers.tv.debug('Package query result structure', {
+          packageId: pkg.packageId,
+          hasQueryResult: !!queryResult,
+          isLoading: queryResult?.isLoading,
+          isSuccess: queryResult?.isSuccess,
+          dataType: typeof queryResult?.data,
+          isArray: Array.isArray(data),
+          firstItem: data?.[0],
+        });
+      }
+      const channels = queryResult?.data as Array<{ id: string }> | undefined;
+      if (channels && Array.isArray(channels)) {
         // id is now streamId from the API, which matches iptvId on channels
-        map.set(pkg.packageId, new Set(channels.map(ch => ch.id)));
+        const channelIds = new Set(channels.map(ch => ch.id).filter(Boolean));
+        if (channelIds.size > 0) {
+          map.set(pkg.packageId, channelIds);
+          loggers.tv.debug('Package channel mapping', { packageId: pkg.packageId, channelCount: channelIds.size });
+        }
       }
     });
     return map;
@@ -943,6 +961,11 @@ export default function LiveTVPage() {
 
   // Filter by selected packages (multi-select)
   if (selectedPackageIds.size > 0) {
+    loggers.tv.debug('Package filter active', {
+      selectedPackages: Array.from(selectedPackageIds),
+      mapSize: packageChannelsMap.size,
+      mapKeys: Array.from(packageChannelsMap.keys()),
+    });
     filteredChannels = filteredChannels.filter(ch => {
       // For IPTV channels, check if their ID is in ANY of the selected packages
       if (ch.source === 'iptv' && ch.iptvId) {
@@ -957,6 +980,7 @@ export default function LiveTVPage() {
       // HDHomeRun channels are not in packages, so hide them when filtering by package
       return false;
     });
+    loggers.tv.debug('After package filter', { channelCount: filteredChannels.length });
   }
 
   // Note: Search filtering happens AFTER EPG data loads (see availableChannels below)
@@ -1000,11 +1024,28 @@ export default function LiveTVPage() {
   });
 
   // Fetch EPG data separately for favorite channels (they might not be in filtered channels)
+  // Create a lookup map keyed by fav.channelId for correct channel matching
+  const favoriteChannelLookup = useMemo(() => {
+    const lookup = new Map<string, UnifiedChannel>();
+    favoriteChannels.forEach(fav => {
+      // First try to find by iptvId (IPTV channels)
+      let channel = allChannels.find(ch => ch.source === 'iptv' && ch.iptvId === fav.channelId);
+      // Fall back to GuideNumber for HDHomeRun channels
+      if (!channel) {
+        channel = allChannels.find(ch => ch.source === 'hdhomerun' && ch.GuideNumber === fav.channelId);
+      }
+      if (channel) {
+        lookup.set(fav.channelId, channel);
+      }
+    });
+    return lookup;
+  }, [favoriteChannels, allChannels]);
+
   const favoriteChannelsForEPG = useMemo(() => {
     return favoriteChannels
-      .map(fav => allChannels.find(ch => ch.iptvId === fav.channelId || ch.GuideNumber === fav.channelId))
+      .map(fav => favoriteChannelLookup.get(fav.channelId))
       .filter((ch): ch is UnifiedChannel => !!ch);
-  }, [favoriteChannels, allChannels]);
+  }, [favoriteChannels, favoriteChannelLookup]);
 
   const favoriteEpgQueries = useQueries({
     queries: favoriteChannelsForEPG.map((channel) => {
@@ -2887,10 +2928,8 @@ export default function LiveTVPage() {
                   ) : (
                     <div className="space-y-2">
                       {favoriteChannels.slice(0, 8).map((fav) => {
-                        // Try to find channel in all channels (not just filtered)
-                        const channel = allChannels.find(ch =>
-                          ch.iptvId === fav.channelId || ch.GuideNumber === fav.channelId
-                        );
+                        // Use the pre-computed lookup map for correct channel matching
+                        const channel = favoriteChannelLookup.get(fav.channelId);
                         const channelKey = channel?.epgId || channel?.iptvId || channel?.GuideNumber || fav.channelId;
                         // Use favorite-specific EPG data, fall back to main EPG map
                         const programs = favoriteEpgDataMap.get(channelKey) ||
