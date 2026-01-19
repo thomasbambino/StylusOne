@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { sql } from 'drizzle-orm';
 import { loggers } from '../lib/logger';
+import { APP_VERSION } from '../lib/startup-display';
 
 const router = Router();
 
@@ -78,7 +79,7 @@ function requireAdmin(req: any, res: any, next: any) {
  * Get app version from startup-display
  */
 function getAppVersion(): string {
-  return '1.5.5'; // Match startup-display.ts APP_VERSION
+  return APP_VERSION;
 }
 
 /**

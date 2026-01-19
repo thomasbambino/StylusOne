@@ -40,6 +40,12 @@ export default function SettingsPage() {
     queryKey: ["/api/settings"],
   });
 
+  // Fetch app version from system dashboard
+  const { data: systemInfo } = useQuery<{ version: string; appName: string }>({
+    queryKey: ["/api/admin/system-dashboard"],
+    select: (data: any) => ({ version: data?.version, appName: data?.appName }),
+  });
+
   const form = useForm({
     resolver: zodResolver(updateSettingsSchema),
     defaultValues: {
@@ -518,12 +524,24 @@ export default function SettingsPage() {
 
                 <TabsContent value="maintenance">
                   <div className="space-y-6">
+                    {/* App Version */}
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <h3 className="text-lg font-medium">App Version</h3>
+                        <p className="text-sm text-muted-foreground">
+                          {systemInfo?.appName || 'Stylus One'} v{systemInfo?.version || '...'}
+                        </p>
+                      </div>
+                    </div>
+
+                    <Separator />
+
                     <div>
                       <h3 className="text-lg font-medium mb-2">Cache Management</h3>
                       <p className="text-sm text-muted-foreground mb-4">
                         Clear cached data to ensure you're seeing the latest version of the application
                       </p>
-                      
+
                       <Card className="border-warning">
                         <CardContent className="pt-6">
                           <div className="space-y-4">
