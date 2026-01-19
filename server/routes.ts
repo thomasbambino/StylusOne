@@ -2021,21 +2021,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // HD HomeRun API routes
   app.get("/api/hdhomerun/devices", requireFeature('live_tv_access'), async (req, res) => {
     if (!req.isAuthenticated()) return res.sendStatus(401);
-    
+
     try {
-      const { HDHomeRunService } = await import('./services/hdhomerun-service');
-      const hdhrService = new HDHomeRunService();
-      
-      if (!hdhrService.isConfigured()) {
+      const { hdHomeRunService } = await import('./services/hdhomerun-service');
+
+      if (!hdHomeRunService.isConfigured()) {
         return res.json({ configured: false, message: "HD HomeRun not configured" });
       }
-      
-      await hdhrService.initialize();
-      if (!hdhrService.isInitialized()) {
-        return res.status(500).json({ message: "Failed to initialize HD HomeRun service" });
+
+      if (!hdHomeRunService.isInitialized()) {
+        await hdHomeRunService.initialize();
       }
-      
-      const deviceInfo = await hdhrService.getDeviceInfo();
+
+      const deviceInfo = await hdHomeRunService.getDeviceInfo();
       res.json({ configured: true, device: deviceInfo });
     } catch (error) {
       loggers.iptv.error('Error fetching HD HomeRun devices', { error });
@@ -2048,21 +2046,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get("/api/hdhomerun/channels", requireFeature('live_tv_access'), async (req, res) => {
     if (!req.isAuthenticated()) return res.sendStatus(401);
-    
+
     try {
-      const { HDHomeRunService } = await import('./services/hdhomerun-service');
-      const hdhrService = new HDHomeRunService();
-      
-      if (!hdhrService.isConfigured()) {
+      const { hdHomeRunService } = await import('./services/hdhomerun-service');
+
+      if (!hdHomeRunService.isConfigured()) {
         return res.json({ configured: false, channels: [] });
       }
-      
-      await hdhrService.initialize();
-      if (!hdhrService.isInitialized()) {
-        return res.status(500).json({ message: "Failed to initialize HD HomeRun service" });
+
+      if (!hdHomeRunService.isInitialized()) {
+        await hdHomeRunService.initialize();
       }
-      
-      const channels = await hdhrService.getChannelLineup();
+
+      const channels = await hdHomeRunService.getChannelLineup();
       res.json({ configured: true, channels });
     } catch (error) {
       loggers.iptv.error('Error fetching HD HomeRun channels', { error });
@@ -2075,21 +2071,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get("/api/hdhomerun/tuners", requireFeature('live_tv_access'), async (req, res) => {
     if (!req.isAuthenticated()) return res.sendStatus(401);
-    
+
     try {
-      const { HDHomeRunService } = await import('./services/hdhomerun-service');
-      const hdhrService = new HDHomeRunService();
-      
-      if (!hdhrService.isConfigured()) {
+      const { hdHomeRunService } = await import('./services/hdhomerun-service');
+
+      if (!hdHomeRunService.isConfigured()) {
         return res.json({ configured: false, tuners: [] });
       }
-      
-      await hdhrService.initialize();
-      if (!hdhrService.isInitialized()) {
-        return res.status(500).json({ message: "Failed to initialize HD HomeRun service" });
+
+      if (!hdHomeRunService.isInitialized()) {
+        await hdHomeRunService.initialize();
       }
-      
-      const tuners = await hdhrService.getTunerStatus();
+
+      const tuners = await hdHomeRunService.getTunerStatus();
       res.json({ configured: true, tuners });
     } catch (error) {
       loggers.iptv.error('Error fetching HD HomeRun tuner status', { error });
@@ -2102,29 +2096,28 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get("/api/hdhomerun/stream/:channel", requireFeature('live_tv_access'), async (req, res) => {
     if (!req.isAuthenticated()) return res.sendStatus(401);
-    
+
     try {
       const { channel } = req.params;
-      const { HDHomeRunService } = await import('./services/hdhomerun-service');
-      const hdhrService = new HDHomeRunService();
-      
-      if (!hdhrService.isConfigured()) {
+      const { hdHomeRunService } = await import('./services/hdhomerun-service');
+
+      if (!hdHomeRunService.isConfigured()) {
         return res.status(500).json({ message: "HD HomeRun not configured" });
       }
-      
+
       // Get the raw stream URL from HDHomeRun
-      const sourceUrl = hdhrService.getChannelStreamUrl(channel);
+      const sourceUrl = hdHomeRunService.getChannelStreamUrl(channel);
       loggers.iptv.debug('HD HomeRun stream request', { channel, sourceUrl });
-      
+
       // Import streaming service
       const { streamingService } = await import('./services/streaming-service');
-      
+
       // Start HLS conversion
       loggers.iptv.debug('Starting HLS stream conversion', { channel });
       const hlsUrl = await streamingService.startHLSStream(channel, sourceUrl);
       loggers.iptv.debug('HLS stream URL generated', { hlsUrl });
-      
-      res.json({ 
+
+      res.json({
         streamUrl: hlsUrl,
         sourceUrl: sourceUrl,
         type: 'hls'
@@ -2140,26 +2133,27 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get("/api/hdhomerun/test", requireFeature('live_tv_access'), async (req, res) => {
     if (!req.isAuthenticated()) return res.sendStatus(401);
-    
+
     try {
-      const { HDHomeRunService } = await import('./services/hdhomerun-service');
-      const hdhrService = new HDHomeRunService();
-      
-      if (!hdhrService.isConfigured()) {
-        return res.json({ 
-          success: false, 
+      const { hdHomeRunService } = await import('./services/hdhomerun-service');
+
+      if (!hdHomeRunService.isConfigured()) {
+        return res.json({
+          success: false,
           configured: false,
-          message: "HD HomeRun URL not configured" 
+          message: "HD HomeRun URL not configured"
         });
       }
-      
-      await hdhrService.initialize();
-      const isHealthy = await hdhrService.isHealthy();
-      
-      res.json({ 
-        success: isHealthy, 
+
+      if (!hdHomeRunService.isInitialized()) {
+        await hdHomeRunService.initialize();
+      }
+      const isHealthy = await hdHomeRunService.isHealthy();
+
+      res.json({
+        success: isHealthy,
         configured: true,
-        message: isHealthy ? "HD HomeRun connection successful" : "HD HomeRun connection failed" 
+        message: isHealthy ? "HD HomeRun connection successful" : "HD HomeRun connection failed"
       });
     } catch (error) {
       loggers.iptv.error('Error testing HD HomeRun connection', { error });
@@ -2970,14 +2964,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
           const relativePath = hlsUrl.startsWith('/') ? hlsUrl.substring(1) : hlsUrl;
           const playlistPath = join(process.cwd(), 'dist', 'public', relativePath);
 
-          loggers.iptv.info('Failover: Reading playlist from', { playlistPath, exists: existsSync(playlistPath) });
+          loggers.iptv.debug('Failover: Reading playlist', { playlistPath, exists: existsSync(playlistPath) });
 
           const manifestText = readFileSync(playlistPath, 'utf8');
 
-          loggers.iptv.info('Failover: HDHomeRun manifest read', {
+          loggers.iptv.debug('Failover: HDHomeRun manifest read', {
             streamId,
-            lines: manifestText.split('\n').length,
-            sample: manifestText.substring(0, 200)
+            lines: manifestText.split('\n').length
           });
 
           const mockResponse = {
@@ -3544,7 +3537,7 @@ live.ts
 
       // HDHomeRun streams use FFmpeg-generated HLS files served directly from /streams/
       if (isHdHomeRun) {
-        loggers.iptv.info('Serving HDHomeRun HLS manifest', { streamId, streamUrl });
+        loggers.iptv.debug('Serving HDHomeRun HLS manifest', { streamId });
 
         // Rewrite segment URLs to be absolute paths to the static /streams/ directory
         // FFmpeg outputs: segment_1768723125.ts (with epoch timestamps)
@@ -3556,14 +3549,6 @@ live.ts
           /^(segment_\d+\.ts)$/gm,
           `${streamDir}/$1`
         );
-
-        // Log the rewrite result
-        const segmentLines = rewrittenManifest.split('\n').filter(l => l.includes('segment_'));
-        loggers.iptv.info('HDHomeRun manifest segments', {
-          streamDir,
-          totalSegments: segmentLines.length,
-          sampleSegment: segmentLines[0] || 'none'
-        });
 
         res.set({
           'Content-Type': 'application/vnd.apple.mpegurl',

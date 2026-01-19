@@ -339,7 +339,7 @@ export class StreamTrackerService {
         for (const stream of result) {
           await this.saveToViewingHistory(stream);
         }
-        loggers.stream.info(`Cleaned up ${result.length} stale streams`);
+        loggers.stream.info('Cleaned up stale streams', { count: result.length });
       }
 
       return result.length;

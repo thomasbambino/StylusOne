@@ -121,13 +121,38 @@ export class StreamingService {
       this.activeStreams.delete(streamId);
     });
 
-    // Log stderr for debugging
+    // Log stderr for debugging - filter out expected warnings
     ffmpegProcess.stderr?.on('data', (data) => {
       const message = data.toString().trim();
+      // Skip empty messages
+      if (!message) return;
+
+      // Expected warnings during normal operation - log at debug level
+      const expectedWarnings = [
+        'non monotonically increasing dts',
+        'discarding packet',
+        'Discarding packet',
+        'trailer',
+        'Application provided invalid',
+        'Last message repeated',
+        'deprecated pixel format'
+      ];
+      const isExpected = expectedWarnings.some(w => message.includes(w));
+
       if (message.includes('error') || message.includes('Error')) {
-        loggers.stream.error('FFmpeg stderr', { channel, message });
+        // Real errors - but filter out expected "trailer" errors on shutdown
+        if (!message.includes('trailer')) {
+          loggers.stream.error('FFmpeg stderr', { channel, message });
+        } else {
+          loggers.stream.debug('FFmpeg trailer cleanup', { channel });
+        }
       } else if (message.includes('warning') || message.includes('Warning')) {
-        loggers.stream.warn('FFmpeg warning', { channel, message });
+        if (isExpected) {
+          // Expected warnings during live streaming - debug only
+          loggers.stream.debug('FFmpeg expected warning', { channel, message });
+        } else {
+          loggers.stream.warn('FFmpeg warning', { channel, message });
+        }
       }
     });
 

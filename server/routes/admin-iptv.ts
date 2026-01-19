@@ -22,7 +22,7 @@ import { streamTrackerService } from '../services/stream-tracker-service';
 import { providerHealthService } from '../services/provider-health-service';
 import { channelMappingService } from '../services/channel-mapping-service';
 import { m3uParserService } from '../services/m3u-parser-service';
-import { HDHomeRunService } from '../services/hdhomerun-service';
+import { hdHomeRunService } from '../services/hdhomerun-service';
 
 const router = Router();
 
@@ -578,18 +578,15 @@ router.post('/iptv-providers/:id/sync', requireSuperAdmin, async (req, res) => {
       const deviceUrl = decrypt(provider.serverUrl);
       loggers.adminIptv.info('Syncing HDHomeRun provider', { providerId, deviceUrl });
 
-      // Create HDHomeRun service instance for this device
-      const hdhrService = new HDHomeRunService();
-
       try {
         // Verify device is accessible
-        await hdhrService.getDeviceInfoFromUrl(deviceUrl);
+        await hdHomeRunService.getDeviceInfoFromUrl(deviceUrl);
       } catch (err) {
         return res.status(400).json({ error: 'Failed to connect to HDHomeRun device. Check the device URL.' });
       }
 
       // Get channels from HDHomeRun device
-      const channels = await hdhrService.getChannelsForProvider(deviceUrl);
+      const channels = await hdHomeRunService.getChannelsForProvider(deviceUrl);
       totalChannels = channels.length;
 
       // Log first 5 channels

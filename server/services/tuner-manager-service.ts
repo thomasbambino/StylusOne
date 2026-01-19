@@ -345,27 +345,26 @@ export class TunerManagerService extends EventEmitter {
 
   private async generateStreamUrl(channelNumber: string): Promise<string> {
     try {
-      const { HDHomeRunService } = await import('./hdhomerun-service');
-      const hdhrService = new HDHomeRunService();
-      
-      if (!hdhrService.isConfigured()) {
+      const { hdHomeRunService } = await import('./hdhomerun-service');
+
+      if (!hdHomeRunService.isConfigured()) {
         throw new Error('HDHomeRun service not configured');
       }
-      
+
       // Get the raw stream URL from HDHomeRun
-      const sourceUrl = hdhrService.getChannelStreamUrl(channelNumber);
-      loggers.stream.debug(`HD HomeRun stream request for channel ${channelNumber}`, { sourceUrl });
-      
+      const sourceUrl = hdHomeRunService.getChannelStreamUrl(channelNumber);
+      loggers.stream.debug('HD HomeRun stream request', { channelNumber, sourceUrl });
+
       // Import streaming service
       const { streamingService } = await import('./streaming-service');
 
       // Start HLS conversion
-      loggers.stream.debug(`Starting HLS stream conversion for channel ${channelNumber}`);
+      loggers.stream.debug('Starting HLS stream conversion', { channelNumber });
       const streamUrl = await streamingService.startHLSStream(channelNumber, sourceUrl);
-      
+
       return streamUrl;
     } catch (error) {
-      loggers.stream.error(`Error generating stream URL for channel ${channelNumber}`, { error });
+      loggers.stream.error('Error generating stream URL', { channelNumber, error });
       // Fallback to default pattern
       return `/streams/channel_${channelNumber.replace('.', '_')}/playlist.m3u8`;
     }

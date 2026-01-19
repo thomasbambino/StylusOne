@@ -71,7 +71,7 @@ export class HDHomeRunService implements IService {
       // Test connection by getting device info
       await this.getDeviceInfo();
       this.initialized = true;
-      loggers.hdHomeRun.info('HD HomeRun service initialized successfully');
+      loggers.hdHomeRun.debug('HD HomeRun service initialized');
     } catch (error) {
       loggers.hdHomeRun.error('Failed to initialize HD HomeRun service', { error });
       this.initialized = false;
@@ -289,3 +289,6 @@ export class HDHomeRunService implements IService {
     }
   }
 }
+
+// Singleton instance - use this instead of creating new instances
+export const hdHomeRunService = new HDHomeRunService();
