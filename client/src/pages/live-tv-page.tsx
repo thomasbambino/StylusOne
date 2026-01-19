@@ -1569,11 +1569,15 @@ export default function LiveTVPage() {
         // Don't start playback here - wait for FRAG_BUFFERED for faster startup
       });
 
-      // Play as soon as first fragment is buffered (faster than waiting for full manifest parse)
+      // Wait for sufficient buffer before starting playback (prevents initial buffering)
+      let fragmentsBuffered = 0;
+      const MIN_FRAGMENTS_BEFORE_PLAY = 2; // Wait for ~12 seconds of buffer (2 x 6s segments)
+
       hls.on(Hls.Events.FRAG_BUFFERED, () => {
-        if (!playbackStarted) {
+        fragmentsBuffered++;
+        if (!playbackStarted && fragmentsBuffered >= MIN_FRAGMENTS_BEFORE_PLAY) {
           playbackStarted = true;
-          loggers.tv.debug('First fragment buffered, starting playback');
+          loggers.tv.debug('Sufficient buffer ready, starting playback', { fragmentsBuffered });
           video.play().then(() => {
             loggers.tv.info('Direct stream started playing successfully');
             setIsPlaying(true);
@@ -1837,11 +1841,16 @@ export default function LiveTVPage() {
             // Don't start playback here - wait for FRAG_BUFFERED for faster startup
           });
 
-          // Play as soon as first fragment is buffered (faster than waiting for full manifest parse)
+          // Wait for sufficient buffer before starting playback (prevents initial buffering)
+          let fragmentsBuffered = 0;
+          const MIN_FRAGMENTS_BEFORE_PLAY = 2; // Wait for ~12 seconds of buffer (2 x 6s segments)
+
           hls.on(Hls.Events.FRAG_BUFFERED, () => {
-            if (!playbackStarted) {
+            fragmentsBuffered++;
+
+            if (!playbackStarted && fragmentsBuffered >= MIN_FRAGMENTS_BEFORE_PLAY) {
               playbackStarted = true;
-              loggers.tv.debug('First fragment buffered, starting playback');
+              loggers.tv.debug('Sufficient buffer ready, starting playback', { fragmentsBuffered });
               setIsLoading(false);
 
               // Try to play the video with detailed error handling
