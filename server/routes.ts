@@ -2910,6 +2910,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     backupProviderId?: number;
     isSynthetic?: boolean;
     tsUrl?: string;
+    isHdHomeRun?: boolean;
   }
 
   // Global map to track streams in "test failover mode"
@@ -2945,28 +2946,39 @@ export async function registerRoutes(app: Express): Promise<Server> {
     if (channel.length > 0 && channel[0].directStreamUrl) {
       // M3U or HDHomeRun channel - use direct stream URL
       let directUrl = channel[0].directStreamUrl;
-      loggers.iptv.debug('Failover: Direct stream channel detected', { directUrl });
+      loggers.iptv.info('Failover: Direct stream channel detected', { streamId, directUrl });
 
       // Detect HDHomeRun streams (format: http://device:5004/auto/vXX.X)
       const isHdHomeRun = directUrl.includes(':5004/auto/v');
 
       if (isHdHomeRun) {
         // HDHomeRun streams need FFmpeg transcoding to HLS
-        loggers.iptv.debug('Failover: HDHomeRun stream detected, starting FFmpeg transcoding', { directUrl });
+        loggers.iptv.info('Failover: HDHomeRun stream detected, starting FFmpeg transcoding', { directUrl });
 
         try {
           const { streamingService } = await import('./services/streaming-service');
-          const { readFileSync } = await import('fs');
+          const { readFileSync, existsSync } = await import('fs');
           const { join } = await import('path');
 
           // Start HLS stream conversion (waits for playlist to be ready)
           const hlsUrl = await streamingService.startHLSStream(streamId, directUrl);
 
-          loggers.iptv.debug('Failover: HDHomeRun HLS stream started', { streamId, hlsUrl });
+          loggers.iptv.info('Failover: HDHomeRun HLS stream started', { streamId, hlsUrl });
 
           // Read the generated playlist
-          const playlistPath = join(process.cwd(), 'dist', 'public', hlsUrl);
+          // hlsUrl is like '/streams/channel_39_1/playlist.m3u8' - need to strip leading slash
+          const relativePath = hlsUrl.startsWith('/') ? hlsUrl.substring(1) : hlsUrl;
+          const playlistPath = join(process.cwd(), 'dist', 'public', relativePath);
+
+          loggers.iptv.info('Failover: Reading playlist from', { playlistPath, exists: existsSync(playlistPath) });
+
           const manifestText = readFileSync(playlistPath, 'utf8');
+
+          loggers.iptv.info('Failover: HDHomeRun manifest read', {
+            streamId,
+            lines: manifestText.split('\n').length,
+            sample: manifestText.substring(0, 200)
+          });
 
           const mockResponse = {
             ok: true,
@@ -3072,6 +3084,8 @@ live.ts
       }
 
       // Fall through to backup channels if M3U stream fails
+    } else {
+      loggers.iptv.info('Failover: No directStreamUrl for channel', { streamId, channelFound: channel.length > 0 });
     }
 
     // Try primary stream first (unless in test mode) - for Xtream providers
