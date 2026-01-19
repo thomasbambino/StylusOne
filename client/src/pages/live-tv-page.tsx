@@ -1028,44 +1028,26 @@ export default function LiveTVPage() {
     return lookup;
   }, [favoriteChannels, allChannels]);
 
-  const favoriteChannelsForEPG = useMemo(() => {
-    return favoriteChannels
-      .map(fav => favoriteChannelLookup.get(fav.channelId))
-      .filter((ch): ch is UnifiedChannel => !!ch);
-  }, [favoriteChannels, favoriteChannelLookup]);
-
+  // Fetch EPG data for favorites using /api/epg/current (has fuzzy name matching)
+  // Same approach as home page - use channel name for reliable EPG lookup
   const favoriteEpgQueries = useQueries({
-    queries: favoriteChannelsForEPG.map((channel) => {
-      const channelKey = channel.source === 'iptv' ? channel.epgId : channel.GuideNumber;
-      const channelName = channel.GuideName || '';
-      if (!channelKey) {
-        return {
-          queryKey: ['epg', 'favorite', 'none', channel.iptvId || channel.GuideNumber],
-          queryFn: async () => [],
-          staleTime: 5 * 60 * 1000,
-        };
-      }
+    queries: favoriteChannels.map((fav) => {
+      // Use channel name for EPG lookup (more reliable than IDs)
+      const channelName = fav.channelName;
       return {
-        queryKey: [`/api/epg/upcoming/${encodeURIComponent(channelKey)}?hours=4&name=${encodeURIComponent(channelName)}`],
+        queryKey: [`/api/epg/current/${encodeURIComponent(channelName)}`],
         queryFn: getQueryFn({ on401: "returnNull" }),
-        select: (data: any) => (data?.programs || []) as EPGProgram[],
+        select: (data: any) => data?.program as EPGProgram | null,
         staleTime: 5 * 60 * 1000,
         refetchInterval: 5 * 60 * 1000,
       };
     })
   });
 
-  // Create a map of favorite channel EPG data
-  const favoriteEpgDataMap = new Map<string, EPGProgram[]>();
-  favoriteChannelsForEPG.forEach((channel, index) => {
-    const channelKey = channel.epgId || channel.iptvId || channel.GuideNumber;
-    if (channelKey) {
-      favoriteEpgDataMap.set(channelKey, favoriteEpgQueries[index]?.data || []);
-    }
-    // Also map by iptvId for easier lookup
-    if (channel.iptvId && channel.iptvId !== channelKey) {
-      favoriteEpgDataMap.set(channel.iptvId, favoriteEpgQueries[index]?.data || []);
-    }
+  // Create a map of favorite channel EPG data (keyed by fav.channelId for easy lookup)
+  const favoriteEpgDataMap = new Map<string, EPGProgram | null>();
+  favoriteChannels.forEach((fav, index) => {
+    favoriteEpgDataMap.set(fav.channelId, favoriteEpgQueries[index]?.data || null);
   });
 
   // Auto-select first channel on load is disabled - users must manually select a channel
@@ -2917,18 +2899,8 @@ export default function LiveTVPage() {
                       {favoriteChannels.slice(0, 8).map((fav) => {
                         // Use the pre-computed lookup map for correct channel matching
                         const channel = favoriteChannelLookup.get(fav.channelId);
-                        const channelKey = channel?.epgId || channel?.iptvId || channel?.GuideNumber || fav.channelId;
-                        // Use favorite-specific EPG data, fall back to main EPG map
-                        const programs = favoriteEpgDataMap.get(channelKey) ||
-                                        favoriteEpgDataMap.get(fav.channelId) ||
-                                        epgDataMap.get(channelKey) || [];
-                        // Find current program by checking if now is between startTime and endTime
-                        const now = new Date();
-                        const currentProgram = programs.find(p => {
-                          const start = new Date(p.startTime);
-                          const end = new Date(p.endTime);
-                          return now >= start && now < end;
-                        }) || programs[0]; // Fall back to first program if no current found
+                        // Get current program directly from favoriteEpgDataMap (keyed by fav.channelId)
+                        const currentProgram = favoriteEpgDataMap.get(fav.channelId);
 
                         return (
                           <div
