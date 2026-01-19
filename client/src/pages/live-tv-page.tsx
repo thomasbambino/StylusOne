@@ -1042,11 +1042,25 @@ export default function LiveTVPage() {
   const favoriteChannelLookup = useMemo(() => {
     const lookup = new Map<string, UnifiedChannel>();
     favoriteChannels.forEach(fav => {
-      // First try to find by iptvId (IPTV channels)
+      // First try to find by iptvId (IPTV channels use streamId)
       let channel = allChannels.find(ch => ch.source === 'iptv' && ch.iptvId === fav.channelId);
       // Fall back to GuideNumber for HDHomeRun channels
       if (!channel) {
         channel = allChannels.find(ch => ch.source === 'hdhomerun' && ch.GuideNumber === fav.channelId);
+      }
+      // Legacy fallback: match by channel name for favorites saved with old database IDs
+      if (!channel && fav.channelName) {
+        const normalizedFavName = fav.channelName.toLowerCase().trim();
+        channel = allChannels.find(ch =>
+          ch.source === 'iptv' && ch.GuideName.toLowerCase().trim() === normalizedFavName
+        );
+        if (channel) {
+          loggers.tv.info('Favorite matched by name (legacy)', {
+            favChannelId: fav.channelId,
+            favName: fav.channelName,
+            matchedIptvId: channel.iptvId
+          });
+        }
       }
       if (channel) {
         lookup.set(fav.channelId, channel);
@@ -1063,7 +1077,7 @@ export default function LiveTVPage() {
           favChannelId: fav.channelId,
           favName: fav.channelName,
           allChannelsCount: allChannels.length,
-          iptvChannelIds: allChannels.filter(c => c.source === 'iptv').slice(0, 5).map(c => c.iptvId)
+          sampleChannelNames: allChannels.filter(c => c.source === 'iptv').slice(0, 5).map(c => c.GuideName)
         });
       }
     });

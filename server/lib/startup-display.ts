@@ -23,7 +23,7 @@ interface CategoryServices {
  *   display.render();
  */
 // App version - increment with each deployment
-const APP_VERSION = '1.5.21';
+const APP_VERSION = '1.5.22';
 
 export class StartupDisplay {
   private categories: Map<ServiceCategory, ServiceInfo[]> = new Map();
