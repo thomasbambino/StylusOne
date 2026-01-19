@@ -817,31 +817,12 @@ export default function LiveTVPage() {
     const map = new Map<number, Set<string>>();
     userPackages.forEach((pkg, index) => {
       const queryResult = packageChannelsQueries[index];
-      // Debug the query result structure for ALL packages
-      loggers.tv.debug('Package query result structure', {
-        packageId: pkg.packageId,
-        packageName: pkg.packageName,
-        hasQueryResult: !!queryResult,
-        isLoading: queryResult?.isLoading,
-        isSuccess: queryResult?.isSuccess,
-        dataType: typeof queryResult?.data,
-        isArray: Array.isArray(queryResult?.data),
-        dataLength: Array.isArray(queryResult?.data) ? queryResult?.data.length : 'N/A',
-        firstItem: Array.isArray(queryResult?.data) ? queryResult?.data[0] : queryResult?.data,
-      });
       const channels = queryResult?.data as Array<{ id: string }> | undefined;
       if (channels && Array.isArray(channels)) {
-        // id is now streamId from the API, which matches iptvId on channels
-        // Convert to string to ensure type consistency
+        // id is streamId from the API, convert to string for consistent comparison
         const channelIds = new Set(channels.map(ch => String(ch.id)).filter(Boolean));
         if (channelIds.size > 0) {
           map.set(pkg.packageId, channelIds);
-          loggers.tv.debug('Package channel mapping created', {
-            packageId: pkg.packageId,
-            packageName: pkg.packageName,
-            channelCount: channelIds.size,
-            sampleIds: Array.from(channelIds).slice(0, 5)
-          });
         }
       }
     });
@@ -966,23 +947,10 @@ export default function LiveTVPage() {
 
   // Filter by selected packages (multi-select)
   if (selectedPackageIds.size > 0) {
-    // Log sample channel and package data for debugging
-    const sampleChannel = filteredChannels.find(ch => ch.source === 'iptv');
-    const firstPackageId = Array.from(selectedPackageIds)[0];
-    const firstPackageChannels = packageChannelsMap.get(firstPackageId);
-    loggers.tv.debug('Package filter active', {
-      selectedPackages: Array.from(selectedPackageIds),
-      mapSize: packageChannelsMap.size,
-      mapKeys: Array.from(packageChannelsMap.keys()),
-      sampleChannelIptvId: sampleChannel?.iptvId,
-      sampleChannelName: sampleChannel?.GuideName,
-      firstPackageChannelCount: firstPackageChannels?.size,
-      firstPackageChannelSample: firstPackageChannels ? Array.from(firstPackageChannels).slice(0, 3) : [],
-    });
     filteredChannels = filteredChannels.filter(ch => {
       // For IPTV channels, check if their ID is in ANY of the selected packages
       if (ch.source === 'iptv' && ch.iptvId) {
-        const iptvIdStr = String(ch.iptvId); // Ensure string comparison
+        const iptvIdStr = String(ch.iptvId);
         for (const packageId of selectedPackageIds) {
           const packageChannelIds = packageChannelsMap.get(packageId);
           if (packageChannelIds?.has(iptvIdStr)) {
@@ -994,7 +962,6 @@ export default function LiveTVPage() {
       // HDHomeRun channels are not in packages, so hide them when filtering by package
       return false;
     });
-    loggers.tv.debug('After package filter', { channelCount: filteredChannels.length });
   }
 
   // Note: Search filtering happens AFTER EPG data loads (see availableChannels below)
@@ -1054,31 +1021,9 @@ export default function LiveTVPage() {
         channel = allChannels.find(ch =>
           ch.source === 'iptv' && ch.GuideName.toLowerCase().trim() === normalizedFavName
         );
-        if (channel) {
-          loggers.tv.info('Favorite matched by name (legacy)', {
-            favChannelId: fav.channelId,
-            favName: fav.channelName,
-            matchedIptvId: channel.iptvId
-          });
-        }
       }
       if (channel) {
         lookup.set(fav.channelId, channel);
-        loggers.tv.debug('Favorite lookup matched', {
-          favChannelId: fav.channelId,
-          favName: fav.channelName,
-          matchedIptvId: channel.iptvId,
-          matchedName: channel.GuideName,
-          matchedEpgId: channel.epgId,
-          source: channel.source
-        });
-      } else {
-        loggers.tv.warn('Favorite lookup failed - no channel found', {
-          favChannelId: fav.channelId,
-          favName: fav.channelName,
-          allChannelsCount: allChannels.length,
-          sampleChannelNames: allChannels.filter(c => c.source === 'iptv').slice(0, 5).map(c => c.GuideName)
-        });
       }
     });
     return lookup;
