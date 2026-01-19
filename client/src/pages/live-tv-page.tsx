@@ -812,18 +812,21 @@ export default function LiveTVPage() {
     })),
   });
 
-  // Build a map of packageId -> channelIds (streamId) for filtering
-  const packageChannelsMap = useMemo(() => {
-    const map = new Map<number, Set<string>>();
+  // Build a map of channel name -> package IDs (same approach as iOS for reliable matching)
+  const channelToPackages = useMemo(() => {
+    const map = new Map<string, Set<number>>();
     userPackages.forEach((pkg, index) => {
       const queryResult = packageChannelsQueries[index];
-      const channels = queryResult?.data as Array<{ id: string }> | undefined;
+      const channels = queryResult?.data as Array<{ id: string; name: string }> | undefined;
       if (channels && Array.isArray(channels)) {
-        // id is streamId from the API, convert to string for consistent comparison
-        const channelIds = new Set(channels.map(ch => String(ch.id)).filter(Boolean));
-        if (channelIds.size > 0) {
-          map.set(pkg.packageId, channelIds);
-        }
+        channels.forEach(ch => {
+          if (ch.name) {
+            const normalizedName = ch.name.toLowerCase().trim();
+            const existing = map.get(normalizedName) || new Set();
+            existing.add(pkg.packageId);
+            map.set(normalizedName, existing);
+          }
+        });
       }
     });
     return map;
@@ -945,22 +948,18 @@ export default function LiveTVPage() {
     filteredChannels = filteredChannels.filter(ch => ch.source !== 'hdhomerun');
   }
 
-  // Filter by selected packages (multi-select)
-  if (selectedPackageIds.size > 0) {
+  // Filter by selected packages (multi-select) - uses channel NAME matching like iOS
+  if (selectedPackageIds.size > 0 && channelToPackages.size > 0) {
     filteredChannels = filteredChannels.filter(ch => {
-      // For IPTV channels, check if their ID is in ANY of the selected packages
-      if (ch.source === 'iptv' && ch.iptvId) {
-        const iptvIdStr = String(ch.iptvId);
-        for (const packageId of selectedPackageIds) {
-          const packageChannelIds = packageChannelsMap.get(packageId);
-          if (packageChannelIds?.has(iptvIdStr)) {
-            return true;
-          }
-        }
-        return false;
-      }
-      // HDHomeRun channels are not in packages, so hide them when filtering by package
-      return false;
+      // Match by channel name (normalized) - same approach as iOS
+      const normalizedName = ch.GuideName.toLowerCase().trim();
+      const packageIds = channelToPackages.get(normalizedName);
+
+      // If channel isn't in any package data, hide it when filtering
+      if (!packageIds || packageIds.size === 0) return false;
+
+      // Show channel if it belongs to ANY of the selected packages
+      return Array.from(packageIds).some(pkgId => selectedPackageIds.has(pkgId));
     });
   }
 
