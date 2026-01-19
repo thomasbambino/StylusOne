@@ -812,13 +812,14 @@ export default function LiveTVPage() {
     })),
   });
 
-  // Build a map of packageId -> channelIds for filtering
+  // Build a map of packageId -> channelIds (streamId) for filtering
   const packageChannelsMap = useMemo(() => {
     const map = new Map<number, Set<string>>();
     userPackages.forEach((pkg, index) => {
-      const channels = packageChannelsQueries[index]?.data as Array<{ id: number }> | undefined;
+      const channels = packageChannelsQueries[index]?.data as Array<{ id: string }> | undefined;
       if (channels) {
-        map.set(pkg.packageId, new Set(channels.map(ch => String(ch.id))));
+        // id is now streamId from the API, which matches iptvId on channels
+        map.set(pkg.packageId, new Set(channels.map(ch => ch.id)));
       }
     });
     return map;
@@ -995,6 +996,47 @@ export default function LiveTVPage() {
     const channelKey = channel.source === 'iptv' ? channel.epgId : channel.GuideNumber;
     if (channelKey) {
       epgDataMap.set(channelKey, epgQueries[index]?.data || []);
+    }
+  });
+
+  // Fetch EPG data separately for favorite channels (they might not be in filtered channels)
+  const favoriteChannelsForEPG = useMemo(() => {
+    return favoriteChannels
+      .map(fav => allChannels.find(ch => ch.iptvId === fav.channelId || ch.GuideNumber === fav.channelId))
+      .filter((ch): ch is UnifiedChannel => !!ch);
+  }, [favoriteChannels, allChannels]);
+
+  const favoriteEpgQueries = useQueries({
+    queries: favoriteChannelsForEPG.map((channel) => {
+      const channelKey = channel.source === 'iptv' ? channel.epgId : channel.GuideNumber;
+      const channelName = channel.GuideName || '';
+      if (!channelKey) {
+        return {
+          queryKey: ['epg', 'favorite', 'none', channel.iptvId || channel.GuideNumber],
+          queryFn: async () => [],
+          staleTime: 5 * 60 * 1000,
+        };
+      }
+      return {
+        queryKey: [`/api/epg/upcoming/${encodeURIComponent(channelKey)}?hours=4&name=${encodeURIComponent(channelName)}`],
+        queryFn: getQueryFn({ on401: "returnNull" }),
+        select: (data: any) => (data?.programs || []) as EPGProgram[],
+        staleTime: 5 * 60 * 1000,
+        refetchInterval: 5 * 60 * 1000,
+      };
+    })
+  });
+
+  // Create a map of favorite channel EPG data
+  const favoriteEpgDataMap = new Map<string, EPGProgram[]>();
+  favoriteChannelsForEPG.forEach((channel, index) => {
+    const channelKey = channel.epgId || channel.iptvId || channel.GuideNumber;
+    if (channelKey) {
+      favoriteEpgDataMap.set(channelKey, favoriteEpgQueries[index]?.data || []);
+    }
+    // Also map by iptvId for easier lookup
+    if (channel.iptvId && channel.iptvId !== channelKey) {
+      favoriteEpgDataMap.set(channel.iptvId, favoriteEpgQueries[index]?.data || []);
     }
   });
 
@@ -2850,7 +2892,10 @@ export default function LiveTVPage() {
                           ch.iptvId === fav.channelId || ch.GuideNumber === fav.channelId
                         );
                         const channelKey = channel?.epgId || channel?.iptvId || channel?.GuideNumber || fav.channelId;
-                        const programs = epgDataMap.get(channelKey) || [];
+                        // Use favorite-specific EPG data, fall back to main EPG map
+                        const programs = favoriteEpgDataMap.get(channelKey) ||
+                                        favoriteEpgDataMap.get(fav.channelId) ||
+                                        epgDataMap.get(channelKey) || [];
                         // Find current program by checking if now is between startTime and endTime
                         const now = new Date();
                         const currentProgram = programs.find(p => {

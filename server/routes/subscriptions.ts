@@ -252,9 +252,11 @@ router.get('/packages/:packageId/channels', requireAuth, async (req, res) => {
     }
 
     // Get channels in the package with provider info for logo proxy
+    // Note: We return streamId as 'id' to match the IPTV channels API format
     const channelsRaw = await db
       .select({
-        id: iptvChannels.id,
+        id: iptvChannels.streamId, // Use streamId as id to match IPTV channels API
+        dbId: iptvChannels.id, // Keep database ID for reference
         name: iptvChannels.name,
         logo: iptvChannels.logo,
         categoryName: iptvChannels.categoryName,
