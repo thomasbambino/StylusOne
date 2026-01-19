@@ -3543,22 +3543,26 @@ live.ts
       }
 
       // HDHomeRun streams use FFmpeg-generated HLS files served directly from /streams/
-      // No URL rewriting needed - just serve the manifest as-is
       if (isHdHomeRun) {
-        loggers.iptv.debug('Serving HDHomeRun HLS manifest directly', { streamId, streamUrl });
+        loggers.iptv.info('Serving HDHomeRun HLS manifest', { streamId, streamUrl });
 
         // Rewrite segment URLs to be absolute paths to the static /streams/ directory
-        // FFmpeg outputs: segment_1768723125.ts (with epoch timestamps due to -hls_start_number_source epoch)
+        // FFmpeg outputs: segment_1768723125.ts (with epoch timestamps)
         // We need to serve them from /streams/channel_XX_X/segment_NNN.ts
         const streamDir = streamUrl.replace('/playlist.m3u8', '');
+
+        // Match segment files - they may be on their own line or after EXTINF/other tags
         const rewrittenManifest = manifestText.replace(
           /^(segment_\d+\.ts)$/gm,
           `${streamDir}/$1`
         );
 
-        loggers.iptv.debug('HDHomeRun manifest rewritten', {
+        // Log the rewrite result
+        const segmentLines = rewrittenManifest.split('\n').filter(l => l.includes('segment_'));
+        loggers.iptv.info('HDHomeRun manifest segments', {
           streamDir,
-          sampleLine: rewrittenManifest.split('\n').find(l => l.includes('segment_'))
+          totalSegments: segmentLines.length,
+          sampleSegment: segmentLines[0] || 'none'
         });
 
         res.set({

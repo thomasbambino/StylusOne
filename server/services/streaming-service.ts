@@ -46,9 +46,30 @@ export class StreamingService {
   async startHLSStream(channel: string, sourceUrl: string): Promise<string> {
     const streamId = `channel_${channel.replace('.', '_')}`;
     const streamPath = join(this.streamDir, streamId);
-    
-    // Stop existing stream if running
+    const playlistPath = join(streamPath, 'playlist.m3u8');
+
+    // If stream is already running and playlist exists with valid content, reuse it
+    if (this.activeStreams.has(streamId) && existsSync(playlistPath)) {
+      try {
+        const content = readFileSync(playlistPath, 'utf8');
+        // Check if playlist has valid segments (non-zero EXTINF)
+        if (content.includes('.ts') && content.includes('#EXTINF:') && !content.includes('#EXTINF:0.0')) {
+          loggers.stream.debug(`Reusing existing HLS stream for channel ${channel}`);
+          // Update timestamp to prevent cleanup
+          const existing = this.activeStreams.get(streamId);
+          if (existing) {
+            existing.timestamp = Date.now();
+          }
+          return `/streams/${streamId}/playlist.m3u8`;
+        }
+      } catch {
+        // Playlist not ready, continue to start/restart
+      }
+    }
+
+    // Stop existing stream if running but not valid
     if (this.activeStreams.has(streamId)) {
+      loggers.stream.debug(`Stopping stale stream for channel ${channel}`);
       this.stopStream(streamId);
     }
 
