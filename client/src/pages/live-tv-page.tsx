@@ -1571,7 +1571,7 @@ export default function LiveTVPage() {
 
       // Wait for sufficient buffer before starting playback (prevents initial buffering)
       let fragmentsBuffered = 0;
-      const MIN_FRAGMENTS_BEFORE_PLAY = 2; // Wait for ~12 seconds of buffer (2 x 6s segments)
+      const MIN_FRAGMENTS_BEFORE_PLAY = 3; // Wait for ~18 seconds of buffer (3 x 6s segments)
 
       hls.on(Hls.Events.FRAG_BUFFERED, () => {
         fragmentsBuffered++;
@@ -1843,7 +1843,7 @@ export default function LiveTVPage() {
 
           // Wait for sufficient buffer before starting playback (prevents initial buffering)
           let fragmentsBuffered = 0;
-          const MIN_FRAGMENTS_BEFORE_PLAY = 2; // Wait for ~12 seconds of buffer (2 x 6s segments)
+          const MIN_FRAGMENTS_BEFORE_PLAY = 3; // Wait for ~18 seconds of buffer (3 x 6s segments)
 
           hls.on(Hls.Events.FRAG_BUFFERED, () => {
             fragmentsBuffered++;
