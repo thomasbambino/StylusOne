@@ -5,8 +5,8 @@ import { loggers } from '@/lib/logger';
 import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Tv, Signal, AlertTriangle, Wifi, WifiOff, Play, Pause, Volume2, VolumeX, Maximize, Star, StarOff, Loader2, Cast } from "lucide-react";
-import { useState, useRef, useEffect, useCallback } from "react";
+import { Tv, Signal, AlertTriangle, Wifi, WifiOff, Play, Pause, Volume2, VolumeX, Maximize, Star, StarOff, Loader2, Cast, PictureInPicture2 } from "lucide-react";
+import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { cn } from "@/lib/utils";
 import Hls from "hls.js";
 import { motion } from "framer-motion";
@@ -25,6 +25,13 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { buildApiUrl, isNativePlatform, getPlatform } from "@/lib/capacitor";
 import { getQueryFn, apiRequest } from "@/lib/queryClient";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 interface HDHomeRunDevice {
   DeviceID: string;
@@ -781,6 +788,39 @@ export default function LiveTVPage() {
     refetchInterval: 300000 // 5 minutes
   });
 
+  // User's channel packages for filtering
+  interface ChannelPackage {
+    packageId: number;
+    packageName: string;
+    channelCount: number;
+  }
+  const { data: userPackages = [] } = useQuery<ChannelPackage[]>({
+    queryKey: ['/api/subscriptions/packages'],
+    queryFn: getQueryFn({ on401: "returnNull" }),
+  });
+
+  // Fetch channels for each package to build a mapping
+  const packageChannelsQueries = useQueries({
+    queries: userPackages.map(pkg => ({
+      queryKey: [`/api/subscriptions/packages/${pkg.packageId}/channels`],
+      queryFn: getQueryFn({ on401: "returnNull" }),
+      enabled: !!pkg.packageId,
+      staleTime: 5 * 60 * 1000,
+    })),
+  });
+
+  // Build a map of packageId -> channelIds for filtering
+  const packageChannelsMap = useMemo(() => {
+    const map = new Map<number, Set<string>>();
+    userPackages.forEach((pkg, index) => {
+      const channels = packageChannelsQueries[index]?.data as Array<{ id: number }> | undefined;
+      if (channels) {
+        map.set(pkg.packageId, new Set(channels.map(ch => String(ch.id))));
+      }
+    });
+    return map;
+  }, [userPackages, packageChannelsQueries]);
+
   // Favorite channels query
   const queryClient = useQueryClient();
   const { toast } = useToast();
@@ -845,6 +885,7 @@ export default function LiveTVPage() {
   // State for HDHomeRun channel visibility and search - MUST be before early returns
   const [showHDHomeRun, setShowHDHomeRun] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const [selectedPackageId, setSelectedPackageId] = useState<string>('all');
 
   // Prepare channel list for EPG queries (before early returns)
   // Convert HDHomeRun channels to unified format
@@ -881,6 +922,22 @@ export default function LiveTVPage() {
   // Filter out HDHomeRun channels if hidden
   if (!showHDHomeRun) {
     filteredChannels = filteredChannels.filter(ch => ch.source !== 'hdhomerun');
+  }
+
+  // Filter by selected package
+  if (selectedPackageId !== 'all') {
+    const packageId = parseInt(selectedPackageId);
+    const packageChannelIds = packageChannelsMap.get(packageId);
+    if (packageChannelIds) {
+      filteredChannels = filteredChannels.filter(ch => {
+        // For IPTV channels, check if their ID is in the package
+        if (ch.source === 'iptv' && ch.iptvId) {
+          return packageChannelIds.has(ch.iptvId);
+        }
+        // HDHomeRun channels are not in packages, so hide them when filtering by package
+        return false;
+      });
+    }
   }
 
   // Note: Search filtering happens AFTER EPG data loads (see availableChannels below)
@@ -1486,6 +1543,24 @@ export default function LiveTVPage() {
           loggers.tv.error('Fullscreen fallback also failed', { error: fallbackError });
         }
       }
+    }
+  };
+
+  // Picture-in-Picture support
+  const isPiPSupported = typeof document !== 'undefined' && 'pictureInPictureEnabled' in document;
+
+  const handlePiP = async () => {
+    const video = videoRef.current;
+    if (!video) return;
+
+    try {
+      if (document.pictureInPictureElement) {
+        await document.exitPictureInPicture();
+      } else if (document.pictureInPictureEnabled) {
+        await video.requestPictureInPicture();
+      }
+    } catch (error) {
+      loggers.tv.error('Error toggling Picture-in-Picture', { error });
     }
   };
 
@@ -2286,25 +2361,26 @@ export default function LiveTVPage() {
           animate={{ opacity: 1 }}
           transition={{ duration: 0.4, delay: 0.1 }}
         >
-          <div className="max-w-7xl mx-auto space-y-6">
+          {/* Side-by-side layout: Video on left, Channel Guide on right */}
+          <div className="grid grid-cols-1 lg:grid-cols-[2fr_1fr] gap-4 h-[calc(100vh-2rem)]">
 
-          {/* Video Player Section - Full Width */}
+          {/* Video Player Section - Left Side */}
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.5, delay: 0.2 }}
+            className="flex flex-col"
           >
               {/* Video Player */}
-              <Card className="bg-card border">
-                <CardContent className="p-0">
+              <Card className="bg-card border flex-1 flex flex-col">
+                <CardContent className="p-0 flex-1 flex flex-col">
                   <div
                     ref={fullscreenContainerRef}
                     className={cn(
-                      "relative bg-black overflow-hidden cursor-pointer",
+                      "relative bg-black overflow-hidden cursor-pointer flex-1",
                       isFullscreen ? "w-full h-full flex items-center justify-center" : "w-full rounded-b-lg",
-                      !isFullscreen && "min-h-[400px] max-h-[calc(100vh-400px)]"
+                      !isFullscreen && "min-h-[300px]"
                     )}
-                    style={!isFullscreen ? { height: 'calc(100vh - 350px)' } : undefined}
                     onMouseMove={showControlsTemporarily}
                     onMouseEnter={() => setShowControls(true)}
                     onMouseLeave={() => !isFullscreen && setShowControls(false)}
@@ -2510,6 +2586,20 @@ export default function LiveTVPage() {
                             <Cast className={cn("text-white", isFullscreen ? "w-6 h-6" : "w-5 h-5")} />
                           </button>
 
+                          {/* Picture-in-Picture Button */}
+                          {isPiPSupported && (
+                            <button
+                              onClick={(e) => { e.stopPropagation(); handlePiP(); }}
+                              className={cn(
+                                "flex items-center justify-center bg-white/20 hover:bg-white/30 rounded-full backdrop-blur-sm transition-colors",
+                                isFullscreen ? "w-12 h-12" : "w-10 h-10"
+                              )}
+                              title="Picture-in-Picture"
+                            >
+                              <PictureInPicture2 className={cn("text-white", isFullscreen ? "w-6 h-6" : "w-5 h-5")} />
+                            </button>
+                          )}
+
                           {/* Fullscreen Button */}
                           <button
                             onClick={(e) => { e.stopPropagation(); handleFullscreen(); }}
@@ -2545,53 +2635,49 @@ export default function LiveTVPage() {
               </Card>
           </motion.div>
 
-          {/* Channel Guide - EPG Style Timeline */}
+          {/* Channel Guide - Right Side */}
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.5, delay: 0.4 }}
+            className="flex flex-col min-h-0"
           >
-            <Card className="bg-card border">
-              <CardHeader className="pb-3">
+            <Card className="bg-card border flex-1 flex flex-col min-h-0">
+              <CardHeader className="pb-3 flex-shrink-0">
                 <div className="flex flex-col gap-3">
-                  <div className="relative">
-                    <input
-                      type="text"
-                      placeholder="Search by channel or program name..."
-                      value={searchQuery}
-                      onChange={(e) => setSearchQuery(e.target.value)}
-                      className="w-full px-3 py-2 pl-9 rounded-md border border-border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    />
-                    <Tv className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
+                  {/* Search and Package Filter */}
+                  <div className="flex gap-2">
+                    <div className="relative flex-1">
+                      <input
+                        type="text"
+                        placeholder="Search channels..."
+                        value={searchQuery}
+                        onChange={(e) => setSearchQuery(e.target.value)}
+                        className="w-full px-3 py-2 pl-9 rounded-md border border-border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      />
+                      <Tv className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
+                    </div>
+                    {userPackages.length > 0 && (
+                      <Select value={selectedPackageId} onValueChange={setSelectedPackageId}>
+                        <SelectTrigger className="w-40">
+                          <SelectValue placeholder="All Packages" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="all">All Packages</SelectItem>
+                          {userPackages.map(pkg => (
+                            <SelectItem key={pkg.packageId} value={String(pkg.packageId)}>
+                              {pkg.packageName}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    )}
                   </div>
                 </div>
               </CardHeader>
-              <CardContent className="pt-0">
-                {/* Time Header */}
-                <div className="sticky top-0 z-10 bg-background border-b-2 border-border flex overflow-x-auto">
-                  <div className="w-40 flex-shrink-0 p-2 border-r border-border">
-                    <div className="text-xs font-bold">Channel</div>
-                  </div>
-                  <div className="flex-1 p-2">
-                    <div className="relative h-8 flex w-full">
-                      {[0, 1, 2, 3].map((hour) => {
-                        const time = new Date();
-                        time.setMinutes(0, 0, 0);
-                        time.setHours(time.getHours() + hour);
-                        return (
-                          <div
-                            key={hour}
-                            className="border-r border-border flex items-center justify-center text-xs font-semibold flex-1 min-w-[180px]"
-                          >
-                            {time.toLocaleTimeString('en-US', { hour: 'numeric', hour12: true })}
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                </div>
-                {/* Channel Rows */}
-                <div ref={setChannelListRef} className="max-h-[600px] overflow-y-auto overflow-x-auto">
+              <CardContent className="pt-0 flex-1 flex flex-col min-h-0">
+                {/* Channel Rows - Simplified list without EPG timeline for side panel */}
+                <div ref={setChannelListRef} className="flex-1 overflow-y-auto">
                   {(channelsLoading || iptvChannelsLoading) ? (
                     // Loading skeleton
                     Array.from({ length: 10 }).map((_, index) => (
