@@ -25,13 +25,14 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { buildApiUrl, isNativePlatform, getPlatform } from "@/lib/capacitor";
 import { getQueryFn, apiRequest } from "@/lib/queryClient";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import { Button } from "@/components/ui/button";
+import { ChevronDown, Filter } from "lucide-react";
 
 interface HDHomeRunDevice {
   DeviceID: string;
@@ -729,6 +730,7 @@ export default function LiveTVPage() {
   const [isCasting, setIsCasting] = useState(false);
   const [castSession, setCastSession] = useState<any>(null);
   const [visibleChannelCount, setVisibleChannelCount] = useState(100); // Start with 100 channels
+  const [isPiPActive, setIsPiPActive] = useState(false);
   const fullscreenContainerRef = useRef<HTMLDivElement>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const hlsRef = useRef<Hls | null>(null);
@@ -736,6 +738,7 @@ export default function LiveTVPage() {
   const heartbeatIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const playbackTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const channelListRef = useRef<HTMLDivElement | null>(null);
+  const isPiPActiveRef = useRef(false); // Ref for cleanup functions
 
   // IPTV stream tracking (separate from HDHomeRun tuner tracking)
   const iptvSessionToken = useRef<string | null>(null);
@@ -898,7 +901,7 @@ export default function LiveTVPage() {
   // State for HDHomeRun channel visibility and search - MUST be before early returns
   const [showHDHomeRun, setShowHDHomeRun] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
-  const [selectedPackageId, setSelectedPackageId] = useState<string>('all');
+  const [selectedPackageIds, setSelectedPackageIds] = useState<Set<number>>(new Set());
 
   // Prepare channel list for EPG queries (before early returns)
   // Convert HDHomeRun channels to unified format
@@ -937,20 +940,22 @@ export default function LiveTVPage() {
     filteredChannels = filteredChannels.filter(ch => ch.source !== 'hdhomerun');
   }
 
-  // Filter by selected package
-  if (selectedPackageId !== 'all') {
-    const packageId = parseInt(selectedPackageId);
-    const packageChannelIds = packageChannelsMap.get(packageId);
-    if (packageChannelIds) {
-      filteredChannels = filteredChannels.filter(ch => {
-        // For IPTV channels, check if their ID is in the package
-        if (ch.source === 'iptv' && ch.iptvId) {
-          return packageChannelIds.has(ch.iptvId);
+  // Filter by selected packages (multi-select)
+  if (selectedPackageIds.size > 0) {
+    filteredChannels = filteredChannels.filter(ch => {
+      // For IPTV channels, check if their ID is in ANY of the selected packages
+      if (ch.source === 'iptv' && ch.iptvId) {
+        for (const packageId of selectedPackageIds) {
+          const packageChannelIds = packageChannelsMap.get(packageId);
+          if (packageChannelIds?.has(ch.iptvId)) {
+            return true;
+          }
         }
-        // HDHomeRun channels are not in packages, so hide them when filtering by package
         return false;
-      });
-    }
+      }
+      // HDHomeRun channels are not in packages, so hide them when filtering by package
+      return false;
+    });
   }
 
   // Note: Search filtering happens AFTER EPG data loads (see availableChannels below)
@@ -1315,9 +1320,12 @@ export default function LiveTVPage() {
   // Cleanup on unmount
   useEffect(() => {
     return () => {
-      if (hlsRef.current) {
+      // Don't destroy HLS if PiP is active - let it continue playing
+      if (hlsRef.current && !isPiPActiveRef.current) {
         loggers.tv.debug('Destroying HLS instance on component unmount', { stack: new Error().stack });
         hlsRef.current.destroy();
+      } else if (isPiPActiveRef.current) {
+        loggers.tv.debug('Skipping HLS destruction - PiP is active');
       }
     };
   }, []);
@@ -1367,9 +1375,12 @@ export default function LiveTVPage() {
       window.removeEventListener('beforeunload', handleBeforeUnload);
       document.removeEventListener('visibilitychange', handleVisibilityChange);
 
-      if (hlsRef.current) {
+      // Don't destroy HLS if PiP is active - let it continue playing
+      if (hlsRef.current && !isPiPActiveRef.current) {
         loggers.tv.debug('Destroying HLS instance during session release', { stack: new Error().stack });
         hlsRef.current.destroy();
+      } else if (isPiPActiveRef.current) {
+        loggers.tv.debug('Skipping HLS destruction during session release - PiP is active');
       }
 
       if (currentSession) {
@@ -1576,6 +1587,38 @@ export default function LiveTVPage() {
       loggers.tv.error('Error toggling Picture-in-Picture', { error });
     }
   };
+
+  // Track PiP state changes for cleanup handling
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video) return;
+
+    const handlePiPEnter = () => {
+      setIsPiPActive(true);
+      isPiPActiveRef.current = true;
+      loggers.tv.debug('Entered Picture-in-Picture mode');
+    };
+
+    const handlePiPExit = () => {
+      setIsPiPActive(false);
+      isPiPActiveRef.current = false;
+      loggers.tv.debug('Exited Picture-in-Picture mode');
+    };
+
+    video.addEventListener('enterpictureinpicture', handlePiPEnter);
+    video.addEventListener('leavepictureinpicture', handlePiPExit);
+
+    // Check if already in PiP on mount
+    if (document.pictureInPictureElement === video) {
+      setIsPiPActive(true);
+      isPiPActiveRef.current = true;
+    }
+
+    return () => {
+      video.removeEventListener('enterpictureinpicture', handlePiPEnter);
+      video.removeEventListener('leavepictureinpicture', handlePiPExit);
+    };
+  }, []);
 
   const showControlsTemporarily = () => {
     setShowControls(true);
@@ -2375,15 +2418,16 @@ export default function LiveTVPage() {
           transition={{ duration: 0.4, delay: 0.1 }}
         >
           {/* Side-by-side layout: Video+Guide on left, Home section on right */}
-          <div className="grid grid-cols-1 lg:grid-cols-[2fr_1fr] gap-4 min-h-[calc(100vh-2rem)]">
+          <div className="grid grid-cols-1 lg:grid-cols-[2fr_1fr] gap-4 h-[calc(100vh-2rem)] max-h-[calc(100vh-2rem)]">
 
           {/* Left Side: Video Player + Channel Guide stacked */}
-          <div className="flex flex-col gap-4">
+          <div className="flex flex-col gap-4 min-h-0 max-h-full">
             {/* Video Player Section */}
             <motion.div
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.5, delay: 0.2 }}
+              className="flex-shrink-0"
             >
               {/* Video Player */}
               <Card className="bg-card border">
@@ -2669,19 +2713,71 @@ export default function LiveTVPage() {
                       <Tv className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
                     </div>
                     {userPackages.length > 0 && (
-                      <Select value={selectedPackageId} onValueChange={setSelectedPackageId}>
-                        <SelectTrigger className="w-40">
-                          <SelectValue placeholder="All Packages" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="all">All Packages</SelectItem>
-                          {userPackages.map(pkg => (
-                            <SelectItem key={pkg.packageId} value={String(pkg.packageId)}>
-                              {pkg.packageName}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                      <Popover>
+                        <PopoverTrigger asChild>
+                          <Button variant="outline" className="w-44 justify-between">
+                            <span className="flex items-center gap-2">
+                              <Filter className="h-4 w-4" />
+                              {selectedPackageIds.size === 0
+                                ? "All Packages"
+                                : `${selectedPackageIds.size} Package${selectedPackageIds.size > 1 ? 's' : ''}`}
+                            </span>
+                            <ChevronDown className="h-4 w-4 opacity-50" />
+                          </Button>
+                        </PopoverTrigger>
+                        <PopoverContent className="w-56 p-2" align="end">
+                          <div className="space-y-2">
+                            <div
+                              className="flex items-center gap-2 p-2 hover:bg-accent rounded cursor-pointer"
+                              onClick={() => setSelectedPackageIds(new Set())}
+                            >
+                              <Checkbox
+                                checked={selectedPackageIds.size === 0}
+                                onCheckedChange={() => setSelectedPackageIds(new Set())}
+                              />
+                              <span className="text-sm font-medium">All Packages</span>
+                            </div>
+                            <div className="border-t pt-2">
+                              {userPackages.map(pkg => (
+                                <div
+                                  key={pkg.packageId}
+                                  className="flex items-center gap-2 p-2 hover:bg-accent rounded cursor-pointer"
+                                  onClick={() => {
+                                    setSelectedPackageIds(prev => {
+                                      const next = new Set(prev);
+                                      if (next.has(pkg.packageId)) {
+                                        next.delete(pkg.packageId);
+                                      } else {
+                                        next.add(pkg.packageId);
+                                      }
+                                      return next;
+                                    });
+                                  }}
+                                >
+                                  <Checkbox
+                                    checked={selectedPackageIds.has(pkg.packageId)}
+                                    onCheckedChange={() => {
+                                      setSelectedPackageIds(prev => {
+                                        const next = new Set(prev);
+                                        if (next.has(pkg.packageId)) {
+                                          next.delete(pkg.packageId);
+                                        } else {
+                                          next.add(pkg.packageId);
+                                        }
+                                        return next;
+                                      });
+                                    }}
+                                  />
+                                  <span className="text-sm">{pkg.packageName}</span>
+                                  <span className="text-xs text-muted-foreground ml-auto">
+                                    {pkg.channelCount}
+                                  </span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        </PopoverContent>
+                      </Popover>
                     )}
                   </div>
                 </CardHeader>
@@ -2727,13 +2823,13 @@ export default function LiveTVPage() {
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.5, delay: 0.3 }}
-            className="hidden lg:block"
+            className="hidden lg:block min-h-0 max-h-full"
           >
-            <Card className="bg-card border h-full">
-              <CardHeader className="pb-3">
+            <Card className="bg-card border h-full flex flex-col max-h-full">
+              <CardHeader className="pb-3 flex-shrink-0">
                 <CardTitle className="text-lg">Watch Now</CardTitle>
               </CardHeader>
-              <CardContent className="space-y-6 overflow-y-auto max-h-[calc(100vh-8rem)]">
+              <CardContent className="space-y-6 overflow-y-auto flex-1 min-h-0">
                 {/* Favorites Section */}
                 <div>
                   <div className="flex items-center gap-2 mb-3">
@@ -2749,12 +2845,19 @@ export default function LiveTVPage() {
                   ) : (
                     <div className="space-y-2">
                       {favoriteChannels.slice(0, 8).map((fav) => {
-                        const channel = filteredChannels.find(ch =>
+                        // Try to find channel in all channels (not just filtered)
+                        const channel = allChannels.find(ch =>
                           ch.iptvId === fav.channelId || ch.GuideNumber === fav.channelId
                         );
-                        const channelKey = channel?.iptvId || channel?.GuideNumber || fav.channelId;
+                        const channelKey = channel?.epgId || channel?.iptvId || channel?.GuideNumber || fav.channelId;
                         const programs = epgDataMap.get(channelKey) || [];
-                        const currentProgram = programs[0];
+                        // Find current program by checking if now is between startTime and endTime
+                        const now = new Date();
+                        const currentProgram = programs.find(p => {
+                          const start = new Date(p.startTime);
+                          const end = new Date(p.endTime);
+                          return now >= start && now < end;
+                        }) || programs[0]; // Fall back to first program if no current found
 
                         return (
                           <div
@@ -2819,10 +2922,12 @@ export default function LiveTVPage() {
                             </div>
                             <div className="flex-1 min-w-0">
                               <p className="font-medium text-sm truncate">{trending.channelName}</p>
-                              <div className="flex items-center gap-1 text-xs text-muted-foreground">
-                                <Users className="h-3 w-3" />
-                                <span>{trending.viewerCount} watching</span>
-                              </div>
+                              {trending.viewerCount > 0 && (
+                                <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                                  <Users className="h-3 w-3" />
+                                  <span>{trending.viewerCount} watching</span>
+                                </div>
+                              )}
                             </div>
                             <Play className="h-4 w-4 text-muted-foreground" />
                           </div>
