@@ -1519,26 +1519,25 @@ export default function LiveTVPage() {
       const hls = new Hls({
         debug: false,
         enableWorker: true,
-        lowLatencyMode: true, // Aggressive startup for faster playback
+        lowLatencyMode: false, // Disabled for stability (prevents buffering)
         startPosition: -1, // Start at live edge
-        liveSyncDuration: 3, // Stay 3 seconds behind live edge
-        liveMaxLatencyDuration: 10, // Max drift before seeking to live
-        backBufferLength: 30, // Reduced for faster startup
-        maxBufferLength: 30, // Reduced - start playing sooner
-        maxMaxBufferLength: 60, // Cap total buffer
-        maxBufferSize: 60 * 1000 * 1000, // 60MB buffer size
+        liveSyncDuration: 6, // Stay 6 seconds behind live edge for stability
+        liveMaxLatencyDuration: 15, // Max drift before seeking to live
+        backBufferLength: 60, // Increased for smoother playback
+        maxBufferLength: 60, // Match native app settings
+        maxMaxBufferLength: 120, // Allow more buffer room
+        maxBufferSize: 120 * 1000 * 1000, // 120MB buffer size
         maxBufferHole: 0.8, // Higher tolerance for buffer holes (prevents stalls)
-        highBufferWatchdogPeriod: 2, // Faster watchdog for low latency
         nudgeOffset: 0.2, // Better stall recovery
         nudgeMaxRetry: 5, // More retries for recovery
         liveDurationInfinity: true,
-        // Faster timeouts for quicker failure/retry
-        fragLoadingTimeOut: 15000, // Reduced from 20s
-        fragLoadingMaxRetry: 4,
-        fragLoadingRetryDelay: 500, // Faster retry
-        manifestLoadingTimeOut: 10000,
-        manifestLoadingMaxRetry: 3,
-        manifestLoadingRetryDelay: 500,
+        // Relaxed timeouts for stability
+        fragLoadingTimeOut: 30000,
+        fragLoadingMaxRetry: 6,
+        fragLoadingRetryDelay: 1000,
+        manifestLoadingTimeOut: 20000,
+        manifestLoadingMaxRetry: 4,
+        manifestLoadingRetryDelay: 1000,
         startFragPrefetch: true, // Prefetch segments
         progressive: true, // Progressive streaming for faster startup
         xhrSetup: function(xhr: XMLHttpRequest) {
@@ -1801,25 +1800,24 @@ export default function LiveTVPage() {
           // Use HLS.js for browsers that support it
           const hls = new Hls({
             enableWorker: true,
-            lowLatencyMode: true, // Aggressive startup for faster playback
+            lowLatencyMode: false, // Disabled for stability (prevents buffering)
             startPosition: -1, // Start at live edge
-            liveSyncDuration: 3, // Stay 3 seconds behind live edge
-            liveMaxLatencyDuration: 10, // Max drift before seeking to live
-            backBufferLength: 30, // Reduced for faster startup
-            maxBufferLength: 30, // Reduced - start playing sooner
-            maxMaxBufferLength: 60, // Cap total buffer
-            maxBufferSize: 60 * 1000 * 1000, // 60MB
+            liveSyncDuration: 6, // Stay 6 seconds behind live edge for stability
+            liveMaxLatencyDuration: 15, // Max drift before seeking to live
+            backBufferLength: 60, // Increased for smoother playback
+            maxBufferLength: 60, // Match native app settings
+            maxMaxBufferLength: 120, // Allow more buffer room
+            maxBufferSize: 120 * 1000 * 1000, // 120MB
             maxBufferHole: 0.8, // Higher tolerance for buffer holes
             nudgeOffset: 0.2, // Better stall recovery
             nudgeMaxRetry: 5,
-            highBufferWatchdogPeriod: 2, // Faster watchdog for low latency
-            fragLoadingTimeOut: 15000, // Reduced from 20s
-            manifestLoadingTimeOut: 10000,
-            manifestLoadingMaxRetry: 3,
-            manifestLoadingRetryDelay: 500,
+            fragLoadingTimeOut: 30000,
+            manifestLoadingTimeOut: 20000,
+            manifestLoadingMaxRetry: 4,
+            manifestLoadingRetryDelay: 1000,
             debug: false,
-            fragLoadingMaxRetry: 4,
-            fragLoadingRetryDelay: 500,
+            fragLoadingMaxRetry: 6,
+            fragLoadingRetryDelay: 1000,
             startFragPrefetch: true,
             progressive: true,
             liveDurationInfinity: true,

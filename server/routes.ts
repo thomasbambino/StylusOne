@@ -2940,38 +2940,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
     if (channel.length > 0 && channel[0].directStreamUrl) {
       // M3U or HDHomeRun channel - use direct stream URL
       let directUrl = channel[0].directStreamUrl;
-      loggers.iptv.info('Failover: Direct stream channel detected', { streamId, directUrl });
 
       // Detect HDHomeRun streams (format: http://device:5004/auto/vXX.X)
       const isHdHomeRun = directUrl.includes(':5004/auto/v');
 
       if (isHdHomeRun) {
         // HDHomeRun streams need FFmpeg transcoding to HLS
-        loggers.iptv.info('Failover: HDHomeRun stream detected, starting FFmpeg transcoding', { directUrl });
-
         try {
           const { streamingService } = await import('./services/streaming-service');
           const { readFileSync, existsSync } = await import('fs');
           const { join } = await import('path');
 
-          // Start HLS stream conversion (waits for playlist to be ready)
+          // Start HLS stream conversion (reuses existing if running)
           const hlsUrl = await streamingService.startHLSStream(streamId, directUrl);
-
-          loggers.iptv.info('Failover: HDHomeRun HLS stream started', { streamId, hlsUrl });
 
           // Read the generated playlist
           // hlsUrl is like '/streams/channel_39_1/playlist.m3u8' - need to strip leading slash
           const relativePath = hlsUrl.startsWith('/') ? hlsUrl.substring(1) : hlsUrl;
           const playlistPath = join(process.cwd(), 'dist', 'public', relativePath);
 
-          loggers.iptv.debug('Failover: Reading playlist', { playlistPath, exists: existsSync(playlistPath) });
-
           const manifestText = readFileSync(playlistPath, 'utf8');
-
-          loggers.iptv.debug('Failover: HDHomeRun manifest read', {
-            streamId,
-            lines: manifestText.split('\n').length
-          });
 
           const mockResponse = {
             ok: true,
