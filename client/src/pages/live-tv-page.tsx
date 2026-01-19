@@ -5,7 +5,7 @@ import { loggers } from '@/lib/logger';
 import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Tv, Signal, AlertTriangle, Wifi, WifiOff, Play, Pause, Volume2, VolumeX, Maximize, Star, StarOff, Loader2, Cast, PictureInPicture2 } from "lucide-react";
+import { Tv, Signal, AlertTriangle, Wifi, WifiOff, Play, Pause, Volume2, VolumeX, Maximize, Star, StarOff, Loader2, Cast, PictureInPicture2, TrendingUp, Users } from "lucide-react";
 import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { cn } from "@/lib/utils";
 import Hls from "hls.js";
@@ -864,6 +864,19 @@ export default function LiveTVPage() {
       addFavoriteMutation.mutate({ channelId, channelName, channelLogo });
     }
   };
+
+  // Trending channels for Home section
+  interface TrendingChannel {
+    channelId: string;
+    channelName: string;
+    viewerCount: number;
+  }
+  const { data: trendingChannels = [] } = useQuery<TrendingChannel[]>({
+    queryKey: ['/api/iptv/trending'],
+    queryFn: getQueryFn({ on401: "returnNull" }),
+    refetchInterval: 30000, // Refresh every 30 seconds
+    select: (data: any) => data?.trending || [],
+  });
 
   // Fetch current program for selected channel - MUST be before any early returns
   // For IPTV channels, use epgId (the XMLTV channel ID), for HDHomeRun use GuideNumber
@@ -2361,25 +2374,25 @@ export default function LiveTVPage() {
           animate={{ opacity: 1 }}
           transition={{ duration: 0.4, delay: 0.1 }}
         >
-          {/* Side-by-side layout: Video on left, Channel Guide on right */}
-          <div className="grid grid-cols-1 lg:grid-cols-[2fr_1fr] gap-4 h-[calc(100vh-2rem)]">
+          {/* Side-by-side layout: Video+Guide on left, Home section on right */}
+          <div className="grid grid-cols-1 lg:grid-cols-[2fr_1fr] gap-4 min-h-[calc(100vh-2rem)]">
 
-          {/* Video Player Section - Left Side */}
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.5, delay: 0.2 }}
-            className="flex flex-col"
-          >
+          {/* Left Side: Video Player + Channel Guide stacked */}
+          <div className="flex flex-col gap-4">
+            {/* Video Player Section */}
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.5, delay: 0.2 }}
+            >
               {/* Video Player */}
-              <Card className="bg-card border flex-1 flex flex-col">
-                <CardContent className="p-0 flex-1 flex flex-col">
+              <Card className="bg-card border">
+                <CardContent className="p-0">
                   <div
                     ref={fullscreenContainerRef}
                     className={cn(
-                      "relative bg-black overflow-hidden cursor-pointer flex-1",
-                      isFullscreen ? "w-full h-full flex items-center justify-center" : "w-full rounded-b-lg",
-                      !isFullscreen && "min-h-[300px]"
+                      "relative bg-black overflow-hidden cursor-pointer aspect-video",
+                      isFullscreen ? "w-full h-full flex items-center justify-center" : "w-full rounded-b-lg"
                     )}
                     onMouseMove={showControlsTemporarily}
                     onMouseEnter={() => setShowControls(true)}
@@ -2633,19 +2646,17 @@ export default function LiveTVPage() {
                   </div>
                 </CardContent>
               </Card>
-          </motion.div>
+            </motion.div>
 
-          {/* Channel Guide - Right Side */}
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.5, delay: 0.4 }}
-            className="flex flex-col min-h-0"
-          >
-            <Card className="bg-card border flex-1 flex flex-col min-h-0">
-              <CardHeader className="pb-3 flex-shrink-0">
-                <div className="flex flex-col gap-3">
-                  {/* Search and Package Filter */}
+            {/* Channel Guide - Below Video Player */}
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.5, delay: 0.4 }}
+              className="flex-1 min-h-0"
+            >
+              <Card className="bg-card border h-full flex flex-col">
+                <CardHeader className="pb-3 flex-shrink-0">
                   <div className="flex gap-2">
                     <div className="relative flex-1">
                       <input
@@ -2673,43 +2684,153 @@ export default function LiveTVPage() {
                       </Select>
                     )}
                   </div>
-                </div>
-              </CardHeader>
-              <CardContent className="pt-0 flex-1 flex flex-col min-h-0">
-                {/* Channel Rows - Simplified list without EPG timeline for side panel */}
-                <div ref={setChannelListRef} className="flex-1 overflow-y-auto">
-                  {(channelsLoading || iptvChannelsLoading) ? (
-                    // Loading skeleton
-                    Array.from({ length: 10 }).map((_, index) => (
-                      <div key={index} className="flex items-center gap-3 p-3 border-b border-border">
-                        <Skeleton className="h-12 w-12 rounded" />
-                        <div className="flex-1">
-                          <Skeleton className="h-4 w-32 mb-2" />
-                          <Skeleton className="h-3 w-24" />
+                </CardHeader>
+                <CardContent className="pt-0 flex-1 overflow-hidden">
+                  <div ref={setChannelListRef} className="h-full overflow-y-auto">
+                    {(channelsLoading || iptvChannelsLoading) ? (
+                      Array.from({ length: 10 }).map((_, index) => (
+                        <div key={index} className="flex items-center gap-3 p-3 border-b border-border">
+                          <Skeleton className="h-12 w-12 rounded" />
+                          <div className="flex-1">
+                            <Skeleton className="h-4 w-32 mb-2" />
+                            <Skeleton className="h-3 w-24" />
+                          </div>
                         </div>
-                        <Skeleton className="h-8 flex-1 max-w-[800px]" />
-                      </div>
-                    ))
+                      ))
+                    ) : (
+                      availableChannels.map((channel) => {
+                        const isFavorite = favoriteChannels.some(fav => fav.channelId === (channel.iptvId || channel.GuideNumber));
+                        const channelKey = channel.iptvId || channel.GuideNumber;
+                        const programs = epgDataMap.get(channelKey) || [];
+                        return (
+                          <ChannelGuideRow
+                            key={`${channel.source}-${channel.GuideNumber}`}
+                            channel={channel}
+                            selectedChannel={selectedChannel}
+                            onChannelSelect={handleChannelSelect}
+                            programs={programs}
+                            isLoading={false}
+                            onToggleFavorite={handleToggleFavorite}
+                            isFavorite={isFavorite}
+                          />
+                        );
+                      })
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
+            </motion.div>
+          </div>
+
+          {/* Right Side: Home Section with Favorites and Trending */}
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.5, delay: 0.3 }}
+            className="hidden lg:block"
+          >
+            <Card className="bg-card border h-full">
+              <CardHeader className="pb-3">
+                <CardTitle className="text-lg">Watch Now</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-6 overflow-y-auto max-h-[calc(100vh-8rem)]">
+                {/* Favorites Section */}
+                <div>
+                  <div className="flex items-center gap-2 mb-3">
+                    <Star className="h-4 w-4 text-yellow-500" />
+                    <h3 className="font-semibold text-sm">Favorites</h3>
+                  </div>
+                  {favoriteChannels.length === 0 ? (
+                    <div className="text-center py-6 text-muted-foreground text-sm">
+                      <Star className="h-8 w-8 mx-auto mb-2 opacity-50" />
+                      <p>No favorites yet</p>
+                      <p className="text-xs mt-1">Right-click a channel to add</p>
+                    </div>
                   ) : (
-                    availableChannels.map((channel) => {
-                      const isFavorite = favoriteChannels.some(fav => fav.channelId === (channel.iptvId || channel.GuideNumber));
-                      const channelKey = channel.iptvId || channel.GuideNumber;
-                      const programs = epgDataMap.get(channelKey) || [];
-                      return (
-                        <ChannelGuideRow
-                          key={`${channel.source}-${channel.GuideNumber}`}
-                          channel={channel}
-                          selectedChannel={selectedChannel}
-                          onChannelSelect={handleChannelSelect}
-                          programs={programs}
-                          isLoading={false}
-                          onToggleFavorite={handleToggleFavorite}
-                          isFavorite={isFavorite}
-                        />
-                      );
-                    })
+                    <div className="space-y-2">
+                      {favoriteChannels.slice(0, 8).map((fav) => {
+                        const channel = filteredChannels.find(ch =>
+                          ch.iptvId === fav.channelId || ch.GuideNumber === fav.channelId
+                        );
+                        const channelKey = channel?.iptvId || channel?.GuideNumber || fav.channelId;
+                        const programs = epgDataMap.get(channelKey) || [];
+                        const currentProgram = programs[0];
+
+                        return (
+                          <div
+                            key={fav.channelId}
+                            className={cn(
+                              "flex items-center gap-3 p-2 rounded-lg cursor-pointer transition-colors",
+                              "hover:bg-accent",
+                              selectedChannel?.iptvId === fav.channelId && "bg-accent"
+                            )}
+                            onClick={() => channel && handleChannelSelect(channel)}
+                          >
+                            {fav.channelLogo ? (
+                              <img
+                                src={fav.channelLogo}
+                                alt={fav.channelName}
+                                className="h-10 w-10 rounded object-contain bg-black/20"
+                              />
+                            ) : (
+                              <div className="h-10 w-10 rounded bg-primary/10 flex items-center justify-center">
+                                <Tv className="h-5 w-5 text-primary" />
+                              </div>
+                            )}
+                            <div className="flex-1 min-w-0">
+                              <p className="font-medium text-sm truncate">{fav.channelName}</p>
+                              <p className="text-xs text-muted-foreground truncate">
+                                {currentProgram?.title || 'No program info'}
+                              </p>
+                            </div>
+                            <Play className="h-4 w-4 text-muted-foreground" />
+                          </div>
+                        );
+                      })}
+                    </div>
                   )}
                 </div>
+
+                {/* Trending Section */}
+                {trendingChannels.length > 0 && (
+                  <div>
+                    <div className="flex items-center gap-2 mb-3">
+                      <TrendingUp className="h-4 w-4 text-orange-500" />
+                      <h3 className="font-semibold text-sm">Trending Now</h3>
+                    </div>
+                    <div className="space-y-2">
+                      {trendingChannels.slice(0, 5).map((trending, index) => {
+                        const channel = filteredChannels.find(ch =>
+                          ch.iptvId === trending.channelId || ch.GuideNumber === trending.channelId
+                        );
+
+                        return (
+                          <div
+                            key={trending.channelId}
+                            className={cn(
+                              "flex items-center gap-3 p-2 rounded-lg cursor-pointer transition-colors",
+                              "hover:bg-accent",
+                              selectedChannel?.iptvId === trending.channelId && "bg-accent"
+                            )}
+                            onClick={() => channel && handleChannelSelect(channel)}
+                          >
+                            <div className="h-8 w-8 rounded-full bg-orange-500/10 flex items-center justify-center text-orange-500 font-bold text-sm">
+                              {index + 1}
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <p className="font-medium text-sm truncate">{trending.channelName}</p>
+                              <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                                <Users className="h-3 w-3" />
+                                <span>{trending.viewerCount} watching</span>
+                              </div>
+                            </div>
+                            <Play className="h-4 w-4 text-muted-foreground" />
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
               </CardContent>
             </Card>
           </motion.div>
