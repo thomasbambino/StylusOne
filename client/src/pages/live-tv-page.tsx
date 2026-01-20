@@ -813,14 +813,25 @@ export default function LiveTVPage() {
   });
 
   // Build a map of channel name -> package IDs (same approach as iOS for reliable matching)
-  // Extract the data arrays from queries to use as stable dependencies
-  const packageChannelsData = packageChannelsQueries.map(q => q.data);
+  // Check if all package channel queries have completed loading
+  const allPackageQueriesLoaded = packageChannelsQueries.length > 0 &&
+    packageChannelsQueries.every(q => !q.isLoading && q.data !== undefined);
+
+  // Extract just the data arrays and create a stable key for memoization
+  const packageChannelsDataKey = packageChannelsQueries.map(q =>
+    q.data ? (q.data as Array<{name: string}>).length : 0
+  ).join(',');
 
   const channelToPackages = useMemo(() => {
     const map = new Map<string, Set<number>>();
 
+    // Only build the map if we have packages AND their channel data is loaded
+    if (!allPackageQueriesLoaded || userPackages.length === 0) {
+      return map;
+    }
+
     userPackages.forEach((pkg, index) => {
-      const channels = packageChannelsData[index] as Array<{ id: string; name: string }> | null | undefined;
+      const channels = packageChannelsQueries[index]?.data as Array<{ id: string; name: string }> | null | undefined;
       if (channels && Array.isArray(channels)) {
         channels.forEach(ch => {
           if (ch.name) {
@@ -832,8 +843,16 @@ export default function LiveTVPage() {
         });
       }
     });
+
+    loggers.tv.debug('Package filter map built', {
+      packageCount: userPackages.length,
+      channelNamesCount: map.size,
+      sampleNames: Array.from(map.keys()).slice(0, 5)
+    });
+
     return map;
-  }, [userPackages, packageChannelsData]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [userPackages, allPackageQueriesLoaded, packageChannelsDataKey, packageChannelsQueries]);
 
   // Favorite channels query
   const queryClient = useQueryClient();
@@ -952,18 +971,35 @@ export default function LiveTVPage() {
   }
 
   // Filter by selected packages (multi-select) - uses channel NAME matching like iOS
-  if (selectedPackageIds.size > 0 && channelToPackages.size > 0) {
-    filteredChannels = filteredChannels.filter(ch => {
-      // Match by channel name (normalized) - same approach as iOS
-      const normalizedName = ch.GuideName.toLowerCase().trim();
-      const packageIds = channelToPackages.get(normalizedName);
+  if (selectedPackageIds.size > 0) {
+    if (channelToPackages.size === 0) {
+      // Package data not loaded yet - log for debugging
+      loggers.tv.debug('Package filter selected but map not ready', {
+        selectedCount: selectedPackageIds.size,
+        mapSize: channelToPackages.size,
+        queriesLoaded: allPackageQueriesLoaded,
+        userPackagesCount: userPackages.length
+      });
+    } else {
+      const beforeCount = filteredChannels.length;
+      filteredChannels = filteredChannels.filter(ch => {
+        // Match by channel name (normalized) - same approach as iOS
+        const normalizedName = ch.GuideName.toLowerCase().trim();
+        const packageIds = channelToPackages.get(normalizedName);
 
-      // If channel isn't in any package data, hide it when filtering
-      if (!packageIds || packageIds.size === 0) return false;
+        // If channel isn't in any package data, hide it when filtering
+        if (!packageIds || packageIds.size === 0) return false;
 
-      // Show channel if it belongs to ANY of the selected packages
-      return Array.from(packageIds).some(pkgId => selectedPackageIds.has(pkgId));
-    });
+        // Show channel if it belongs to ANY of the selected packages
+        return Array.from(packageIds).some(pkgId => selectedPackageIds.has(pkgId));
+      });
+      loggers.tv.debug('Package filter applied', {
+        before: beforeCount,
+        after: filteredChannels.length,
+        selectedPackages: Array.from(selectedPackageIds),
+        mapSize: channelToPackages.size
+      });
+    }
   }
 
   // Note: Search filtering happens AFTER EPG data loads (see availableChannels below)
@@ -1021,28 +1057,46 @@ export default function LiveTVPage() {
   }, [allChannels]);
 
   // Fetch EPG data for favorites - EXACT same approach as home page (which works)
-  // Simple lookup by channelId, use epgId for EPG, fall back to saved channelName
-  const favoriteEpgQueries = useQueries({
-    queries: favoriteChannels.map((fav) => {
-      // Simple direct lookup by channelId (same as home page)
-      const channel = channelLookupById.get(fav.channelId);
-      // Use epgId if found, otherwise fall back to the saved channelName (not a fuzzy match)
-      const epgKey = channel?.epgId || fav.channelName;
-      return {
-        queryKey: [`/api/epg/current/${encodeURIComponent(epgKey)}`],
-        queryFn: getQueryFn({ on401: "returnNull" }),
-        select: (data: any) => data?.program as EPGProgram | null,
-        staleTime: 5 * 60 * 1000,
-        refetchInterval: 5 * 60 * 1000,
-        enabled: !!epgKey,
-      };
-    })
-  });
+  // Use a SINGLE query with queryFn that does the lookup INSIDE (not during render)
+  // This ensures channels are loaded before we try to look them up
+  const favoriteChannelIds = useMemo(
+    () => favoriteChannels.map(fav => fav.channelId),
+    [favoriteChannels]
+  );
 
-  // Create a map of favorite channel EPG data (keyed by fav.channelId for easy lookup)
-  const favoriteEpgDataMap = new Map<string, EPGProgram | null>();
-  favoriteChannels.forEach((fav, index) => {
-    favoriteEpgDataMap.set(fav.channelId, favoriteEpgQueries[index]?.data || null);
+  const { data: favoriteEpgDataMap = new Map<string, EPGProgram | null>() } = useQuery<Map<string, EPGProgram | null>>({
+    queryKey: ['/api/epg/favorites-batch', favoriteChannelIds.join(','), allChannels.length],
+    queryFn: async () => {
+      if (favoriteChannelIds.length === 0) return new Map();
+
+      const programs = new Map<string, EPGProgram | null>();
+      await Promise.all(
+        favoriteChannels.map(async (fav) => {
+          try {
+            // Look up full channel data to get epgId - this happens INSIDE queryFn
+            // so channels are guaranteed to be loaded (see enabled condition)
+            const channel = channelLookupById.get(fav.channelId);
+            // Use epgId for precise EPG matching, fall back to channelName
+            const epgKey = channel?.epgId || fav.channelName;
+            const response = await apiRequest("GET", `/api/epg/current/${encodeURIComponent(epgKey)}`);
+            if (response.ok) {
+              const data = await response.json();
+              programs.set(fav.channelId, data.program || null);
+            } else {
+              programs.set(fav.channelId, null);
+            }
+          } catch {
+            // EPG fetch failed silently - UI shows fallback
+            programs.set(fav.channelId, null);
+          }
+        })
+      );
+      return programs;
+    },
+    refetchInterval: 5 * 60 * 1000, // 5 minutes
+    staleTime: 5 * 60 * 1000,
+    // CRITICAL: Only run when channels have loaded so lookups work correctly
+    enabled: favoriteChannelIds.length > 0 && allChannels.length > 0,
   });
 
   // Auto-select first channel on load is disabled - users must manually select a channel
