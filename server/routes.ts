@@ -3298,7 +3298,7 @@ live.ts
           // Manifest is fresh enough, share it
           existingStream.users.add(userIdString);
           existingStream.lastAccessed = new Date();
-          loggers.iptv.debug('Sharing cached stream', { streamId, ageSeconds: Math.round(manifestAge / 1000), userId: userIdString, totalUsers: existingStream.users.size });
+          loggers.iptv.info('Manifest: Serving cached (fresh)', { streamId, ageMs: manifestAge, baseSegmentUrl: existingStream.baseSegmentUrl?.substring(0, 60) });
 
           res.set({
             'Content-Type': 'application/vnd.apple.mpegurl',
@@ -3393,7 +3393,7 @@ live.ts
         }
 
         if (!freshResponse.ok) {
-          loggers.iptv.error('Failed to fetch fresh stream', { streamId, status: freshResponse.status });
+          loggers.iptv.info('Manifest refresh failed, using cached', { streamId, status: freshResponse.status, cachedBaseUrl: existingStream.baseSegmentUrl?.substring(0, 80) });
           // Fallback to cached manifest with tokens
           let tokenizedManifest = existingStream.manifest.replace(
             /\/api\/iptv\/segment\/([^/]+)\/([^\s\n]+)/g,
@@ -3563,12 +3563,12 @@ live.ts
       const manifestUrl = new URL(finalManifestUrl);
       const baseSegmentUrl = manifestUrl.origin + manifestUrl.pathname.substring(0, manifestUrl.pathname.lastIndexOf('/') + 1);
 
-      loggers.iptv.trace('Manifest URLs', { initialUrl: streamUrl, finalUrl: finalManifestUrl, baseSegmentUrl });
+      loggers.iptv.info('Manifest: URL resolution', { streamId, initialUrl: streamUrl.substring(0, 80), finalUrl: finalManifestUrl.substring(0, 80), baseSegmentUrl: baseSegmentUrl.substring(0, 80), usedBackup });
 
       // Store the base URL in a map so the segment proxy can look it up
       (global as any).iptvSegmentBaseUrls = (global as any).iptvSegmentBaseUrls || new Map();
       (global as any).iptvSegmentBaseUrls.set(streamId, baseSegmentUrl);
-      loggers.iptv.trace('Stored base URL in cache', { streamId });
+      loggers.iptv.info('Manifest: Stored base URL for segments', { streamId, baseSegmentUrl: baseSegmentUrl.substring(0, 80) });
 
       // Debug: Show original manifest segment URLs
       const originalSegments = manifestText.split('\n').filter(line => line.includes('.ts')).slice(0, 3);
@@ -3860,7 +3860,7 @@ live.ts
     const { streamId } = req.params;
     const segmentPath = (req.params as Record<string, string>)[0];
 
-    loggers.iptv.trace('Segment request', { streamId, segmentPath: segmentPath?.substring(0, 30), hasToken: !!token });
+    loggers.iptv.info('Segment request', { streamId, segmentPath: segmentPath?.substring(0, 30), hasToken: !!token });
 
     if (token && typeof token === 'string') {
       // Token-based authentication
@@ -3907,14 +3907,14 @@ live.ts
       if (urlParam) {
         // Absolute URL passed as query parameter - decode and use directly
         segmentUrl = decodeURIComponent(urlParam);
-        loggers.iptv.trace('Using absolute URL from query param', { segmentUrl });
+        loggers.iptv.info('Segment: Using absolute URL from query param', { segmentUrl: segmentUrl.substring(0, 80) });
       } else {
         if (!baseUrl) {
           loggers.iptv.error('No base URL found for stream', { streamId, streamIdType: typeof streamId, cacheSize: iptvSegmentBaseUrls.size });
           return res.status(404).send('Stream not found or expired. Please reload the channel.');
         }
 
-        loggers.iptv.trace('Fetching segment for stream', { streamId, segmentPath, wasAbsolutePath });
+        loggers.iptv.info('Segment: Using base URL', { streamId, baseUrl: baseUrl?.substring(0, 80), segmentPath: segmentPath?.substring(0, 30) });
 
         // Build the full segment URL
         if (wasAbsolutePath) {
@@ -3929,7 +3929,7 @@ live.ts
         }
       }
 
-      loggers.iptv.trace('Full segment URL', { segmentUrl });
+      loggers.iptv.info('Segment: Full URL constructed', { segmentUrl: segmentUrl.substring(0, 100) });
 
       // Set response headers immediately
       res.set({
@@ -3964,10 +3964,11 @@ live.ts
           clearTimeout(timeoutId);
 
           if (response.ok) {
+            loggers.iptv.info('Segment: Fetch succeeded', { streamId, status: response.status, contentLength: response.headers.get('content-length') });
             break; // Success!
           }
 
-          loggers.iptv.debug('Segment fetch attempt failed', { attempt: retries + 1, status: response.status });
+          loggers.iptv.info('Segment: Fetch attempt failed', { streamId, attempt: retries + 1, status: response.status });
 
           // On 509 (bandwidth limit) or 5xx errors, refresh the base URL from cache
           // The manifest may have been refreshed and redirected to a different server
@@ -3994,10 +3995,9 @@ live.ts
           }
         } catch (error: any) {
           if (error.name === 'AbortError') {
-            loggers.iptv.debug('Segment fetch timeout', { attempt: retries + 1, device: isChromecast ? 'Chromecast' : 'Browser' });
+            loggers.iptv.info('Segment: Fetch timeout', { streamId, attempt: retries + 1, device: isChromecast ? 'Chromecast' : 'Browser' });
           } else {
-            loggers.iptv.debug('Segment fetch error', { attempt: retries + 1, error: error.message });
-          }
+            loggers.iptv.info('Segment: Fetch error', { streamId, attempt: retries + 1, error: error.message });
           retries++;
 
           if (retries <= maxRetries) {
