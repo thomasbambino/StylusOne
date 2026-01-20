@@ -414,23 +414,18 @@ export function SystemDashboard() {
 
   return (
     <div className="space-y-4">
-      {/* Header with version and refresh */}
+      {/* Header with status summary and refresh */}
       <div className="flex items-center justify-between">
-        <div>
-          <p className="text-sm text-muted-foreground">
-            {data.appName} Dashboard v{data.version}
-          </p>
-          <div className="flex items-center gap-2 mt-1">
-            <Badge variant={failedCount > 0 ? "destructive" : "secondary"}>
-              {successCount} online
-            </Badge>
-            {failedCount > 0 && (
-              <Badge variant="destructive">{failedCount} offline</Badge>
-            )}
-            <Badge variant="outline" className="text-xs">
-              {totalCount} services
-            </Badge>
-          </div>
+        <div className="flex items-center gap-2">
+          <Badge variant={failedCount > 0 ? "destructive" : "secondary"}>
+            {successCount} online
+          </Badge>
+          {failedCount > 0 && (
+            <Badge variant="destructive">{failedCount} offline</Badge>
+          )}
+          <Badge variant="outline" className="text-xs">
+            {totalCount} services
+          </Badge>
         </div>
         <Button
           variant="outline"

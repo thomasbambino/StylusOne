@@ -812,9 +812,15 @@ export default function LiveTVPage() {
     })),
   });
 
+  // Check if all package channel queries have loaded
+  const allPackageQueriesLoaded = packageChannelsQueries.every(q => !q.isLoading && q.data !== undefined);
+
   // Build a map of channel name -> package IDs (same approach as iOS for reliable matching)
+  // Only build when all queries have loaded to ensure complete data
   const channelToPackages = useMemo(() => {
     const map = new Map<string, Set<number>>();
+    if (!allPackageQueriesLoaded) return map; // Return empty map until all data is loaded
+
     userPackages.forEach((pkg, index) => {
       const queryResult = packageChannelsQueries[index];
       const channels = queryResult?.data as Array<{ id: string; name: string }> | undefined;
@@ -830,7 +836,7 @@ export default function LiveTVPage() {
       }
     });
     return map;
-  }, [userPackages, packageChannelsQueries]);
+  }, [userPackages, packageChannelsQueries, allPackageQueriesLoaded]);
 
   // Favorite channels query
   const queryClient = useQueryClient();
@@ -1028,23 +1034,21 @@ export default function LiveTVPage() {
     return lookup;
   }, [favoriteChannels, allChannels]);
 
-  // Fetch EPG data for favorites using the channel's epgId for precise matching
-  // This avoids fuzzy name matching that can mix up channels across providers
+  // Fetch EPG data for favorites - same approach as home page (which works)
+  // Use epgId for precise matching, fall back to channelName
   const favoriteEpgQueries = useQueries({
     queries: favoriteChannels.map((fav) => {
-      // Look up the full channel data to get the epgId
+      // Look up the full channel data to get epgId
       const channel = favoriteChannelLookup.get(fav.channelId);
-      // For IPTV channels, use epgId (XMLTV channel ID); for HDHomeRun, use GuideNumber
-      const epgKey = channel?.source === 'iptv' ? channel?.epgId : channel?.GuideNumber;
-      // If no epgId/GuideNumber, fall back to channel name (fuzzy match)
-      const lookupKey = epgKey || fav.channelName;
+      // Use epgId if available (for IPTV), GuideNumber (for HDHomeRun), or channelName as fallback
+      const epgKey = channel?.epgId || channel?.GuideNumber || fav.channelName;
       return {
-        queryKey: [`/api/epg/current/${encodeURIComponent(lookupKey)}`],
+        queryKey: [`/api/epg/current/${encodeURIComponent(epgKey)}`],
         queryFn: getQueryFn({ on401: "returnNull" }),
         select: (data: any) => data?.program as EPGProgram | null,
         staleTime: 5 * 60 * 1000,
         refetchInterval: 5 * 60 * 1000,
-        enabled: !!lookupKey,
+        enabled: !!epgKey,
       };
     })
   });
