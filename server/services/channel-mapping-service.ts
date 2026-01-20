@@ -50,6 +50,29 @@ export class ChannelMappingService {
    * Get all backup channels for a primary channel, ordered by priority
    */
   async getBackupChannels(primaryChannelId: number): Promise<BackupChannelInfo[]> {
+    // First, check if ANY mappings exist for this channel (regardless of active status)
+    const allMappings = await db.select({
+      mappingId: channelMappings.id,
+      backupChannelId: channelMappings.backupChannelId,
+      isActive: channelMappings.isActive,
+      priority: channelMappings.priority,
+    })
+      .from(channelMappings)
+      .where(eq(channelMappings.primaryChannelId, primaryChannelId));
+
+    if (allMappings.length > 0) {
+      loggers.iptv.info('Failover: Raw mappings found', {
+        primaryChannelId,
+        mappingCount: allMappings.length,
+        mappings: allMappings.map(m => ({
+          mappingId: m.mappingId,
+          backupChannelId: m.backupChannelId,
+          isActive: m.isActive,
+          priority: m.priority
+        }))
+      });
+    }
+
     const mappings = await db.select({
       mappingId: channelMappings.id,
       channelId: iptvChannels.id,
@@ -72,6 +95,15 @@ export class ChannelMappingService {
       ))
       .orderBy(asc(channelMappings.priority));
 
+    if (allMappings.length > 0 && mappings.length === 0) {
+      // There are mappings but none passed the filter - log why
+      loggers.iptv.warn('Failover: Mappings exist but none are usable (check isActive on mapping and provider)', {
+        primaryChannelId,
+        rawMappingCount: allMappings.length,
+        filteredMappingCount: 0
+      });
+    }
+
     return mappings;
   }
 
@@ -92,17 +124,46 @@ export class ChannelMappingService {
           eq(iptvChannels.providerId, providerId)
         ));
     } else {
-      // Search by streamId across all providers
-      [primaryChannel] = await db.select()
+      // Search by streamId across all providers - get ALL channels with this streamId
+      const allChannels = await db.select()
         .from(iptvChannels)
         .where(eq(iptvChannels.streamId, streamId));
-    }
 
-    if (!primaryChannel) {
+      loggers.iptv.info('Failover: Looking up primary channel', {
+        streamId,
+        foundChannels: allChannels.length,
+        channelIds: allChannels.map(c => ({ id: c.id, providerId: c.providerId, name: c.name }))
+      });
+
+      // Try each channel to find one with backup mappings
+      for (const channel of allChannels) {
+        const backups = await this.getBackupChannels(channel.id);
+        if (backups.length > 0) {
+          loggers.iptv.info('Failover: Found channel with backups', {
+            channelId: channel.id,
+            providerId: channel.providerId,
+            backupCount: backups.length
+          });
+          return backups;
+        }
+      }
+
+      // No channel had backups configured
+      loggers.iptv.info('Failover: No channel with backups found', { streamId, checkedChannels: allChannels.length });
       return [];
     }
 
-    return this.getBackupChannels(primaryChannel.id);
+    if (!primaryChannel) {
+      loggers.iptv.info('Failover: Primary channel not found', { streamId, providerId });
+      return [];
+    }
+
+    const backups = await this.getBackupChannels(primaryChannel.id);
+    loggers.iptv.info('Failover: Backups lookup result', {
+      primaryChannelId: primaryChannel.id,
+      backupCount: backups.length
+    });
+    return backups;
   }
 
   /**
