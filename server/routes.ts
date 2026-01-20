@@ -3998,6 +3998,7 @@ live.ts
             loggers.iptv.info('Segment: Fetch timeout', { streamId, attempt: retries + 1, device: isChromecast ? 'Chromecast' : 'Browser' });
           } else {
             loggers.iptv.info('Segment: Fetch error', { streamId, attempt: retries + 1, error: error.message });
+          }
           retries++;
 
           if (retries <= maxRetries) {
