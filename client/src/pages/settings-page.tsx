@@ -40,10 +40,9 @@ export default function SettingsPage() {
     queryKey: ["/api/settings"],
   });
 
-  // Fetch app version from system dashboard
+  // Fetch app version (public endpoint)
   const { data: systemInfo } = useQuery<{ version: string; appName: string }>({
-    queryKey: ["/api/admin/system-dashboard"],
-    select: (data: any) => ({ version: data?.version, appName: data?.appName }),
+    queryKey: ["/api/version"],
   });
 
   const form = useForm({

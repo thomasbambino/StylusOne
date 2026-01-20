@@ -1028,18 +1028,23 @@ export default function LiveTVPage() {
     return lookup;
   }, [favoriteChannels, allChannels]);
 
-  // Fetch EPG data for favorites using /api/epg/current (has fuzzy name matching)
-  // Same approach as home page - use channel name for reliable EPG lookup
+  // Fetch EPG data for favorites using the channel's epgId for precise matching
+  // This avoids fuzzy name matching that can mix up channels across providers
   const favoriteEpgQueries = useQueries({
     queries: favoriteChannels.map((fav) => {
-      // Use channel name for EPG lookup (more reliable than IDs)
-      const channelName = fav.channelName;
+      // Look up the full channel data to get the epgId
+      const channel = favoriteChannelLookup.get(fav.channelId);
+      // For IPTV channels, use epgId (XMLTV channel ID); for HDHomeRun, use GuideNumber
+      const epgKey = channel?.source === 'iptv' ? channel?.epgId : channel?.GuideNumber;
+      // If no epgId/GuideNumber, fall back to channel name (fuzzy match)
+      const lookupKey = epgKey || fav.channelName;
       return {
-        queryKey: [`/api/epg/current/${encodeURIComponent(channelName)}`],
+        queryKey: [`/api/epg/current/${encodeURIComponent(lookupKey)}`],
         queryFn: getQueryFn({ on401: "returnNull" }),
         select: (data: any) => data?.program as EPGProgram | null,
         staleTime: 5 * 60 * 1000,
         refetchInterval: 5 * 60 * 1000,
+        enabled: !!lookupKey,
       };
     })
   });

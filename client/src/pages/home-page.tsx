@@ -104,6 +104,7 @@ interface IPTVChannel {
   id: string;
   name: string;
   logo?: string;
+  epgId?: string;
 }
 
 interface IPTVStatus {
@@ -299,8 +300,17 @@ export default function HomePage() {
   // Extract channels from the response
   const liveTVChannels = iptvChannels?.channels || [];
 
+  // Build a lookup map from streamId to full channel data (to get epgId)
+  const channelLookup = useMemo(() => {
+    const lookup = new Map<string, typeof liveTVChannels[0]>();
+    liveTVChannels.forEach(ch => {
+      lookup.set(ch.id, ch);
+    });
+    return lookup;
+  }, [liveTVChannels]);
+
   // Fetch EPG data for all favorite channels in a single query
-  // Use useMemo to stabilize the channel IDs array and prevent unnecessary re-renders
+  // Use epgId for precise matching instead of channelId (streamId)
   const favoriteChannelIds = useMemo(
     () => favoriteChannels.map(fav => fav.channelId),
     [favoriteChannels]
@@ -313,12 +323,16 @@ export default function HomePage() {
 
       const programs: Record<string, any> = {};
       await Promise.all(
-        favoriteChannelIds.map(async (channelId) => {
+        favoriteChannels.map(async (fav) => {
           try {
-            const response = await apiRequest("GET", `/api/epg/current/${channelId}`);
+            // Look up full channel data to get epgId
+            const channel = channelLookup.get(fav.channelId);
+            // Use epgId for precise EPG matching, fall back to channelName
+            const epgKey = channel?.epgId || fav.channelName;
+            const response = await apiRequest("GET", `/api/epg/current/${encodeURIComponent(epgKey)}`);
             if (response.ok) {
               const data = await response.json();
-              programs[channelId] = data.program;
+              programs[fav.channelId] = data.program;
             }
           } catch {
             // EPG fetch failed silently - UI shows fallback

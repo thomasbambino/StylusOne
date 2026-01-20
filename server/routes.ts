@@ -62,6 +62,7 @@ import {
 } from './middleware/security';
 import cors from 'cors';
 import helmet from 'helmet';
+import { APP_VERSION } from './lib/startup-display';
 
 // Helper to detect device type from User-Agent
 function detectDeviceType(userAgent?: string): string {
@@ -569,6 +570,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // Referral routes
   app.use("/api/referrals", referralsRouter);
+
+  // Public version endpoint (no auth required)
+  app.get("/api/version", (req, res) => {
+    res.json({
+      version: APP_VERSION,
+      appName: process.env.APP_NAME || 'Stylus One'
+    });
+  });
 
   app.get("/api/services", async (req, res) => {
     if (!req.isAuthenticated()) return res.sendStatus(401);
