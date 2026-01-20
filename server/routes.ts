@@ -3084,7 +3084,7 @@ live.ts
     if (primaryClient) {
       try {
         let streamUrl = primaryClient.getHLSStreamUrl(streamId);
-        loggers.iptv.debug('Failover: Trying primary stream', { streamId });
+        loggers.iptv.info('Failover: Trying primary stream', { streamId });
 
         let response = await fetch(streamUrl);
 
@@ -3109,26 +3109,26 @@ live.ts
           }
 
           if (response.ok && !manifestText.trim().startsWith('<!DOCTYPE') && !manifestText.trim().startsWith('<html')) {
-            loggers.iptv.debug('Failover: Primary stream succeeded', { streamId });
+            loggers.iptv.info('Failover: Primary stream succeeded', { streamId });
             return { response, manifestText, streamUrl, usedBackup: false };
           }
         } else {
-          loggers.iptv.debug('Failover: Primary stream failed', { streamId, status: response.status });
+          loggers.iptv.info('Failover: Primary stream failed', { streamId, status: response.status });
         }
       } catch (error) {
-        loggers.iptv.debug('Failover: Primary stream error', { streamId, error });
+        loggers.iptv.info('Failover: Primary stream error', { streamId, error: error instanceof Error ? error.message : String(error) });
       }
     } else if (!channel.length || !channel[0].directStreamUrl) {
       // Only log "no client" for non-M3U channels
-      loggers.iptv.debug('Failover: No client available for primary stream', { streamId });
+      loggers.iptv.info('Failover: No client available for primary stream', { streamId });
     }
 
     // Primary failed, try backup channels
-    loggers.iptv.debug('Failover: Looking for backup channels', { streamId });
+    loggers.iptv.info('Failover: Looking for backup channels', { streamId });
     const backups = await channelMappingService.getBackupsByStreamId(streamId); // Searches across all providers
 
     if (backups.length === 0) {
-      loggers.iptv.debug('Failover: No backup channels configured', { streamId });
+      loggers.iptv.info('Failover: No backup channels configured', { streamId });
       return null;
     }
 
@@ -3147,13 +3147,13 @@ live.ts
       }
 
       attempts++;
-      loggers.iptv.debug('Failover: Trying backup', { attempt: attempts, maxAttempts: MAX_FAILOVER_ATTEMPTS, name: backup.name, provider: backup.providerName });
+      loggers.iptv.info('Failover: Trying backup', { attempt: attempts, maxAttempts: MAX_FAILOVER_ATTEMPTS, name: backup.name, provider: backup.providerName, backupStreamId: backup.streamId });
 
       // Get client for backup stream - use getClientForBackupStream which doesn't require user access
       // This allows failover to use ANY available credential for the backup provider
       const backupClient = await xtreamCodesService.getClientForBackupStream(backup.streamId);
       if (!backupClient) {
-        loggers.iptv.debug('Failover: No client available for backup', { backupStreamId: backup.streamId });
+        loggers.iptv.info('Failover: No client available for backup', { backupStreamId: backup.streamId });
         continue;
       }
 
@@ -3180,7 +3180,7 @@ live.ts
           }
 
           if (response.ok && !manifestText.trim().startsWith('<!DOCTYPE') && !manifestText.trim().startsWith('<html')) {
-            loggers.iptv.debug('Failover: Backup stream succeeded', { backupStreamId: backup.streamId, originalStreamId: streamId });
+            loggers.iptv.info('Failover: Backup stream succeeded', { backupStreamId: backup.streamId, originalStreamId: streamId, provider: backup.providerName });
             return {
               response,
               manifestText,
@@ -3192,9 +3192,9 @@ live.ts
           }
         }
 
-        loggers.iptv.debug('Failover: Backup failed', { backupStreamId: backup.streamId, status: response.status });
+        loggers.iptv.info('Failover: Backup failed', { backupStreamId: backup.streamId, status: response.status });
       } catch (error) {
-        loggers.iptv.debug('Failover: Backup error', { backupStreamId: backup.streamId, error });
+        loggers.iptv.info('Failover: Backup error', { backupStreamId: backup.streamId, error: error instanceof Error ? error.message : String(error) });
       }
     }
 
