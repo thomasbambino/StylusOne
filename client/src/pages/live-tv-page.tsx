@@ -825,13 +825,31 @@ export default function LiveTVPage() {
   const channelToPackages = useMemo(() => {
     const map = new Map<string, Set<number>>();
 
+    // Debug: Log initial state
+    console.log('[PackageFilter] Building map:', {
+      userPackagesLength: userPackages.length,
+      allPackageQueriesLoaded,
+      queriesLength: packageChannelsQueries.length,
+      queriesData: packageChannelsQueries.map((q, i) => ({
+        index: i,
+        isLoading: q.isLoading,
+        hasData: q.data !== undefined && q.data !== null,
+        dataLength: Array.isArray(q.data) ? q.data.length : 'not-array'
+      }))
+    });
+
     // Only build the map if we have packages AND their channel data is loaded
     if (!allPackageQueriesLoaded || userPackages.length === 0) {
+      console.log('[PackageFilter] Skipping map build - not ready');
       return map;
     }
 
     userPackages.forEach((pkg, index) => {
       const channels = packageChannelsQueries[index]?.data as Array<{ id: string; name: string }> | null | undefined;
+      console.log(`[PackageFilter] Package ${pkg.packageId} (${pkg.packageName}):`, {
+        hasChannels: !!channels,
+        channelCount: Array.isArray(channels) ? channels.length : 0
+      });
       if (channels && Array.isArray(channels)) {
         channels.forEach(ch => {
           if (ch.name) {
@@ -844,10 +862,9 @@ export default function LiveTVPage() {
       }
     });
 
-    loggers.tv.debug('Package filter map built', {
-      packageCount: userPackages.length,
-      channelNamesCount: map.size,
-      sampleNames: Array.from(map.keys()).slice(0, 5)
+    console.log('[PackageFilter] Map built:', {
+      totalChannelNames: map.size,
+      sampleNames: Array.from(map.keys()).slice(0, 10)
     });
 
     return map;
@@ -972,16 +989,25 @@ export default function LiveTVPage() {
 
   // Filter by selected packages (multi-select) - uses channel NAME matching like iOS
   if (selectedPackageIds.size > 0) {
+    console.log('[PackageFilter] Filter requested:', {
+      selectedPackageIds: Array.from(selectedPackageIds),
+      channelToPackagesSize: channelToPackages.size
+    });
+
     if (channelToPackages.size === 0) {
       // Package data not loaded yet - log for debugging
-      loggers.tv.debug('Package filter selected but map not ready', {
-        selectedCount: selectedPackageIds.size,
-        mapSize: channelToPackages.size,
-        queriesLoaded: allPackageQueriesLoaded,
-        userPackagesCount: userPackages.length
-      });
+      console.log('[PackageFilter] Map is empty - filter skipped');
     } else {
       const beforeCount = filteredChannels.length;
+
+      // Debug: Check first few channels for matching
+      const debugChannels = filteredChannels.slice(0, 5);
+      debugChannels.forEach(ch => {
+        const normalizedName = ch.GuideName.toLowerCase().trim();
+        const packageIds = channelToPackages.get(normalizedName);
+        console.log(`[PackageFilter] Channel "${ch.GuideName}" -> normalized: "${normalizedName}" -> packages:`, packageIds ? Array.from(packageIds) : 'NOT FOUND');
+      });
+
       filteredChannels = filteredChannels.filter(ch => {
         // Match by channel name (normalized) - same approach as iOS
         const normalizedName = ch.GuideName.toLowerCase().trim();
@@ -993,11 +1019,11 @@ export default function LiveTVPage() {
         // Show channel if it belongs to ANY of the selected packages
         return Array.from(packageIds).some(pkgId => selectedPackageIds.has(pkgId));
       });
-      loggers.tv.debug('Package filter applied', {
+
+      console.log('[PackageFilter] Filter applied:', {
         before: beforeCount,
         after: filteredChannels.length,
-        selectedPackages: Array.from(selectedPackageIds),
-        mapSize: channelToPackages.size
+        selectedPackages: Array.from(selectedPackageIds)
       });
     }
   }
