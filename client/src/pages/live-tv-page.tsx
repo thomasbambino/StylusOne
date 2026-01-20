@@ -812,18 +812,15 @@ export default function LiveTVPage() {
     })),
   });
 
-  // Check if all package channel queries have loaded
-  const allPackageQueriesLoaded = packageChannelsQueries.every(q => !q.isLoading && q.data !== undefined);
-
   // Build a map of channel name -> package IDs (same approach as iOS for reliable matching)
-  // Only build when all queries have loaded to ensure complete data
+  // Extract the data arrays from queries to use as stable dependencies
+  const packageChannelsData = packageChannelsQueries.map(q => q.data);
+
   const channelToPackages = useMemo(() => {
     const map = new Map<string, Set<number>>();
-    if (!allPackageQueriesLoaded) return map; // Return empty map until all data is loaded
 
     userPackages.forEach((pkg, index) => {
-      const queryResult = packageChannelsQueries[index];
-      const channels = queryResult?.data as Array<{ id: string; name: string }> | undefined;
+      const channels = packageChannelsData[index] as Array<{ id: string; name: string }> | null | undefined;
       if (channels && Array.isArray(channels)) {
         channels.forEach(ch => {
           if (ch.name) {
@@ -836,7 +833,7 @@ export default function LiveTVPage() {
       }
     });
     return map;
-  }, [userPackages, packageChannelsQueries, allPackageQueriesLoaded]);
+  }, [userPackages, packageChannelsData]);
 
   // Favorite channels query
   const queryClient = useQueryClient();
@@ -1009,39 +1006,28 @@ export default function LiveTVPage() {
     }
   });
 
-  // Fetch EPG data separately for favorite channels (they might not be in filtered channels)
-  // Create a lookup map keyed by fav.channelId for correct channel matching
-  const favoriteChannelLookup = useMemo(() => {
+  // Build a simple lookup map from channel ID to channel data (same approach as home page)
+  // This avoids complex find() operations that could match wrong channels
+  const channelLookupById = useMemo(() => {
     const lookup = new Map<string, UnifiedChannel>();
-    favoriteChannels.forEach(fav => {
-      // First try to find by iptvId (IPTV channels use streamId)
-      let channel = allChannels.find(ch => ch.source === 'iptv' && ch.iptvId === fav.channelId);
-      // Fall back to GuideNumber for HDHomeRun channels
-      if (!channel) {
-        channel = allChannels.find(ch => ch.source === 'hdhomerun' && ch.GuideNumber === fav.channelId);
-      }
-      // Legacy fallback: match by channel name for favorites saved with old database IDs
-      if (!channel && fav.channelName) {
-        const normalizedFavName = fav.channelName.toLowerCase().trim();
-        channel = allChannels.find(ch =>
-          ch.source === 'iptv' && ch.GuideName.toLowerCase().trim() === normalizedFavName
-        );
-      }
-      if (channel) {
-        lookup.set(fav.channelId, channel);
+    allChannels.forEach(ch => {
+      // For IPTV: use iptvId (streamId), for HDHomeRun: use GuideNumber
+      const key = ch.source === 'iptv' ? ch.iptvId : ch.GuideNumber;
+      if (key) {
+        lookup.set(key, ch);
       }
     });
     return lookup;
-  }, [favoriteChannels, allChannels]);
+  }, [allChannels]);
 
-  // Fetch EPG data for favorites - same approach as home page (which works)
-  // Use epgId for precise matching, fall back to channelName
+  // Fetch EPG data for favorites - EXACT same approach as home page (which works)
+  // Simple lookup by channelId, use epgId for EPG, fall back to saved channelName
   const favoriteEpgQueries = useQueries({
     queries: favoriteChannels.map((fav) => {
-      // Look up the full channel data to get epgId
-      const channel = favoriteChannelLookup.get(fav.channelId);
-      // Use epgId if available (for IPTV), GuideNumber (for HDHomeRun), or channelName as fallback
-      const epgKey = channel?.epgId || channel?.GuideNumber || fav.channelName;
+      // Simple direct lookup by channelId (same as home page)
+      const channel = channelLookupById.get(fav.channelId);
+      // Use epgId if found, otherwise fall back to the saved channelName (not a fuzzy match)
+      const epgKey = channel?.epgId || fav.channelName;
       return {
         queryKey: [`/api/epg/current/${encodeURIComponent(epgKey)}`],
         queryFn: getQueryFn({ on401: "returnNull" }),
@@ -2906,8 +2892,8 @@ export default function LiveTVPage() {
                   ) : (
                     <div className="space-y-2">
                       {favoriteChannels.slice(0, 8).map((fav) => {
-                        // Use the pre-computed lookup map for correct channel matching
-                        const channel = favoriteChannelLookup.get(fav.channelId);
+                        // Use the simple lookup map (same as home page)
+                        const channel = channelLookupById.get(fav.channelId);
                         // Get current program directly from favoriteEpgDataMap (keyed by fav.channelId)
                         const currentProgram = favoriteEpgDataMap.get(fav.channelId);
 
