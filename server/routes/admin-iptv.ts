@@ -682,19 +682,41 @@ router.post('/iptv-providers/:id/sync', requireSuperAdmin, async (req, res) => {
         }))
       });
 
-      // Upsert channels
+      // Upsert channels - prefix streamId with providerId for global uniqueness
       for (const channel of m3uResult.channels) {
         const hasEpg = !!(channel.epgId && epgMap.has(channel.epgId));
         if (channel.epgId) withEpgCount++;
 
-        // Check if channel exists
-        const [existing] = await db
+        // Make streamId globally unique by prefixing with provider ID
+        const globalStreamId = `m3u_p${providerId}_${channel.streamId.replace('m3u_', '')}`;
+
+        // Check if channel exists (try new format first, then legacy format)
+        let [existing] = await db
           .select({ id: iptvChannels.id })
           .from(iptvChannels)
           .where(and(
             eq(iptvChannels.providerId, providerId),
-            eq(iptvChannels.streamId, channel.streamId)
+            eq(iptvChannels.streamId, globalStreamId)
           ));
+
+        // Also check for legacy format (m3u_1, m3u_2, etc.) and migrate
+        if (!existing) {
+          [existing] = await db
+            .select({ id: iptvChannels.id })
+            .from(iptvChannels)
+            .where(and(
+              eq(iptvChannels.providerId, providerId),
+              eq(iptvChannels.streamId, channel.streamId)
+            ));
+
+          if (existing) {
+            // Migrate legacy streamId to new globally unique format
+            await db
+              .update(iptvChannels)
+              .set({ streamId: globalStreamId })
+              .where(eq(iptvChannels.id, existing.id));
+          }
+        }
 
         if (existing) {
           // Update existing channel (don't change isEnabled)
@@ -718,7 +740,7 @@ router.post('/iptv-providers/:id/sync', requireSuperAdmin, async (req, res) => {
             .insert(iptvChannels)
             .values({
               providerId,
-              streamId: channel.streamId,
+              streamId: globalStreamId,
               name: channel.name,
               logo: channel.logo || null,
               categoryId: channel.groupTitle || null,

@@ -147,7 +147,7 @@ export function NavigationBar({ settings, pageTitle }: NavigationBarProps) {
                         Analytics
                       </DropdownMenuItem>
                     </Link>
-                    {isSuperAdmin && (
+                    {(isAdmin || isSuperAdmin) && (
                       <>
                         <Link href="/subscription-plans">
                           <DropdownMenuItem className="cursor-pointer">

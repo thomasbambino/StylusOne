@@ -741,11 +741,11 @@ export class XtreamCodesManager implements IService {
       const info = providerInfo.get(channel.providerId);
       if (!info || !info.hasCredentials) continue; // Skip if provider not accessible
 
-      // Build proxy stream URL (same format as legacy channels)
-      const streamUrl = `/api/iptv/stream/${channel.streamId}.m3u8`;
+      // Build proxy stream URL with providerId to disambiguate same streamIds across providers
+      const streamUrl = `/api/iptv/stream/${channel.streamId}.m3u8?providerId=${channel.providerId}`;
 
-      // Use channel name for deduplication (same channel in multiple packages)
-      const key = channel.name.toLowerCase().trim();
+      // Use providerId + channel name for deduplication (same channel in multiple packages from same provider)
+      const key = `${channel.providerId}:${channel.name.toLowerCase().trim()}`;
       if (!channelMap.has(key)) {
         // Use epgChannelId if available (new column), fallback to empty string
         // The column might not exist yet if migration hasn't run
@@ -825,13 +825,12 @@ export class XtreamCodesManager implements IService {
       clients.map(client => client.getChannels().catch(() => []))
     );
 
-    // Merge and deduplicate channels
+    // Merge and deduplicate channels (per credential, not globally)
     const channelMap = new Map<string, IPTVChannel>();
-    for (const channels of channelArrays) {
-      for (const channel of channels) {
-        // Use channel name as the deduplication key
-        // Keep the first occurrence (from higher priority credential)
-        const key = channel.name.toLowerCase().trim();
+    for (let i = 0; i < channelArrays.length; i++) {
+      for (const channel of channelArrays[i]) {
+        // Use credential index + channel name to allow same-named channels from different providers
+        const key = `${i}:${channel.name.toLowerCase().trim()}`;
         if (!channelMap.has(key)) {
           channelMap.set(key, channel);
         }

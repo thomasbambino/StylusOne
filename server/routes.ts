@@ -2923,7 +2923,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   async function fetchStreamWithFailover(
     userId: number,
     streamId: string,
-    xtreamCodesService: any
+    xtreamCodesService: any,
+    providerId?: number
   ): Promise<StreamFetchResult | null> {
     const MAX_FAILOVER_ATTEMPTS = 3;
     const testFailoverStreams = (global as any).testFailoverStreams as Map<string, boolean>;
@@ -2940,11 +2941,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
 
     // Check if this is an M3U channel with a direct stream URL
-    const channel = await db
-      .select({ directStreamUrl: iptvChannels.directStreamUrl })
-      .from(iptvChannels)
-      .where(eq(iptvChannels.streamId, streamId))
-      .limit(1);
+    const channelQuery = db
+      .select({ directStreamUrl: iptvChannels.directStreamUrl, providerId: iptvChannels.providerId })
+      .from(iptvChannels);
+
+    // Use providerId to disambiguate same streamIds across different providers
+    const channel = providerId
+      ? await channelQuery.where(and(eq(iptvChannels.streamId, streamId), eq(iptvChannels.providerId, providerId))).limit(1)
+      : await channelQuery.where(eq(iptvChannels.streamId, streamId)).limit(1);
 
     if (channel.length > 0 && channel[0].directStreamUrl) {
       // M3U or HDHomeRun channel - use direct stream URL
@@ -3124,8 +3128,8 @@ live.ts
     }
 
     // Primary failed, try backup channels
-    loggers.iptv.info('Failover: Looking for backup channels', { streamId });
-    const backups = await channelMappingService.getBackupsByStreamId(streamId); // Searches across all providers
+    loggers.iptv.info('Failover: Looking for backup channels', { streamId, providerId });
+    const backups = await channelMappingService.getBackupsByStreamId(streamId, providerId);
 
     if (backups.length === 0) {
       loggers.iptv.info('Failover: No backup channels configured', { streamId });
@@ -3205,10 +3209,11 @@ live.ts
   // IPTV Stream Proxy - bypass CORS restrictions with stream sharing
   app.get("/api/iptv/stream/:streamId.m3u8", async (req, res) => {
     // Check for token-based authentication (for Chromecast) or session authentication
-    const { token } = req.query;
+    const { token, providerId: providerIdParam } = req.query;
     const { streamId } = req.params;
+    const providerId = providerIdParam ? parseInt(providerIdParam as string, 10) : undefined;
 
-    loggers.iptv.debug('Stream request', { streamId, hasToken: !!token, hasSession: req.isAuthenticated(), userAgent: req.headers['user-agent']?.substring(0, 50) });
+    loggers.iptv.debug('Stream request', { streamId, providerId, hasToken: !!token, hasSession: req.isAuthenticated(), userAgent: req.headers['user-agent']?.substring(0, 50) });
 
     let userId: number | null = null;
 
@@ -3253,11 +3258,12 @@ live.ts
         loggers.iptv.debug('M3U browser stream - using transcoded HLS with AAC audio', { streamId });
 
         // Get the direct stream URL for this M3U channel
-        const m3uChannel = await db
+        const m3uChannelQuery = db
           .select({ directStreamUrl: iptvChannels.directStreamUrl })
-          .from(iptvChannels)
-          .where(eq(iptvChannels.streamId, streamId))
-          .limit(1);
+          .from(iptvChannels);
+        const m3uChannel = providerId
+          ? await m3uChannelQuery.where(and(eq(iptvChannels.streamId, streamId), eq(iptvChannels.providerId, providerId))).limit(1)
+          : await m3uChannelQuery.where(eq(iptvChannels.streamId, streamId)).limit(1);
 
         if (m3uChannel.length > 0 && m3uChannel[0].directStreamUrl) {
           let sourceUrl = m3uChannel[0].directStreamUrl;
@@ -3363,11 +3369,12 @@ live.ts
 
         // Fetch fresh manifest from source
         // First check if this is an M3U channel with direct URL
-        const m3uChannel = await db
+        const m3uRefreshQuery = db
           .select({ directStreamUrl: iptvChannels.directStreamUrl })
-          .from(iptvChannels)
-          .where(eq(iptvChannels.streamId, streamId))
-          .limit(1);
+          .from(iptvChannels);
+        const m3uChannel = providerId
+          ? await m3uRefreshQuery.where(and(eq(iptvChannels.streamId, streamId), eq(iptvChannels.providerId, providerId))).limit(1)
+          : await m3uRefreshQuery.where(eq(iptvChannels.streamId, streamId)).limit(1);
 
         let freshStreamUrl: string;
         let freshResponse: import('node-fetch').Response;
@@ -3519,7 +3526,7 @@ live.ts
       loggers.iptv.debug('Creating new stream', { streamId, userId: userIdString });
 
       // Try to fetch stream with automatic failover to backup channels
-      const fetchResult = await fetchStreamWithFailover(userId!, streamId, xtreamCodesService);
+      const fetchResult = await fetchStreamWithFailover(userId!, streamId, xtreamCodesService, providerId);
 
       if (!fetchResult) {
         loggers.iptv.error('No stream available (primary and all backups failed)', { streamId });
