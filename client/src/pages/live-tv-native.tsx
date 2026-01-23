@@ -2202,7 +2202,8 @@ export default function LiveTVTvPage() {
             const tokenData = await tokenResponse.json();
 
             if (tokenData?.token) {
-              streamUrl = `${streamUrl}?token=${tokenData.token}`;
+              const separator = streamUrl.includes('?') ? '&' : '?';
+              streamUrl = `${streamUrl}${separator}token=${tokenData.token}`;
             }
 
             // Set up session tracking from token response

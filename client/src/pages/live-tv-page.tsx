@@ -1976,7 +1976,8 @@ export default function LiveTVPage() {
               deviceType: getPlatform()
             });
             const { token } = await tokenResponse.json();
-            streamUrl = `${streamUrl}?token=${token}`;
+            const separator = streamUrl.includes('?') ? '&' : '?';
+            streamUrl = `${streamUrl}${separator}token=${token}`;
             loggers.tv.info('Stream token generated for native playback');
           } catch (error) {
             loggers.tv.error('Failed to generate stream token', { error });
