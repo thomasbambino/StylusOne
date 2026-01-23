@@ -3003,8 +3003,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // Some M3U providers (e.g., port 8002) need time to initialize the stream
       // session and generate HLS segments before returning a manifest.
-      // Retry with increasing timeouts: 15s, 30s
-      const fetchTimeouts = [15000, 30000];
+      // Use generous initial timeout to avoid wasting time on a retry.
+      const fetchTimeouts = [30000, 45000];
       for (let attempt = 0; attempt < fetchTimeouts.length; attempt++) {
         try {
           let streamUrl = directUrl;
