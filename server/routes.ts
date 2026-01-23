@@ -3470,7 +3470,12 @@ live.ts
             }
             // For absolute paths (starting with /), construct full URL using source origin
             if (trimmed.startsWith('/')) {
-              const absoluteUrl = freshManifestUrl.origin + trimmed;
+              let absoluteUrl = freshManifestUrl.origin + trimmed;
+              // Append source session params (e.g., ?s=TOKEN) for auth
+              try {
+                const srcUrl = new URL(freshStreamUrl);
+                if (srcUrl.search) absoluteUrl += srcUrl.search;
+              } catch {}
               const pathParts = trimmed.split('/');
               const originalFilename = pathParts[pathParts.length - 1] || (isSubPlaylist ? 'variant.m3u8' : 'stream.ts');
               if (isSubPlaylist) {
@@ -3622,7 +3627,12 @@ live.ts
           }
           // For absolute paths (starting with /), construct full URL using source origin
           if (trimmed.startsWith('/')) {
-            const absoluteUrl = manifestUrl.origin + trimmed;
+            let absoluteUrl = manifestUrl.origin + trimmed;
+            // Append source session params (e.g., ?s=TOKEN) for auth
+            try {
+              const srcUrl = new URL(streamUrl);
+              if (srcUrl.search) absoluteUrl += srcUrl.search;
+            } catch {}
             const pathParts = trimmed.split('/');
             const originalFilename = pathParts[pathParts.length - 1] || (isSubPlaylist ? 'variant.m3u8' : 'stream.ts');
             if (isSubPlaylist) {
@@ -3832,10 +3842,19 @@ live.ts
           const trimmed = match.trim();
           const isSubPlaylist = trimmed.endsWith('.m3u8') || trimmed.includes('.m3u8?');
 
-          // Build absolute URL if relative
+          // Build absolute URL if relative or absolute-path
           let absoluteUrl = trimmed;
           if (!trimmed.startsWith('http://') && !trimmed.startsWith('https://')) {
-            absoluteUrl = baseSegmentUrl + trimmed.replace(/^\/+/, '');
+            if (trimmed.startsWith('/')) {
+              // Absolute path - use origin only (don't prepend baseUrl path)
+              absoluteUrl = manifestUrl.origin + trimmed;
+            } else {
+              // Relative path - append to base URL directory
+              absoluteUrl = baseSegmentUrl + trimmed;
+            }
+            // Append source session params from parent URL for auth
+            const srcSearch = manifestUrl.search;
+            if (srcSearch) absoluteUrl += srcSearch;
           }
 
           try {
