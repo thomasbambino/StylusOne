@@ -1,6 +1,6 @@
 import { spawn, ChildProcess } from 'child_process';
 import { join } from 'path';
-import { mkdirSync, existsSync, rmSync, readFileSync } from 'fs';
+import { mkdirSync, existsSync, rmSync, readFileSync, statSync } from 'fs';
 import { sanitizeFilename, safeJoin, validatePath } from '../utils/path-security';
 import { loggers } from '../lib/logger';
 
@@ -50,20 +50,36 @@ export class StreamingService {
 
     // If stream is already running and playlist exists with valid content, reuse it
     if (this.activeStreams.has(streamId) && existsSync(playlistPath)) {
+      const existing = this.activeStreams.get(streamId);
       try {
-        const content = readFileSync(playlistPath, 'utf8');
-        // Check if playlist has valid segments (non-zero EXTINF)
-        if (content.includes('.ts') && content.includes('#EXTINF:') && !content.includes('#EXTINF:0.0')) {
-          loggers.stream.debug('Reusing existing HLS stream', { channel });
-          // Update timestamp to prevent cleanup
-          const existing = this.activeStreams.get(streamId);
-          if (existing) {
-            existing.timestamp = Date.now();
+        // Verify the FFmpeg process is still alive
+        const processAlive = existing?.process && existing.process.exitCode === null && !existing.process.killed;
+        if (!processAlive) {
+          loggers.stream.info('FFmpeg process dead, restarting stream', { channel });
+          this.stopStream(streamId);
+        } else {
+          // Verify playlist was recently modified (FFmpeg is actively writing)
+          const playlistStat = statSync(playlistPath);
+          const playlistAge = Date.now() - playlistStat.mtimeMs;
+          if (playlistAge > 30000) {
+            // Playlist hasn't been updated in 30s - FFmpeg is likely hung
+            loggers.stream.info('Playlist stale, restarting stream', { channel, ageSeconds: Math.round(playlistAge / 1000) });
+            this.stopStream(streamId);
+          } else {
+            const content = readFileSync(playlistPath, 'utf8');
+            // Check if playlist has valid segments (non-zero EXTINF)
+            if (content.includes('.ts') && content.includes('#EXTINF:') && !content.includes('#EXTINF:0.0')) {
+              loggers.stream.debug('Reusing existing HLS stream', { channel });
+              existing!.timestamp = Date.now();
+              return `/streams/${streamId}/playlist.m3u8`;
+            }
           }
-          return `/streams/${streamId}/playlist.m3u8`;
         }
       } catch {
-        // Playlist not ready, continue to start/restart
+        // Playlist not ready or stat failed, continue to start/restart
+        if (existing) {
+          this.stopStream(streamId);
+        }
       }
     }
 

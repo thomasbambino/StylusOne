@@ -741,8 +741,8 @@ export class XtreamCodesManager implements IService {
       const info = providerInfo.get(channel.providerId);
       if (!info || !info.hasCredentials) continue; // Skip if provider not accessible
 
-      // Build proxy stream URL with providerId to disambiguate same streamIds across providers
-      const streamUrl = `/api/iptv/stream/${channel.streamId}.m3u8?providerId=${channel.providerId}`;
+      // Build proxy stream URL - stream IDs are globally unique (m3u_p{providerId}_{n})
+      const streamUrl = `/api/iptv/stream/${channel.streamId}.m3u8`;
 
       // Use providerId + channel name for deduplication (same channel in multiple packages from same provider)
       const key = `${channel.providerId}:${channel.name.toLowerCase().trim()}`;
