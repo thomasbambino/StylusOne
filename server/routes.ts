@@ -3001,41 +3001,46 @@ export async function registerRoutes(app: Express): Promise<Server> {
         loggers.iptv.debug('Failover: Converted to HLS format', { directUrl });
       }
 
-      try {
-        let streamUrl = directUrl;
-        loggers.iptv.debug('Failover: Fetching M3U stream from', { streamUrl });
-        let response = await fetch(streamUrl, { timeout: 10000 });
-        loggers.iptv.debug('Failover: M3U fetch response', { status: response.status, statusText: response.statusText });
+      // Some M3U providers (e.g., port 8002) need time to initialize the stream
+      // session and generate HLS segments before returning a manifest.
+      // Retry with increasing timeouts: 15s, 30s
+      const fetchTimeouts = [15000, 30000];
+      for (let attempt = 0; attempt < fetchTimeouts.length; attempt++) {
+        try {
+          let streamUrl = directUrl;
+          loggers.iptv.info('Failover: Fetching M3U stream', { streamUrl: streamUrl.substring(0, 80), attempt: attempt + 1, timeout: fetchTimeouts[attempt] });
+          let response = await fetch(streamUrl, { timeout: fetchTimeouts[attempt] });
+          loggers.iptv.info('Failover: M3U fetch response', { status: response.status, attempt: attempt + 1 });
 
-        if (response.ok) {
-          let manifestText = await response.text();
-          loggers.iptv.trace('Failover: M3U response content type', { contentType: response.headers.get('content-type') });
-          loggers.iptv.trace('Failover: M3U response preview', { preview: manifestText.substring(0, 200) });
+          if (response.ok) {
+            let manifestText = await response.text();
 
-          // Handle HTML redirects
-          if (manifestText.trim().startsWith('<!DOCTYPE') || manifestText.trim().startsWith('<html')) {
-            const metaRefreshMatch = manifestText.match(/url='([^']+)'/);
-            const hrefMatch = manifestText.match(/href="([^"]+)"/);
-            const redirectUrl = metaRefreshMatch?.[1] || hrefMatch?.[1];
+            // Handle HTML redirects
+            if (manifestText.trim().startsWith('<!DOCTYPE') || manifestText.trim().startsWith('<html')) {
+              const metaRefreshMatch = manifestText.match(/url='([^']+)'/);
+              const hrefMatch = manifestText.match(/href="([^"]+)"/);
+              const redirectUrl = metaRefreshMatch?.[1] || hrefMatch?.[1];
 
-            if (redirectUrl) {
-              response = await fetch(redirectUrl);
-              if (response.ok) {
-                manifestText = await response.text();
-                streamUrl = redirectUrl;
+              if (redirectUrl) {
+                response = await fetch(redirectUrl, { timeout: fetchTimeouts[attempt] });
+                if (response.ok) {
+                  manifestText = await response.text();
+                  streamUrl = redirectUrl;
+                }
               }
             }
-          }
 
-          if (response.ok && !manifestText.trim().startsWith('<!DOCTYPE') && !manifestText.trim().startsWith('<html')) {
-            loggers.iptv.debug('Failover: M3U direct stream succeeded', { streamId });
-            return { response, manifestText, streamUrl, usedBackup: false };
+            if (response.ok && !manifestText.trim().startsWith('<!DOCTYPE') && !manifestText.trim().startsWith('<html')) {
+              loggers.iptv.info('Failover: M3U direct stream succeeded', { streamId, attempt: attempt + 1 });
+              return { response, manifestText, streamUrl, usedBackup: false };
+            }
+          } else {
+            loggers.iptv.info('Failover: M3U fetch returned non-OK', { status: response.status, attempt: attempt + 1 });
           }
-        } else {
-          loggers.iptv.debug('Failover: M3U HLS endpoint not available, trying MPEG-TS proxy', { status: response.status });
+        } catch (error: any) {
+          loggers.iptv.info('Failover: M3U fetch attempt failed', { streamId, attempt: attempt + 1, error: error?.message || error });
+          // Continue to next attempt with longer timeout
         }
-      } catch (error) {
-        loggers.iptv.debug('Failover: M3U direct stream error', { streamId, error });
       }
 
       // If HLS (.m3u8) failed, try to serve the MPEG-TS stream directly
