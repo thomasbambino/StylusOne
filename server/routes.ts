@@ -3468,11 +3468,21 @@ live.ts
                 return `/api/iptv/segment/${streamId}/stream.ts?url=${encodeURIComponent(trimmed)}`;
               }
             }
-            // For relative paths, strip leading slashes
-            if (isSubPlaylist) {
-              return `/api/iptv/manifest/${streamId}/${trimmed.replace(/^\/+/, '')}`;
+            // For absolute paths (starting with /), construct full URL using source origin
+            if (trimmed.startsWith('/')) {
+              const absoluteUrl = freshManifestUrl.origin + trimmed;
+              const pathParts = trimmed.split('/');
+              const originalFilename = pathParts[pathParts.length - 1] || (isSubPlaylist ? 'variant.m3u8' : 'stream.ts');
+              if (isSubPlaylist) {
+                return `/api/iptv/manifest/${streamId}/${originalFilename}?url=${encodeURIComponent(absoluteUrl)}`;
+              }
+              return `/api/iptv/segment/${streamId}/${originalFilename}?url=${encodeURIComponent(absoluteUrl)}`;
             }
-            return `/api/iptv/segment/${streamId}/${trimmed.replace(/^\/+/, '')}`;
+            // For relative paths (no leading slash)
+            if (isSubPlaylist) {
+              return `/api/iptv/manifest/${streamId}/${trimmed}`;
+            }
+            return `/api/iptv/segment/${streamId}/${trimmed}`;
           }
         );
 
@@ -3599,7 +3609,6 @@ live.ts
               const originalFilename = pathParts[pathParts.length - 1] || (isSubPlaylist ? 'variant.m3u8' : 'stream.ts');
 
               if (isSubPlaylist) {
-                // Sub-playlists go through the manifest proxy
                 return `/api/iptv/manifest/${streamId}/${originalFilename}?url=${encodeURIComponent(trimmed)}`;
               } else {
                 return `/api/iptv/segment/${streamId}/${originalFilename}?url=${encodeURIComponent(trimmed)}`;
@@ -3611,11 +3620,21 @@ live.ts
               return `/api/iptv/segment/${streamId}/stream.ts?url=${encodeURIComponent(trimmed)}`;
             }
           }
-          // For relative paths, strip leading slashes
-          if (isSubPlaylist) {
-            return `/api/iptv/manifest/${streamId}/${trimmed.replace(/^\/+/, '')}`;
+          // For absolute paths (starting with /), construct full URL using source origin
+          if (trimmed.startsWith('/')) {
+            const absoluteUrl = manifestUrl.origin + trimmed;
+            const pathParts = trimmed.split('/');
+            const originalFilename = pathParts[pathParts.length - 1] || (isSubPlaylist ? 'variant.m3u8' : 'stream.ts');
+            if (isSubPlaylist) {
+              return `/api/iptv/manifest/${streamId}/${originalFilename}?url=${encodeURIComponent(absoluteUrl)}`;
+            }
+            return `/api/iptv/segment/${streamId}/${originalFilename}?url=${encodeURIComponent(absoluteUrl)}`;
           }
-          return `/api/iptv/segment/${streamId}/${trimmed.replace(/^\/+/, '')}`;
+          // For relative paths (no leading slash)
+          if (isSubPlaylist) {
+            return `/api/iptv/manifest/${streamId}/${trimmed}`;
+          }
+          return `/api/iptv/segment/${streamId}/${trimmed}`;
         }
       );
 
