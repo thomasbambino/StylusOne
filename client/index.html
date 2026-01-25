@@ -59,6 +59,11 @@
         if (!isNative) {
           var splash = document.getElementById('initial-splash');
           if (splash) splash.style.display = 'none';
+        } else {
+          // Safety: auto-hide splash after 5s even if app fails to load
+          setTimeout(function() {
+            window.__hideInitialSplash();
+          }, 5000);
         }
       })();
 

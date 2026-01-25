@@ -7,6 +7,9 @@ import {
   activeIptvStreams,
   iptvCredentials,
   iptvChannels,
+  iptvProviders,
+  userSubscriptions,
+  subscriptionPlans,
   users,
 } from '@shared/schema';
 import { eq, desc, and, sql, gte, lte, asc, count, max } from 'drizzle-orm';
@@ -666,6 +669,116 @@ router.delete('/history', requireAdmin, async (req, res) => {
     }
     loggers.analytics.error('Error deleting history', { error });
     res.status(500).json({ error: 'Failed to delete history' });
+  }
+});
+
+// ============================================
+// Dashboard Summary Endpoint (for native app)
+// ============================================
+
+/**
+ * GET /api/admin/analytics/dashboard-summary
+ * Consolidated dashboard stats for native app admin panel
+ */
+router.get('/dashboard-summary', requireAdmin, async (req, res) => {
+  try {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    // Run all queries in parallel for performance
+    const [
+      // Live stats
+      activeStreamsResult,
+      uniqueViewersTodayResult,
+      watchTimeTodayResult,
+      sessionsTodayResult,
+      // User stats
+      totalUsersResult,
+      usersByRoleResult,
+      pendingUsersResult,
+      disabledUsersResult,
+      // Subscription stats
+      activeSubscriptionsResult,
+      // IPTV stats
+      totalProvidersResult,
+      totalChannelsResult,
+    ] = await Promise.all([
+      // Live stats queries
+      db.select({ count: sql<number>`count(*)::int` }).from(activeIptvStreams),
+      db.select({ count: sql<number>`count(DISTINCT user_id)::int` }).from(viewingHistory).where(gte(viewingHistory.startedAt, today)),
+      db.select({ sum: sql<number>`COALESCE(SUM(duration_seconds), 0)::int` }).from(viewingHistory).where(gte(viewingHistory.startedAt, today)),
+      db.select({ count: sql<number>`count(*)::int` }).from(viewingHistory).where(gte(viewingHistory.startedAt, today)),
+      // User stats queries
+      db.select({ count: sql<number>`count(*)::int` }).from(users),
+      db.select({ role: users.role, count: sql<number>`count(*)::int` }).from(users).groupBy(users.role),
+      db.select({ count: sql<number>`count(*)::int` }).from(users).where(eq(users.approved, false)),
+      db.select({ count: sql<number>`count(*)::int` }).from(users).where(eq(users.enabled, false)),
+      // Subscription stats queries
+      db.select({
+        billing_period: userSubscriptions.billing_period,
+        price_monthly: subscriptionPlans.price_monthly,
+        price_annual: subscriptionPlans.price_annual,
+        plan_name: subscriptionPlans.name,
+      })
+        .from(userSubscriptions)
+        .innerJoin(subscriptionPlans, eq(subscriptionPlans.id, userSubscriptions.plan_id))
+        .where(eq(userSubscriptions.status, 'active')),
+      // IPTV stats queries
+      db.select({ count: sql<number>`count(*)::int` }).from(iptvProviders).where(eq(iptvProviders.isActive, true)),
+      db.select({ count: sql<number>`count(*)::int` }).from(iptvChannels).where(eq(iptvChannels.isActive, true)),
+    ]);
+
+    // Calculate MRR from active subscriptions
+    let totalMRR = 0;
+    const planBreakdown: Record<string, { count: number; mrr: number }> = {};
+
+    for (const sub of activeSubscriptionsResult) {
+      const monthlyRevenue = sub.billing_period === 'monthly'
+        ? sub.price_monthly / 100
+        : sub.price_annual / 100 / 12;
+
+      totalMRR += monthlyRevenue;
+
+      if (!planBreakdown[sub.plan_name]) {
+        planBreakdown[sub.plan_name] = { count: 0, mrr: 0 };
+      }
+      planBreakdown[sub.plan_name].count++;
+      planBreakdown[sub.plan_name].mrr += monthlyRevenue;
+    }
+
+    // Build roles breakdown
+    const byRole: Record<string, number> = {};
+    for (const row of usersByRoleResult) {
+      byRole[row.role || 'unknown'] = Number(row.count) || 0;
+    }
+
+    res.json({
+      liveStats: {
+        activeStreams: Number(activeStreamsResult[0]?.count) || 0,
+        uniqueViewersToday: Number(uniqueViewersTodayResult[0]?.count) || 0,
+        watchTimeToday: Number(watchTimeTodayResult[0]?.sum) || 0,
+        sessionsToday: Number(sessionsTodayResult[0]?.count) || 0,
+      },
+      users: {
+        total: Number(totalUsersResult[0]?.count) || 0,
+        pending: Number(pendingUsersResult[0]?.count) || 0,
+        disabled: Number(disabledUsersResult[0]?.count) || 0,
+        byRole,
+      },
+      subscriptions: {
+        totalMRR: Math.round(totalMRR * 100) / 100,
+        activeSubscribers: activeSubscriptionsResult.length,
+        planBreakdown,
+      },
+      iptv: {
+        totalProviders: Number(totalProvidersResult[0]?.count) || 0,
+        totalChannels: Number(totalChannelsResult[0]?.count) || 0,
+        activeStreams: Number(activeStreamsResult[0]?.count) || 0,
+      },
+    });
+  } catch (error) {
+    loggers.analytics.error('Error fetching dashboard summary', { error });
+    res.status(500).json({ error: 'Failed to fetch dashboard summary' });
   }
 });
 

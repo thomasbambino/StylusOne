@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef, useMemo, memo } from 'react';
 import { useQuery, useQueries, useMutation, useQueryClient } from '@tanstack/react-query';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Play, Pause, Volume2, VolumeX, Info, Plus, MoreHorizontal, Star, X, Check, CreditCard, Calendar, ExternalLink, LogOut, LayoutGrid, Airplay, Search, Volume1, Minus, Settings, PictureInPicture2, Filter, Package, Tv, Clock, Zap, Radio, TrendingUp, Users, Bell, BellOff } from 'lucide-react';
+import { ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Play, Pause, Volume2, VolumeX, Info, Plus, MoreHorizontal, Star, X, Check, CreditCard, Calendar, ExternalLink, LogOut, LayoutGrid, Airplay, Search, Volume1, Minus, Settings, PictureInPicture2, Filter, Package, Tv, Clock, Zap, Radio, TrendingUp, Users, Bell, BellOff, BarChart3, Shield, List, Copy, Trash2, RefreshCw, Server, Database, Power, Eye, EyeOff, AlertCircle, CheckCircle, XCircle, Key, DollarSign, Activity, Loader2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { getQueryFn, apiRequest, queryClient } from '@/lib/queryClient';
 import { buildApiUrl, isNativePlatform, getDeviceTypeSync, getPlatform } from '@/lib/capacitor';
@@ -1043,6 +1043,8 @@ FocusedProgramPanel.displayName = 'FocusedProgramPanel';
 export default function LiveTVTvPage() {
   // Auth
   const { user, logoutMutation } = useAuth();
+  const isAdmin = user?.role === 'admin';
+  const isSuperAdmin = user?.role === 'superadmin';
 
   // Reminders context
   const { hasReminder, setReminder, cancelReminder, pendingChannel, clearPendingChannel } = useReminders();
@@ -1622,6 +1624,21 @@ export default function LiveTVTvPage() {
 
   const [expandedPackageId, setExpandedPackageId] = useState<number | null>(null);
 
+  // Admin dashboard state
+  const [adminTab, setAdminTab] = useState<'overview' | 'users' | 'iptv' | 'system'>('overview');
+  const [adminUserSearch, setAdminUserSearch] = useState('');
+  const [expandedUserId, setExpandedUserId] = useState<number | null>(null);
+  const [showPasswordModal, setShowPasswordModal] = useState(false);
+  const [tempPassword, setTempPassword] = useState<string | null>(null);
+  const [passwordCopied, setPasswordCopied] = useState(false);
+  const [showAssignSubModal, setShowAssignSubModal] = useState(false);
+  const [assignSubUserId, setAssignSubUserId] = useState<number | null>(null);
+  const [assignSubPlanId, setAssignSubPlanId] = useState<number | null>(null);
+  const [assignSubBillingPeriod, setAssignSubBillingPeriod] = useState<'monthly' | 'annual'>('monthly');
+  const [assignSubDuration, setAssignSubDuration] = useState(1);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [deleteUserId, setDeleteUserId] = useState<number | null>(null);
+
   // Fetch channels for expanded package (profile view)
   const { data: packageChannels = [], isLoading: packageChannelsLoading } = useQuery<PackageChannel[]>({
     queryKey: [`/api/subscriptions/packages/${expandedPackageId}/channels`],
@@ -1629,6 +1646,166 @@ export default function LiveTVTvPage() {
     enabled: !!expandedPackageId,
     select: (data) => data || [],
   });
+
+  // Admin dashboard queries (only fetch when admin and on profile tab)
+  const isAdminUser = isAdmin || isSuperAdmin;
+
+  // Dashboard summary - overview stats
+  const { data: dashboardSummary, isLoading: dashboardLoading, refetch: refetchDashboard } = useQuery<{
+    liveStats: { activeStreams: number; uniqueViewersToday: number; watchTimeToday: number; sessionsToday: number };
+    users: { total: number; pending: number; disabled: number; byRole: Record<string, number> };
+    subscriptions: { totalMRR: number; activeSubscribers: number; planBreakdown: Record<string, { count: number; mrr: number }> };
+    iptv: { totalProviders: number; totalChannels: number; activeStreams: number };
+  }>({
+    queryKey: ['/api/admin/analytics/dashboard-summary'],
+    queryFn: getQueryFn({ on401: "returnNull" }),
+    enabled: isAdminUser && viewMode === 'profile' && adminTab === 'overview',
+    refetchInterval: 30000, // Auto-refresh every 30 seconds
+  });
+
+  // Users list for management
+  const { data: adminUsers = [], isLoading: usersLoading, refetch: refetchUsers } = useQuery<Array<{
+    id: number;
+    username: string;
+    email: string;
+    role: string;
+    approved: boolean;
+    enabled: boolean;
+    last_login?: string;
+    last_ip?: string;
+    subscription?: {
+      id: number;
+      plan_id: number;
+      status: string;
+      billing_period: string;
+      current_period_end: string;
+      plan_name: string;
+    };
+  }>>({
+    queryKey: ['/api/subscriptions/admin/users'],
+    queryFn: getQueryFn({ on401: "returnNull" }),
+    enabled: isAdminUser && viewMode === 'profile' && adminTab === 'users',
+  });
+
+  // Subscription plans for assignment
+  const { data: subscriptionPlans = [] } = useQuery<Array<{
+    id: number;
+    name: string;
+    price_monthly: number;
+    price_annual: number;
+  }>>({
+    queryKey: ['/api/subscriptions/plans'],
+    queryFn: getQueryFn({ on401: "returnNull" }),
+    enabled: isAdminUser && viewMode === 'profile' && showAssignSubModal,
+  });
+
+  // System health status
+  const { data: systemHealth, isLoading: healthLoading, refetch: refetchHealth } = useQuery<{
+    categories: Array<{
+      name: string;
+      services: Array<{
+        name: string;
+        status: 'success' | 'failed' | 'pending' | 'skipped';
+        message?: string;
+        error?: string;
+      }>;
+    }>;
+    version: string;
+    appName: string;
+  }>({
+    queryKey: ['/api/admin/system/status'],
+    queryFn: getQueryFn({ on401: "returnNull" }),
+    enabled: isAdminUser && viewMode === 'profile' && adminTab === 'system',
+  });
+
+  // IPTV providers for stats
+  const { data: iptvProviders = [], isLoading: providersLoading } = useQuery<Array<{
+    id: number;
+    name: string;
+    providerType: string;
+    isActive: boolean;
+    channelCount?: number;
+  }>>({
+    queryKey: ['/api/admin/iptv-providers'],
+    queryFn: getQueryFn({ on401: "returnNull" }),
+    enabled: isAdminUser && viewMode === 'profile' && adminTab === 'iptv',
+  });
+
+  // Filter users by search query
+  const filteredAdminUsers = useMemo(() => {
+    if (!adminUserSearch.trim()) return adminUsers;
+    const search = adminUserSearch.toLowerCase();
+    return adminUsers.filter(u =>
+      u.username.toLowerCase().includes(search) ||
+      u.email?.toLowerCase().includes(search)
+    );
+  }, [adminUsers, adminUserSearch]);
+
+  // User management mutations
+  const updateUserMutation = useMutation({
+    mutationFn: async ({ userId, data }: { userId: number; data: Partial<{ role: string; enabled: boolean; approved: boolean }> }) => {
+      return apiRequest('PATCH', `/api/users/${userId}`, data);
+    },
+    onSuccess: () => {
+      refetchUsers();
+      haptics.success();
+    },
+  });
+
+  const resetPasswordMutation = useMutation({
+    mutationFn: async (userId: number) => {
+      const res = await apiRequest('POST', '/api/admin/reset-user-password', { userId });
+      return res.json();
+    },
+    onSuccess: (data) => {
+      setTempPassword(data.temporaryPassword);
+      setShowPasswordModal(true);
+      haptics.success();
+    },
+  });
+
+  const assignSubscriptionMutation = useMutation({
+    mutationFn: async ({ userId, planId, billingPeriod, durationMonths }: { userId: number; planId: number; billingPeriod: string; durationMonths: number }) => {
+      return apiRequest('POST', '/api/subscriptions/admin/assign', { userId, planId, billingPeriod, durationMonths });
+    },
+    onSuccess: () => {
+      setShowAssignSubModal(false);
+      setAssignSubUserId(null);
+      refetchUsers();
+      haptics.success();
+    },
+  });
+
+  const removeSubscriptionMutation = useMutation({
+    mutationFn: async (userId: number) => {
+      return apiRequest('DELETE', `/api/subscriptions/admin/remove/${userId}`);
+    },
+    onSuccess: () => {
+      refetchUsers();
+      haptics.success();
+    },
+  });
+
+  const deleteUserMutation = useMutation({
+    mutationFn: async (userId: number) => {
+      return apiRequest('DELETE', `/api/users/${userId}`);
+    },
+    onSuccess: () => {
+      setShowDeleteConfirm(false);
+      setDeleteUserId(null);
+      refetchUsers();
+      haptics.success();
+    },
+  });
+
+  // Format watch time helper
+  const formatWatchTime = (seconds: number) => {
+    if (seconds < 60) return `${seconds}s`;
+    if (seconds < 3600) return `${Math.round(seconds / 60)}m`;
+    const hours = Math.floor(seconds / 3600);
+    const mins = Math.round((seconds % 3600) / 60);
+    return mins > 0 ? `${hours}h ${mins}m` : `${hours}h`;
+  };
 
   // Find sport package IDs
   const nflPackage = userPackages.find(p => p.packageName?.toLowerCase().includes('nfl'));
@@ -2953,8 +3130,10 @@ export default function LiveTVTvPage() {
       tabBarTimer.current = null;
     }
 
-    // Determine if we should show: portrait AND not rotating AND splash is done
-    const shouldShow = isPortrait && !isRotating && !showSplash;
+    // Determine if we should show: (portrait OR tablet) AND not rotating AND splash is done
+    // On iPad in player mode, sync with overlay visibility (hide when controls hide)
+    const inPlayerWithHiddenOverlay = !isPhoneDevice && viewMode === 'player' && !showOverlay;
+    const shouldShow = (isPortrait || !isPhoneDevice) && !isRotating && !showSplash && !inPlayerWithHiddenOverlay;
 
     // Skip if already in desired state
     if (tabBarCurrentState.current === shouldShow) {
@@ -2964,7 +3143,8 @@ export default function LiveTVTvPage() {
     // Debounce all state changes to prevent rapid switching
     tabBarTimer.current = setTimeout(() => {
       // Re-check current conditions using refs (they reflect latest values)
-      const stillShouldShow = isPortraitRef.current && !isRotatingRef.current && !showSplashRef.current;
+      const stillInPlayerWithHiddenOverlay = !isPhoneDevice && viewModeRef.current === 'player' && !showOverlay;
+      const stillShouldShow = (isPortraitRef.current || !isPhoneDevice) && !isRotatingRef.current && !showSplashRef.current && !stillInPlayerWithHiddenOverlay;
 
       if (stillShouldShow && tabBarCurrentState.current !== true) {
         tabBarCurrentState.current = true;
@@ -2983,7 +3163,7 @@ export default function LiveTVTvPage() {
         clearTimeout(tabBarTimer.current);
       }
     };
-  }, [isPortrait, isRotating, showSplash]);
+  }, [isPortrait, isRotating, showSplash, viewMode, showOverlay]);
 
   // Listen for native tab bar selections
   useEffect(() => {
@@ -4327,7 +4507,7 @@ export default function LiveTVTvPage() {
 
             {/* YouTube TV Style Program Info - Only show if EPG data available */}
             {currentEPG?.currentProgram && (
-              <div className="absolute bottom-44 left-16 max-w-2xl">
+              <div className="absolute bottom-44 md:bottom-56 left-16 max-w-2xl">
                 {/* Time Range */}
                 <div className="text-white/70 text-xl mb-1">
                   {formatTimeRange(currentEPG.currentProgram.startTime, currentEPG.currentProgram.endTime)}
@@ -4389,7 +4569,7 @@ export default function LiveTVTvPage() {
 
             {/* Progress Bar - Full width just above controls */}
             {currentEPG?.currentProgram && (
-              <div className="absolute bottom-24 left-16 right-16">
+              <div className="absolute bottom-24 md:bottom-36 left-16 right-16">
                 <div className="h-1.5 bg-white/30 rounded-full overflow-hidden">
                   <div
                     className="h-full bg-red-600 transition-all duration-1000"
@@ -4404,7 +4584,7 @@ export default function LiveTVTvPage() {
             )}
 
             {/* Channel Selector - Bottom Left, aligned with progress bar */}
-            <div className="absolute bottom-2 left-16">
+            <div className="absolute bottom-2 md:bottom-14 left-16">
               <div className="relative flex flex-col items-center">
                 {/* Channel Up - positioned above logo */}
                 <button
@@ -4439,7 +4619,7 @@ export default function LiveTVTvPage() {
             </div>
 
             {/* Controls Bar - Bottom Center */}
-            <div className="absolute bottom-8 left-1/2 -translate-x-1/2">
+            <div className="absolute bottom-8 md:bottom-20 left-1/2 -translate-x-1/2">
               <PlaybackControls
                 isPlaying={isPlaying}
                 isMuted={isMuted}
@@ -4462,7 +4642,7 @@ export default function LiveTVTvPage() {
             </div>
 
             {/* Action Buttons - Bottom Right */}
-            <div className="absolute bottom-8 right-8 flex items-center gap-3">
+            <div className="absolute bottom-8 md:bottom-20 right-8 flex items-center gap-3">
               {/* Guide Button */}
               <button
                 onClick={(e) => {
@@ -4499,7 +4679,10 @@ export default function LiveTVTvPage() {
             {/* Top section - Program details on left, PiP space on right */}
             <div className="h-60 shrink-0 flex relative">
               {/* Close Button + Search - Top Left, aligned with channel column */}
-              <div className="absolute top-6 left-16 flex items-center gap-4 z-10">
+              <div
+                className="absolute left-16 flex items-center gap-4 z-10"
+                style={{ top: isNativePlatform() ? 'calc(env(safe-area-inset-top, 24px) + 8px)' : '24px' }}
+              >
                 <button
                   onClick={() => { setViewMode('player'); setGuideSearchQuery(''); setNativeTabBarSelected('nowplaying'); }}
                   className="p-2 bg-white/10 hover:bg-white/20 rounded-full text-white transition-all active:scale-95"
@@ -4647,9 +4830,8 @@ export default function LiveTVTvPage() {
       </div>
       )}
 
-      {/* Portrait Home View - Apple TV+ Style */}
-      {/* On phones: always render (orientation locked). On tablets: only in portrait */}
-      {!isRotating && isNativePlatform() && viewMode === 'home' && (isPhoneDevice || isPortrait) && (
+      {/* Home View - Apple TV+ Style */}
+      {!isRotating && isNativePlatform() && viewMode === 'home' && (
         <div
           className="absolute inset-0 bg-black flex flex-col animate-viewSlideUp"
           style={{ zIndex: 30 }}
@@ -4850,7 +5032,7 @@ export default function LiveTVTvPage() {
                   <TrendingUp className="h-5 w-5 text-orange-500" />
                   <h2 className="text-xl font-semibold text-white/90">Trending</h2>
                 </div>
-                <div className="flex gap-4 overflow-x-auto overflow-y-hidden px-5 scrollbar-hide">
+                <div className="flex gap-4 overflow-x-auto overflow-y-hidden px-5 scrollbar-hide md:grid md:grid-cols-4 md:gap-3 md:overflow-x-visible">
                   <AnimatePresence mode="popLayout">
                     {trendingChannels.map((trending) => {
                       const channel = channels.find((c: Channel) => c.iptvId === trending.channelId);
@@ -4872,7 +5054,7 @@ export default function LiveTVTvPage() {
                             duration: 0.25,
                             layout: { duration: 0.25, ease: 'easeInOut' }
                           }}
-                          className="shrink-0 w-72 active:scale-[0.97] transition-transform duration-200"
+                          className="shrink-0 w-72 md:w-auto active:scale-[0.97] transition-transform duration-200"
                           onClick={() => { haptics.light(); playStream(channel); setViewMode('player'); }}
                         >
                           <div className="relative rounded-xl overflow-hidden mb-3">
@@ -4968,7 +5150,7 @@ export default function LiveTVTvPage() {
                     <span className="text-sm text-white/70">Schedule</span>
                   </button>
                 </div>
-                <div className="flex gap-4 overflow-x-auto overflow-y-hidden px-5 scrollbar-hide">
+                <div className="flex gap-4 overflow-x-auto overflow-y-hidden px-5 scrollbar-hide md:grid md:grid-cols-4 md:gap-3 md:overflow-x-visible">
                   {nflChannels.map((pkgChannel) => {
                     const channel = channels.find((c: Channel) => c.GuideName === pkgChannel.name);
                     if (!channel) return null;
@@ -4983,7 +5165,7 @@ export default function LiveTVTvPage() {
                     return (
                       <div
                         key={pkgChannel.id}
-                        className="shrink-0 w-72 active:scale-[0.97] transition-transform duration-200"
+                        className="shrink-0 w-72 md:w-auto active:scale-[0.97] transition-transform duration-200"
                         onClick={() => { haptics.light(); playStream(channel); setViewMode('player'); }}
                       >
                         <div className="relative rounded-xl overflow-hidden mb-3">
@@ -5057,7 +5239,7 @@ export default function LiveTVTvPage() {
                     <span className="text-sm text-white/70">Schedule</span>
                   </button>
                 </div>
-                <div className="flex gap-3 overflow-x-auto overflow-y-hidden px-5 scrollbar-hide">
+                <div className="flex gap-3 overflow-x-auto overflow-y-hidden px-5 scrollbar-hide md:grid md:grid-cols-6 md:gap-3 md:overflow-x-visible">
                   {nbaChannels.map((pkgChannel) => {
                     const channel = channels.find((c: Channel) => c.GuideName === pkgChannel.name);
                     if (!channel) return null;
@@ -5070,7 +5252,7 @@ export default function LiveTVTvPage() {
                     return (
                       <div
                         key={pkgChannel.id}
-                        className="shrink-0 w-36 active:scale-[0.97] transition-transform duration-200"
+                        className="shrink-0 w-36 md:w-auto active:scale-[0.97] transition-transform duration-200"
                         onClick={() => { haptics.light(); playStream(channel); setViewMode('player'); }}
                       >
                         <div className="relative rounded-xl overflow-hidden mb-2">
@@ -5133,7 +5315,7 @@ export default function LiveTVTvPage() {
                     <span className="text-sm text-white/70">Schedule</span>
                   </button>
                 </div>
-                <div className="flex gap-4 overflow-x-auto overflow-y-hidden px-5 scrollbar-hide">
+                <div className="flex gap-4 overflow-x-auto overflow-y-hidden px-5 scrollbar-hide md:grid md:grid-cols-4 md:gap-3 md:overflow-x-visible">
                   {mlbChannels.map((pkgChannel) => {
                     const channel = channels.find((c: Channel) => c.GuideName === pkgChannel.name);
                     if (!channel) return null;
@@ -5148,7 +5330,7 @@ export default function LiveTVTvPage() {
                     return (
                       <div
                         key={pkgChannel.id}
-                        className="shrink-0 w-72 active:scale-[0.97] transition-transform duration-200"
+                        className="shrink-0 w-72 md:w-auto active:scale-[0.97] transition-transform duration-200"
                         onClick={() => { haptics.light(); playStream(channel); setViewMode('player'); }}
                       >
                         <div className="relative rounded-xl overflow-hidden mb-3">
@@ -5212,37 +5394,44 @@ export default function LiveTVTvPage() {
         </div>
       )}
 
-      {/* Portrait Profile View - User info, subscription, packages, logout */}
-      {/* On phones: always render (orientation locked). On tablets: only in portrait */}
-      {!isRotating && isNativePlatform() && viewMode === 'profile' && (isPhoneDevice || isPortrait) && (
+      {/* Profile View - User info, subscription, packages, logout */}
+      {!isRotating && isNativePlatform() && viewMode === 'profile' && (
         <div
           className="absolute inset-0 bg-black flex flex-col animate-viewSlideUp"
           style={{ zIndex: 30 }}
         >
-          {/* Header */}
-          <div className="shrink-0 pt-20 px-4 pb-4">
-            <h1 className="text-2xl font-bold text-white">My Profile</h1>
+          {/* Header with User Info integrated */}
+          <div className="shrink-0 pt-20 px-5 md:px-8 pb-4">
+            <div className="flex items-center gap-4 md:gap-6">
+              <div className="w-14 h-14 md:w-16 md:h-16 rounded-full bg-gradient-to-br from-blue-500/20 to-purple-500/20 flex items-center justify-center border border-white/10">
+                <span className="text-xl md:text-2xl text-white font-bold">
+                  {user?.username?.charAt(0).toUpperCase() || 'U'}
+                </span>
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-white font-semibold text-xl md:text-2xl">{user?.username || 'User'}</p>
+                <p className="text-white/50 text-sm truncate">{user?.email || ''}</p>
+              </div>
+              {/* Logout button in header on iPad */}
+              <button
+                onTouchEnd={(e) => { e.preventDefault(); haptics.warning(); logoutMutation.mutate(); }}
+                onClick={() => { haptics.warning(); logoutMutation.mutate(); }}
+                className="hidden md:flex items-center gap-2 px-4 py-2 bg-red-500/20 text-red-400 rounded-xl active:bg-red-500/30"
+              >
+                <LogOut className="w-4 h-4" />
+                <span className="text-sm font-medium">Log Out</span>
+              </button>
+            </div>
           </div>
 
           {/* Profile Content */}
-          <div className="flex-1 overflow-y-auto px-4 pb-24">
-            {/* User Info Card */}
-            <div className="bg-white/5 rounded-xl p-4 mb-4">
-              <div className="flex items-center gap-4">
-                <div className="w-16 h-16 rounded-full bg-white/10 flex items-center justify-center">
-                  <span className="text-2xl text-white font-bold">
-                    {user?.username?.charAt(0).toUpperCase() || 'U'}
-                  </span>
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-white font-semibold text-lg">{user?.username || 'User'}</p>
-                  <p className="text-white/50 text-sm truncate">{user?.email || ''}</p>
-                </div>
-              </div>
-            </div>
+          <div className="flex-1 overflow-y-auto px-5 md:px-8 pb-24">
+
+            {/* Two-column grid for Subscription + Packages on iPad */}
+            <div className="md:grid md:grid-cols-2 md:gap-4">
 
             {/* Subscription Info */}
-            <div className="bg-white/5 rounded-xl p-4 mb-4">
+            <div className="bg-white/5 rounded-xl p-4 mb-4 md:mb-0">
               <div className="flex items-center gap-2 mb-3">
                 <CreditCard className="w-4 h-4 text-white/50" />
                 <h3 className="text-white/50 text-xs font-medium uppercase tracking-wider">Subscription</h3>
@@ -5346,7 +5535,7 @@ export default function LiveTVTvPage() {
             </div>
 
             {/* Channel Packages */}
-            <div className="bg-white/5 rounded-xl p-4 mb-4">
+            <div className="bg-white/5 rounded-xl p-4 mb-4 md:mb-0">
               <h3 className="text-white/50 text-xs font-medium uppercase tracking-wider mb-3">Channel Packages</h3>
               <div className="space-y-2">
                 {packagesLoading ? (
@@ -5408,8 +5597,634 @@ export default function LiveTVTvPage() {
                 )}
               </div>
             </div>
+            </div>{/* end grid */}
 
-            {/* Logout Button */}
+            {/* Admin Dashboard - only visible to admins and superadmins */}
+            {(isAdmin || isSuperAdmin) && (
+              <div className="bg-white/5 rounded-xl mt-4 overflow-hidden">
+                {/* Admin Header */}
+                <div className="flex items-center gap-2 p-4 pb-2">
+                  <Shield className="w-4 h-4 text-amber-400" />
+                  <h3 className="text-white font-semibold">Admin Dashboard</h3>
+                </div>
+
+                {/* Admin Tab Bar */}
+                <div className="flex gap-1 px-4 pb-3 overflow-x-auto scrollbar-hide">
+                  {[
+                    { id: 'overview', label: 'Overview', icon: BarChart3 },
+                    { id: 'users', label: 'Users', icon: Users },
+                    { id: 'iptv', label: 'IPTV', icon: Tv },
+                    { id: 'system', label: 'System', icon: Server },
+                  ].map((tab) => (
+                    <button
+                      key={tab.id}
+                      onClick={() => { haptics.light(); setAdminTab(tab.id as typeof adminTab); }}
+                      className={cn(
+                        "shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-medium transition-colors",
+                        adminTab === tab.id
+                          ? "bg-amber-500/20 text-amber-400"
+                          : "bg-white/5 text-white/60 active:bg-white/10"
+                      )}
+                    >
+                      <tab.icon className="w-3.5 h-3.5" />
+                      {tab.label}
+                    </button>
+                  ))}
+                </div>
+
+                {/* Admin Tab Content */}
+                <div className="px-4 pb-4">
+                  {/* Overview Tab */}
+                  {adminTab === 'overview' && (
+                    <div className="space-y-3">
+                      {dashboardLoading ? (
+                        <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+                          {[1, 2, 3, 4, 5, 6].map((i) => (
+                            <div key={i} className="bg-white/5 rounded-lg p-3 animate-pulse">
+                              <div className="h-4 w-8 bg-white/10 rounded mb-2" />
+                              <div className="h-6 w-16 bg-white/10 rounded" />
+                            </div>
+                          ))}
+                        </div>
+                      ) : dashboardSummary ? (
+                        <>
+                          <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+                            <div className="bg-white/5 rounded-lg p-3">
+                              <div className="flex items-center gap-1.5 text-white/50 text-xs mb-1">
+                                <Activity className="w-3 h-3" />
+                                Active Streams
+                              </div>
+                              <p className="text-white text-xl font-bold">{dashboardSummary.liveStats.activeStreams}</p>
+                            </div>
+                            <div className="bg-white/5 rounded-lg p-3">
+                              <div className="flex items-center gap-1.5 text-white/50 text-xs mb-1">
+                                <Eye className="w-3 h-3" />
+                                Viewers Today
+                              </div>
+                              <p className="text-white text-xl font-bold">{dashboardSummary.liveStats.uniqueViewersToday}</p>
+                            </div>
+                            <div className="bg-white/5 rounded-lg p-3">
+                              <div className="flex items-center gap-1.5 text-white/50 text-xs mb-1">
+                                <Clock className="w-3 h-3" />
+                                Watch Time
+                              </div>
+                              <p className="text-white text-xl font-bold">{formatWatchTime(dashboardSummary.liveStats.watchTimeToday)}</p>
+                            </div>
+                            <div className="bg-white/5 rounded-lg p-3">
+                              <div className="flex items-center gap-1.5 text-white/50 text-xs mb-1">
+                                <Play className="w-3 h-3" />
+                                Sessions Today
+                              </div>
+                              <p className="text-white text-xl font-bold">{dashboardSummary.liveStats.sessionsToday}</p>
+                            </div>
+                            <div className="bg-white/5 rounded-lg p-3">
+                              <div className="flex items-center gap-1.5 text-green-400/70 text-xs mb-1">
+                                <DollarSign className="w-3 h-3" />
+                                MRR
+                              </div>
+                              <p className="text-green-400 text-xl font-bold">${dashboardSummary.subscriptions.totalMRR.toFixed(2)}</p>
+                            </div>
+                            <div className="bg-white/5 rounded-lg p-3">
+                              <div className="flex items-center gap-1.5 text-white/50 text-xs mb-1">
+                                <Users className="w-3 h-3" />
+                                Subscribers
+                              </div>
+                              <p className="text-white text-xl font-bold">{dashboardSummary.subscriptions.activeSubscribers}</p>
+                            </div>
+                          </div>
+                          {/* Quick stats row */}
+                          <div className="flex flex-wrap gap-2 text-xs">
+                            <span className="px-2 py-1 bg-white/5 rounded text-white/60">
+                              {dashboardSummary.users.total} users
+                            </span>
+                            {dashboardSummary.users.pending > 0 && (
+                              <span className="px-2 py-1 bg-yellow-500/20 rounded text-yellow-400">
+                                {dashboardSummary.users.pending} pending
+                              </span>
+                            )}
+                            <span className="px-2 py-1 bg-white/5 rounded text-white/60">
+                              {dashboardSummary.iptv.totalChannels} channels
+                            </span>
+                            <span className="px-2 py-1 bg-white/5 rounded text-white/60">
+                              {dashboardSummary.iptv.totalProviders} providers
+                            </span>
+                          </div>
+                        </>
+                      ) : (
+                        <p className="text-white/50 text-sm text-center py-4">Failed to load dashboard</p>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Users Tab */}
+                  {adminTab === 'users' && (
+                    <div className="space-y-3">
+                      {/* Search Input */}
+                      <div className="relative">
+                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-white/40" />
+                        <input
+                          type="text"
+                          value={adminUserSearch}
+                          onChange={(e) => setAdminUserSearch(e.target.value)}
+                          placeholder="Search users..."
+                          className="w-full bg-white/5 border border-white/10 rounded-lg pl-9 pr-3 py-2 text-white text-sm placeholder:text-white/40 focus:outline-none focus:border-white/30"
+                        />
+                      </div>
+
+                      {/* Users List */}
+                      {usersLoading ? (
+                        <div className="space-y-2">
+                          {[1, 2, 3].map((i) => (
+                            <div key={i} className="bg-white/5 rounded-lg p-3 animate-pulse">
+                              <div className="flex items-center gap-3">
+                                <div className="w-8 h-8 rounded-full bg-white/10" />
+                                <div className="flex-1">
+                                  <div className="h-4 w-24 bg-white/10 rounded mb-1" />
+                                  <div className="h-3 w-32 bg-white/10 rounded" />
+                                </div>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <div className="space-y-2 max-h-[400px] overflow-y-auto">
+                          {filteredAdminUsers.map((adminUser) => (
+                            <div key={adminUser.id} className="bg-white/5 rounded-lg overflow-hidden">
+                              {/* User Row */}
+                              <button
+                                onClick={() => {
+                                  haptics.light();
+                                  setExpandedUserId(expandedUserId === adminUser.id ? null : adminUser.id);
+                                }}
+                                className="w-full flex items-center gap-3 p-3 active:bg-white/5"
+                              >
+                                <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-500/20 to-purple-500/20 flex items-center justify-center border border-white/10">
+                                  <span className="text-xs text-white font-medium">
+                                    {adminUser.username.charAt(0).toUpperCase()}
+                                  </span>
+                                </div>
+                                <div className="flex-1 text-left min-w-0">
+                                  <div className="flex items-center gap-2">
+                                    <p className="text-white text-sm font-medium truncate">{adminUser.username}</p>
+                                    {adminUser.role === 'superadmin' && (
+                                      <Shield className="w-3 h-3 text-amber-400 shrink-0" />
+                                    )}
+                                  </div>
+                                  <p className="text-white/40 text-xs truncate">{adminUser.email}</p>
+                                </div>
+                                <div className="flex items-center gap-2 shrink-0">
+                                  <span className={cn(
+                                    "px-2 py-0.5 rounded text-xs",
+                                    !adminUser.approved ? "bg-yellow-500/20 text-yellow-400" :
+                                    !adminUser.enabled ? "bg-red-500/20 text-red-400" :
+                                    "bg-green-500/20 text-green-400"
+                                  )}>
+                                    {!adminUser.approved ? 'Pending' : !adminUser.enabled ? 'Disabled' : adminUser.role}
+                                  </span>
+                                  <ChevronDown className={cn(
+                                    "w-4 h-4 text-white/40 transition-transform",
+                                    expandedUserId === adminUser.id && "rotate-180"
+                                  )} />
+                                </div>
+                              </button>
+
+                              {/* Expanded User Actions */}
+                              {expandedUserId === adminUser.id && (
+                                <div className="px-3 pb-3 pt-1 border-t border-white/5 space-y-3">
+                                  {/* User Details */}
+                                  <div className="grid grid-cols-2 gap-2 text-xs">
+                                    <div>
+                                      <p className="text-white/40">Role</p>
+                                      <p className="text-white capitalize">{adminUser.role}</p>
+                                    </div>
+                                    <div>
+                                      <p className="text-white/40">Status</p>
+                                      <p className="text-white">{adminUser.enabled ? 'Active' : 'Disabled'}</p>
+                                    </div>
+                                    {adminUser.subscription && (
+                                      <>
+                                        <div>
+                                          <p className="text-white/40">Plan</p>
+                                          <p className="text-white">{adminUser.subscription.plan_name}</p>
+                                        </div>
+                                        <div>
+                                          <p className="text-white/40">Expires</p>
+                                          <p className="text-white">{new Date(adminUser.subscription.current_period_end).toLocaleDateString()}</p>
+                                        </div>
+                                      </>
+                                    )}
+                                  </div>
+
+                                  {/* Action Buttons */}
+                                  <div className="grid grid-cols-2 gap-2">
+                                    {/* Toggle Enable/Disable */}
+                                    <button
+                                      onClick={() => {
+                                        haptics.light();
+                                        updateUserMutation.mutate({
+                                          userId: adminUser.id,
+                                          data: { enabled: !adminUser.enabled }
+                                        });
+                                      }}
+                                      disabled={updateUserMutation.isPending}
+                                      className={cn(
+                                        "flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium",
+                                        adminUser.enabled
+                                          ? "bg-red-500/20 text-red-400 active:bg-red-500/30"
+                                          : "bg-green-500/20 text-green-400 active:bg-green-500/30"
+                                      )}
+                                    >
+                                      <Power className="w-3.5 h-3.5" />
+                                      {adminUser.enabled ? 'Disable' : 'Enable'}
+                                    </button>
+
+                                    {/* Reset Password */}
+                                    <button
+                                      onClick={() => {
+                                        haptics.light();
+                                        resetPasswordMutation.mutate(adminUser.id);
+                                      }}
+                                      disabled={resetPasswordMutation.isPending}
+                                      className="flex items-center justify-center gap-1.5 px-3 py-2 bg-blue-500/20 text-blue-400 rounded-lg text-xs font-medium active:bg-blue-500/30"
+                                    >
+                                      {resetPasswordMutation.isPending ? (
+                                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                      ) : (
+                                        <Key className="w-3.5 h-3.5" />
+                                      )}
+                                      Reset Password
+                                    </button>
+
+                                    {/* Role Dropdown */}
+                                    <select
+                                      value={adminUser.role}
+                                      onChange={(e) => {
+                                        haptics.light();
+                                        const newRole = e.target.value;
+                                        updateUserMutation.mutate({
+                                          userId: adminUser.id,
+                                          data: { role: newRole, approved: newRole !== 'pending' }
+                                        });
+                                      }}
+                                      disabled={adminUser.role === 'superadmin' && !isSuperAdmin}
+                                      className="bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-white text-xs focus:outline-none"
+                                    >
+                                      <option value="pending">Pending</option>
+                                      <option value="user">User</option>
+                                      <option value="admin">Admin</option>
+                                      {isSuperAdmin && <option value="superadmin">Super Admin</option>}
+                                    </select>
+
+                                    {/* Assign Subscription */}
+                                    <button
+                                      onClick={() => {
+                                        haptics.light();
+                                        setAssignSubUserId(adminUser.id);
+                                        setShowAssignSubModal(true);
+                                      }}
+                                      className="flex items-center justify-center gap-1.5 px-3 py-2 bg-purple-500/20 text-purple-400 rounded-lg text-xs font-medium active:bg-purple-500/30"
+                                    >
+                                      <CreditCard className="w-3.5 h-3.5" />
+                                      {adminUser.subscription ? 'Change Plan' : 'Assign Plan'}
+                                    </button>
+                                  </div>
+
+                                  {/* Remove Subscription / Delete User */}
+                                  <div className="flex gap-2">
+                                    {adminUser.subscription && (
+                                      <button
+                                        onClick={() => {
+                                          haptics.warning();
+                                          removeSubscriptionMutation.mutate(adminUser.id);
+                                        }}
+                                        disabled={removeSubscriptionMutation.isPending}
+                                        className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 bg-orange-500/20 text-orange-400 rounded-lg text-xs font-medium active:bg-orange-500/30"
+                                      >
+                                        <X className="w-3.5 h-3.5" />
+                                        Remove Subscription
+                                      </button>
+                                    )}
+                                    {isSuperAdmin && adminUser.role !== 'superadmin' && (
+                                      <button
+                                        onClick={() => {
+                                          haptics.warning();
+                                          setDeleteUserId(adminUser.id);
+                                          setShowDeleteConfirm(true);
+                                        }}
+                                        className="flex items-center justify-center gap-1.5 px-3 py-2 bg-red-500/20 text-red-400 rounded-lg text-xs font-medium active:bg-red-500/30"
+                                      >
+                                        <Trash2 className="w-3.5 h-3.5" />
+                                        Delete
+                                      </button>
+                                    )}
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          ))}
+                          {filteredAdminUsers.length === 0 && (
+                            <p className="text-white/50 text-sm text-center py-4">
+                              {adminUserSearch ? 'No users match your search' : 'No users found'}
+                            </p>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* IPTV Tab */}
+                  {adminTab === 'iptv' && (
+                    <div className="space-y-3">
+                      {providersLoading ? (
+                        <div className="space-y-2">
+                          {[1, 2].map((i) => (
+                            <div key={i} className="bg-white/5 rounded-lg p-3 animate-pulse">
+                              <div className="h-4 w-32 bg-white/10 rounded mb-2" />
+                              <div className="h-3 w-24 bg-white/10 rounded" />
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <>
+                          {/* Summary Stats */}
+                          <div className="grid grid-cols-3 gap-2">
+                            <div className="bg-white/5 rounded-lg p-3 text-center">
+                              <p className="text-white text-lg font-bold">{iptvProviders.length}</p>
+                              <p className="text-white/50 text-xs">Providers</p>
+                            </div>
+                            <div className="bg-white/5 rounded-lg p-3 text-center">
+                              <p className="text-white text-lg font-bold">{iptvProviders.filter(p => p.isActive).length}</p>
+                              <p className="text-white/50 text-xs">Active</p>
+                            </div>
+                            <div className="bg-white/5 rounded-lg p-3 text-center">
+                              <p className="text-white text-lg font-bold">{dashboardSummary?.iptv.activeStreams || 0}</p>
+                              <p className="text-white/50 text-xs">Streams</p>
+                            </div>
+                          </div>
+
+                          {/* Provider List */}
+                          <div className="space-y-2">
+                            {iptvProviders.map((provider) => (
+                              <div key={provider.id} className="bg-white/5 rounded-lg p-3 flex items-center gap-3">
+                                <div className={cn(
+                                  "w-2 h-2 rounded-full shrink-0",
+                                  provider.isActive ? "bg-green-400" : "bg-red-400"
+                                )} />
+                                <div className="flex-1 min-w-0">
+                                  <p className="text-white text-sm font-medium truncate">{provider.name}</p>
+                                  <p className="text-white/40 text-xs capitalize">{provider.providerType}</p>
+                                </div>
+                                {provider.channelCount !== undefined && (
+                                  <span className="text-white/50 text-xs">{provider.channelCount} ch</span>
+                                )}
+                              </div>
+                            ))}
+                            {iptvProviders.length === 0 && (
+                              <p className="text-white/50 text-sm text-center py-4">No providers configured</p>
+                            )}
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  )}
+
+                  {/* System Tab */}
+                  {adminTab === 'system' && (
+                    <div className="space-y-3">
+                      {healthLoading ? (
+                        <div className="space-y-2">
+                          {[1, 2, 3].map((i) => (
+                            <div key={i} className="bg-white/5 rounded-lg p-3 animate-pulse">
+                              <div className="h-4 w-24 bg-white/10 rounded mb-2" />
+                              <div className="h-3 w-40 bg-white/10 rounded" />
+                            </div>
+                          ))}
+                        </div>
+                      ) : systemHealth ? (
+                        <>
+                          {systemHealth.categories.map((category) => (
+                            <div key={category.name} className="bg-white/5 rounded-lg p-3">
+                              <h4 className="text-white/50 text-xs font-medium uppercase tracking-wider mb-2">{category.name}</h4>
+                              <div className="space-y-1.5">
+                                {category.services.map((service) => (
+                                  <div key={service.name} className="flex items-center gap-2">
+                                    {service.status === 'success' ? (
+                                      <CheckCircle className="w-3.5 h-3.5 text-green-400 shrink-0" />
+                                    ) : service.status === 'failed' ? (
+                                      <XCircle className="w-3.5 h-3.5 text-red-400 shrink-0" />
+                                    ) : service.status === 'pending' ? (
+                                      <Loader2 className="w-3.5 h-3.5 text-yellow-400 animate-spin shrink-0" />
+                                    ) : (
+                                      <Minus className="w-3.5 h-3.5 text-white/30 shrink-0" />
+                                    )}
+                                    <span className="text-white text-sm flex-1">{service.name}</span>
+                                    <span className={cn(
+                                      "text-xs",
+                                      service.status === 'success' ? "text-white/40" :
+                                      service.status === 'failed' ? "text-red-400" :
+                                      service.status === 'pending' ? "text-yellow-400" : "text-white/30"
+                                    )}>
+                                      {service.message || service.error || service.status}
+                                    </span>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          ))}
+                          {/* App Version */}
+                          <div className="text-center text-white/30 text-xs">
+                            {systemHealth.appName} v{systemHealth.version}
+                          </div>
+                        </>
+                      ) : (
+                        <p className="text-white/50 text-sm text-center py-4">Failed to load system health</p>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* Password Reset Modal */}
+            {showPasswordModal && tempPassword && (
+              <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4">
+                <div className="bg-zinc-900 rounded-xl p-5 w-full max-w-sm border border-white/10">
+                  <div className="flex items-center gap-2 mb-4">
+                    <Key className="w-5 h-5 text-blue-400" />
+                    <h3 className="text-white font-semibold">Temporary Password</h3>
+                  </div>
+                  <p className="text-white/60 text-sm mb-3">
+                    The user must change this password on their next login.
+                  </p>
+                  <div className="flex items-center gap-2 bg-white/5 rounded-lg p-3 mb-4">
+                    <code className="flex-1 text-white font-mono text-sm break-all">{tempPassword}</code>
+                    <button
+                      onClick={() => {
+                        navigator.clipboard.writeText(tempPassword);
+                        setPasswordCopied(true);
+                        haptics.success();
+                        setTimeout(() => setPasswordCopied(false), 2000);
+                      }}
+                      className="shrink-0 p-2 bg-white/10 rounded-lg active:bg-white/20"
+                    >
+                      {passwordCopied ? (
+                        <Check className="w-4 h-4 text-green-400" />
+                      ) : (
+                        <Copy className="w-4 h-4 text-white" />
+                      )}
+                    </button>
+                  </div>
+                  <button
+                    onClick={() => {
+                      setShowPasswordModal(false);
+                      setTempPassword(null);
+                    }}
+                    className="w-full py-2.5 bg-white/10 text-white rounded-lg text-sm font-medium active:bg-white/20"
+                  >
+                    Done
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Assign Subscription Modal */}
+            {showAssignSubModal && assignSubUserId && (
+              <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4">
+                <div className="bg-zinc-900 rounded-xl p-5 w-full max-w-sm border border-white/10">
+                  <div className="flex items-center gap-2 mb-4">
+                    <CreditCard className="w-5 h-5 text-purple-400" />
+                    <h3 className="text-white font-semibold">Assign Subscription</h3>
+                  </div>
+
+                  {/* Plan Selection */}
+                  <div className="mb-4">
+                    <label className="text-white/60 text-xs block mb-1.5">Plan</label>
+                    <select
+                      value={assignSubPlanId || ''}
+                      onChange={(e) => setAssignSubPlanId(Number(e.target.value) || null)}
+                      className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2.5 text-white text-sm focus:outline-none"
+                    >
+                      <option value="">Select a plan...</option>
+                      {subscriptionPlans.map((plan) => (
+                        <option key={plan.id} value={plan.id}>
+                          {plan.name} - ${(assignSubBillingPeriod === 'monthly' ? plan.price_monthly : plan.price_annual) / 100}/{assignSubBillingPeriod === 'monthly' ? 'mo' : 'yr'}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {/* Billing Period */}
+                  <div className="mb-4">
+                    <label className="text-white/60 text-xs block mb-1.5">Billing Period</label>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => setAssignSubBillingPeriod('monthly')}
+                        className={cn(
+                          "flex-1 py-2 rounded-lg text-sm font-medium transition-colors",
+                          assignSubBillingPeriod === 'monthly'
+                            ? "bg-purple-500/20 text-purple-400"
+                            : "bg-white/5 text-white/60"
+                        )}
+                      >
+                        Monthly
+                      </button>
+                      <button
+                        onClick={() => setAssignSubBillingPeriod('annual')}
+                        className={cn(
+                          "flex-1 py-2 rounded-lg text-sm font-medium transition-colors",
+                          assignSubBillingPeriod === 'annual'
+                            ? "bg-purple-500/20 text-purple-400"
+                            : "bg-white/5 text-white/60"
+                        )}
+                      >
+                        Annual
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Duration */}
+                  <div className="mb-4">
+                    <label className="text-white/60 text-xs block mb-1.5">Duration (months)</label>
+                    <input
+                      type="number"
+                      min="1"
+                      max="120"
+                      value={assignSubDuration}
+                      onChange={(e) => setAssignSubDuration(Math.max(1, Math.min(120, parseInt(e.target.value) || 1)))}
+                      className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2.5 text-white text-sm focus:outline-none"
+                    />
+                  </div>
+
+                  {/* Actions */}
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => {
+                        setShowAssignSubModal(false);
+                        setAssignSubUserId(null);
+                      }}
+                      className="flex-1 py-2.5 bg-white/10 text-white rounded-lg text-sm font-medium active:bg-white/20"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      onClick={() => {
+                        if (assignSubPlanId) {
+                          assignSubscriptionMutation.mutate({
+                            userId: assignSubUserId,
+                            planId: assignSubPlanId,
+                            billingPeriod: assignSubBillingPeriod,
+                            durationMonths: assignSubDuration,
+                          });
+                        }
+                      }}
+                      disabled={!assignSubPlanId || assignSubscriptionMutation.isPending}
+                      className="flex-1 py-2.5 bg-purple-500 text-white rounded-lg text-sm font-medium active:bg-purple-600 disabled:opacity-50"
+                    >
+                      {assignSubscriptionMutation.isPending ? 'Assigning...' : 'Assign'}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Delete Confirmation Modal */}
+            {showDeleteConfirm && deleteUserId && (
+              <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4">
+                <div className="bg-zinc-900 rounded-xl p-5 w-full max-w-sm border border-white/10">
+                  <div className="flex items-center gap-2 mb-4">
+                    <AlertCircle className="w-5 h-5 text-red-400" />
+                    <h3 className="text-white font-semibold">Delete User?</h3>
+                  </div>
+                  <p className="text-white/60 text-sm mb-4">
+                    This action cannot be undone. The user and all their data will be permanently deleted.
+                  </p>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => {
+                        setShowDeleteConfirm(false);
+                        setDeleteUserId(null);
+                      }}
+                      className="flex-1 py-2.5 bg-white/10 text-white rounded-lg text-sm font-medium active:bg-white/20"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      onClick={() => {
+                        if (deleteUserId) {
+                          deleteUserMutation.mutate(deleteUserId);
+                        }
+                      }}
+                      disabled={deleteUserMutation.isPending}
+                      className="flex-1 py-2.5 bg-red-500 text-white rounded-lg text-sm font-medium active:bg-red-600 disabled:opacity-50"
+                    >
+                      {deleteUserMutation.isPending ? 'Deleting...' : 'Delete'}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Logout Button - Phone only (iPad has it in header) */}
             <button
               onTouchEnd={(e) => {
                 e.preventDefault();
@@ -5420,7 +6235,7 @@ export default function LiveTVTvPage() {
                 haptics.warning();
                 logoutMutation.mutate();
               }}
-              className="w-full bg-red-500/20 text-red-400 rounded-xl p-4 flex items-center justify-center gap-2 active:bg-red-500/30"
+              className="w-full md:hidden bg-red-500/20 text-red-400 rounded-xl p-4 flex items-center justify-center gap-2 active:bg-red-500/30 mt-4"
             >
               <LogOut className="w-5 h-5" />
               <span className="font-medium">Log Out</span>
@@ -5430,9 +6245,8 @@ export default function LiveTVTvPage() {
         </div>
       )}
 
-      {/* Portrait Events View - Sports events and PPV channels */}
-      {/* On phones: always render (orientation locked). On tablets: only in portrait */}
-      {!isRotating && isNativePlatform() && viewMode === 'events' && (isPhoneDevice || isPortrait) && (
+      {/* Events View - Sports events and PPV channels */}
+      {!isRotating && isNativePlatform() && viewMode === 'events' && (
         <div
           className="absolute inset-0 bg-black flex flex-col animate-viewSlideUp"
           style={{ zIndex: 30 }}
@@ -5494,9 +6308,9 @@ export default function LiveTVTvPage() {
               <div className="space-y-6 pt-4">
                 {/* Featured Hero Card */}
                 {filteredEventsData.featuredGame && (
-                  <section className="px-5">
+                  <section className="px-5 md:px-8 md:max-w-xl">
                     <div
-                      className="relative aspect-[16/10] bg-gradient-to-br from-zinc-800 via-zinc-900 to-black rounded-2xl overflow-hidden active:scale-[0.98] transition-transform cursor-pointer"
+                      className="relative aspect-[16/9] md:aspect-[2/1] bg-gradient-to-br from-zinc-800 via-zinc-900 to-black rounded-2xl overflow-hidden active:scale-[0.98] transition-transform cursor-pointer"
                       onClick={() => playEventBroadcast(filteredEventsData.featuredGame?.broadcast)}
                     >
                       {/* Background gradient based on sport */}
@@ -5526,26 +6340,26 @@ export default function LiveTVTvPage() {
                       </div>
 
                       {/* Teams Display */}
-                      <div className="absolute inset-0 flex items-center justify-center gap-6 px-6">
+                      <div className="absolute inset-0 flex items-center justify-center gap-6 md:gap-10 px-6 md:px-12">
                         {/* Away Team */}
                         <div className="flex flex-col items-center flex-1">
                           {filteredEventsData.featuredGame.awayTeam.logo ? (
-                            <img src={filteredEventsData.featuredGame.awayTeam.logo} alt="" className="w-16 h-16 object-contain" />
+                            <img src={filteredEventsData.featuredGame.awayTeam.logo} alt="" className="w-16 h-16 md:w-24 md:h-24 object-contain" />
                           ) : (
-                            <div className="w-16 h-16 rounded-full bg-white/10 flex items-center justify-center">
-                              <span className="text-white text-lg font-bold">{filteredEventsData.featuredGame.awayTeam.abbreviation?.[0]}</span>
+                            <div className="w-16 h-16 md:w-24 md:h-24 rounded-full bg-white/10 flex items-center justify-center">
+                              <span className="text-white text-lg md:text-2xl font-bold">{filteredEventsData.featuredGame.awayTeam.abbreviation?.[0]}</span>
                             </div>
                           )}
-                          <span className="text-white font-bold text-lg mt-2">{filteredEventsData.featuredGame.awayTeam.abbreviation}</span>
+                          <span className="text-white font-bold text-lg md:text-xl mt-2">{filteredEventsData.featuredGame.awayTeam.abbreviation}</span>
                           {filteredEventsData.featuredGame.status !== 'pre' && (
-                            <span className="text-white text-3xl font-bold mt-1">{filteredEventsData.featuredGame.awayTeam.score}</span>
+                            <span className="text-white text-3xl md:text-4xl font-bold mt-1">{filteredEventsData.featuredGame.awayTeam.score}</span>
                           )}
                         </div>
 
                         {/* VS / Score Divider */}
                         <div className="flex flex-col items-center">
                           {filteredEventsData.featuredGame.status === 'pre' ? (
-                            <span className="text-white/40 text-lg font-medium">VS</span>
+                            <span className="text-white/40 text-lg md:text-xl font-medium">VS</span>
                           ) : (
                             <span className="text-white/40 text-sm">-</span>
                           )}
@@ -5554,15 +6368,15 @@ export default function LiveTVTvPage() {
                         {/* Home Team */}
                         <div className="flex flex-col items-center flex-1">
                           {filteredEventsData.featuredGame.homeTeam.logo ? (
-                            <img src={filteredEventsData.featuredGame.homeTeam.logo} alt="" className="w-16 h-16 object-contain" />
+                            <img src={filteredEventsData.featuredGame.homeTeam.logo} alt="" className="w-16 h-16 md:w-24 md:h-24 object-contain" />
                           ) : (
-                            <div className="w-16 h-16 rounded-full bg-white/10 flex items-center justify-center">
-                              <span className="text-white text-lg font-bold">{filteredEventsData.featuredGame.homeTeam.abbreviation?.[0]}</span>
+                            <div className="w-16 h-16 md:w-24 md:h-24 rounded-full bg-white/10 flex items-center justify-center">
+                              <span className="text-white text-lg md:text-2xl font-bold">{filteredEventsData.featuredGame.homeTeam.abbreviation?.[0]}</span>
                             </div>
                           )}
-                          <span className="text-white font-bold text-lg mt-2">{filteredEventsData.featuredGame.homeTeam.abbreviation}</span>
+                          <span className="text-white font-bold text-lg md:text-xl mt-2">{filteredEventsData.featuredGame.homeTeam.abbreviation}</span>
                           {filteredEventsData.featuredGame.status !== 'pre' && (
-                            <span className="text-white text-3xl font-bold mt-1">{filteredEventsData.featuredGame.homeTeam.score}</span>
+                            <span className="text-white text-3xl md:text-4xl font-bold mt-1">{filteredEventsData.featuredGame.homeTeam.score}</span>
                           )}
                         </div>
                       </div>
@@ -5613,11 +6427,11 @@ export default function LiveTVTvPage() {
                       </h2>
                       <span className="text-white/40 text-sm">{filteredEventsData.live.length} games</span>
                     </div>
-                    <div className="flex gap-3 overflow-x-auto px-5 scrollbar-hide pb-1">
+                    <div className="flex gap-3 overflow-x-auto px-5 scrollbar-hide pb-1 md:grid md:grid-cols-4 md:gap-4 md:px-8 md:overflow-x-visible">
                       {filteredEventsData.live.slice(filteredEventsData.featuredGame?.status === 'in' ? 1 : 0).map((game: any) => (
                         <div
                           key={game.id}
-                          className="shrink-0 w-44 bg-zinc-900/80 rounded-xl overflow-hidden border border-white/5 active:scale-[0.97] transition-transform cursor-pointer"
+                          className="shrink-0 w-44 md:w-auto bg-zinc-900/80 rounded-xl overflow-hidden border border-white/5 active:scale-[0.97] transition-transform cursor-pointer"
                           onClick={() => playEventBroadcast(game.broadcast)}
                         >
                           {/* Header with LIVE badge and game clock */}
@@ -5673,11 +6487,11 @@ export default function LiveTVTvPage() {
                         Upcoming
                       </h2>
                     </div>
-                    <div className="flex gap-3 overflow-x-auto px-5 scrollbar-hide pb-1">
-                      {filteredEventsData.allUpcoming.slice(0, 10).map((game: any) => (
+                    <div className="flex gap-3 overflow-x-auto px-5 scrollbar-hide pb-1 md:grid md:grid-cols-4 md:gap-4 md:px-8 md:overflow-x-visible">
+                      {filteredEventsData.allUpcoming.slice(0, 12).map((game: any) => (
                         <div
                           key={game.id}
-                          className="shrink-0 w-48 bg-zinc-900/50 rounded-xl overflow-hidden border border-white/5 active:scale-[0.97] transition-transform cursor-pointer"
+                          className="shrink-0 w-48 md:w-auto bg-zinc-900/50 rounded-xl overflow-hidden border border-white/5 active:scale-[0.97] transition-transform cursor-pointer"
                           onClick={() => playEventBroadcast(game.broadcast)}
                         >
                           {/* Header with sport and date */}
@@ -5734,7 +6548,7 @@ export default function LiveTVTvPage() {
                         Recent Results
                       </h2>
                     </div>
-                    <div className="px-5 space-y-2">
+                    <div className="px-5 space-y-2 md:grid md:grid-cols-2 md:gap-3 md:px-8 md:space-y-0">
                       {filteredEventsData.allRecent.slice(0, 10).map((game: any) => (
                         <div key={game.id} className="bg-zinc-900/30 rounded-xl p-3 border border-white/5">
                           <div className="flex items-center gap-3">

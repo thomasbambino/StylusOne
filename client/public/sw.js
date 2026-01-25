@@ -1,6 +1,6 @@
 // Cache version - update this when cache structure changes
 // INCREMENT THIS VERSION TO FORCE CACHE REFRESH
-const CACHE_VERSION = 'v2.0.4-20260112';
+const CACHE_VERSION = 'v2.1.0-20260123';
 const CACHE_NAME = `homelab-dashboard-${CACHE_VERSION}`;
 
 // Add message to notify clients of updates
@@ -73,6 +73,12 @@ function isCacheValid(cachedResponse, refreshInterval = 30) {
 // Fetch handler with different strategies for different requests
 self.addEventListener('fetch', (event) => {
   const url = new URL(event.request.url);
+
+  // Skip service worker entirely for native Capacitor apps
+  // Native apps use bundled assets - caching causes stale content after updates
+  if (url.protocol === 'capacitor:') {
+    return;
+  }
 
   // Skip service worker for external resources (Google Cast SDK, etc.)
   if (url.origin !== location.origin) {
