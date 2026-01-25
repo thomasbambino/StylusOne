@@ -1625,7 +1625,7 @@ export default function LiveTVTvPage() {
   const [expandedPackageId, setExpandedPackageId] = useState<number | null>(null);
 
   // Admin dashboard state
-  const [adminTab, setAdminTab] = useState<'overview' | 'users' | 'iptv' | 'system'>('overview');
+  const [adminTab, setAdminTab] = useState<'overview' | 'analytics' | 'users' | 'iptv' | 'system'>('overview');
   const [adminUserSearch, setAdminUserSearch] = useState('');
   const [expandedUserId, setExpandedUserId] = useState<number | null>(null);
   const [showPasswordModal, setShowPasswordModal] = useState(false);
@@ -1638,6 +1638,18 @@ export default function LiveTVTvPage() {
   const [assignSubDuration, setAssignSubDuration] = useState(1);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [deleteUserId, setDeleteUserId] = useState<number | null>(null);
+  // IPTV Provider management state
+  const [showProviderModal, setShowProviderModal] = useState(false);
+  const [editingProvider, setEditingProvider] = useState<any | null>(null);
+  const [providerForm, setProviderForm] = useState({
+    name: '',
+    providerType: 'xtream' as 'xtream' | 'm3u' | 'hdhomerun',
+    serverUrl: '',
+    m3uUrl: '',
+    username: '',
+    password: '',
+    isActive: true,
+  });
 
   // Fetch channels for expanded package (profile view)
   const { data: packageChannels = [], isLoading: packageChannelsLoading } = useQuery<PackageChannel[]>({
@@ -1718,17 +1730,50 @@ export default function LiveTVTvPage() {
     enabled: isAdminUser && viewMode === 'profile' && adminTab === 'system',
   });
 
-  // IPTV providers for stats
-  const { data: iptvProviders = [], isLoading: providersLoading } = useQuery<Array<{
+  // IPTV providers for management
+  const { data: iptvProviders = [], isLoading: providersLoading, refetch: refetchProviders } = useQuery<Array<{
     id: number;
     name: string;
     providerType: string;
+    serverUrl?: string;
+    m3uUrl?: string;
     isActive: boolean;
     channelCount?: number;
   }>>({
     queryKey: ['/api/admin/iptv-providers'],
     queryFn: getQueryFn({ on401: "returnNull" }),
     enabled: isAdminUser && viewMode === 'profile' && adminTab === 'iptv',
+  });
+
+  // Analytics - channel stats
+  const { data: channelStats = [], isLoading: channelStatsLoading } = useQuery<Array<{
+    channelId: string;
+    channelName: string;
+    channelLogo?: string;
+    totalWatchTime: number;
+    uniqueViewers: number;
+    totalSessions: number;
+    currentViewers: number;
+  }>>({
+    queryKey: ['/api/admin/analytics/channels'],
+    queryFn: getQueryFn({ on401: "returnNull" }),
+    enabled: isAdminUser && viewMode === 'profile' && adminTab === 'analytics',
+  });
+
+  // Analytics - active streams
+  const { data: activeStreams = [], isLoading: streamsLoading, refetch: refetchStreams } = useQuery<Array<{
+    id: number;
+    userId: number;
+    username: string;
+    channelName: string;
+    channelLogo?: string;
+    startedAt: string;
+    deviceType?: string;
+  }>>({
+    queryKey: ['/api/admin/analytics/active-streams'],
+    queryFn: getQueryFn({ on401: "returnNull" }),
+    enabled: isAdminUser && viewMode === 'profile' && adminTab === 'analytics',
+    refetchInterval: 10000, // Refresh every 10 seconds
   });
 
   // Filter users by search query
@@ -1794,6 +1839,64 @@ export default function LiveTVTvPage() {
       setShowDeleteConfirm(false);
       setDeleteUserId(null);
       refetchUsers();
+      haptics.success();
+    },
+  });
+
+  // IPTV Provider mutations
+  const createProviderMutation = useMutation({
+    mutationFn: async (data: typeof providerForm) => {
+      return apiRequest('POST', '/api/admin/iptv-providers', data);
+    },
+    onSuccess: () => {
+      setShowProviderModal(false);
+      setEditingProvider(null);
+      setProviderForm({ name: '', providerType: 'xtream', serverUrl: '', m3uUrl: '', username: '', password: '', isActive: true });
+      refetchProviders();
+      haptics.success();
+    },
+  });
+
+  const updateProviderMutation = useMutation({
+    mutationFn: async ({ id, data }: { id: number; data: Partial<typeof providerForm> }) => {
+      return apiRequest('PUT', `/api/admin/iptv-providers/${id}`, data);
+    },
+    onSuccess: () => {
+      setShowProviderModal(false);
+      setEditingProvider(null);
+      setProviderForm({ name: '', providerType: 'xtream', serverUrl: '', m3uUrl: '', username: '', password: '', isActive: true });
+      refetchProviders();
+      haptics.success();
+    },
+  });
+
+  const deleteProviderMutation = useMutation({
+    mutationFn: async (id: number) => {
+      return apiRequest('DELETE', `/api/admin/iptv-providers/${id}`);
+    },
+    onSuccess: () => {
+      refetchProviders();
+      haptics.success();
+    },
+  });
+
+  const syncProviderMutation = useMutation({
+    mutationFn: async (id: number) => {
+      return apiRequest('POST', `/api/admin/iptv-providers/${id}/sync`);
+    },
+    onSuccess: () => {
+      refetchProviders();
+      haptics.success();
+    },
+  });
+
+  // Disconnect stream mutation
+  const disconnectStreamMutation = useMutation({
+    mutationFn: async (streamId: number) => {
+      return apiRequest('DELETE', `/api/admin/analytics/active-streams/${streamId}`);
+    },
+    onSuccess: () => {
+      refetchStreams();
       haptics.success();
     },
   });
@@ -5612,6 +5715,7 @@ export default function LiveTVTvPage() {
                 <div className="flex gap-1 px-4 pb-3 overflow-x-auto scrollbar-hide">
                   {[
                     { id: 'overview', label: 'Overview', icon: BarChart3 },
+                    { id: 'analytics', label: 'Analytics', icon: Activity },
                     { id: 'users', label: 'Users', icon: Users },
                     { id: 'iptv', label: 'IPTV', icon: Tv },
                     { id: 'system', label: 'System', icon: Server },
@@ -5713,6 +5817,101 @@ export default function LiveTVTvPage() {
                       ) : (
                         <p className="text-white/50 text-sm text-center py-4">Failed to load dashboard</p>
                       )}
+                    </div>
+                  )}
+
+                  {/* Analytics Tab */}
+                  {adminTab === 'analytics' && (
+                    <div className="space-y-4">
+                      {/* Active Streams */}
+                      <div>
+                        <div className="flex items-center justify-between mb-2">
+                          <h4 className="text-white/70 text-sm font-medium">Active Streams</h4>
+                          <button
+                            onClick={() => refetchStreams()}
+                            className="p-1.5 bg-white/5 rounded-lg active:bg-white/10"
+                          >
+                            <RefreshCw className="w-3.5 h-3.5 text-white/50" />
+                          </button>
+                        </div>
+                        {streamsLoading ? (
+                          <div className="space-y-2">
+                            {[1, 2].map((i) => (
+                              <div key={i} className="bg-white/5 rounded-lg p-3 animate-pulse">
+                                <div className="h-4 w-32 bg-white/10 rounded" />
+                              </div>
+                            ))}
+                          </div>
+                        ) : activeStreams.length > 0 ? (
+                          <div className="space-y-2 max-h-48 overflow-y-auto">
+                            {activeStreams.map((stream) => (
+                              <div key={stream.id} className="bg-white/5 rounded-lg p-3 flex items-center gap-3">
+                                {stream.channelLogo ? (
+                                  <img src={stream.channelLogo} alt="" className="w-8 h-8 rounded object-contain bg-white/10" />
+                                ) : (
+                                  <div className="w-8 h-8 rounded bg-zinc-800 flex items-center justify-center">
+                                    <Tv className="w-4 h-4 text-zinc-500" />
+                                  </div>
+                                )}
+                                <div className="flex-1 min-w-0">
+                                  <p className="text-white text-sm font-medium truncate">{stream.channelName}</p>
+                                  <p className="text-white/40 text-xs truncate">{stream.username} · {stream.deviceType || 'web'}</p>
+                                </div>
+                                <button
+                                  onClick={() => {
+                                    haptics.warning();
+                                    disconnectStreamMutation.mutate(stream.id);
+                                  }}
+                                  disabled={disconnectStreamMutation.isPending}
+                                  className="p-2 bg-red-500/20 text-red-400 rounded-lg active:bg-red-500/30"
+                                >
+                                  <X className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <p className="text-white/40 text-sm text-center py-3 bg-white/5 rounded-lg">No active streams</p>
+                        )}
+                      </div>
+
+                      {/* Top Channels */}
+                      <div>
+                        <h4 className="text-white/70 text-sm font-medium mb-2">Top Channels (30 days)</h4>
+                        {channelStatsLoading ? (
+                          <div className="space-y-2">
+                            {[1, 2, 3].map((i) => (
+                              <div key={i} className="bg-white/5 rounded-lg p-3 animate-pulse">
+                                <div className="h-4 w-40 bg-white/10 rounded" />
+                              </div>
+                            ))}
+                          </div>
+                        ) : channelStats.length > 0 ? (
+                          <div className="space-y-2 max-h-64 overflow-y-auto">
+                            {channelStats.slice(0, 10).map((channel, idx) => (
+                              <div key={channel.channelId} className="bg-white/5 rounded-lg p-3 flex items-center gap-3">
+                                <span className="text-white/30 text-xs w-5">{idx + 1}</span>
+                                {channel.channelLogo ? (
+                                  <img src={channel.channelLogo} alt="" className="w-6 h-6 rounded object-contain bg-white/10" />
+                                ) : (
+                                  <div className="w-6 h-6 rounded bg-zinc-800 flex items-center justify-center">
+                                    <Tv className="w-3 h-3 text-zinc-500" />
+                                  </div>
+                                )}
+                                <div className="flex-1 min-w-0">
+                                  <p className="text-white text-sm truncate">{channel.channelName}</p>
+                                </div>
+                                <div className="text-right shrink-0">
+                                  <p className="text-white text-xs">{formatWatchTime(channel.totalWatchTime)}</p>
+                                  <p className="text-white/40 text-xs">{channel.uniqueViewers} viewers</p>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <p className="text-white/40 text-sm text-center py-3 bg-white/5 rounded-lg">No viewing data</p>
+                        )}
+                      </div>
                     </div>
                   )}
 
@@ -5935,6 +6134,20 @@ export default function LiveTVTvPage() {
                   {/* IPTV Tab */}
                   {adminTab === 'iptv' && (
                     <div className="space-y-3">
+                      {/* Add Provider Button */}
+                      <button
+                        onClick={() => {
+                          haptics.light();
+                          setEditingProvider(null);
+                          setProviderForm({ name: '', providerType: 'xtream', serverUrl: '', m3uUrl: '', username: '', password: '', isActive: true });
+                          setShowProviderModal(true);
+                        }}
+                        className="w-full flex items-center justify-center gap-2 p-3 bg-blue-500/20 text-blue-400 rounded-lg active:bg-blue-500/30"
+                      >
+                        <Plus className="w-4 h-4" />
+                        <span className="text-sm font-medium">Add Provider</span>
+                      </button>
+
                       {providersLoading ? (
                         <div className="space-y-2">
                           {[1, 2].map((i) => (
@@ -5946,37 +6159,74 @@ export default function LiveTVTvPage() {
                         </div>
                       ) : (
                         <>
-                          {/* Summary Stats */}
-                          <div className="grid grid-cols-3 gap-2">
-                            <div className="bg-white/5 rounded-lg p-3 text-center">
-                              <p className="text-white text-lg font-bold">{iptvProviders.length}</p>
-                              <p className="text-white/50 text-xs">Providers</p>
-                            </div>
-                            <div className="bg-white/5 rounded-lg p-3 text-center">
-                              <p className="text-white text-lg font-bold">{iptvProviders.filter(p => p.isActive).length}</p>
-                              <p className="text-white/50 text-xs">Active</p>
-                            </div>
-                            <div className="bg-white/5 rounded-lg p-3 text-center">
-                              <p className="text-white text-lg font-bold">{dashboardSummary?.iptv.activeStreams || 0}</p>
-                              <p className="text-white/50 text-xs">Streams</p>
-                            </div>
-                          </div>
-
-                          {/* Provider List */}
+                          {/* Provider List with Actions */}
                           <div className="space-y-2">
                             {iptvProviders.map((provider) => (
-                              <div key={provider.id} className="bg-white/5 rounded-lg p-3 flex items-center gap-3">
-                                <div className={cn(
-                                  "w-2 h-2 rounded-full shrink-0",
-                                  provider.isActive ? "bg-green-400" : "bg-red-400"
-                                )} />
-                                <div className="flex-1 min-w-0">
-                                  <p className="text-white text-sm font-medium truncate">{provider.name}</p>
-                                  <p className="text-white/40 text-xs capitalize">{provider.providerType}</p>
+                              <div key={provider.id} className="bg-white/5 rounded-lg overflow-hidden">
+                                <div className="p-3 flex items-center gap-3">
+                                  <div className={cn(
+                                    "w-2 h-2 rounded-full shrink-0",
+                                    provider.isActive ? "bg-green-400" : "bg-red-400"
+                                  )} />
+                                  <div className="flex-1 min-w-0">
+                                    <p className="text-white text-sm font-medium truncate">{provider.name}</p>
+                                    <p className="text-white/40 text-xs capitalize">{provider.providerType}</p>
+                                  </div>
+                                  {provider.channelCount !== undefined && (
+                                    <span className="text-white/50 text-xs shrink-0">{provider.channelCount} ch</span>
+                                  )}
                                 </div>
-                                {provider.channelCount !== undefined && (
-                                  <span className="text-white/50 text-xs">{provider.channelCount} ch</span>
-                                )}
+                                {/* Action Buttons */}
+                                <div className="flex border-t border-white/5">
+                                  <button
+                                    onClick={() => {
+                                      haptics.light();
+                                      setEditingProvider(provider);
+                                      setProviderForm({
+                                        name: provider.name,
+                                        providerType: provider.providerType as any,
+                                        serverUrl: provider.serverUrl || '',
+                                        m3uUrl: provider.m3uUrl || '',
+                                        username: '',
+                                        password: '',
+                                        isActive: provider.isActive,
+                                      });
+                                      setShowProviderModal(true);
+                                    }}
+                                    className="flex-1 flex items-center justify-center gap-1 py-2 text-blue-400 text-xs active:bg-white/5"
+                                  >
+                                    <Settings className="w-3 h-3" />
+                                    Edit
+                                  </button>
+                                  <button
+                                    onClick={() => {
+                                      haptics.light();
+                                      syncProviderMutation.mutate(provider.id);
+                                    }}
+                                    disabled={syncProviderMutation.isPending}
+                                    className="flex-1 flex items-center justify-center gap-1 py-2 text-green-400 text-xs active:bg-white/5 border-l border-white/5"
+                                  >
+                                    {syncProviderMutation.isPending ? (
+                                      <Loader2 className="w-3 h-3 animate-spin" />
+                                    ) : (
+                                      <RefreshCw className="w-3 h-3" />
+                                    )}
+                                    Sync
+                                  </button>
+                                  <button
+                                    onClick={() => {
+                                      haptics.warning();
+                                      if (confirm(`Delete ${provider.name}?`)) {
+                                        deleteProviderMutation.mutate(provider.id);
+                                      }
+                                    }}
+                                    disabled={deleteProviderMutation.isPending}
+                                    className="flex-1 flex items-center justify-center gap-1 py-2 text-red-400 text-xs active:bg-white/5 border-l border-white/5"
+                                  >
+                                    <Trash2 className="w-3 h-3" />
+                                    Delete
+                                  </button>
+                                </div>
                               </div>
                             ))}
                             {iptvProviders.length === 0 && (
@@ -6218,6 +6468,151 @@ export default function LiveTVTvPage() {
                       className="flex-1 py-2.5 bg-red-500 text-white rounded-lg text-sm font-medium active:bg-red-600 disabled:opacity-50"
                     >
                       {deleteUserMutation.isPending ? 'Deleting...' : 'Delete'}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Provider Add/Edit Modal */}
+            {showProviderModal && (
+              <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4">
+                <div className="bg-zinc-900 rounded-xl p-5 w-full max-w-sm border border-white/10 max-h-[80vh] overflow-y-auto">
+                  <div className="flex items-center gap-2 mb-4">
+                    <Tv className="w-5 h-5 text-purple-400" />
+                    <h3 className="text-white font-semibold">{editingProvider ? 'Edit Provider' : 'Add Provider'}</h3>
+                  </div>
+
+                  {/* Provider Name */}
+                  <div className="mb-3">
+                    <label className="text-white/60 text-xs block mb-1.5">Name</label>
+                    <input
+                      type="text"
+                      value={providerForm.name}
+                      onChange={(e) => setProviderForm(p => ({ ...p, name: e.target.value }))}
+                      placeholder="Provider name"
+                      className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2.5 text-white text-sm placeholder:text-white/30 focus:outline-none"
+                    />
+                  </div>
+
+                  {/* Provider Type */}
+                  <div className="mb-3">
+                    <label className="text-white/60 text-xs block mb-1.5">Type</label>
+                    <div className="flex gap-2">
+                      {(['xtream', 'm3u', 'hdhomerun'] as const).map((type) => (
+                        <button
+                          key={type}
+                          onClick={() => setProviderForm(p => ({ ...p, providerType: type }))}
+                          className={cn(
+                            "flex-1 py-2 rounded-lg text-xs font-medium capitalize transition-colors",
+                            providerForm.providerType === type
+                              ? "bg-purple-500/20 text-purple-400"
+                              : "bg-white/5 text-white/60"
+                          )}
+                        >
+                          {type}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Server URL (for xtream/hdhomerun) */}
+                  {providerForm.providerType !== 'm3u' && (
+                    <div className="mb-3">
+                      <label className="text-white/60 text-xs block mb-1.5">Server URL</label>
+                      <input
+                        type="text"
+                        value={providerForm.serverUrl}
+                        onChange={(e) => setProviderForm(p => ({ ...p, serverUrl: e.target.value }))}
+                        placeholder="http://server.com:port"
+                        className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2.5 text-white text-sm placeholder:text-white/30 focus:outline-none"
+                      />
+                    </div>
+                  )}
+
+                  {/* M3U URL (for m3u type) */}
+                  {providerForm.providerType === 'm3u' && (
+                    <div className="mb-3">
+                      <label className="text-white/60 text-xs block mb-1.5">M3U URL</label>
+                      <input
+                        type="text"
+                        value={providerForm.m3uUrl}
+                        onChange={(e) => setProviderForm(p => ({ ...p, m3uUrl: e.target.value }))}
+                        placeholder="http://example.com/playlist.m3u"
+                        className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2.5 text-white text-sm placeholder:text-white/30 focus:outline-none"
+                      />
+                    </div>
+                  )}
+
+                  {/* Username (for xtream) */}
+                  {providerForm.providerType === 'xtream' && (
+                    <>
+                      <div className="mb-3">
+                        <label className="text-white/60 text-xs block mb-1.5">Username</label>
+                        <input
+                          type="text"
+                          value={providerForm.username}
+                          onChange={(e) => setProviderForm(p => ({ ...p, username: e.target.value }))}
+                          placeholder="Username"
+                          className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2.5 text-white text-sm placeholder:text-white/30 focus:outline-none"
+                        />
+                      </div>
+                      <div className="mb-3">
+                        <label className="text-white/60 text-xs block mb-1.5">Password</label>
+                        <input
+                          type="password"
+                          value={providerForm.password}
+                          onChange={(e) => setProviderForm(p => ({ ...p, password: e.target.value }))}
+                          placeholder={editingProvider ? '(unchanged)' : 'Password'}
+                          className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2.5 text-white text-sm placeholder:text-white/30 focus:outline-none"
+                        />
+                      </div>
+                    </>
+                  )}
+
+                  {/* Active Toggle */}
+                  <div className="mb-4 flex items-center justify-between">
+                    <label className="text-white/60 text-sm">Active</label>
+                    <button
+                      onClick={() => setProviderForm(p => ({ ...p, isActive: !p.isActive }))}
+                      className={cn(
+                        "w-12 h-6 rounded-full transition-colors",
+                        providerForm.isActive ? "bg-green-500" : "bg-white/20"
+                      )}
+                    >
+                      <div className={cn(
+                        "w-5 h-5 rounded-full bg-white transition-transform mx-0.5",
+                        providerForm.isActive ? "translate-x-6" : "translate-x-0"
+                      )} />
+                    </button>
+                  </div>
+
+                  {/* Actions */}
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => {
+                        setShowProviderModal(false);
+                        setEditingProvider(null);
+                      }}
+                      className="flex-1 py-2.5 bg-white/10 text-white rounded-lg text-sm font-medium active:bg-white/20"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      onClick={() => {
+                        if (editingProvider) {
+                          updateProviderMutation.mutate({
+                            id: editingProvider.id,
+                            data: providerForm,
+                          });
+                        } else {
+                          createProviderMutation.mutate(providerForm);
+                        }
+                      }}
+                      disabled={!providerForm.name || createProviderMutation.isPending || updateProviderMutation.isPending}
+                      className="flex-1 py-2.5 bg-purple-500 text-white rounded-lg text-sm font-medium active:bg-purple-600 disabled:opacity-50"
+                    >
+                      {createProviderMutation.isPending || updateProviderMutation.isPending ? 'Saving...' : 'Save'}
                     </button>
                   </div>
                 </div>
