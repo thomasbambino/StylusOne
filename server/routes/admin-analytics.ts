@@ -725,7 +725,7 @@ router.get('/dashboard-summary', requireAdmin, async (req, res) => {
         .where(eq(userSubscriptions.status, 'active')),
       // IPTV stats queries
       db.select({ count: sql<number>`count(*)::int` }).from(iptvProviders).where(eq(iptvProviders.isActive, true)),
-      db.select({ count: sql<number>`count(*)::int` }).from(iptvChannels).where(eq(iptvChannels.isActive, true)),
+      db.select({ count: sql<number>`count(*)::int` }).from(iptvChannels).where(eq(iptvChannels.isEnabled, true)),
     ]);
 
     // Calculate MRR from active subscriptions
