@@ -200,11 +200,8 @@ public class NativeTabBarPlugin: CAPPlugin, CAPBridgedPlugin {
         tabBar.alpha = 0
         tabBar.isHidden = true
 
-        // Check if iPad for larger sizing
+        // Check if iPad for custom sizing
         let isIPad = UIDevice.current.userInterfaceIdiom == .pad
-        let tabBarHeight: CGFloat = isIPad ? 65 : 49
-        let iconSize: CGFloat = isIPad ? 20 : 22
-        let fontSize: CGFloat = isIPad ? 11 : 10
 
         // Configure appearance for iOS 15+ with translucent dark background
         if #available(iOS 15.0, *) {
@@ -215,18 +212,26 @@ public class NativeTabBarPlugin: CAPPlugin, CAPBridgedPlugin {
             appearance.shadowColor = .clear
             appearance.shadowImage = UIImage()
 
-            // Configure item appearance for dark theme with iPad-appropriate sizing
+            // Configure item appearance for dark theme
             let itemAppearance = UITabBarItemAppearance()
             itemAppearance.normal.iconColor = UIColor.white.withAlphaComponent(0.6)
-            itemAppearance.normal.titleTextAttributes = [
-                .foregroundColor: UIColor.white.withAlphaComponent(0.6),
-                .font: UIFont.systemFont(ofSize: fontSize, weight: .medium)
-            ]
             itemAppearance.selected.iconColor = .white
-            itemAppearance.selected.titleTextAttributes = [
-                .foregroundColor: UIColor.white,
-                .font: UIFont.systemFont(ofSize: fontSize, weight: .semibold)
-            ]
+
+            if isIPad {
+                // iPad: Custom font sizing
+                itemAppearance.normal.titleTextAttributes = [
+                    .foregroundColor: UIColor.white.withAlphaComponent(0.6),
+                    .font: UIFont.systemFont(ofSize: 11, weight: .medium)
+                ]
+                itemAppearance.selected.titleTextAttributes = [
+                    .foregroundColor: UIColor.white,
+                    .font: UIFont.systemFont(ofSize: 11, weight: .semibold)
+                ]
+            } else {
+                // iPhone: Use default system font (original behavior)
+                itemAppearance.normal.titleTextAttributes = [.foregroundColor: UIColor.white.withAlphaComponent(0.6)]
+                itemAppearance.selected.titleTextAttributes = [.foregroundColor: UIColor.white]
+            }
 
             appearance.stackedLayoutAppearance = itemAppearance
             appearance.inlineLayoutAppearance = itemAppearance
@@ -240,15 +245,26 @@ public class NativeTabBarPlugin: CAPPlugin, CAPBridgedPlugin {
         tabBar.tintColor = .white
         tabBar.unselectedItemTintColor = UIColor.white.withAlphaComponent(0.6)
 
-        // Create tab bar items AFTER appearance is configured with iPad-sized icons
-        let iconConfig = UIImage.SymbolConfiguration(pointSize: iconSize, weight: .medium)
+        // Create tab bar items AFTER appearance is configured
         var items: [UITabBarItem] = []
         for (index, tab) in visibleTabs.enumerated() {
-            let item = UITabBarItem(
-                title: tab.title,
-                image: UIImage(systemName: tab.icon, withConfiguration: iconConfig),
-                selectedImage: UIImage(systemName: tab.selectedIcon, withConfiguration: iconConfig)
-            )
+            let item: UITabBarItem
+            if isIPad {
+                // iPad: Use custom icon sizing (20pt)
+                let iconConfig = UIImage.SymbolConfiguration(pointSize: 20, weight: .medium)
+                item = UITabBarItem(
+                    title: tab.title,
+                    image: UIImage(systemName: tab.icon, withConfiguration: iconConfig),
+                    selectedImage: UIImage(systemName: tab.selectedIcon, withConfiguration: iconConfig)
+                )
+            } else {
+                // iPhone: Use default system icons (original behavior)
+                item = UITabBarItem(
+                    title: tab.title,
+                    image: UIImage(systemName: tab.icon),
+                    selectedImage: UIImage(systemName: tab.selectedIcon)
+                )
+            }
             item.tag = index
             items.append(item)
         }
@@ -266,9 +282,9 @@ public class NativeTabBarPlugin: CAPPlugin, CAPBridgedPlugin {
             bottomConstraint
         ]
 
-        // Add explicit height for iPad
+        // Add explicit height for iPad (65pt vs system default 49pt)
         if isIPad {
-            constraints.append(tabBar.heightAnchor.constraint(equalToConstant: tabBarHeight))
+            constraints.append(tabBar.heightAnchor.constraint(equalToConstant: 65))
         }
 
         NSLayoutConstraint.activate(constraints)
