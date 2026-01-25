@@ -9,6 +9,7 @@ import { Tv, Signal, AlertTriangle, Wifi, WifiOff, Play, Pause, Volume2, VolumeX
 import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { cn } from "@/lib/utils";
 import Hls from "hls.js";
+import { HlsErrorRecovery } from "@/lib/hls-error-recovery";
 import { motion } from "framer-motion";
 import {
   ContextMenu,
@@ -734,6 +735,7 @@ export default function LiveTVPage() {
   const fullscreenContainerRef = useRef<HTMLDivElement>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const hlsRef = useRef<Hls | null>(null);
+  const errorRecoveryRef = useRef<HlsErrorRecovery | null>(null);
   const controlsTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const heartbeatIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const playbackTimeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -1786,6 +1788,8 @@ export default function LiveTVPage() {
         maxMaxBufferLength: 120, // Allow more buffer room
         maxBufferSize: 120 * 1000 * 1000, // 120MB buffer size
         maxBufferHole: 0.8, // Higher tolerance for buffer holes (prevents stalls)
+        maxAudioFramesDrift: 8, // High tolerance (185ms) for audio drift - prevents desync
+        forceKeyFrameOnDiscontinuity: true, // Handle ad stitching/discontinuities
         nudgeOffset: 0.2, // Better stall recovery
         nudgeMaxRetry: 5, // More retries for recovery
         liveDurationInfinity: true,
@@ -1805,6 +1809,17 @@ export default function LiveTVPage() {
       });
       
       hlsRef.current = hls;
+
+      // Initialize error recovery
+      errorRecoveryRef.current = new HlsErrorRecovery();
+      errorRecoveryRef.current.attach(hls, video, {
+        onFatalError: () => {
+          loggers.tv.error('Fatal error - HLS recovery exhausted');
+          hls.destroy();
+          setIsLoading(false);
+          setIsBuffering(false);
+        }
+      });
 
       hls.on(Hls.Events.MEDIA_ATTACHED, () => {
         loggers.tv.debug('Direct stream HLS media attached to video element');
@@ -1861,7 +1876,11 @@ export default function LiveTVPage() {
 
       hls.on(Hls.Events.ERROR, (event, data) => {
         loggers.tv.error('Direct stream HLS error', { data });
-        if (data.fatal) {
+        // Use error recovery system
+        if (errorRecoveryRef.current) {
+          errorRecoveryRef.current.handleError(data);
+        } else if (data.fatal) {
+          // Fallback if error recovery not initialized
           loggers.tv.debug('Fatal direct stream error, destroying HLS instance');
           hls.destroy();
           setIsLoading(false);
@@ -1873,6 +1892,8 @@ export default function LiveTVPage() {
       video.addEventListener('play', () => {
         loggers.tv.debug('Direct stream video play event');
         setIsPlaying(true);
+        // Reset error recovery state on successful playback
+        errorRecoveryRef.current?.resetOnSuccess();
       });
 
       video.addEventListener('waiting', () => {
@@ -2072,6 +2093,8 @@ export default function LiveTVPage() {
             maxMaxBufferLength: 120, // Allow more buffer room
             maxBufferSize: 120 * 1000 * 1000, // 120MB
             maxBufferHole: 0.8, // Higher tolerance for buffer holes
+            maxAudioFramesDrift: 8, // High tolerance (185ms) for audio drift - prevents desync
+            forceKeyFrameOnDiscontinuity: true, // Handle ad stitching/discontinuities
             nudgeOffset: 0.2, // Better stall recovery
             nudgeMaxRetry: 5,
             fragLoadingTimeOut: 30000,
@@ -2087,7 +2110,20 @@ export default function LiveTVPage() {
           });
           
           hlsRef.current = hls;
-          
+
+          // Initialize error recovery with session release on fatal
+          errorRecoveryRef.current = new HlsErrorRecovery();
+          errorRecoveryRef.current.attach(hls, video, {
+            onFatalError: () => {
+              loggers.tv.error('Fatal error - HLS recovery exhausted, releasing session');
+              if (currentSession) {
+                releaseCurrentSession();
+              }
+              hls.destroy();
+              setIsLoading(false);
+            }
+          });
+
           hls.on(Hls.Events.MEDIA_ATTACHED, () => {
             loggers.tv.debug('HLS media attached');
           });
@@ -2163,7 +2199,11 @@ export default function LiveTVPage() {
 
           hls.on(Hls.Events.ERROR, (event, data) => {
             loggers.tv.error('HLS error', { data });
-            if (data.fatal) {
+            // Use error recovery system with retry tracking and exponential backoff
+            if (errorRecoveryRef.current) {
+              errorRecoveryRef.current.handleError(data);
+            } else if (data.fatal) {
+              // Fallback if error recovery not initialized
               switch (data.type) {
                 case Hls.ErrorTypes.NETWORK_ERROR:
                   loggers.tv.warn('Fatal network error, trying to recover');
@@ -2175,11 +2215,9 @@ export default function LiveTVPage() {
                   break;
                 default:
                   loggers.tv.error('Fatal error, cannot recover - releasing session');
-                  // Release session on fatal errors
                   if (currentSession) {
                     releaseCurrentSession();
                   }
-                  loggers.tv.debug('Destroying HLS instance due to fatal error', { stack: new Error().stack });
                   hls.destroy();
                   setIsLoading(false);
                   break;
@@ -2189,6 +2227,8 @@ export default function LiveTVPage() {
 
           // Add video event listeners
           video.addEventListener('play', () => {
+            // Reset error recovery state on successful playback
+            errorRecoveryRef.current?.resetOnSuccess();
             loggers.tv.debug('Video play event fired');
             setIsPlaying(true);
           });

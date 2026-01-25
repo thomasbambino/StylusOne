@@ -3211,6 +3211,57 @@ live.ts
     return null;
   }
 
+  // Stream probe endpoint - detect codecs and determine playback compatibility
+  app.get("/api/stream/probe", async (req, res) => {
+    if (!req.isAuthenticated()) {
+      return res.sendStatus(401);
+    }
+
+    const { url } = req.query;
+
+    if (!url || typeof url !== 'string') {
+      return res.status(400).json({ error: 'URL parameter required' });
+    }
+
+    try {
+      const { probeStream } = await import('./services/stream-probe-service');
+      const result = await probeStream(url);
+      res.json(result);
+    } catch (error) {
+      loggers.stream.error('Probe endpoint error', { error });
+      res.status(500).json({ error: 'Failed to probe stream' });
+    }
+  });
+
+  // Get probe cache stats (admin only)
+  app.get("/api/stream/probe/stats", async (req, res) => {
+    if (!req.isAuthenticated() || ((req.user as User).role !== 'admin' && (req.user as User).role !== 'superadmin')) {
+      return res.sendStatus(403);
+    }
+
+    try {
+      const { getProbeCacheStats } = await import('./services/stream-probe-service');
+      res.json(getProbeCacheStats());
+    } catch (error) {
+      res.status(500).json({ error: 'Failed to get cache stats' });
+    }
+  });
+
+  // Clear probe cache (admin only)
+  app.post("/api/stream/probe/clear", async (req, res) => {
+    if (!req.isAuthenticated() || ((req.user as User).role !== 'admin' && (req.user as User).role !== 'superadmin')) {
+      return res.sendStatus(403);
+    }
+
+    try {
+      const { clearProbeCache } = await import('./services/stream-probe-service');
+      clearProbeCache();
+      res.json({ success: true });
+    } catch (error) {
+      res.status(500).json({ error: 'Failed to clear cache' });
+    }
+  });
+
   // IPTV Stream Proxy - bypass CORS restrictions with stream sharing
   app.get("/api/iptv/stream/:streamId.m3u8", async (req, res) => {
     // Check for token-based authentication (for Chromecast) or session authentication

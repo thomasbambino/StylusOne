@@ -8,6 +8,7 @@ import { buildApiUrl, isNativePlatform, getDeviceTypeSync, getPlatform } from '@
 import { haptics } from '@/lib/haptics';
 import { useAuth } from '@/hooks/use-auth';
 import Hls from 'hls.js';
+import { HlsErrorRecovery } from '@/lib/hls-error-recovery';
 import { ScreenOrientation } from '@capacitor/screen-orientation';
 import { KeepAwake } from '@capacitor-community/keep-awake';
 import { CapacitorHttp, HttpResponse } from '@capacitor/core';
@@ -1239,6 +1240,7 @@ export default function LiveTVTvPage() {
   // Refs
   const videoRef = useRef<HTMLVideoElement>(null);
   const hlsRef = useRef<Hls | null>(null);
+  const errorRecoveryRef = useRef<HlsErrorRecovery | null>(null);
   const overlayTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const guideScrollRef = useRef<HTMLDivElement>(null);
 
@@ -2717,24 +2719,53 @@ export default function LiveTVTvPage() {
           lowLatencyMode: false,
           backBufferLength: 90,
           maxBufferLength: 60,
+          maxMaxBufferLength: 120,
+          maxBufferSize: 120 * 1000 * 1000, // 120MB
+          maxBufferHole: 0.8, // Higher tolerance for buffer holes
+          maxAudioFramesDrift: 8, // High tolerance (185ms) for audio drift - prevents desync
+          forceKeyFrameOnDiscontinuity: true, // Handle ad stitching/discontinuities
+          nudgeOffset: 0.2, // Better stall recovery
+          nudgeMaxRetry: 5,
           manifestLoadingTimeOut: 30000,
           manifestLoadingMaxRetry: 4,
           levelLoadingTimeOut: 30000,
           fragLoadingTimeOut: 60000,
+          fragLoadingMaxRetry: 6,
+          fragLoadingRetryDelay: 1000,
+          liveSyncDuration: 6, // Stay 6 seconds behind live edge
+          liveMaxLatencyDuration: 15, // Max drift before seeking to live
+          liveDurationInfinity: true,
           xhrSetup: (xhr) => { xhr.withCredentials = false; },
         });
 
         hlsRef.current = hls;
 
+        // Initialize error recovery with retry tracking and exponential backoff
+        errorRecoveryRef.current = new HlsErrorRecovery();
+        errorRecoveryRef.current.attach(hls, video, {
+          onFatalError: () => {
+            loggers.tv.error('Fatal error - HLS recovery exhausted');
+            hls.destroy();
+            setIsLoading(false);
+            handleStreamError('Stream playback failed after multiple retries');
+          }
+        });
+
         hls.on(Hls.Events.MANIFEST_PARSED, () => {
           video.play().then(() => {
             setIsPlaying(true);
             setIsLoading(false);
+            // Reset error recovery state on successful playback
+            errorRecoveryRef.current?.resetOnSuccess();
           }).catch(() => setIsLoading(false));
         });
 
         hls.on(Hls.Events.ERROR, (_, data) => {
-          if (data.fatal) {
+          // Use error recovery system with retry tracking and exponential backoff
+          if (errorRecoveryRef.current) {
+            errorRecoveryRef.current.handleError(data);
+          } else if (data.fatal) {
+            // Fallback if error recovery not initialized
             if (data.type === Hls.ErrorTypes.NETWORK_ERROR) {
               hls.startLoad();
             } else if (data.type === Hls.ErrorTypes.MEDIA_ERROR) {
