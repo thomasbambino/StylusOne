@@ -1,27 +1,9 @@
 import { QueryClient, QueryFunction } from "@tanstack/react-query";
-import { buildApiUrl, isNativePlatform, getApiBaseUrl } from "./capacitor";
-import { CapacitorHttp, HttpResponse, CapacitorCookies } from '@capacitor/core';
+import { buildApiUrl, isNativePlatform } from "./capacitor";
+import { CapacitorHttp, HttpResponse } from '@capacitor/core';
 import { nativeStorage } from "./nativeStorage";
 import { preloadImages } from "./imageCache";
 import { loggers } from "./logger";
-
-// Helper to get cookies for native requests
-async function getNativeCookies(): Promise<string> {
-  if (!isNativePlatform()) return '';
-  try {
-    const baseUrl = getApiBaseUrl();
-    const cookies = await CapacitorCookies.getCookies({ url: baseUrl });
-    // Convert cookie object to cookie header string
-    const cookieString = Object.entries(cookies)
-      .map(([name, value]) => `${name}=${value}`)
-      .join('; ');
-    loggers.queryClient.debug('Native cookies retrieved', { count: Object.keys(cookies).length });
-    return cookieString;
-  } catch (error) {
-    loggers.queryClient.warn('Failed to get native cookies', { error });
-    return '';
-  }
-}
 
 // Endpoints that should be cached for offline/startup performance
 const CACHEABLE_ENDPOINTS: Record<string, string> = {
@@ -83,23 +65,13 @@ export async function apiRequest(
 
   try {
     // Use Capacitor HTTP for native apps to bypass CORS
+    // CapacitorHttp automatically shares cookies with WKWebView
     if (isNativePlatform()) {
       loggers.queryClient.debug('Using CapacitorHttp for native request');
-
-      // Get cookies from the WebView to include in native requests
-      const cookieHeader = await getNativeCookies();
-      const requestHeaders: Record<string, string> = {};
-      if (cookieHeader) {
-        requestHeaders['Cookie'] = cookieHeader;
-      }
-      if (data) {
-        requestHeaders['Content-Type'] = 'application/json';
-      }
-
       const options: Parameters<typeof CapacitorHttp.request>[0] = {
         url: fullUrl,
         method: method,
-        headers: requestHeaders,
+        headers: data ? { "Content-Type": "application/json" } : {},
         data: data,
         responseType: 'json' as const,
       };
@@ -162,19 +134,11 @@ export const getQueryFn: <T>(options: {
 
     try {
       // Use Capacitor HTTP for native apps to bypass CORS
+      // CapacitorHttp automatically shares cookies with WKWebView
       if (isNativePlatform()) {
         loggers.queryClient.debug('Using CapacitorHttp for native query');
-
-        // Get cookies from the WebView to include in native requests
-        const cookieHeader = await getNativeCookies();
-        const headers: Record<string, string> = {};
-        if (cookieHeader) {
-          headers['Cookie'] = cookieHeader;
-        }
-
         const response: HttpResponse = await CapacitorHttp.get({
           url: fullUrl,
-          headers,
           responseType: 'json',
         });
 
