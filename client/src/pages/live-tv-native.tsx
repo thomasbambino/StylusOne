@@ -2472,6 +2472,25 @@ export default function LiveTVTvPage() {
     try {
       let streamUrl = buildApiUrl(channel.URL);
 
+      // For HDHomeRun channels, use tuner manager to get proxied stream URL
+      if (channel.source === 'hdhomerun') {
+        loggers.tv.info('Requesting HDHomeRun stream via tuner manager', { guideNumber: channel.GuideNumber });
+        const tunerResponse = await apiRequest('POST', '/api/tuner/request-stream', {
+          channelNumber: channel.GuideNumber
+        });
+
+        if (!tunerResponse.ok) {
+          const errorData = await tunerResponse.json();
+          throw new Error(errorData.message || 'Failed to request HDHomeRun stream');
+        }
+
+        const tunerData = await tunerResponse.json();
+        if (tunerData.session?.streamUrl) {
+          streamUrl = buildApiUrl(tunerData.session.streamUrl);
+          loggers.tv.debug('HDHomeRun stream URL from tuner manager', { streamUrl });
+        }
+      }
+
       // For IPTV channels, get token (native) or acquire session (web)
       // OPTIMIZED: Don't block streaming on acquire - it's just for tracking
       if (channel.source === 'iptv' && channel.iptvId) {
