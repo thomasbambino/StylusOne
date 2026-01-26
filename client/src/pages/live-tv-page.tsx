@@ -1785,11 +1785,11 @@ export default function LiveTVPage() {
         enableWorker: true,
         lowLatencyMode: false, // Disabled for stability (prevents buffering)
         startPosition: -1, // Start at live edge
-        liveSyncDuration: 6, // Stay 6 seconds behind live edge for stability
-        liveMaxLatencyDuration: 15, // Max drift before seeking to live
-        backBufferLength: 60, // Increased for smoother playback
-        maxBufferLength: 60, // Match native app settings
-        maxMaxBufferLength: 120, // Allow more buffer room
+        liveSyncDuration: 20, // Stay 20 seconds behind live edge (~2 segments)
+        liveMaxLatencyDuration: 45, // Allow more drift before seeking to live
+        backBufferLength: 90, // More back buffer for smoother playback
+        maxBufferLength: 90, // Larger forward buffer
+        maxMaxBufferLength: 180, // Allow more buffer room
         maxBufferSize: 120 * 1000 * 1000, // 120MB buffer size
         maxBufferHole: 0.8, // Higher tolerance for buffer holes (prevents stalls)
         maxAudioFramesDrift: 8, // High tolerance (185ms) for audio drift - prevents desync
@@ -2096,11 +2096,11 @@ export default function LiveTVPage() {
             enableWorker: true,
             lowLatencyMode: false, // Disabled for stability (prevents buffering)
             startPosition: -1, // Start at live edge
-            liveSyncDuration: 6, // Stay 6 seconds behind live edge for stability
-            liveMaxLatencyDuration: 15, // Max drift before seeking to live
-            backBufferLength: 60, // Increased for smoother playback
-            maxBufferLength: 60, // Match native app settings
-            maxMaxBufferLength: 120, // Allow more buffer room
+            liveSyncDuration: 20, // Stay 20 seconds behind live edge (~2 segments)
+            liveMaxLatencyDuration: 45, // Allow more drift before seeking to live
+            backBufferLength: 90, // More back buffer for smoother playback
+            maxBufferLength: 90, // Larger forward buffer
+            maxMaxBufferLength: 180, // Allow more buffer room
             maxBufferSize: 120 * 1000 * 1000, // 120MB
             maxBufferHole: 0.8, // Higher tolerance for buffer holes
             maxAudioFramesDrift: 8, // High tolerance (185ms) for audio drift - prevents desync
