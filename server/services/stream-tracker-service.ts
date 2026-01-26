@@ -454,11 +454,11 @@ export class StreamTrackerService {
   async getAllActiveStreams(): Promise<Array<typeof activeIptvStreams.$inferSelect & { credentialName?: string }>> {
     const streams = await db.select()
       .from(activeIptvStreams)
-      .innerJoin(iptvCredentials, eq(activeIptvStreams.credentialId, iptvCredentials.id));
+      .leftJoin(iptvCredentials, eq(activeIptvStreams.credentialId, iptvCredentials.id));
 
     return streams.map(s => ({
       ...s.active_iptv_streams,
-      credentialName: s.iptv_credentials.name
+      credentialName: s.iptv_credentials?.name
     }));
   }
 }
