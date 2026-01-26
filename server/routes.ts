@@ -3284,6 +3284,13 @@ live.ts
         sourceUrl
       });
 
+      loggers.stream.info('Viewer heartbeat', {
+        channelId,
+        viewerCount: result.viewerCount,
+        mode: result.mode,
+        isNewViewer: result.isNewViewer
+      });
+
       res.json({
         viewerCount: result.viewerCount,
         mode: result.mode,
