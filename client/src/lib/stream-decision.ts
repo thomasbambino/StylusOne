@@ -8,6 +8,7 @@ import { loggers } from './logger';
  * - Codec compatibility (via server-side ffprobe)
  * - Platform capabilities
  * - CORS restrictions
+ * - Viewer count (for mini-CDN optimization)
  */
 
 export interface ProbeResult {
@@ -236,4 +237,171 @@ export function streamNeedsProxy(url: string): boolean {
   } catch {
     return false;
   }
+}
+
+// ============================================================================
+// VIEWER TRACKING (Mini-CDN)
+// ============================================================================
+
+export interface HeartbeatResponse {
+  viewerCount: number;
+  mode: StreamMode;
+  isNewViewer: boolean;
+}
+
+// Generate a unique session ID for this browser tab
+let sessionId: string | null = null;
+function getSessionId(): string {
+  if (!sessionId) {
+    sessionId = `${Date.now()}-${Math.random().toString(36).substring(2, 11)}`;
+  }
+  return sessionId;
+}
+
+// Track active heartbeat intervals
+const activeHeartbeats = new Map<string, NodeJS.Timeout>();
+
+/**
+ * Send heartbeat to server and get current viewer count/mode
+ */
+export async function sendHeartbeat(
+  channelId: string,
+  sourceUrl?: string
+): Promise<HeartbeatResponse | null> {
+  try {
+    const url = buildApiUrl('/api/stream/heartbeat');
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({
+        channelId,
+        sessionId: getSessionId(),
+        sourceUrl
+      })
+    });
+
+    if (!response.ok) {
+      loggers.tv.warn('Heartbeat failed', { status: response.status });
+      return null;
+    }
+
+    const result: HeartbeatResponse = await response.json();
+    loggers.tv.debug('Heartbeat response', {
+      channelId,
+      viewerCount: result.viewerCount,
+      mode: result.mode
+    });
+
+    return result;
+  } catch (error) {
+    loggers.tv.warn('Heartbeat error', { error });
+    return null;
+  }
+}
+
+/**
+ * Notify server that viewer is leaving the channel
+ */
+export async function leaveChannel(channelId: string): Promise<void> {
+  // Stop heartbeat
+  stopHeartbeat(channelId);
+
+  try {
+    const url = buildApiUrl('/api/stream/leave');
+    await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({
+        channelId,
+        sessionId: getSessionId()
+      })
+    });
+    loggers.tv.debug('Left channel', { channelId });
+  } catch (error) {
+    loggers.tv.warn('Leave channel error', { error });
+  }
+}
+
+/**
+ * Start periodic heartbeat for a channel
+ */
+export function startHeartbeat(
+  channelId: string,
+  sourceUrl?: string,
+  onModeChange?: (mode: StreamMode, viewerCount: number) => void
+): void {
+  // Stop existing heartbeat for this channel
+  stopHeartbeat(channelId);
+
+  // Send initial heartbeat
+  sendHeartbeat(channelId, sourceUrl).then(result => {
+    if (result && onModeChange) {
+      onModeChange(result.mode, result.viewerCount);
+    }
+  });
+
+  // Start periodic heartbeat every 30 seconds
+  const interval = setInterval(async () => {
+    const result = await sendHeartbeat(channelId, sourceUrl);
+    if (result && onModeChange) {
+      onModeChange(result.mode, result.viewerCount);
+    }
+  }, 30000);
+
+  activeHeartbeats.set(channelId, interval);
+  loggers.tv.debug('Started heartbeat', { channelId });
+}
+
+/**
+ * Stop heartbeat for a channel
+ */
+export function stopHeartbeat(channelId: string): void {
+  const interval = activeHeartbeats.get(channelId);
+  if (interval) {
+    clearInterval(interval);
+    activeHeartbeats.delete(channelId);
+    loggers.tv.debug('Stopped heartbeat', { channelId });
+  }
+}
+
+/**
+ * Stop all active heartbeats (e.g., on page unload)
+ */
+export function stopAllHeartbeats(): void {
+  for (const [channelId, interval] of activeHeartbeats.entries()) {
+    clearInterval(interval);
+    loggers.tv.debug('Stopped heartbeat', { channelId });
+  }
+  activeHeartbeats.clear();
+}
+
+/**
+ * Get channel status (viewer count, mode)
+ */
+export async function getChannelStatus(channelId: string): Promise<{
+  viewerCount: number;
+  mode: StreamMode;
+} | null> {
+  try {
+    const url = buildApiUrl(`/api/stream/${encodeURIComponent(channelId)}/status`);
+    const response = await fetch(url, { credentials: 'include' });
+
+    if (!response.ok) {
+      return null;
+    }
+
+    return await response.json();
+  } catch (error) {
+    loggers.tv.warn('Get channel status error', { error });
+    return null;
+  }
+}
+
+// Clean up on page unload
+if (typeof window !== 'undefined') {
+  window.addEventListener('beforeunload', () => {
+    stopAllHeartbeats();
+  });
 }

@@ -18,6 +18,7 @@ import { getCachedEPG, cacheEPG, cleanupExpiredCache, prefetchEPG, clearAllCache
 import { useReminders } from '@/contexts/ReminderContext';
 import { useToast } from '@/hooks/use-toast';
 import { loggers } from '@/lib/logger';
+import { startHeartbeat as startViewerHeartbeat, stopAllHeartbeats as stopAllViewerHeartbeats } from '@/lib/stream-decision';
 
 // ============================================================================
 // TYPES & INTERFACES
@@ -2416,6 +2417,9 @@ export default function LiveTVTvPage() {
       heartbeatIntervalRef.current = null;
     }
 
+    // Stop viewer tracking heartbeats
+    stopAllViewerHeartbeats();
+
     // Release stream session
     if (streamSessionToken.current) {
       try {
@@ -2508,9 +2512,18 @@ export default function LiveTVTvPage() {
                 }
               }, 30000);
             }
+
+            // Start viewer tracking heartbeat for mini-CDN mode promotion
+            startViewerHeartbeat(channel.iptvId!, streamUrl, (mode, viewerCount) => {
+              loggers.tv.debug('Viewer tracking update', { mode, viewerCount, channelId: channel.iptvId });
+            });
           } catch (e) {
             loggers.tv.debug('Could not generate token', { error: e });
             // Continue anyway - stream might work without token
+            // Still start viewer tracking
+            startViewerHeartbeat(channel.iptvId!, streamUrl, (mode, viewerCount) => {
+              loggers.tv.debug('Viewer tracking update', { mode, viewerCount, channelId: channel.iptvId });
+            });
           }
         } else {
           // Web: acquire stream session for tracking
@@ -2537,9 +2550,18 @@ export default function LiveTVTvPage() {
                 }
               }
             }, 30000);
+
+            // Start viewer tracking heartbeat for mini-CDN mode promotion
+            startViewerHeartbeat(channel.iptvId!, streamUrl, (mode, viewerCount) => {
+              loggers.tv.debug('Viewer tracking update', { mode, viewerCount, channelId: channel.iptvId });
+            });
           } catch (e) {
             loggers.tv.debug('Could not acquire stream session', { error: e });
             // Continue anyway - stream might still work
+            // Still start viewer tracking
+            startViewerHeartbeat(channel.iptvId!, streamUrl, (mode, viewerCount) => {
+              loggers.tv.debug('Viewer tracking update', { mode, viewerCount, channelId: channel.iptvId });
+            });
           }
         }
       }

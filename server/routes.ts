@@ -3262,6 +3262,113 @@ live.ts
     }
   });
 
+  // Viewer heartbeat - track active viewers per channel for mode selection
+  app.post("/api/stream/heartbeat", async (req, res) => {
+    if (!req.isAuthenticated()) {
+      return res.sendStatus(401);
+    }
+
+    const { channelId, sessionId, sourceUrl } = req.body;
+
+    if (!channelId || !sessionId) {
+      return res.status(400).json({ error: 'channelId and sessionId required' });
+    }
+
+    try {
+      const { viewerTracker } = await import('./services/viewer-tracker');
+      const user = req.user as User;
+
+      const result = viewerTracker.heartbeat(channelId, sessionId, {
+        userId: user.id,
+        userAgent: req.headers['user-agent'],
+        sourceUrl
+      });
+
+      res.json({
+        viewerCount: result.viewerCount,
+        mode: result.mode,
+        isNewViewer: result.isNewViewer
+      });
+    } catch (error) {
+      loggers.stream.error('Heartbeat error', { error });
+      res.status(500).json({ error: 'Failed to record heartbeat' });
+    }
+  });
+
+  // Remove viewer from channel (called when leaving)
+  app.post("/api/stream/leave", async (req, res) => {
+    if (!req.isAuthenticated()) {
+      return res.sendStatus(401);
+    }
+
+    const { channelId, sessionId } = req.body;
+
+    if (!channelId || !sessionId) {
+      return res.status(400).json({ error: 'channelId and sessionId required' });
+    }
+
+    try {
+      const { viewerTracker } = await import('./services/viewer-tracker');
+      const result = viewerTracker.removeViewer(channelId, sessionId);
+
+      res.json({
+        viewerCount: result?.viewerCount ?? 0,
+        mode: result?.mode ?? 'direct'
+      });
+    } catch (error) {
+      loggers.stream.error('Leave error', { error });
+      res.status(500).json({ error: 'Failed to remove viewer' });
+    }
+  });
+
+  // Get channel status (viewer count, mode)
+  app.get("/api/stream/:channelId/status", async (req, res) => {
+    if (!req.isAuthenticated()) {
+      return res.sendStatus(401);
+    }
+
+    const { channelId } = req.params;
+
+    try {
+      const { viewerTracker } = await import('./services/viewer-tracker');
+      const state = viewerTracker.getChannelState(channelId);
+
+      if (!state) {
+        return res.json({
+          viewerCount: 0,
+          mode: 'direct',
+          viewers: []
+        });
+      }
+
+      res.json({
+        viewerCount: state.viewerCount,
+        mode: state.mode,
+        viewers: state.viewers.map(v => ({
+          sessionId: v.sessionId.substring(0, 8) + '...',
+          lastHeartbeat: v.lastHeartbeat
+        }))
+      });
+    } catch (error) {
+      loggers.stream.error('Status error', { error });
+      res.status(500).json({ error: 'Failed to get channel status' });
+    }
+  });
+
+  // Get global viewer stats (admin only)
+  app.get("/api/stream/viewers/stats", async (req, res) => {
+    if (!req.isAuthenticated() || ((req.user as User).role !== 'admin' && (req.user as User).role !== 'superadmin')) {
+      return res.sendStatus(403);
+    }
+
+    try {
+      const { viewerTracker } = await import('./services/viewer-tracker');
+      res.json(viewerTracker.getStats());
+    } catch (error) {
+      res.status(500).json({ error: 'Failed to get viewer stats' });
+    }
+  });
+
   // IPTV Stream Proxy - bypass CORS restrictions with stream sharing
   app.get("/api/iptv/stream/:streamId.m3u8", async (req, res) => {
     // Check for token-based authentication (for Chromecast) or session authentication

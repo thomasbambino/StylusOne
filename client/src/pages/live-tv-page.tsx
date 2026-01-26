@@ -26,6 +26,7 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { buildApiUrl, isNativePlatform, getPlatform } from "@/lib/capacitor";
 import { getQueryFn, apiRequest } from "@/lib/queryClient";
+import { startHeartbeat as startViewerHeartbeat, stopHeartbeat as stopViewerHeartbeat, leaveChannel as leaveViewerChannel, stopAllHeartbeats as stopAllViewerHeartbeats } from "@/lib/stream-decision";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
   Popover,
@@ -1526,6 +1527,9 @@ export default function LiveTVPage() {
           JSON.stringify({ sessionToken: iptvSessionToken.current })
         );
       }
+
+      // Stop all viewer tracking heartbeats
+      stopAllViewerHeartbeats();
     };
   }, []);
 
@@ -2036,9 +2040,15 @@ export default function LiveTVPage() {
 
       const session = data.session as TunerSession;
       setCurrentSession(session);
-      
-      // Start heartbeat
+
+      // Start heartbeat for tuner management
       startHeartbeat(session.id);
+
+      // Start viewer tracking heartbeat for HDHomeRun channel
+      const channelId = `hdhomerun_${channel.GuideNumber}`;
+      startViewerHeartbeat(channelId, session.streamUrl, (mode, viewerCount) => {
+        loggers.tv.debug('HDHomeRun viewer tracking update', { mode, viewerCount, channelId });
+      });
 
       loggers.tv.debug('Stream session established', { session, streamUrl: session.streamUrl });
 
@@ -2365,6 +2375,9 @@ export default function LiveTVPage() {
         heartbeatIntervalRef.current = null;
       }
 
+      // Stop viewer tracking heartbeats
+      stopAllViewerHeartbeats();
+
       // Release session
       const res = await fetch(buildApiUrl('/api/tuner/release-session'), {
         method: 'POST',
@@ -2384,11 +2397,16 @@ export default function LiveTVPage() {
   };
 
   // Release IPTV stream session
-  const releaseIptvSession = async () => {
+  const releaseIptvSession = async (streamId?: string) => {
     // Stop IPTV heartbeat
     if (iptvHeartbeatRef.current) {
       clearInterval(iptvHeartbeatRef.current);
       iptvHeartbeatRef.current = null;
+    }
+
+    // Stop viewer tracking heartbeat
+    if (streamId) {
+      leaveViewerChannel(streamId);
     }
 
     // Release IPTV session
@@ -2433,9 +2451,18 @@ export default function LiveTVPage() {
       }, 30000);
 
       loggers.tv.info('IPTV stream session acquired', { platform });
+
+      // Start viewer tracking heartbeat for mini-CDN mode promotion
+      startViewerHeartbeat(streamId, undefined, (mode, viewerCount) => {
+        loggers.tv.debug('Viewer tracking update', { mode, viewerCount });
+      });
     } catch (e) {
       loggers.tv.debug('IPTV could not acquire stream session', { error: e });
       // Continue anyway - stream might still work for users without subscription
+      // Still start viewer tracking even if IPTV session failed
+      startViewerHeartbeat(streamId, undefined, (mode, viewerCount) => {
+        loggers.tv.debug('Viewer tracking update', { mode, viewerCount });
+      });
     }
   };
 
