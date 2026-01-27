@@ -22,29 +22,14 @@ export function serveStatic(app: Express) {
     );
   }
 
-  // Add CORS headers specifically for HLS streaming files
-  app.use('/streams', (req, res, next) => {
-    res.header('Access-Control-Allow-Origin', '*');
-    res.header('Access-Control-Allow-Methods', 'GET, OPTIONS');
-    res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Range');
-    
-    // Set proper MIME types for HLS files
-    if (req.path.endsWith('.m3u8')) {
-      res.header('Content-Type', 'application/vnd.apple.mpegurl');
-    } else if (req.path.endsWith('.ts')) {
-      res.header('Content-Type', 'video/mp2t');
-    }
-    
-    next();
-  });
-
-  app.use(express.static(distPath));
-
-  // Serve HLS streams with proper headers (including CORS for native apps)
+  // Serve HLS streams FIRST with CORS headers (must come before generic static handler)
+  // This handles /streams/* requests before express.static(distPath) can serve them without CORS
   app.use("/streams", express.static(path.join(distPath, "streams"), {
     setHeaders: (res, filePath) => {
       // CORS headers for cross-origin access (native apps, Chromecast, etc.)
       res.setHeader('Access-Control-Allow-Origin', '*');
+      res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
+      res.setHeader('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Range');
       res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
 
       if (filePath.endsWith('.m3u8')) {
@@ -58,6 +43,9 @@ export function serveStatic(app: Express) {
       }
     }
   }));
+
+  // Generic static handler (serves everything except /streams which is handled above)
+  app.use(express.static(distPath));
 
   // Dynamic HTML serving with meta tags
   app.get("*", async (req, res) => {
