@@ -40,9 +40,13 @@ export function serveStatic(app: Express) {
 
   app.use(express.static(distPath));
 
-  // Serve HLS streams with proper headers
+  // Serve HLS streams with proper headers (including CORS for native apps)
   app.use("/streams", express.static(path.join(distPath, "streams"), {
     setHeaders: (res, filePath) => {
+      // CORS headers for cross-origin access (native apps, Chromecast, etc.)
+      res.setHeader('Access-Control-Allow-Origin', '*');
+      res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+
       if (filePath.endsWith('.m3u8')) {
         res.setHeader('Content-Type', 'application/x-mpegURL');
         res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');

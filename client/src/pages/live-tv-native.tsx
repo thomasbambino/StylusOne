@@ -1364,23 +1364,47 @@ export default function LiveTVTvPage() {
     staleTime: 5 * 60 * 1000, // Consider data fresh for 5 minutes
   });
 
+  // Fetch HDHomeRun channels
+  const { data: hdHomeRunData } = useQuery({
+    queryKey: ['/api/hdhomerun/channels'],
+    queryFn: getQueryFn({ on401: "returnNull" }),
+    staleTime: 5 * 60 * 1000,
+  });
+
   // Cache channels to localStorage for offline/faster startup
   const channels = useMemo(() => {
     const raw = (channelsData as any)?.channels || [];
+    const hdhrRaw = (hdHomeRunData as any)?.channels || [];
 
-    if (raw.length > 0) {
-      // Process and cache fresh data
-      const processed = raw.filter((ch: any) => !ch.hidden).map((ch: any) => ({
-        GuideName: ch.name,
-        GuideNumber: ch.number || String(ch.id),
-        URL: ch.streamUrl,
-        source: 'iptv' as const,
-        iptvId: String(ch.id),
-        epgId: ch.epgId,
-        logo: ch.logo,
-        categoryId: ch.categoryId,
-        categoryName: ch.categoryName
-      }));
+    // Process IPTV channels
+    const iptvChannels: Channel[] = raw.filter((ch: any) => !ch.hidden).map((ch: any) => ({
+      GuideName: ch.name,
+      GuideNumber: ch.number || String(ch.id),
+      URL: ch.streamUrl,
+      source: 'iptv' as const,
+      iptvId: String(ch.id),
+      epgId: ch.epgId,
+      logo: ch.logo,
+      categoryId: ch.categoryId,
+      categoryName: ch.categoryName
+    }));
+
+    // Process HDHomeRun channels (filter out DRM channels)
+    const hdHomeRunChannels: Channel[] = hdhrRaw.filter((ch: any) => !ch.DRM).map((ch: any) => ({
+      GuideName: ch.GuideName,
+      GuideNumber: ch.GuideNumber,
+      URL: ch.URL,
+      source: 'hdhomerun' as const,
+      epgId: ch.GuideName, // Use channel name for EPG lookup
+      logo: undefined,
+      categoryId: undefined,
+      categoryName: 'HDHomeRun'
+    }));
+
+    // Merge: IPTV first, then HDHomeRun
+    const processed = [...iptvChannels, ...hdHomeRunChannels];
+
+    if (processed.length > 0) {
 
       // Cache to localStorage
       try {
@@ -1412,7 +1436,7 @@ export default function LiveTVTvPage() {
     }
 
     return [];
-  }, [channelsData]);
+  }, [channelsData, hdHomeRunData]);
 
   // Background prefetch ALL EPG data when channels load (native only)
   // This ensures thumbnails show on homepage without needing to scroll through guide
@@ -2488,6 +2512,29 @@ export default function LiveTVTvPage() {
         if (tunerData.session?.streamUrl) {
           streamUrl = buildApiUrl(tunerData.session.streamUrl);
           loggers.tv.debug('HDHomeRun stream URL from tuner manager', { streamUrl });
+
+          // Wait for playlist to be ready (poll up to 10 seconds)
+          let playlistReady = false;
+          for (let i = 0; i < 20; i++) {
+            try {
+              const checkResponse = await CapacitorHttp.request({
+                url: streamUrl,
+                method: 'HEAD'
+              });
+              if (checkResponse.status >= 200 && checkResponse.status < 300) {
+                playlistReady = true;
+                loggers.tv.info('HDHomeRun playlist ready', { attempt: i + 1 });
+                break;
+              }
+            } catch (e) {
+              // Continue waiting
+            }
+            await new Promise(resolve => setTimeout(resolve, 500));
+          }
+
+          if (!playlistReady) {
+            loggers.tv.warn('HDHomeRun playlist not ready after timeout, proceeding anyway');
+          }
         }
       }
 
@@ -2509,6 +2556,30 @@ export default function LiveTVTvPage() {
             if (tokenData?.token) {
               const separator = streamUrl.includes('?') ? '&' : '?';
               streamUrl = `${streamUrl}${separator}token=${tokenData.token}`;
+            }
+
+            // Wait for playlist to be ready (server may need time to start FFmpeg)
+            loggers.tv.info('Waiting for IPTV playlist to be ready', { streamUrl: streamUrl.substring(0, 80) });
+            let playlistReady = false;
+            for (let i = 0; i < 20; i++) {
+              try {
+                const checkResponse = await CapacitorHttp.request({
+                  url: streamUrl,
+                  method: 'HEAD'
+                });
+                if (checkResponse.status >= 200 && checkResponse.status < 300) {
+                  playlistReady = true;
+                  loggers.tv.info('IPTV playlist ready', { attempt: i + 1 });
+                  break;
+                }
+              } catch (e) {
+                // Continue waiting
+              }
+              await new Promise(resolve => setTimeout(resolve, 500));
+            }
+
+            if (!playlistReady) {
+              loggers.tv.warn('IPTV playlist not ready after timeout, proceeding anyway');
             }
 
             // Set up session tracking from token response
