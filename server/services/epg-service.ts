@@ -826,24 +826,89 @@ export class EPGService implements IService {
   }
 
   /**
+   * Find the best matching channel ID from the EPG cache
+   * Returns null if no good match is found
+   */
+  private findBestMatchingChannelId(channelId: string): string | null {
+    // 1. Try exact match first
+    if (this.programCache.has(channelId)) {
+      return channelId;
+    }
+
+    const normalizedInput = channelId.toLowerCase().replace(/[^a-z0-9]/g, '');
+    if (normalizedInput.length < 2) {
+      return null; // Too short to match meaningfully
+    }
+
+    // 2. Try exact normalized match in channel name mapping
+    const mappedId = this.channelNameToId.get(normalizedInput);
+    if (mappedId && this.programCache.has(mappedId)) {
+      return mappedId;
+    }
+
+    // 3. Try to find a channel ID that matches the call sign exactly
+    //    (e.g., input "KNBC" should match cache key "KNBC.us" or "I22051.json.schedulesdirect.org")
+    const bestMatches: Array<{ id: string; score: number }> = [];
+
+    for (const epgChannelId of this.programCache.keys()) {
+      const normalizedEpg = epgChannelId.toLowerCase().replace(/[^a-z0-9]/g, '');
+
+      // Score the match quality
+      let score = 0;
+
+      // Exact normalized match is best
+      if (normalizedEpg === normalizedInput) {
+        score = 100;
+      }
+      // EPG starts with input (e.g., "knbc" matches "knbcus")
+      else if (normalizedEpg.startsWith(normalizedInput) && normalizedInput.length >= 3) {
+        score = 80;
+      }
+      // Input starts with EPG (e.g., "knbclocal" matches "knbc")
+      else if (normalizedInput.startsWith(normalizedEpg) && normalizedEpg.length >= 3) {
+        score = 70;
+      }
+      // Substring match only for longer inputs (4+ chars) to avoid false positives
+      else if (normalizedInput.length >= 4) {
+        if (normalizedEpg.includes(normalizedInput)) {
+          score = 50;
+        } else if (normalizedInput.includes(normalizedEpg) && normalizedEpg.length >= 4) {
+          score = 40;
+        }
+      }
+
+      if (score > 0) {
+        bestMatches.push({ id: epgChannelId, score });
+      }
+    }
+
+    // Sort by score descending, then by length ascending (prefer shorter/more specific matches)
+    bestMatches.sort((a, b) => {
+      if (b.score !== a.score) return b.score - a.score;
+      return a.id.length - b.id.length;
+    });
+
+    if (bestMatches.length > 0 && bestMatches[0].score >= 40) {
+      const match = bestMatches[0];
+      loggers.epg.debug(`EPG match: "${channelId}" → "${match.id}" (score: ${match.score})`);
+      return match.id;
+    }
+
+    return null;
+  }
+
+  /**
    * Get the current program for a channel
    */
   getCurrentProgram(channelId: string): EPGProgram | null {
-    const programs = this.programCache.get(channelId);
+    // Find the best matching channel ID
+    const matchedChannelId = this.findBestMatchingChannelId(channelId);
+    if (!matchedChannelId) {
+      return null;
+    }
+
+    const programs = this.programCache.get(matchedChannelId);
     if (!programs || programs.length === 0) {
-      // Try fuzzy match
-      const normalizedInput = channelId.toLowerCase().replace(/[^a-z0-9]/g, '');
-      for (const [epgChannelId, channelPrograms] of this.programCache.entries()) {
-        const normalizedEpg = epgChannelId.toLowerCase().replace(/[^a-z0-9]/g, '');
-        if (normalizedEpg.includes(normalizedInput) || normalizedInput.includes(normalizedEpg)) {
-          const now = new Date();
-          return channelPrograms.find(p => {
-            const start = p.startTime instanceof Date ? p.startTime : new Date(p.startTime);
-            const end = p.endTime instanceof Date ? p.endTime : new Date(p.endTime);
-            return now >= start && now <= end;
-          }) || null;
-        }
-      }
       return null;
     }
 
@@ -859,20 +924,13 @@ export class EPGService implements IService {
    * Get upcoming programs for a channel (within specified hours)
    */
   getUpcomingPrograms(channelId: string, hours: number = 3): EPGProgram[] {
-    let programs = this.programCache.get(channelId);
-
-    // Try fuzzy match if exact match fails
-    if (!programs || programs.length === 0) {
-      const normalizedInput = channelId.toLowerCase().replace(/[^a-z0-9]/g, '');
-      for (const [epgChannelId, channelPrograms] of this.programCache.entries()) {
-        const normalizedEpg = epgChannelId.toLowerCase().replace(/[^a-z0-9]/g, '');
-        if (normalizedEpg.includes(normalizedInput) || normalizedInput.includes(normalizedEpg)) {
-          programs = channelPrograms;
-          break;
-        }
-      }
+    // Find the best matching channel ID
+    const matchedChannelId = this.findBestMatchingChannelId(channelId);
+    if (!matchedChannelId) {
+      return [];
     }
 
+    const programs = this.programCache.get(matchedChannelId);
     if (!programs) return [];
 
     const now = new Date();
@@ -894,48 +952,35 @@ export class EPGService implements IService {
    * Get upcoming programs by channel name (fallback when ID lookup fails)
    */
   getUpcomingProgramsByName(channelName: string, hours: number = 3): EPGProgram[] {
-    // Normalize the channel name for matching
-    const normalized = channelName.toLowerCase().replace(/[^a-z0-9]/g, '');
+    // Use the improved matching logic which handles both name mapping and cache lookup
+    const matchedChannelId = this.findBestMatchingChannelId(channelName);
 
-    // Try exact match in name->ID mapping
-    let epgChannelId = this.channelNameToId.get(normalized);
-    let matchType = epgChannelId ? 'exact-name' : '';
-
-    // Try partial matches if exact fails
-    if (!epgChannelId) {
-      // Try finding a key that contains our name or vice versa
-      for (const [mappedName, id] of this.channelNameToId.entries()) {
-        if (mappedName.includes(normalized) || normalized.includes(mappedName)) {
-          epgChannelId = id;
-          matchType = 'partial-name';
-          break;
-        }
-      }
-    }
-
-    // If still no match, try matching against all cached channel IDs
-    if (!epgChannelId) {
-      for (const cachedChannelId of this.programCache.keys()) {
-        const normalizedCached = cachedChannelId.toLowerCase().replace(/[^a-z0-9]/g, '');
-        if (normalizedCached.includes(normalized) || normalized.includes(normalizedCached)) {
-          epgChannelId = cachedChannelId;
-          matchType = 'cache-id';
-          break;
-        }
-      }
-    }
-
-    if (!epgChannelId) {
-      // Log first few failures for debugging
-      loggers.epg.debug(`No match for name "${channelName}" (normalized: ${normalized}, mapping size: ${this.channelNameToId.size})`);
+    if (!matchedChannelId) {
+      loggers.epg.debug(`No EPG match for channel name "${channelName}"`);
       return [];
     }
 
-    const programs = this.getUpcomingPrograms(epgChannelId, hours);
-    if (programs.length > 0) {
-      loggers.epg.trace(`Found ${programs.length} programs for "${channelName}" -> ${epgChannelId} (${matchType})`);
+    const programs = this.programCache.get(matchedChannelId);
+    if (!programs) return [];
+
+    const now = new Date();
+    const cutoff = new Date(now.getTime() + hours * 60 * 60 * 1000);
+
+    const filteredPrograms = programs.filter(p => {
+      const start = p.startTime instanceof Date ? p.startTime : new Date(p.startTime);
+      const end = p.endTime instanceof Date ? p.endTime : new Date(p.endTime);
+      return end > now && start <= cutoff;
+    }).sort((a, b) => {
+      const aStart = a.startTime instanceof Date ? a.startTime : new Date(a.startTime);
+      const bStart = b.startTime instanceof Date ? b.startTime : new Date(b.startTime);
+      return aStart.getTime() - bStart.getTime();
+    });
+
+    if (filteredPrograms.length > 0) {
+      loggers.epg.trace(`Found ${filteredPrograms.length} programs for "${channelName}" → "${matchedChannelId}"`);
     }
-    return programs;
+
+    return filteredPrograms;
   }
 
   /**

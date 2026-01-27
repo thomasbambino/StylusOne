@@ -233,6 +233,35 @@ export class HDHomeRunService implements IService {
   }
 
   /**
+   * Extract call sign from HDHomeRun GuideName
+   * Examples:
+   *   "2.1 KNBC" → "KNBC"
+   *   "5.1 KTTV FOX 11" → "KTTV"
+   *   "7.1 KABC ABC 7" → "KABC"
+   *   "11.1 KTTV" → "KTTV"
+   */
+  private extractCallSign(guideName: string): string {
+    // Remove leading channel number (e.g., "2.1 " or "11.1 ")
+    const withoutNumber = guideName.replace(/^\d+\.\d+\s*/, '').trim();
+
+    // US call signs are typically 3-4 letters starting with K (west) or W (east)
+    // Match the call sign at the start of the remaining string
+    const callSignMatch = withoutNumber.match(/^([KW][A-Z]{2,3})/i);
+    if (callSignMatch) {
+      return callSignMatch[1].toUpperCase();
+    }
+
+    // Fallback: take the first word (for non-standard names)
+    const firstWord = withoutNumber.split(/\s+/)[0];
+    if (firstWord && firstWord.length >= 3) {
+      return firstWord.toUpperCase();
+    }
+
+    // Last resort: normalize the full name
+    return withoutNumber.replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
+  }
+
+  /**
    * Get channels formatted for IPTV provider sync
    * Converts HDHomeRun lineup to format compatible with iptvChannels table
    */
@@ -260,14 +289,20 @@ export class HDHomeRunService implements IService {
       baseUrlObj.port = '5004';
       const streamBase = baseUrlObj.origin;
 
-      return lineup.map(ch => ({
-        streamId: ch.GuideNumber,
-        name: ch.GuideName,
-        directStreamUrl: `${streamBase}/auto/v${ch.GuideNumber}`,
-        quality: ch.HD ? 'hd' as const : 'sd' as const,
-        categoryName: 'OTA Antenna',
-        epgChannelId: ch.GuideName, // Use GuideName for EPG matching
-      }));
+      return lineup.map(ch => {
+        // Extract call sign for better EPG matching
+        const callSign = this.extractCallSign(ch.GuideName);
+        loggers.hdHomeRun.debug(`Channel ${ch.GuideNumber}: "${ch.GuideName}" → call sign "${callSign}"`);
+
+        return {
+          streamId: ch.GuideNumber,
+          name: ch.GuideName,
+          directStreamUrl: `${streamBase}/auto/v${ch.GuideNumber}`,
+          quality: ch.HD ? 'hd' as const : 'sd' as const,
+          categoryName: 'OTA Antenna',
+          epgChannelId: callSign, // Use extracted call sign for EPG matching
+        };
+      });
     } catch (error) {
       loggers.hdHomeRun.error('Error fetching channels for provider sync', { error });
       throw new Error('Failed to fetch HDHomeRun channels');
