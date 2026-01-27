@@ -1,4 +1,5 @@
 import { buildApiUrl, isNativePlatform } from './capacitor';
+import { CapacitorHttp } from '@capacitor/core';
 import { loggers } from './logger';
 
 /**
@@ -270,23 +271,46 @@ export async function sendHeartbeat(
 ): Promise<HeartbeatResponse | null> {
   try {
     const url = buildApiUrl('/api/stream/heartbeat');
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      credentials: 'include',
-      body: JSON.stringify({
-        channelId,
-        sessionId: getSessionId(),
-        sourceUrl
-      })
-    });
+    const body = {
+      channelId,
+      sessionId: getSessionId(),
+      sourceUrl
+    };
 
-    if (!response.ok) {
-      loggers.tv.warn('Heartbeat failed', { status: response.status });
-      return null;
+    let result: HeartbeatResponse;
+
+    // Use CapacitorHttp on native for proper cookie handling
+    if (isNativePlatform()) {
+      const response = await CapacitorHttp.request({
+        url,
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        data: body,
+        responseType: 'json'
+      });
+
+      if (response.status !== 200) {
+        loggers.tv.warn('Heartbeat failed', { status: response.status });
+        return null;
+      }
+
+      result = response.data;
+    } else {
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify(body)
+      });
+
+      if (!response.ok) {
+        loggers.tv.warn('Heartbeat failed', { status: response.status });
+        return null;
+      }
+
+      result = await response.json();
     }
 
-    const result: HeartbeatResponse = await response.json();
     loggers.tv.debug('Heartbeat response', {
       channelId,
       viewerCount: result.viewerCount,
@@ -309,15 +333,28 @@ export async function leaveChannel(channelId: string): Promise<void> {
 
   try {
     const url = buildApiUrl('/api/stream/leave');
-    await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      credentials: 'include',
-      body: JSON.stringify({
-        channelId,
-        sessionId: getSessionId()
-      })
-    });
+    const body = {
+      channelId,
+      sessionId: getSessionId()
+    };
+
+    // Use CapacitorHttp on native for proper cookie handling
+    if (isNativePlatform()) {
+      await CapacitorHttp.request({
+        url,
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        data: body,
+        responseType: 'json'
+      });
+    } else {
+      await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify(body)
+      });
+    }
     loggers.tv.debug('Left channel', { channelId });
   } catch (error) {
     loggers.tv.warn('Leave channel error', { error });
