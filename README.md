@@ -14,6 +14,7 @@ A self-hosted dashboard for managing homelab services including media servers, l
 - [Mobile App](#mobile-app)
 - [iOS App](#ios-app)
 - [Android App](#android-app)
+- [Google Sign-In](#google-sign-in)
 - [Infrastructure](#infrastructure)
 - [Shared Code](#shared-code)
 - [Logging System](#logging-system)
@@ -1121,6 +1122,215 @@ VITE_FIREBASE_APP_ID=...
 | **Signing** | Keystore file | Xcode signing |
 | **Distribution** | APK/AAB → Play Store | IPA → App Store |
 | **Google Auth Config** | `strings.xml` | `capacitor.config.ts` |
+
+---
+
+## Google Sign-In
+
+The app implements **two OAuth flows**: web (Passport.js redirect) and native (Capacitor plugin).
+
+### Flow Diagrams
+
+**Web Flow:**
+```
+Click "Sign in with Google" → Redirect to /api/auth/google/start
+→ Google login screen → Callback to /api/auth/google/callback
+→ Verify profile → Create/find user → Session cookie → Redirect to dashboard
+```
+
+**Native Flow (iOS/Android):**
+```
+Click "Sign in with Google" → GoogleAuth.signIn() native dialog
+→ Returns ID token → POST /api/auth/google with token
+→ Firebase verifies token → Create/find user → Session → Return user JSON
+```
+
+### Client Implementation
+
+**File**: `client/src/components/google-auth-button.tsx`
+
+```tsx
+import { GoogleAuth } from '@codetrix-studio/capacitor-google-auth';
+import { CapacitorHttp } from '@capacitor/core';
+
+export function GoogleAuthButton({ onSuccess, redirect }: Props) {
+
+  const handleClick = async () => {
+    if (!isNativePlatform()) {
+      // WEB: OAuth redirect
+      window.location.href = `/api/auth/google/start`;
+      return;
+    }
+
+    // NATIVE: Capacitor plugin
+    const result = await GoogleAuth.signIn();
+    const idToken = result.authentication.idToken;
+
+    // CapacitorHttp required for cookie handling on native
+    const response = await CapacitorHttp.post({
+      url: `${getApiBaseUrl()}/api/auth/google`,
+      headers: { 'Content-Type': 'application/json' },
+      data: { token: idToken },
+    });
+
+    if (response.status === 403) {
+      // User needs admin approval
+      return;
+    }
+
+    queryClient.setQueryData(['/api/user'], response.data);
+    onSuccess?.(response.data);
+  };
+
+  return <Button onClick={handleClick}>Sign in with Google</Button>;
+}
+```
+
+### Server Implementation
+
+**File**: `server/auth.ts`
+
+#### Passport Google Strategy (Web)
+
+```typescript
+passport.use(new GoogleStrategy({
+    clientID: process.env.VITE_GOOGLE_CLIENT_ID!,
+    clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
+    callbackURL: `${process.env.APP_URL}/api/auth/google/callback`
+  },
+  async (accessToken, refreshToken, profile, done) => {
+    const email = profile.emails?.[0]?.value;
+
+    let user = await storage.getUserByEmail(email);
+    if (!user) {
+      user = await storage.createUser({
+        username: profile.displayName,
+        email,
+        password: crypto.randomBytes(32).toString('hex'),
+        role: 'pending',
+        approved: false,
+      });
+    }
+
+    return done(null, user);
+  }
+));
+```
+
+#### Token Verification Endpoint (Native)
+
+```typescript
+app.post('/api/auth/google', async (req, res) => {
+  const { token } = req.body;
+
+  // Verify with Firebase Admin SDK
+  const decoded = await admin.auth().verifyIdToken(token);
+  const email = decoded.email;
+
+  let user = await storage.getUserByEmail(email);
+  if (!user) {
+    user = await storage.createUser({ email, ... });
+  }
+
+  if (!user.approved) {
+    return res.status(403).json({
+      message: 'Account pending approval',
+      requiresApproval: true,
+    });
+  }
+
+  req.login(user, (err) => {
+    res.json(user);
+  });
+});
+```
+
+### Capacitor Configuration
+
+**File**: `capacitor.config.ts`
+
+```typescript
+plugins: {
+  GoogleAuth: {
+    scopes: ['profile', 'email'],
+    iosClientId: process.env.VITE_GOOGLE_IOS_CLIENT_ID,
+    androidClientId: process.env.VITE_GOOGLE_CLIENT_ID,
+  }
+}
+```
+
+### Platform Configuration
+
+**iOS** (`Info.plist`):
+```xml
+<key>CFBundleURLSchemes</key>
+<array>
+    <string>com.googleusercontent.apps.YOUR_IOS_CLIENT_ID</string>
+</array>
+```
+
+**Android** (`strings.xml` - auto-injected from `.env`):
+```xml
+<string name="server_client_id">YOUR_GOOGLE_CLIENT_ID</string>
+```
+
+### Environment Variables
+
+```bash
+# Firebase
+VITE_FIREBASE_API_KEY=AIzaSy...
+VITE_FIREBASE_PROJECT_ID=your-project-id
+VITE_FIREBASE_APP_ID=1:123456:web:abc123
+
+# Google OAuth
+VITE_GOOGLE_CLIENT_ID=123456.apps.googleusercontent.com
+GOOGLE_CLIENT_SECRET=GOCSPX-...
+
+# iOS-specific
+VITE_GOOGLE_IOS_CLIENT_ID=123456.apps.googleusercontent.com
+```
+
+### User Approval Flow
+
+New users are created with `approved: false` by default. Admin must approve before access is granted.
+
+**Not Approved (403):**
+```json
+{ "message": "Account pending approval", "requiresApproval": true }
+```
+
+**Approved (200):**
+```json
+{ "id": 123, "email": "user@example.com", "approved": true }
+```
+
+### Web vs Native Comparison
+
+| Aspect | Web | Native |
+|--------|-----|--------|
+| **Flow** | OAuth redirect | Native SDK dialog |
+| **Client ID** | `VITE_GOOGLE_CLIENT_ID` | iOS: `VITE_GOOGLE_IOS_CLIENT_ID` |
+| **Token Transport** | Via redirect callback | POST body |
+| **Cookie Handling** | Automatic | Requires CapacitorHttp |
+| **Verification** | Passport auto-verifies | Firebase Admin SDK |
+
+### Security Features
+
+| Feature | Implementation |
+|---------|----------------|
+| **Token Verification** | Firebase Admin SDK |
+| **Rate Limiting** | 5 attempts per 10 minutes |
+| **Session Cookies** | httpOnly, secure, sameSite: lax |
+| **Login Tracking** | IP, ISP, city, country logged |
+
+### Key Files
+
+| File | Purpose |
+|------|---------|
+| `client/src/components/google-auth-button.tsx` | Sign-in button |
+| `client/src/lib/firebase.ts` | Firebase initialization |
+| `server/auth.ts` | Passport strategies, token verification |
+| `capacitor.config.ts` | GoogleAuth plugin config |
 
 ---
 
