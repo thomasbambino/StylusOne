@@ -721,6 +721,116 @@ cd ../..
 | **Google Sign-In** | Native OAuth with iOS-specific client ID |
 | **Keep Awake** | Prevents sleep during video playback |
 
+### Splash Screen Architecture
+
+The iOS app uses a **three-layer splash screen** system for smooth loading:
+
+```
+iOS Launch Screen (static image)
+         ↓
+HTML Initial Splash (black screen)
+         ↓
+React App renders
+         ↓
+Animated splash shows for 3 seconds
+         ↓
+Fade out → Main app visible
+```
+
+#### Layer 1: Native Launch Screen
+
+**File**: `ios/App/App/Base.lproj/LaunchScreen.storyboard`
+
+Static image displayed by iOS while the app binary loads:
+
+```xml
+<imageView contentMode="scaleAspectFill" image="Splash">
+    <color key="backgroundColor" red="0" green="0" blue="0" alpha="1"/>
+</imageView>
+```
+
+#### Layer 2: HTML Transition Splash
+
+**File**: `client/index.html`
+
+Black div covering the screen while React initializes:
+
+```html
+<div id="initial-splash" style="position: fixed; inset: 0; z-index: 9999; background-color: #000;"></div>
+
+<script>
+  // Hide immediately on web, keep visible on native until React is ready
+  window.__hideInitialSplash = function() {
+    var splash = document.getElementById('initial-splash');
+    splash.style.transition = 'opacity 0.3s ease-out';
+    splash.style.opacity = '0';
+    setTimeout(() => splash.remove(), 300);
+  };
+</script>
+```
+
+#### Layer 3: Animated React Splash
+
+**File**: `client/src/pages/live-tv-native.tsx`
+
+Animated splash with Framer Motion (shows for 3 seconds):
+
+```tsx
+const [showSplash, setShowSplash] = useState(true);
+
+useEffect(() => {
+  const timer = setTimeout(() => setShowSplash(false), 3000);
+  return () => clearTimeout(timer);
+}, []);
+
+<AnimatePresence>
+  {showSplash && (
+    <motion.div
+      initial={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      transition={{ duration: 0.4 }}
+      className="fixed inset-0 z-[100] bg-black"
+    >
+      {/* 20 floating particles */}
+      {[...Array(20)].map((_, i) => (
+        <motion.div
+          className="absolute w-1 h-1 bg-white/20 rounded-full"
+          animate={{ y: [null, -100], opacity: [0, 0.5, 0] }}
+          transition={{ duration: 3 + Math.random() * 2, repeat: Infinity }}
+        />
+      ))}
+
+      {/* Radial blue glow background */}
+      <div className="absolute inset-0 bg-gradient-radial from-blue-900/20" />
+
+      {/* Logo with blur glow */}
+      <div className="absolute w-64 h-64 bg-blue-600/20 rounded-full blur-[80px]" />
+      <img src={settings.logo_url_large} className="w-24 h-24" />
+
+      {/* App name */}
+      <h1 className="text-2xl font-bold text-white">{settings.site_title}</h1>
+
+      {/* Animated loading bar */}
+      <motion.div
+        className="h-1 w-1/3 bg-gradient-to-r from-transparent via-blue-500 to-transparent"
+        animate={{ x: ['-100%', '400%'] }}
+        transition={{ duration: 1.2, repeat: Infinity }}
+      />
+    </motion.div>
+  )}
+</AnimatePresence>
+```
+
+#### Animation Elements
+
+| Element | Animation |
+|---------|-----------|
+| **Particles** | 20 dots floating upward, fading in/out on loop |
+| **Background** | Radial blue gradient glow |
+| **Logo** | Static with 80px blurred blue glow |
+| **Loading bar** | Blue gradient sliding left-to-right infinitely |
+| **Exit** | Entire splash fades out over 0.4s |
+
 ### App Store Submission
 
 1. In Xcode: Product → Archive
