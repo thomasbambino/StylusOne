@@ -12,6 +12,7 @@ A self-hosted dashboard for managing homelab services including media servers, l
 - [Game Servers](#game-servers)
 - [Subscriptions & Payments](#subscriptions--payments)
 - [Mobile App](#mobile-app)
+- [iOS App](#ios-app)
 - [Infrastructure](#infrastructure)
 - [Shared Code](#shared-code)
 - [Logging System](#logging-system)
@@ -486,6 +487,271 @@ npm run cap:open      # Open Android Studio
 npm run cap:run       # Build, sync, and open
 npm run android:build # Build debug APK
 ```
+
+---
+
+## iOS App
+
+### Directory Structure
+
+```
+ios/App/
+├── App/
+│   ├── AppDelegate.swift           # App lifecycle, notifications
+│   ├── PiPBridgeViewController.swift  # Custom WebView with PiP
+│   ├── NativeTabBarPlugin.swift    # Custom native tab bar
+│   ├── Info.plist                  # App configuration
+│   └── Assets.xcassets/            # App icons
+├── App.xcworkspace/                # Open this in Xcode
+├── Podfile                         # CocoaPods dependencies
+└── Pods/                           # Installed dependencies
+```
+
+### Capacitor iOS Configuration
+
+**File**: `capacitor.config.ts`
+
+```typescript
+const config: CapacitorConfig = {
+  appId: 'com.stylusone.app',
+  appName: 'Stylus One',
+  webDir: 'dist/public',
+  plugins: {
+    GoogleAuth: {
+      scopes: ['profile', 'email'],
+      iosClientId: process.env.VITE_GOOGLE_IOS_CLIENT_ID,
+    }
+  }
+};
+```
+
+Web assets are **bundled** with the app for fast load times and offline support.
+
+### Native Swift Code
+
+#### AppDelegate.swift
+
+Handles app lifecycle and notifications:
+
+```swift
+func application(_ application: UIApplication, didFinishLaunchingWithOptions...) {
+    // Black background prevents white flash on launch
+    window?.backgroundColor = .black
+
+    // Show notifications in foreground
+    UNUserNotificationCenter.current().delegate = self
+}
+
+// Forward notification taps to Capacitor
+func userNotificationCenter(_ center: UNUserNotificationCenter,
+                           didReceive response: UNNotificationResponse...) {
+    NotificationCenter.default.post(
+        name: .capacitorDidReceiveLocalNotification,
+        object: response.notification
+    )
+}
+```
+
+#### PiPBridgeViewController.swift
+
+Custom WebView with video features:
+
+```swift
+class PiPBridgeViewController: CAPBridgeViewController {
+    override func webViewConfiguration(for config: WKWebViewConfiguration) {
+        config.allowsPictureInPictureMediaPlayback = true
+        config.allowsAirPlayForMediaPlayback = true
+        config.allowsInlineMediaPlayback = true
+        config.mediaTypesRequiringUserActionForPlayback = []
+    }
+}
+```
+
+#### NativeTabBarPlugin.swift
+
+Custom Capacitor plugin for native iOS tab bar:
+
+```swift
+@objc(NativeTabBarPlugin)
+public class NativeTabBarPlugin: CAPPlugin {
+    @objc func show(_ call: CAPPluginCall) {
+        DispatchQueue.main.async {
+            UIView.animate(withDuration: 0.35, delay: 0,
+                          usingSpringWithDamping: 0.8,
+                          initialSpringVelocity: 0.5) {
+                self.tabBar?.transform = .identity
+            }
+        }
+    }
+
+    @objc func setSelected(_ call: CAPPluginCall) {
+        // Haptic feedback on tab selection
+        let generator = UIImpactFeedbackGenerator(style: .light)
+        generator.impactOccurred()
+    }
+}
+```
+
+### Info.plist Configuration
+
+```xml
+<!-- Background audio for streaming -->
+<key>UIBackgroundModes</key>
+<array>
+    <string>audio</string>
+</array>
+
+<!-- Allow HTTP for image CDN -->
+<key>NSAppTransportSecurity</key>
+<dict>
+    <key>NSAllowsArbitraryLoadsInWebContent</key>
+    <true/>
+</dict>
+
+<!-- Google Sign-In URL scheme -->
+<key>CFBundleURLTypes</key>
+<array>
+    <dict>
+        <key>CFBundleURLSchemes</key>
+        <array>
+            <string>com.googleusercontent.apps.YOUR_CLIENT_ID</string>
+        </array>
+    </dict>
+</array>
+```
+
+### CocoaPods Dependencies
+
+**File**: `ios/App/Podfile`
+
+```ruby
+platform :ios, '14.0'
+
+target 'App' do
+  capacitor_pods
+
+  pod 'CapacitorDevice'
+  pod 'CapacitorHaptics'
+  pod 'CapacitorLocalNotifications'
+  pod 'CapacitorPreferences'
+  pod 'CapacitorScreenOrientation'
+  pod 'CapacitorCommunityKeepAwake'
+  pod 'CaprockappsCapacitorChromecast'
+  pod 'CodetrixStudioCapacitorGoogleAuth'
+end
+```
+
+### Client-Side iOS Handling
+
+#### HTTP Requests with Cookies
+
+iOS WKWebView doesn't share cookies with `fetch()`, so use CapacitorHttp:
+
+```typescript
+import { CapacitorHttp } from '@capacitor/core';
+
+export async function apiRequest(url: string, options: RequestInit = {}) {
+  if (isNativePlatform()) {
+    // CapacitorHttp handles cookies properly on iOS
+    return CapacitorHttp.request({
+      url: getApiBaseUrl() + url,
+      method: options.method || 'GET',
+      headers: options.headers as Record<string, string>,
+      data: options.body,
+    });
+  }
+  return fetch(url, { ...options, credentials: 'include' });
+}
+```
+
+#### Native Tab Bar Control
+
+```typescript
+import { registerPlugin } from '@capacitor/core';
+
+const NativeTabBar = registerPlugin<NativeTabBarPlugin>('NativeTabBarPlugin');
+
+export async function showNativeTabBar() {
+  if (Capacitor.getPlatform() !== 'ios') return;
+  await NativeTabBar.show();
+}
+```
+
+#### Haptic Feedback
+
+```typescript
+import { Haptics, ImpactStyle } from '@capacitor/haptics';
+
+export async function hapticLight() {
+  if (!isNativePlatform()) return;
+  await Haptics.impact({ style: ImpactStyle.Light });
+}
+```
+
+### iOS Build Workflow
+
+```bash
+# Build and sync
+npm run build
+npx cap sync ios
+
+# Open in Xcode
+npx cap open ios
+
+# Or all-in-one
+npm run cap:run
+```
+
+#### Pod Installation
+
+```bash
+cd ios/App
+pod install
+cd ../..
+```
+
+### iOS-Specific Features
+
+| Feature | Implementation |
+|---------|----------------|
+| **Picture-in-Picture** | `PiPBridgeViewController` enables PiP for HLS streams |
+| **AirPlay** | WebView configured for Apple TV streaming |
+| **Background Audio** | Info.plist `UIBackgroundModes: audio` |
+| **Native Tab Bar** | Custom `NativeTabBarPlugin.swift` with haptics |
+| **Google Sign-In** | Native OAuth with iOS-specific client ID |
+| **Keep Awake** | Prevents sleep during video playback |
+
+### App Store Submission
+
+1. In Xcode: Product → Archive
+2. Click "Distribute App" → "App Store Connect"
+3. Upload to App Store Connect
+4. Submit for review
+
+**Required assets:**
+- App icon: 1024x1024 PNG
+- Screenshots: iPhone 6.7" and iPad 12.9"
+- Privacy policy URL
+
+### iOS Environment Variables
+
+```bash
+VITE_API_URL=https://your-server.com
+VITE_GOOGLE_IOS_CLIENT_ID=your-ios-client-id.apps.googleusercontent.com
+VITE_FIREBASE_API_KEY=...
+VITE_FIREBASE_PROJECT_ID=...
+VITE_FIREBASE_APP_ID=...
+```
+
+### Common iOS Issues
+
+| Problem | Solution |
+|---------|----------|
+| White flash on launch | Set black background in AppDelegate + PiPBridgeViewController |
+| 401 errors on API calls | Use `CapacitorHttp` instead of `fetch` |
+| Cookies not persisting | WKWebView issue - must use CapacitorHttp |
+| Pod install fails | Run `pod repo update` then retry |
+| Build fails after plugin update | `npx cap sync --force` and clean build |
 
 ---
 
