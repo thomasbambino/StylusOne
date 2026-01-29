@@ -13,6 +13,7 @@ A self-hosted dashboard for managing homelab services including media servers, l
 - [Subscriptions & Payments](#subscriptions--payments)
 - [Mobile App](#mobile-app)
 - [iOS App](#ios-app)
+- [Android App](#android-app)
 - [Infrastructure](#infrastructure)
 - [Shared Code](#shared-code)
 - [Logging System](#logging-system)
@@ -862,6 +863,264 @@ VITE_FIREBASE_APP_ID=...
 | Cookies not persisting | WKWebView issue - must use CapacitorHttp |
 | Pod install fails | Run `pod repo update` then retry |
 | Build fails after plugin update | `npx cap sync --force` and clean build |
+
+---
+
+## Android App
+
+### Directory Structure
+
+```
+android/
+├── app/
+│   ├── src/main/
+│   │   ├── java/com/stylusone/app/
+│   │   │   └── MainActivity.java      # Minimal Capacitor wrapper
+│   │   ├── res/
+│   │   │   ├── values/strings.xml     # App name, Google Client ID
+│   │   │   ├── drawable/              # Splash screens
+│   │   │   └── mipmap-*/              # Launcher icons
+│   │   └── AndroidManifest.xml
+│   └── build.gradle                   # App-level config
+├── build.gradle                       # Root build config
+├── variables.gradle                   # SDK versions
+├── stylusone-release.keystore         # Play Store signing key
+└── capacitor-cordova-android-plugins/
+```
+
+### Native Android Configuration
+
+#### MainActivity.java
+
+Minimal implementation - Capacitor handles everything:
+
+```java
+package com.stylusone.app;
+
+import com.getcapacitor.BridgeActivity;
+
+public class MainActivity extends BridgeActivity {}
+```
+
+No custom Java code needed - all functionality lives in TypeScript/React.
+
+#### SDK Versions (`variables.gradle`)
+
+```gradle
+ext {
+    minSdkVersion = 23           // Android 6.0
+    compileSdkVersion = 35       // Android 15
+    targetSdkVersion = 35
+    javaVersion = VERSION_21
+}
+```
+
+#### AndroidManifest.xml
+
+```xml
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <uses-permission android:name="android.permission.INTERNET" />
+
+    <application
+        android:allowBackup="true"
+        android:icon="@mipmap/ic_launcher"
+        android:label="@string/app_name"
+        android:theme="@style/AppTheme">
+
+        <activity
+            android:name=".MainActivity"
+            android:launchMode="singleTask"
+            android:theme="@style/AppTheme.NoActionBarLaunch"
+            android:configChanges="orientation|keyboardHidden|keyboard|screenSize|locale"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+    </application>
+</manifest>
+```
+
+### Capacitor Plugins
+
+| Plugin | Purpose |
+|--------|---------|
+| `@capacitor/device` | Device info (model, platform, OS) |
+| `@capacitor/haptics` | Vibration feedback |
+| `@capacitor/local-notifications` | Push notifications |
+| `@capacitor/preferences` | Native key-value storage |
+| `@capacitor/screen-orientation` | Lock/unlock rotation |
+| `@capacitor-community/keep-awake` | Prevent screen sleep |
+| `@caprockapps/capacitor-chromecast` | Cast to Chromecast |
+| `@codetrix-studio/capacitor-google-auth` | Google Sign-In |
+
+### Build Configuration
+
+#### Signing (`app/build.gradle`)
+
+```gradle
+android {
+    signingConfigs {
+        release {
+            storeFile file('../stylusone-release.keystore')
+            storePassword 'your-password'
+            keyAlias 'stylusone'
+            keyPassword 'your-password'
+        }
+    }
+    buildTypes {
+        release {
+            signingConfig signingConfigs.release
+            minifyEnabled false
+        }
+    }
+}
+```
+
+### Client-Side Android Handling
+
+#### Platform Detection
+
+```typescript
+import { Device } from '@capacitor/device';
+
+export async function getDeviceType(): Promise<'phone' | 'tablet' | 'tv' | 'web'> {
+  if (!isNativePlatform()) return 'web';
+
+  const info = await Device.getInfo();
+
+  // Android TV detection
+  if (info.platform === 'android') {
+    const model = info.model.toLowerCase();
+    if (model.includes('tv') || model.includes('shield') ||
+        model.includes('firetv') || model.includes('chromecast')) {
+      return 'tv';
+    }
+    if (window.innerWidth >= 600) return 'tablet';
+  }
+  return 'phone';
+}
+```
+
+#### HTTP Requests with Cookies
+
+```typescript
+import { CapacitorHttp } from '@capacitor/core';
+
+export async function apiRequest(url: string, options: RequestInit = {}) {
+  if (isNativePlatform()) {
+    // CapacitorHttp shares cookies with WebView
+    return CapacitorHttp.request({
+      url: getApiBaseUrl() + url,
+      method: options.method || 'GET',
+      headers: options.headers as Record<string, string>,
+      data: options.body,
+    });
+  }
+  return fetch(url, { ...options, credentials: 'include' });
+}
+```
+
+### Google Auth Auto-Configuration
+
+Script (`scripts/update-android-config.cjs`) auto-injects Client ID from `.env`:
+
+```javascript
+// Reads VITE_GOOGLE_CLIENT_ID from .env
+// Injects into android/app/src/main/res/values/strings.xml
+const clientId = env.match(/VITE_GOOGLE_CLIENT_ID=(.+)/)?.[1];
+strings = strings.replace(
+  /<string name="server_client_id">.*<\/string>/,
+  `<string name="server_client_id">${clientId}</string>`
+);
+```
+
+### Android Build Commands
+
+```bash
+# Build web + sync to Android
+npm run cap:sync
+
+# Open Android Studio
+npm run cap:open
+
+# Build, sync, and open (all-in-one)
+npm run cap:run
+
+# Build debug APK
+npm run android:build
+
+# Build release APK
+cd android && ./gradlew assembleRelease
+
+# Build App Bundle for Play Store
+cd android && ./gradlew bundleRelease
+```
+
+#### Build Output
+
+```
+android/app/build/outputs/
+├── apk/
+│   ├── debug/app-debug.apk
+│   └── release/app-release.apk
+└── bundle/
+    └── release/app-release.aab    # Play Store
+```
+
+### Android-Specific Features
+
+| Feature | Implementation |
+|---------|----------------|
+| **Google Sign-In** | Auto-injected Client ID in `strings.xml` |
+| **Haptic Feedback** | Vibration on user interactions |
+| **Keep Awake** | Prevents sleep during video |
+| **Chromecast** | Cast streams to Chromecast devices |
+| **Screen Orientation** | Lock landscape for fullscreen video |
+| **Android TV** | Detection by model name + optimized UI |
+
+### Play Store Deployment
+
+1. Update version in `server/lib/startup-display.ts`
+2. Build release bundle:
+   ```bash
+   cd android && ./gradlew bundleRelease
+   ```
+3. Upload `app-release.aab` to Google Play Console
+4. Configure store listing (screenshots, description, privacy policy)
+5. Submit for review (1-3 days)
+
+### Android Environment Variables
+
+```bash
+VITE_API_URL=https://your-server.com
+VITE_GOOGLE_CLIENT_ID=your-client-id.apps.googleusercontent.com
+VITE_FIREBASE_API_KEY=...
+VITE_FIREBASE_PROJECT_ID=...
+VITE_FIREBASE_APP_ID=...
+```
+
+### Common Android Issues
+
+| Problem | Solution |
+|---------|----------|
+| 401 errors on API calls | Use `CapacitorHttp` instead of `fetch` |
+| Google Sign-In fails | Check `server_client_id` in `strings.xml` |
+| Build fails with SDK error | Update `compileSdkVersion` in `variables.gradle` |
+| Cookies not persisting | Must use CapacitorHttp for authenticated requests |
+| Chromecast not finding devices | Ensure same WiFi network |
+
+### iOS vs Android Comparison
+
+| Aspect | Android | iOS |
+|--------|---------|-----|
+| **Native Code** | None (pure Capacitor) | Custom Swift (PiP, Tab Bar) |
+| **Tab Bar** | Web-based (React) | Native UITabBar |
+| **Package Manager** | Gradle | CocoaPods |
+| **Signing** | Keystore file | Xcode signing |
+| **Distribution** | APK/AAB → Play Store | IPA → App Store |
+| **Google Auth Config** | `strings.xml` | `capacitor.config.ts` |
 
 ---
 
