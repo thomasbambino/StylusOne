@@ -838,10 +838,10 @@ export default function LiveTVPage() {
       if (channels && Array.isArray(channels)) {
         channels.forEach(ch => {
           if (ch.name) {
-            const normalizedName = ch.name.toLowerCase().trim();
-            const existing = map.get(normalizedName) || new Set();
+            // Use channel name directly without normalization (same as iOS)
+            const existing = map.get(ch.name) || new Set();
             existing.add(pkg.packageId);
-            map.set(normalizedName, existing);
+            map.set(ch.name, existing);
           }
         });
       }
@@ -928,7 +928,26 @@ export default function LiveTVPage() {
   // State for HDHomeRun channel visibility and search - MUST be before early returns
   const [showHDHomeRun, setShowHDHomeRun] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
-  const [selectedPackageIds, setSelectedPackageIds] = useState<Set<number>>(new Set());
+
+  // Package filtering - uses exclusion logic like iOS (hiddenPackages)
+  const [hiddenPackages, setHiddenPackages] = useState<Set<number>>(() => {
+    try {
+      const saved = localStorage.getItem('guideHiddenPackages');
+      if (saved) {
+        return new Set(JSON.parse(saved));
+      }
+    } catch (e) {}
+    return new Set();
+  });
+
+  // Persist hidden packages to localStorage
+  useEffect(() => {
+    if (hiddenPackages.size > 0) {
+      localStorage.setItem('guideHiddenPackages', JSON.stringify(Array.from(hiddenPackages)));
+    } else {
+      localStorage.removeItem('guideHiddenPackages');
+    }
+  }, [hiddenPackages]);
 
   // Prepare channel list for EPG queries (before early returns)
   // Convert HDHomeRun channels to unified format
@@ -967,18 +986,17 @@ export default function LiveTVPage() {
     filteredChannels = filteredChannels.filter(ch => ch.source !== 'hdhomerun');
   }
 
-  // Filter by selected packages (multi-select) - uses channel NAME matching like iOS
-  if (selectedPackageIds.size > 0 && channelToPackages.size > 0) {
+  // Filter out channels from hidden packages (exclusion logic like iOS)
+  if (hiddenPackages.size > 0 && channelToPackages.size > 0) {
     filteredChannels = filteredChannels.filter(ch => {
-      // Match by channel name (normalized)
-      const normalizedName = ch.GuideName.toLowerCase().trim();
-      const packageIds = channelToPackages.get(normalizedName);
+      // Match by channel name (same approach as iOS - use GuideName directly)
+      const packageIds = channelToPackages.get(ch.GuideName);
 
-      // If channel isn't in any package data, show it (same as iOS)
+      // If channel isn't in any package, show it
       if (!packageIds || packageIds.size === 0) return true;
 
-      // Show channel if it belongs to ANY of the selected packages
-      return Array.from(packageIds).some(pkgId => selectedPackageIds.has(pkgId));
+      // Show channel if at least one of its packages is not hidden
+      return Array.from(packageIds).some(pkgId => !hiddenPackages.has(pkgId));
     });
   }
 
@@ -2864,9 +2882,9 @@ export default function LiveTVPage() {
                           <Button variant="outline" className="w-44 justify-between">
                             <span className="flex items-center gap-2">
                               <Filter className="h-4 w-4" />
-                              {selectedPackageIds.size === 0
+                              {hiddenPackages.size === 0
                                 ? "All Packages"
-                                : `${selectedPackageIds.size} Package${selectedPackageIds.size > 1 ? 's' : ''}`}
+                                : `${userPackages.length - hiddenPackages.size}/${userPackages.length} Packages`}
                             </span>
                             <ChevronDown className="h-4 w-4 opacity-50" />
                           </Button>
@@ -2875,35 +2893,23 @@ export default function LiveTVPage() {
                           <div className="space-y-2">
                             <div
                               className="flex items-center gap-2 p-2 hover:bg-accent rounded cursor-pointer"
-                              onClick={() => setSelectedPackageIds(new Set())}
+                              onClick={() => setHiddenPackages(new Set())}
                             >
                               <Checkbox
-                                checked={selectedPackageIds.size === 0}
-                                onCheckedChange={() => setSelectedPackageIds(new Set())}
+                                checked={hiddenPackages.size === 0}
+                                onCheckedChange={() => setHiddenPackages(new Set())}
                               />
                               <span className="text-sm font-medium">All Packages</span>
                             </div>
                             <div className="border-t pt-2">
-                              {userPackages.map(pkg => (
-                                <div
-                                  key={pkg.packageId}
-                                  className="flex items-center gap-2 p-2 hover:bg-accent rounded cursor-pointer"
-                                  onClick={() => {
-                                    setSelectedPackageIds(prev => {
-                                      const next = new Set(prev);
-                                      if (next.has(pkg.packageId)) {
-                                        next.delete(pkg.packageId);
-                                      } else {
-                                        next.add(pkg.packageId);
-                                      }
-                                      return next;
-                                    });
-                                  }}
-                                >
-                                  <Checkbox
-                                    checked={selectedPackageIds.has(pkg.packageId)}
-                                    onCheckedChange={() => {
-                                      setSelectedPackageIds(prev => {
+                              {userPackages.map(pkg => {
+                                const isVisible = !hiddenPackages.has(pkg.packageId);
+                                return (
+                                  <div
+                                    key={pkg.packageId}
+                                    className="flex items-center gap-2 p-2 hover:bg-accent rounded cursor-pointer"
+                                    onClick={() => {
+                                      setHiddenPackages(prev => {
                                         const next = new Set(prev);
                                         if (next.has(pkg.packageId)) {
                                           next.delete(pkg.packageId);
@@ -2913,13 +2919,28 @@ export default function LiveTVPage() {
                                         return next;
                                       });
                                     }}
-                                  />
-                                  <span className="text-sm">{pkg.packageName}</span>
-                                  <span className="text-xs text-muted-foreground ml-auto">
-                                    {pkg.channelCount}
-                                  </span>
-                                </div>
-                              ))}
+                                  >
+                                    <Checkbox
+                                      checked={isVisible}
+                                      onCheckedChange={() => {
+                                        setHiddenPackages(prev => {
+                                          const next = new Set(prev);
+                                          if (next.has(pkg.packageId)) {
+                                            next.delete(pkg.packageId);
+                                          } else {
+                                            next.add(pkg.packageId);
+                                          }
+                                          return next;
+                                        });
+                                      }}
+                                    />
+                                    <span className="text-sm">{pkg.packageName}</span>
+                                    <span className="text-xs text-muted-foreground ml-auto">
+                                      {pkg.channelCount}
+                                    </span>
+                                  </div>
+                                );
+                              })}
                             </div>
                           </div>
                         </PopoverContent>
