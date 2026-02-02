@@ -4972,29 +4972,6 @@ live.ts
     }
   });
 
-  // EPG debug endpoint - trace the lookup process for a channel ID
-  app.get("/api/epg/debug/:channelId", async (req, res) => {
-    if (!req.isAuthenticated()) return res.sendStatus(401);
-
-    // Only allow super admins to use debug endpoint
-    const user = req.user as any;
-    if (!user || user.role !== 'superadmin') {
-      return res.status(403).json({ error: 'Super admin required' });
-    }
-
-    try {
-      const epgService = await getEPGService();
-      const debug = epgService.debugLookup(req.params.channelId);
-      res.json(debug);
-    } catch (error) {
-      loggers.epg.error('Error in EPG debug', { error });
-      res.status(500).json({
-        message: "Failed to debug EPG lookup",
-        error: error instanceof Error ? error.message : "Unknown error"
-      });
-    }
-  });
-
   // ============================================================================
   // TV CODE LOGIN API - Netflix/Hulu style code authentication for TV devices
   // ============================================================================

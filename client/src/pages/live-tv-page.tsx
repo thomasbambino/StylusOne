@@ -2452,14 +2452,14 @@ export default function LiveTVPage() {
 
       loggers.tv.info('IPTV stream session acquired', { platform });
 
-      // Start viewer tracking heartbeat for mini-CDN mode promotion
+      // Start viewer tracking for analytics (server handles mode logic per provider type)
       startViewerHeartbeat(streamId, undefined, (mode, viewerCount) => {
         loggers.tv.debug('Viewer tracking update', { mode, viewerCount });
       });
     } catch (e) {
       loggers.tv.debug('IPTV could not acquire stream session', { error: e });
       // Continue anyway - stream might still work for users without subscription
-      // Still start viewer tracking even if IPTV session failed
+      // Still start viewer tracking for analytics
       startViewerHeartbeat(streamId, undefined, (mode, viewerCount) => {
         loggers.tv.debug('Viewer tracking update', { mode, viewerCount });
       });

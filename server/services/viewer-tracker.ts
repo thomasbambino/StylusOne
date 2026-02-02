@@ -105,8 +105,8 @@ export class ViewerTracker {
 
     const viewerCount = channel.viewers.size;
 
-    // Calculate recommended mode based on viewer count
-    const recommendedMode = this.calculateMode(viewerCount);
+    // Calculate recommended mode based on viewer count and channel type
+    const recommendedMode = this.calculateMode(viewerCount, channelId);
 
     // Apply hysteresis - only change mode if not locked
     if (now >= channel.modeLockedUntil && channel.currentMode !== recommendedMode) {
@@ -169,7 +169,7 @@ export class ViewerTracker {
 
     // Consider mode demotion
     const now = Date.now();
-    const recommendedMode = this.calculateMode(viewerCount);
+    const recommendedMode = this.calculateMode(viewerCount, channelId);
 
     if (now >= channel.modeLockedUntil && channel.currentMode !== recommendedMode) {
       const oldMode = channel.currentMode;
@@ -230,8 +230,19 @@ export class ViewerTracker {
 
   /**
    * Calculate the recommended mode based on viewer count
+   * M3U and HDHomeRun streams always stay in direct mode (no viewer limits)
+   * Only Xtream streams use the mini-CDN mode switching
    */
-  private calculateMode(viewerCount: number): StreamMode {
+  private calculateMode(viewerCount: number, channelId: string): StreamMode {
+    // M3U streams (m3u_p{providerId}_{n}) and HDHomeRun streams don't have viewer limits
+    // Only Xtream streams need mode switching for mini-CDN
+    const isM3uStream = channelId.startsWith('m3u_');
+    const isHdHomeRunStream = channelId.startsWith('hdhomerun_');
+
+    if (isM3uStream || isHdHomeRunStream) {
+      return 'direct';
+    }
+
     if (viewerCount >= TRANSCODE_THRESHOLD) {
       return 'transcode';
     }
