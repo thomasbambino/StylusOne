@@ -950,6 +950,55 @@ router.get('/iptv-channels', requireSuperAdmin, async (req, res) => {
 });
 
 /**
+ * GET /api/admin/iptv-channels/epg-debug
+ * Search channels by name and show their epgChannelId for debugging
+ */
+router.get('/iptv-channels/epg-debug', requireSuperAdmin, async (req, res) => {
+  try {
+    const search = (req.query.search as string) || '';
+    if (!search || search.length < 2) {
+      return res.status(400).json({ error: 'Search term must be at least 2 characters' });
+    }
+
+    // Search across all providers
+    const channels = await db
+      .select({
+        id: iptvChannels.id,
+        name: iptvChannels.name,
+        streamId: iptvChannels.streamId,
+        epgChannelId: iptvChannels.epgChannelId,
+        providerId: iptvChannels.providerId,
+        providerName: iptvProviders.name,
+        categoryName: iptvChannels.categoryName,
+        hasEPG: iptvChannels.hasEPG,
+      })
+      .from(iptvChannels)
+      .leftJoin(iptvProviders, eq(iptvChannels.providerId, iptvProviders.id))
+      .where(sql`LOWER(${iptvChannels.name}) LIKE ${`%${search.toLowerCase()}%`}`)
+      .orderBy(iptvChannels.name)
+      .limit(50);
+
+    res.json({
+      search,
+      count: channels.length,
+      channels: channels.map(ch => ({
+        id: ch.id,
+        name: ch.name,
+        streamId: ch.streamId,
+        epgChannelId: ch.epgChannelId || '(empty)',
+        providerId: ch.providerId,
+        providerName: ch.providerName || 'Unknown',
+        categoryName: ch.categoryName || 'Uncategorized',
+        hasEPG: ch.hasEPG,
+      }))
+    });
+  } catch (error) {
+    loggers.adminIptv.error('Error in EPG debug search', { error });
+    res.status(500).json({ error: 'Failed to search channels' });
+  }
+});
+
+/**
  * GET /api/admin/iptv-channels/categories
  * Get categories with counts for a provider
  */

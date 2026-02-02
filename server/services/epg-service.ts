@@ -1103,4 +1103,99 @@ export class EPGService implements IService {
       })
       .slice(0, limit);
   }
+
+  /**
+   * Debug EPG lookup - trace what's happening during channel matching
+   * Returns detailed info about the lookup process
+   */
+  debugLookup(channelId: string): {
+    input: string;
+    normalizedInput: string;
+    exactMatch: boolean;
+    nameMapMatch: string | null;
+    fuzzyMatches: Array<{ id: string; score: number; normalizedId: string }>;
+    finalMatch: string | null;
+    matchedPrograms: number;
+    currentProgram: { title: string; start: string; end: string } | null;
+  } {
+    const normalizedInput = channelId.toLowerCase().replace(/[^a-z0-9]/g, '');
+
+    // Check exact match
+    const exactMatch = this.programCache.has(channelId);
+
+    // Check name map match
+    const nameMapMatch = this.channelNameToId.get(normalizedInput) || null;
+
+    // Collect all fuzzy matches with scores
+    const fuzzyMatches: Array<{ id: string; score: number; normalizedId: string }> = [];
+
+    for (const epgChannelId of this.programCache.keys()) {
+      const normalizedEpg = epgChannelId.toLowerCase().replace(/[^a-z0-9]/g, '');
+      let score = 0;
+
+      if (normalizedEpg === normalizedInput) {
+        score = 100;
+      } else if (normalizedEpg.startsWith(normalizedInput) && normalizedInput.length >= 3) {
+        score = 80;
+      } else if (normalizedInput.startsWith(normalizedEpg) && normalizedEpg.length >= 3) {
+        score = 70;
+      } else if (normalizedInput.length >= 4) {
+        if (normalizedEpg.includes(normalizedInput)) {
+          score = 50;
+        } else if (normalizedInput.includes(normalizedEpg) && normalizedEpg.length >= 4) {
+          score = 40;
+        }
+      }
+
+      if (score > 0) {
+        fuzzyMatches.push({ id: epgChannelId, score, normalizedId: normalizedEpg });
+      }
+    }
+
+    // Sort by score descending, then by length ascending
+    fuzzyMatches.sort((a, b) => {
+      if (b.score !== a.score) return b.score - a.score;
+      return a.id.length - b.id.length;
+    });
+
+    // Get the final match using the actual method
+    const finalMatch = this.findBestMatchingChannelId(channelId);
+
+    // Get program count and current program for the matched channel
+    let matchedPrograms = 0;
+    let currentProgram: { title: string; start: string; end: string } | null = null;
+
+    if (finalMatch) {
+      const programs = this.programCache.get(finalMatch) || [];
+      matchedPrograms = programs.length;
+
+      const now = new Date();
+      const current = programs.find(p => {
+        const start = p.startTime instanceof Date ? p.startTime : new Date(p.startTime);
+        const end = p.endTime instanceof Date ? p.endTime : new Date(p.endTime);
+        return now >= start && now <= end;
+      });
+
+      if (current) {
+        const start = current.startTime instanceof Date ? current.startTime : new Date(current.startTime);
+        const end = current.endTime instanceof Date ? current.endTime : new Date(current.endTime);
+        currentProgram = {
+          title: current.title,
+          start: start.toISOString(),
+          end: end.toISOString()
+        };
+      }
+    }
+
+    return {
+      input: channelId,
+      normalizedInput,
+      exactMatch,
+      nameMapMatch,
+      fuzzyMatches: fuzzyMatches.slice(0, 10), // Top 10 matches
+      finalMatch,
+      matchedPrograms,
+      currentProgram
+    };
+  }
 }
