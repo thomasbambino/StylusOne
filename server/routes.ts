@@ -4978,7 +4978,7 @@ live.ts
 
     // Only allow super admins to use debug endpoint
     const user = req.user as any;
-    if (!user?.isSuperAdmin) {
+    if (!user || user.role !== 'superadmin') {
       return res.status(403).json({ error: 'Super admin required' });
     }
 
