@@ -2991,8 +2991,9 @@ export default function LiveTVPage() {
                     ) : (
                       availableChannels.map((channel) => {
                         const isFavorite = favoriteChannels.some(fav => fav.channelId === (channel.iptvId || channel.GuideNumber));
-                        const channelKey = channel.iptvId || channel.GuideNumber;
-                        const programs = epgDataMap.get(channelKey) || [];
+                        // Use epgId for IPTV channels (matches how epgDataMap is keyed)
+                        const channelKey = channel.source === 'iptv' ? channel.epgId : channel.GuideNumber;
+                        const programs = epgDataMap.get(channelKey || '') || [];
                         return (
                           <ChannelGuideRow
                             key={`${channel.source}-${channel.GuideNumber}`}
