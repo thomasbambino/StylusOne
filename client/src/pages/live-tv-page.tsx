@@ -805,42 +805,46 @@ export default function LiveTVPage() {
     queryFn: getQueryFn({ on401: "returnNull" }),
   });
 
-  // Fetch channels for each package to build a mapping
+  // Fetch channels for each package to build a mapping (same pattern as iOS)
+  interface PackageChannel {
+    id: string;
+    name: string;
+    logo: string | null;
+    categoryName: string | null;
+  }
+  interface PackageChannelResult {
+    packageId: number;
+    packageName: string;
+    channels: PackageChannel[];
+  }
+
   const packageChannelsQueries = useQueries({
     queries: userPackages.map(pkg => ({
       queryKey: [`/api/subscriptions/packages/${pkg.packageId}/channels`],
-      queryFn: getQueryFn({ on401: "returnNull" }),
+      queryFn: getQueryFn({ on401: "returnNull" }) as () => Promise<PackageChannel[] | null>,
       enabled: !!pkg.packageId,
-      staleTime: 5 * 60 * 1000,
+      staleTime: 10 * 60 * 1000,
+      // Use select to embed packageId into result (same as iOS)
+      select: (data: PackageChannel[] | null): PackageChannelResult => ({
+        packageId: pkg.packageId,
+        packageName: pkg.packageName,
+        channels: data || []
+      })
     })),
   });
 
-  // Build a map of channel name -> package IDs (same approach as iOS for reliable matching)
-  // Check if all package channel queries have completed loading
-  const allPackageQueriesLoaded = packageChannelsQueries.length > 0 &&
-    packageChannelsQueries.every(q => !q.isLoading && q.data !== undefined);
-
-  // Extract just the data arrays and create a stable key for memoization
-  const packageChannelsDataKey = packageChannelsQueries.map(q =>
-    q.data ? (q.data as Array<{name: string}>).length : 0
-  ).join(',');
-
+  // Build a map of channel name -> package IDs (same approach as iOS)
   const channelToPackages = useMemo(() => {
     const map = new Map<string, Set<number>>();
 
-    // Only build the map if we have packages AND their channel data is loaded
-    if (!allPackageQueriesLoaded || userPackages.length === 0) {
-      return map;
-    }
-
-    userPackages.forEach((pkg, index) => {
-      const channels = packageChannelsQueries[index]?.data as Array<{ id: string; name: string }> | null | undefined;
-      if (channels && Array.isArray(channels)) {
-        channels.forEach(ch => {
+    // Iterate through queries directly like iOS does
+    packageChannelsQueries.forEach((query: { data?: PackageChannelResult }) => {
+      if (query.data) {
+        const { packageId, channels } = query.data;
+        channels.forEach((ch: PackageChannel) => {
           if (ch.name) {
-            // Use channel name directly without normalization (same as iOS)
             const existing = map.get(ch.name) || new Set();
-            existing.add(pkg.packageId);
+            existing.add(packageId);
             map.set(ch.name, existing);
           }
         });
@@ -848,8 +852,7 @@ export default function LiveTVPage() {
     });
 
     return map;
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [userPackages, allPackageQueriesLoaded, packageChannelsDataKey, packageChannelsQueries]);
+  }, [packageChannelsQueries]);
 
   // Favorite channels query
   const queryClient = useQueryClient();
@@ -989,12 +992,9 @@ export default function LiveTVPage() {
   // Filter out channels from hidden packages (exclusion logic like iOS)
   if (hiddenPackages.size > 0 && channelToPackages.size > 0) {
     filteredChannels = filteredChannels.filter(ch => {
-      // Match by channel name (same approach as iOS - use GuideName directly)
       const packageIds = channelToPackages.get(ch.GuideName);
-
       // If channel isn't in any package, show it
       if (!packageIds || packageIds.size === 0) return true;
-
       // Show channel if at least one of its packages is not hidden
       return Array.from(packageIds).some(pkgId => !hiddenPackages.has(pkgId));
     });
