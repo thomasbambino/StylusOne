@@ -2045,10 +2045,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const deviceInfo = await hdHomeRunService.getDeviceInfo();
       res.json({ configured: true, device: deviceInfo });
     } catch (error) {
+      const errMsg = error instanceof Error ? error.message : "Unknown error";
+      const isUnreachable = errMsg.includes('EHOSTUNREACH') || errMsg.includes('ECONNREFUSED') || errMsg.includes('ETIMEDOUT');
+      if (isUnreachable) {
+        loggers.iptv.warn('HD HomeRun device unreachable', { error: errMsg });
+        return res.json({ configured: true, device: null, offline: true, message: "HD HomeRun device is unreachable" });
+      }
       loggers.iptv.error('Error fetching HD HomeRun devices', { error });
       res.status(500).json({
         message: "Failed to fetch HD HomeRun devices",
-        error: error instanceof Error ? error.message : "Unknown error"
+        error: errMsg
       });
     }
   });
@@ -2070,10 +2076,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const channels = await hdHomeRunService.getChannelLineup();
       res.json({ configured: true, channels });
     } catch (error) {
+      const errMsg = error instanceof Error ? error.message : "Unknown error";
+      const isUnreachable = errMsg.includes('EHOSTUNREACH') || errMsg.includes('ECONNREFUSED') || errMsg.includes('ETIMEDOUT');
+      if (isUnreachable) {
+        return res.json({ configured: true, channels: [], offline: true });
+      }
       loggers.iptv.error('Error fetching HD HomeRun channels', { error });
       res.status(500).json({
         message: "Failed to fetch HD HomeRun channels",
-        error: error instanceof Error ? error.message : "Unknown error"
+        error: errMsg
       });
     }
   });
@@ -2095,10 +2106,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const tuners = await hdHomeRunService.getTunerStatus();
       res.json({ configured: true, tuners });
     } catch (error) {
+      const errMsg = error instanceof Error ? error.message : "Unknown error";
+      const isUnreachable = errMsg.includes('EHOSTUNREACH') || errMsg.includes('ECONNREFUSED') || errMsg.includes('ETIMEDOUT');
+      if (isUnreachable) {
+        return res.json({ configured: true, tuners: [], offline: true });
+      }
       loggers.iptv.error('Error fetching HD HomeRun tuner status', { error });
       res.status(500).json({
         message: "Failed to fetch HD HomeRun tuner status",
-        error: error instanceof Error ? error.message : "Unknown error"
+        error: errMsg
       });
     }
   });
@@ -4304,6 +4320,13 @@ live.ts
 
       if (!streamId) {
         return res.status(400).json({ error: "Stream ID required" });
+      }
+
+      // Invalidate cached manifest so the next request fetches a fresh one.
+      // This prevents serving stale segments from a previous session (e.g. after page refresh).
+      if (sharedStreams.has(streamId)) {
+        loggers.iptv.debug('Clearing cached manifest on stream acquire', { streamId });
+        sharedStreams.delete(streamId);
       }
 
       const userId = req.user!.id;
