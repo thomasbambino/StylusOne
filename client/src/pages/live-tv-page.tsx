@@ -734,6 +734,8 @@ export default function LiveTVPage() {
   const [visibleChannelCount, setVisibleChannelCount] = useState(100); // Start with 100 channels
   const [isPiPActive, setIsPiPActive] = useState(false);
   const [guideExpanded, setGuideExpanded] = useState(false);
+  const [videoHeight, setVideoHeight] = useState<number>(0);
+  const videoWrapperRef = useRef<HTMLDivElement>(null);
   const fullscreenContainerRef = useRef<HTMLDivElement>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const hlsRef = useRef<Hls | null>(null);
@@ -1171,6 +1173,19 @@ export default function LiveTVPage() {
   useEffect(() => {
     setVisibleChannelCount(100);
   }, [searchQuery, showHDHomeRun]);
+
+  // Measure video player height to constrain favorites card
+  useEffect(() => {
+    const el = videoWrapperRef.current;
+    if (!el) return;
+    const observer = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        setVideoHeight(entry.contentRect.height);
+      }
+    });
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
 
   // Expand channel guide when user scrolls down on the page
   useEffect(() => {
@@ -2595,6 +2610,7 @@ export default function LiveTVPage() {
 
             {/* Video Player Section - Row 1, Col 1 */}
             <motion.div
+              ref={videoWrapperRef}
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.5, delay: 0.2 }}
@@ -2858,9 +2874,10 @@ export default function LiveTVPage() {
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.5, delay: 0.3 }}
-              className="hidden lg:flex min-h-0 overflow-hidden"
+              className="hidden lg:flex min-h-0"
+              style={videoHeight ? { maxHeight: videoHeight } : undefined}
             >
-              <Card className="bg-card border h-full flex flex-col w-full">
+              <Card className="bg-card border h-full flex flex-col w-full overflow-hidden">
                 <CardHeader className="pb-3 flex-shrink-0">
                   <div className="flex items-center gap-2">
                     <Star className="h-4 w-4 text-yellow-500" />
