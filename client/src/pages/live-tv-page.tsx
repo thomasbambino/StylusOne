@@ -2995,8 +2995,8 @@ export default function LiveTVPage() {
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.5, delay: 0.3 }}
-                className="flex-shrink-0 overflow-hidden"
-                style={videoHeight ? { height: videoHeight } : undefined}
+                className="flex-shrink-0"
+                style={videoHeight ? { height: videoHeight, maxHeight: videoHeight } : undefined}
               >
                 <Card className="bg-card border h-full flex flex-col">
                   <CardHeader className="pb-3 flex-shrink-0">
