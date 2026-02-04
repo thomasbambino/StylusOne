@@ -834,14 +834,18 @@ export default function LiveTVPage() {
     })),
   });
 
+  // Extract query data and timestamps outside useMemo so React Query's result
+  // tracking detects the .data accesses and triggers re-renders when queries load.
+  // The timestamps create a stable dependency key that changes only when data updates.
+  const packageQueryData = packageChannelsQueries.map((q: { data?: PackageChannelResult; dataUpdatedAt?: number }) => q.data);
+  const packageDataKey = packageChannelsQueries.map((q: { dataUpdatedAt?: number }) => q.dataUpdatedAt || 0).join(',');
+
   // Build a map of channel name -> package IDs (same approach as iOS)
-  // Computed directly during render (not useMemo) so React Query's result
-  // tracking detects the .data accesses and triggers re-renders when queries load
-  const channelToPackages = (() => {
+  const channelToPackages = useMemo(() => {
     const map = new Map<string, Set<number>>();
-    packageChannelsQueries.forEach((query: { data?: PackageChannelResult }) => {
-      if (query.data) {
-        const { packageId, channels } = query.data;
+    packageQueryData.forEach((data) => {
+      if (data) {
+        const { packageId, channels } = data;
         channels.forEach((ch: PackageChannel) => {
           if (ch.name) {
             const key = ch.name.trim();
@@ -853,7 +857,8 @@ export default function LiveTVPage() {
       }
     });
     return map;
-  })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [packageDataKey]);
 
   // Favorite channels query
   const queryClient = useQueryClient();
@@ -2590,12 +2595,10 @@ export default function LiveTVPage() {
           animate={{ opacity: 1 }}
           transition={{ duration: 0.4, delay: 0.1 }}
         >
-          {/* Two-column layout: Video+Guide left, Favorites+Trending right */}
-          <div className="grid grid-cols-1 lg:grid-cols-[2fr_1fr] gap-4 min-h-[calc(100vh-2rem)]">
+          {/* 2x2 grid: Video+Favorites share row 1 (auto height), Guide+Trending share row 2 (1fr) */}
+          <div className="grid grid-cols-1 lg:grid-cols-[2fr_1fr] lg:grid-rows-[auto_1fr] gap-4 min-h-[calc(100vh-2rem)]">
 
-            {/* Left Column: Video Player + Channel Guide */}
-            <div className="flex flex-col gap-4 min-h-0">
-            {/* Video Player */}
+            {/* [Row 1, Col 1] Video Player */}
             <motion.div
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
@@ -2856,12 +2859,76 @@ export default function LiveTVPage() {
               </Card>
             </motion.div>
 
-            {/* Channel Guide */}
+            {/* [Row 1, Col 2] Favorites - same grid row as video, so height matches automatically */}
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.5, delay: 0.3 }}
+              className="hidden lg:block overflow-hidden min-h-0"
+            >
+              <Card className="bg-card border h-full flex flex-col">
+                <CardHeader className="pb-3 flex-shrink-0">
+                  <div className="flex items-center gap-2">
+                    <Star className="h-4 w-4 text-yellow-500" />
+                    <CardTitle className="text-lg">Favorites</CardTitle>
+                  </div>
+                </CardHeader>
+                <CardContent className="overflow-y-auto flex-1 min-h-0">
+                  {favoriteChannels.length === 0 ? (
+                    <div className="text-center py-6 text-muted-foreground text-sm">
+                      <Star className="h-8 w-8 mx-auto mb-2 opacity-50" />
+                      <p>No favorites yet</p>
+                      <p className="text-xs mt-1">Right-click a channel to add</p>
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      {favoriteChannels.map((fav) => {
+                        const channel = channelLookupById.get(fav.channelId);
+                        const currentProgram = favoriteEpgDataMap.get(fav.channelId);
+                        const logo = channel?.logo || fav.channelLogo;
+                        return (
+                          <div
+                            key={fav.channelId}
+                            className={cn(
+                              "flex items-center gap-3 p-2 rounded-lg cursor-pointer transition-colors",
+                              "hover:bg-accent",
+                              selectedChannel?.iptvId === fav.channelId && "bg-accent"
+                            )}
+                            onClick={() => channel && handleChannelSelect(channel)}
+                          >
+                            {logo ? (
+                              <img
+                                src={logo}
+                                alt={fav.channelName}
+                                className="h-10 w-10 rounded object-contain bg-black/20"
+                              />
+                            ) : (
+                              <div className="h-10 w-10 rounded bg-primary/10 flex items-center justify-center">
+                                <Tv className="h-5 w-5 text-primary" />
+                              </div>
+                            )}
+                            <div className="flex-1 min-w-0">
+                              <p className="font-medium text-sm truncate">{fav.channelName}</p>
+                              <p className="text-xs text-muted-foreground truncate">
+                                {currentProgram?.title || 'No program info'}
+                              </p>
+                            </div>
+                            <Play className="h-4 w-4 text-muted-foreground" />
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            </motion.div>
+
+            {/* [Row 2, Col 1] Channel Guide */}
             <motion.div
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.5, delay: 0.4 }}
-              className={cn("flex-1 min-h-0 transition-all duration-500", guideExpanded && "min-h-[1100px]")}
+              className={cn("min-h-0 transition-all duration-500", guideExpanded && "min-h-[1100px]")}
             >
               <Card className="bg-card border h-full flex flex-col">
                 <CardHeader className="pb-3 flex-shrink-0">
@@ -2983,133 +3050,65 @@ export default function LiveTVPage() {
                 </CardContent>
               </Card>
             </motion.div>
-            </div>
 
-            {/* Right Column: Favorites + Trending */}
-            <div className="hidden lg:flex flex-col gap-4 min-h-0">
-              {/* Favorites - aspect-[8/9] matches the 16:9 video in the 2fr column */}
-              <motion.div
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.5, delay: 0.3 }}
-                className="flex-shrink-0 overflow-hidden aspect-[8/9]"
-              >
-                <Card className="bg-card border h-full flex flex-col">
-                  <CardHeader className="pb-3 flex-shrink-0">
-                    <div className="flex items-center gap-2">
-                      <Star className="h-4 w-4 text-yellow-500" />
-                      <CardTitle className="text-lg">Favorites</CardTitle>
-                    </div>
-                  </CardHeader>
-                  <CardContent className="overflow-y-auto flex-1 min-h-0">
-                    {favoriteChannels.length === 0 ? (
-                      <div className="text-center py-6 text-muted-foreground text-sm">
-                        <Star className="h-8 w-8 mx-auto mb-2 opacity-50" />
-                        <p>No favorites yet</p>
-                        <p className="text-xs mt-1">Right-click a channel to add</p>
-                      </div>
-                    ) : (
-                      <div className="space-y-2">
-                        {favoriteChannels.map((fav) => {
-                          const channel = channelLookupById.get(fav.channelId);
-                          const currentProgram = favoriteEpgDataMap.get(fav.channelId);
-                          const logo = channel?.logo || fav.channelLogo;
-                          return (
-                            <div
-                              key={fav.channelId}
-                              className={cn(
-                                "flex items-center gap-3 p-2 rounded-lg cursor-pointer transition-colors",
-                                "hover:bg-accent",
-                                selectedChannel?.iptvId === fav.channelId && "bg-accent"
-                              )}
-                              onClick={() => channel && handleChannelSelect(channel)}
-                            >
-                              {logo ? (
-                                <img
-                                  src={logo}
-                                  alt={fav.channelName}
-                                  className="h-10 w-10 rounded object-contain bg-black/20"
-                                />
-                              ) : (
-                                <div className="h-10 w-10 rounded bg-primary/10 flex items-center justify-center">
-                                  <Tv className="h-5 w-5 text-primary" />
+            {/* [Row 2, Col 2] Trending Now */}
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.5, delay: 0.5 }}
+              className="hidden lg:block min-h-0"
+            >
+              <Card className="bg-card border h-full flex flex-col">
+                <CardHeader className="pb-3 flex-shrink-0">
+                  <div className="flex items-center gap-2">
+                    <TrendingUp className="h-4 w-4 text-orange-500" />
+                    <CardTitle className="text-lg">Trending Now</CardTitle>
+                  </div>
+                </CardHeader>
+                <CardContent className="overflow-y-auto flex-1 min-h-0">
+                  {trendingChannels.length > 0 ? (
+                    <div className="space-y-2">
+                      {trendingChannels.slice(0, 5).map((trending, index) => {
+                        const channel = filteredChannels.find(ch =>
+                          ch.iptvId === trending.channelId || ch.GuideNumber === trending.channelId
+                        );
+
+                        return (
+                          <div
+                            key={trending.channelId}
+                            className={cn(
+                              "flex items-center gap-3 p-2 rounded-lg cursor-pointer transition-colors",
+                              "hover:bg-accent",
+                              selectedChannel?.iptvId === trending.channelId && "bg-accent"
+                            )}
+                            onClick={() => channel && handleChannelSelect(channel)}
+                          >
+                            <div className="h-8 w-8 rounded-full bg-orange-500/10 flex items-center justify-center text-orange-500 font-bold text-sm">
+                              {index + 1}
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <p className="font-medium text-sm truncate">{trending.channelName}</p>
+                              {trending.viewerCount > 0 && (
+                                <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                                  <Users className="h-3 w-3" />
+                                  <span>{trending.viewerCount} watching</span>
                                 </div>
                               )}
-                              <div className="flex-1 min-w-0">
-                                <p className="font-medium text-sm truncate">{fav.channelName}</p>
-                                <p className="text-xs text-muted-foreground truncate">
-                                  {currentProgram?.title || 'No program info'}
-                                </p>
-                              </div>
-                              <Play className="h-4 w-4 text-muted-foreground" />
                             </div>
-                          );
-                        })}
-                      </div>
-                    )}
-                  </CardContent>
-                </Card>
-              </motion.div>
-
-              {/* Trending Now */}
-              <motion.div
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.5, delay: 0.5 }}
-                className="flex-1 min-h-0"
-              >
-                <Card className="bg-card border h-full flex flex-col">
-                  <CardHeader className="pb-3 flex-shrink-0">
-                    <div className="flex items-center gap-2">
-                      <TrendingUp className="h-4 w-4 text-orange-500" />
-                      <CardTitle className="text-lg">Trending Now</CardTitle>
+                            <Play className="h-4 w-4 text-muted-foreground" />
+                          </div>
+                        );
+                      })}
                     </div>
-                  </CardHeader>
-                  <CardContent className="overflow-y-auto flex-1 min-h-0">
-                    {trendingChannels.length > 0 ? (
-                      <div className="space-y-2">
-                        {trendingChannels.slice(0, 5).map((trending, index) => {
-                          const channel = filteredChannels.find(ch =>
-                            ch.iptvId === trending.channelId || ch.GuideNumber === trending.channelId
-                          );
-
-                          return (
-                            <div
-                              key={trending.channelId}
-                              className={cn(
-                                "flex items-center gap-3 p-2 rounded-lg cursor-pointer transition-colors",
-                                "hover:bg-accent",
-                                selectedChannel?.iptvId === trending.channelId && "bg-accent"
-                              )}
-                              onClick={() => channel && handleChannelSelect(channel)}
-                            >
-                              <div className="h-8 w-8 rounded-full bg-orange-500/10 flex items-center justify-center text-orange-500 font-bold text-sm">
-                                {index + 1}
-                              </div>
-                              <div className="flex-1 min-w-0">
-                                <p className="font-medium text-sm truncate">{trending.channelName}</p>
-                                {trending.viewerCount > 0 && (
-                                  <div className="flex items-center gap-1 text-xs text-muted-foreground">
-                                    <Users className="h-3 w-3" />
-                                    <span>{trending.viewerCount} watching</span>
-                                  </div>
-                                )}
-                              </div>
-                              <Play className="h-4 w-4 text-muted-foreground" />
-                            </div>
-                          );
-                        })}
-                      </div>
-                    ) : (
-                      <div className="text-center py-6 text-muted-foreground text-sm">
-                        <TrendingUp className="h-8 w-8 mx-auto mb-2 opacity-50" />
-                        <p>No trending channels</p>
-                      </div>
-                    )}
-                  </CardContent>
-                </Card>
-              </motion.div>
-            </div>
+                  ) : (
+                    <div className="text-center py-6 text-muted-foreground text-sm">
+                      <TrendingUp className="h-8 w-8 mx-auto mb-2 opacity-50" />
+                      <p>No trending channels</p>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            </motion.div>
         </div>
       </motion.div>
     </motion.div>
