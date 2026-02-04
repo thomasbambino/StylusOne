@@ -3425,8 +3425,6 @@ live.ts
       const isM3UStream = streamId.startsWith('m3u_');
 
       if (isBrowserRequest && isM3UStream) {
-        loggers.iptv.debug('M3U browser stream - using transcoded HLS with AAC audio', { streamId });
-
         // Get the direct stream URL for this M3U channel
         const m3uChannelQuery = db
           .select({ directStreamUrl: iptvChannels.directStreamUrl })
@@ -3438,25 +3436,39 @@ live.ts
         if (m3uChannel.length > 0 && m3uChannel[0].directStreamUrl) {
           let sourceUrl = m3uChannel[0].directStreamUrl;
 
-          // Ensure we have the MPEG-TS URL (not HLS) for ffmpeg input
-          if (sourceUrl.endsWith('.m3u8')) {
-            sourceUrl = sourceUrl.replace(/\.m3u8$/, '.ts');
-          }
-
-          loggers.iptv.debug('Transcoding M3U stream', { sourceUrl });
-
-          // Use streaming service to transcode to HLS with AAC audio
-          const { streamingService } = await import('./services/streaming-service');
-          const transcodedStreamId = `m3u_browser_${streamId.replace(/[^a-zA-Z0-9_]/g, '_')}`;
-
+          // Probe the stream to check if audio needs transcoding
+          // Only transcode if audio codec is browser-incompatible (AC3, EAC3, DTS, etc.)
           try {
-            const hlsUrl = await streamingService.startHLSStream(transcodedStreamId, sourceUrl);
-            loggers.iptv.debug('Transcoded stream available', { hlsUrl });
+            const { probeStream } = await import('./services/stream-probe-service');
+            const probeResult = await probeStream(sourceUrl);
+            const audioCodec = probeResult.audioCodec?.toLowerCase() || '';
+            const browserCompatibleAudio = ['aac', 'mp3', 'opus', 'vorbis', 'mp4a'].some(c => audioCodec.includes(c));
 
-            // Redirect browser to the transcoded stream
-            return res.redirect(hlsUrl);
-          } catch (transcodeError) {
-            loggers.iptv.error('Transcoding failed, falling back to proxy', { error: transcodeError });
+            if (browserCompatibleAudio || !audioCodec) {
+              loggers.iptv.debug('M3U browser stream - audio is browser-compatible, using proxy', { streamId, audioCodec: probeResult.audioCodec });
+              // Fall through to normal proxy handling below
+            } else {
+              loggers.iptv.debug('M3U browser stream - incompatible audio, transcoding to AAC', { streamId, audioCodec: probeResult.audioCodec });
+
+              // Ensure we have the MPEG-TS URL (not HLS) for ffmpeg input
+              if (sourceUrl.endsWith('.m3u8')) {
+                sourceUrl = sourceUrl.replace(/\.m3u8$/, '.ts');
+              }
+
+              const { streamingService } = await import('./services/streaming-service');
+              const transcodedStreamId = `m3u_browser_${streamId.replace(/[^a-zA-Z0-9_]/g, '_')}`;
+
+              try {
+                const hlsUrl = await streamingService.startHLSStream(transcodedStreamId, sourceUrl);
+                loggers.iptv.debug('Transcoded stream available', { hlsUrl });
+                return res.redirect(hlsUrl);
+              } catch (transcodeError) {
+                loggers.iptv.error('Transcoding failed, falling back to proxy', { error: transcodeError });
+                // Fall through to normal proxy handling
+              }
+            }
+          } catch (probeError) {
+            loggers.iptv.warn('Probe failed for M3U stream, falling back to proxy', { streamId, error: probeError });
             // Fall through to normal proxy handling
           }
         }
