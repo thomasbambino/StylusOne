@@ -733,7 +733,6 @@ export default function LiveTVPage() {
   const [castSession, setCastSession] = useState<any>(null);
   const [visibleChannelCount, setVisibleChannelCount] = useState(100); // Start with 100 channels
   const [isPiPActive, setIsPiPActive] = useState(false);
-  const [guideExpanded, setGuideExpanded] = useState(false);
   const [videoHeight, setVideoHeight] = useState<number>(0);
   const videoCardRef = useRef<HTMLDivElement>(null);
   const fullscreenContainerRef = useRef<HTMLDivElement>(null);
@@ -1189,18 +1188,6 @@ export default function LiveTVPage() {
     observer.observe(el);
     return () => observer.disconnect();
   }, []);
-
-  // Expand channel guide when user scrolls down on the page
-  useEffect(() => {
-    if (guideExpanded) return;
-    const handleWheel = (e: WheelEvent) => {
-      if (e.deltaY > 0) {
-        setGuideExpanded(true);
-      }
-    };
-    window.addEventListener('wheel', handleWheel, { passive: true });
-    return () => window.removeEventListener('wheel', handleWheel);
-  }, [guideExpanded]);
 
   // Initialize Cast API
   useEffect(() => {
@@ -2880,7 +2867,7 @@ export default function LiveTVPage() {
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.5, delay: 0.4 }}
-              className={cn("flex-1 min-h-0 transition-all duration-500", guideExpanded && "min-h-[1100px]")}
+              className="flex-1 min-h-0"
             >
               <Card className="bg-card border h-full flex flex-col">
                 <CardHeader className="pb-3 flex-shrink-0">
@@ -2961,7 +2948,7 @@ export default function LiveTVPage() {
                   <motion.div
                     key={`channels-${hiddenPackages.size}-${filteredChannels.length}`}
                     ref={setChannelListRef}
-                    className="h-full overflow-y-auto"
+                    className="h-full overflow-y-auto max-h-[730px]"
                     initial={{ opacity: 0 }}
                     animate={{ opacity: 1 }}
                     transition={{ duration: 0.2 }}
@@ -3009,7 +2996,7 @@ export default function LiveTVPage() {
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.5, delay: 0.3 }}
                 className="flex-shrink-0 overflow-hidden"
-                style={videoHeight ? { height: Math.round(videoHeight * 0.5) } : undefined}
+                style={videoHeight ? { height: videoHeight } : undefined}
               >
                 <Card className="bg-card border h-full flex flex-col">
                   <CardHeader className="pb-3 flex-shrink-0">
