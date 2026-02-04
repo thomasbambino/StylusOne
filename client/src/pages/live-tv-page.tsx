@@ -843,17 +843,16 @@ export default function LiveTVPage() {
     staleTime: 10 * 60 * 1000,
   });
 
-  // Build a map of channel name -> package IDs
+  // Build a map of channel ID -> package IDs (using stream IDs, not names)
   const channelToPackages = useMemo(() => {
     const map = new Map<string, Set<number>>();
     if (!allPackageChannels) return map;
     allPackageChannels.forEach(({ packageId, channels }) => {
       channels.forEach((ch: PackageChannel) => {
-        if (ch.name) {
-          const key = ch.name.trim();
-          const existing = map.get(key) || new Set();
+        if (ch.id) {
+          const existing = map.get(ch.id) || new Set();
           existing.add(packageId);
-          map.set(key, existing);
+          map.set(ch.id, existing);
         }
       });
     });
@@ -995,10 +994,11 @@ export default function LiveTVPage() {
     filteredChannels = filteredChannels.filter(ch => ch.source !== 'hdhomerun');
   }
 
-  // Filter out channels from hidden packages (exclusion logic like iOS)
+  // Filter out channels from hidden packages (using channel stream IDs)
   if (hiddenPackages.size > 0 && channelToPackages.size > 0) {
     filteredChannels = filteredChannels.filter(ch => {
-      const packageIds = channelToPackages.get(ch.GuideName.trim());
+      const channelId = ch.iptvId || ch.GuideNumber;
+      const packageIds = channelToPackages.get(channelId);
       // If channel isn't in any package, show it
       if (!packageIds || packageIds.size === 0) return true;
       // Show channel if at least one of its packages is not hidden
@@ -3012,7 +3012,7 @@ export default function LiveTVPage() {
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.5, delay: 0.3 }}
                 className="flex-shrink-0 overflow-hidden"
-                style={videoHeight ? { height: videoHeight } : undefined}
+                style={videoHeight ? { height: Math.round(videoHeight * 0.5) } : undefined}
               >
                 <Card className="bg-card border h-full flex flex-col">
                   <CardHeader className="pb-3 flex-shrink-0">
