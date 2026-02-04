@@ -843,16 +843,17 @@ export default function LiveTVPage() {
     staleTime: 10 * 60 * 1000,
   });
 
-  // Build a map of channel ID -> package IDs (using stream IDs, not names)
+  // Build a map of channel name -> package IDs
   const channelToPackages = useMemo(() => {
     const map = new Map<string, Set<number>>();
     if (!allPackageChannels) return map;
     allPackageChannels.forEach(({ packageId, channels }) => {
       channels.forEach((ch: PackageChannel) => {
-        if (ch.id) {
-          const existing = map.get(ch.id) || new Set();
+        if (ch.name) {
+          const key = ch.name.trim();
+          const existing = map.get(key) || new Set();
           existing.add(packageId);
-          map.set(ch.id, existing);
+          map.set(key, existing);
         }
       });
     });
@@ -994,11 +995,10 @@ export default function LiveTVPage() {
     filteredChannels = filteredChannels.filter(ch => ch.source !== 'hdhomerun');
   }
 
-  // Filter out channels from hidden packages (using channel stream IDs)
+  // Filter out channels from hidden packages (using channel names)
   if (hiddenPackages.size > 0 && channelToPackages.size > 0) {
     filteredChannels = filteredChannels.filter(ch => {
-      const channelId = ch.iptvId || ch.GuideNumber;
-      const packageIds = channelToPackages.get(channelId);
+      const packageIds = channelToPackages.get(ch.GuideName.trim());
       // If channel isn't in any package, show it
       if (!packageIds || packageIds.size === 0) return true;
       // Show channel if at least one of its packages is not hidden
@@ -2916,7 +2916,6 @@ export default function LiveTVPage() {
                             >
                               <Checkbox
                                 checked={hiddenPackages.size === 0}
-                                onCheckedChange={() => setHiddenPackages(new Set())}
                               />
                               <span className="text-sm font-medium">All Packages</span>
                             </div>
@@ -2941,17 +2940,6 @@ export default function LiveTVPage() {
                                   >
                                     <Checkbox
                                       checked={isVisible}
-                                      onCheckedChange={() => {
-                                        setHiddenPackages(prev => {
-                                          const next = new Set(prev);
-                                          if (next.has(pkg.packageId)) {
-                                            next.delete(pkg.packageId);
-                                          } else {
-                                            next.add(pkg.packageId);
-                                          }
-                                          return next;
-                                        });
-                                      }}
                                     />
                                     <span className="text-sm">{pkg.packageName}</span>
                                     <span className="text-xs text-muted-foreground ml-auto">
