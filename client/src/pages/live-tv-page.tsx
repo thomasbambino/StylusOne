@@ -837,10 +837,10 @@ export default function LiveTVPage() {
   });
 
   // Build a map of channel name -> package IDs (same approach as iOS)
-  const channelToPackages = useMemo(() => {
+  // Computed directly during render (not useMemo) so React Query's result
+  // tracking detects the .data accesses and triggers re-renders when queries load
+  const channelToPackages = (() => {
     const map = new Map<string, Set<number>>();
-
-    // Iterate through queries directly like iOS does
     packageChannelsQueries.forEach((query: { data?: PackageChannelResult }) => {
       if (query.data) {
         const { packageId, channels } = query.data;
@@ -853,9 +853,8 @@ export default function LiveTVPage() {
         });
       }
     });
-
     return map;
-  }, [packageChannelsQueries]);
+  })();
 
   // Favorite channels query
   const queryClient = useQueryClient();
