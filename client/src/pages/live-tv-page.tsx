@@ -733,6 +733,7 @@ export default function LiveTVPage() {
   const [castSession, setCastSession] = useState<any>(null);
   const [visibleChannelCount, setVisibleChannelCount] = useState(100); // Start with 100 channels
   const [isPiPActive, setIsPiPActive] = useState(false);
+  const [guideExpanded, setGuideExpanded] = useState(false);
   const fullscreenContainerRef = useRef<HTMLDivElement>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const hlsRef = useRef<Hls | null>(null);
@@ -1170,6 +1171,18 @@ export default function LiveTVPage() {
   useEffect(() => {
     setVisibleChannelCount(100);
   }, [searchQuery, showHDHomeRun]);
+
+  // Expand channel guide when user scrolls down on the page
+  useEffect(() => {
+    if (guideExpanded) return;
+    const handleWheel = (e: WheelEvent) => {
+      if (e.deltaY > 0) {
+        setGuideExpanded(true);
+      }
+    };
+    window.addEventListener('wheel', handleWheel, { passive: true });
+    return () => window.removeEventListener('wheel', handleWheel);
+  }, [guideExpanded]);
 
   // Initialize Cast API
   useEffect(() => {
@@ -2442,7 +2455,7 @@ export default function LiveTVPage() {
           <div className="container mx-auto px-4 ">
           <div className="text-center py-12">
             <div className="inline-flex items-center gap-2">
-              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+              <Loader2 className="h-8 w-8 animate-spin text-primary" />
               <span>Loading Live TV sources...</span>
             </div>
           </div>
@@ -2577,17 +2590,14 @@ export default function LiveTVPage() {
           animate={{ opacity: 1 }}
           transition={{ duration: 0.4, delay: 0.1 }}
         >
-          {/* Side-by-side layout: Video+Guide on left, Home section on right */}
-          <div className="grid grid-cols-1 lg:grid-cols-[2fr_1fr] gap-4 h-[calc(100vh-2rem)] max-h-[calc(100vh-2rem)]">
+          {/* 2x2 grid: Video+Favorites top row, Guide+Trending bottom row */}
+          <div className="grid grid-cols-1 lg:grid-cols-[2fr_1fr] lg:grid-rows-[auto_1fr] gap-4 min-h-[calc(100vh-2rem)]">
 
-          {/* Left Side: Video Player + Channel Guide stacked */}
-          <div className="flex flex-col gap-4 min-h-0 max-h-full">
-            {/* Video Player Section */}
+            {/* Video Player Section - Row 1, Col 1 */}
             <motion.div
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.5, delay: 0.2 }}
-              className="flex-shrink-0"
             >
               {/* Video Player */}
               <Card className="bg-card border">
@@ -2595,13 +2605,12 @@ export default function LiveTVPage() {
                   <div
                     ref={fullscreenContainerRef}
                     className={cn(
-                      "relative bg-black overflow-hidden cursor-pointer aspect-video",
+                      "relative bg-black overflow-hidden aspect-video",
                       isFullscreen ? "w-full h-full flex items-center justify-center" : "w-full rounded-b-lg"
                     )}
                     onMouseMove={showControlsTemporarily}
                     onMouseEnter={() => setShowControls(true)}
                     onMouseLeave={() => !isFullscreen && setShowControls(false)}
-                    onClick={handlePlayPause}
                   >
                     <video
                       ref={(el) => {
@@ -2627,7 +2636,7 @@ export default function LiveTVPage() {
 
                     {/* Buffering Indicator */}
                     {(isBuffering || isLoading) && (
-                      <div className="absolute inset-0 flex items-center justify-center bg-black/60 backdrop-blur-sm z-50">
+                      <div className="absolute inset-0 flex items-center justify-center bg-black/60 backdrop-blur-sm z-10">
                         <div className="flex flex-col items-center gap-3">
                           <Loader2 className="h-12 w-12 animate-spin text-white" />
                           <p className="text-white text-sm font-medium">
@@ -2831,14 +2840,6 @@ export default function LiveTVPage() {
                       </div>
                     )}
 
-                    {isLoading && (
-                      <div className="absolute inset-0 flex items-center justify-center text-white bg-black/50 backdrop-blur-sm">
-                        <div className="text-center">
-                          <div className="animate-spin rounded-full h-12 w-12 border-4 border-white border-t-transparent mx-auto mb-3"></div>
-                          <p>Loading stream...</p>
-                        </div>
-                      </div>
-                    )}
                     {!selectedChannel && !isLoading && (
                       <div className="absolute inset-0 flex items-center justify-center text-white/60">
                         <div className="text-center">
@@ -2852,12 +2853,75 @@ export default function LiveTVPage() {
               </Card>
             </motion.div>
 
-            {/* Channel Guide - Below Video Player */}
+            {/* Favorites - Row 1, Col 2 */}
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.5, delay: 0.3 }}
+              className="hidden lg:flex min-h-0"
+            >
+              <Card className="bg-card border h-full flex flex-col w-full">
+                <CardHeader className="pb-3 flex-shrink-0">
+                  <div className="flex items-center gap-2">
+                    <Star className="h-4 w-4 text-yellow-500" />
+                    <CardTitle className="text-lg">Favorites</CardTitle>
+                  </div>
+                </CardHeader>
+                <CardContent className="overflow-y-auto flex-1 min-h-0">
+                  {favoriteChannels.length === 0 ? (
+                    <div className="text-center py-6 text-muted-foreground text-sm">
+                      <Star className="h-8 w-8 mx-auto mb-2 opacity-50" />
+                      <p>No favorites yet</p>
+                      <p className="text-xs mt-1">Right-click a channel to add</p>
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      {favoriteChannels.map((fav) => {
+                        const channel = channelLookupById.get(fav.channelId);
+                        const currentProgram = favoriteEpgDataMap.get(fav.channelId);
+                        return (
+                          <div
+                            key={fav.channelId}
+                            className={cn(
+                              "flex items-center gap-3 p-2 rounded-lg cursor-pointer transition-colors",
+                              "hover:bg-accent",
+                              selectedChannel?.iptvId === fav.channelId && "bg-accent"
+                            )}
+                            onClick={() => channel && handleChannelSelect(channel)}
+                          >
+                            {fav.channelLogo ? (
+                              <img
+                                src={fav.channelLogo}
+                                alt={fav.channelName}
+                                className="h-10 w-10 rounded object-contain bg-black/20"
+                              />
+                            ) : (
+                              <div className="h-10 w-10 rounded bg-primary/10 flex items-center justify-center">
+                                <Tv className="h-5 w-5 text-primary" />
+                              </div>
+                            )}
+                            <div className="flex-1 min-w-0">
+                              <p className="font-medium text-sm truncate">{fav.channelName}</p>
+                              <p className="text-xs text-muted-foreground truncate">
+                                {currentProgram?.title || 'No program info'}
+                              </p>
+                            </div>
+                            <Play className="h-4 w-4 text-muted-foreground" />
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            </motion.div>
+
+            {/* Channel Guide - Row 2, Col 1 */}
             <motion.div
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.5, delay: 0.4 }}
-              className="flex-1 min-h-0"
+              className={cn("min-h-0 transition-all duration-500", guideExpanded && "min-h-[70vh]")}
             >
               <Card className="bg-card border h-full flex flex-col">
                 <CardHeader className="pb-3 flex-shrink-0">
@@ -2980,82 +3044,23 @@ export default function LiveTVPage() {
                 </CardContent>
               </Card>
             </motion.div>
-          </div>
 
-          {/* Right Side: Home Section with Favorites and Trending */}
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.5, delay: 0.3 }}
-            className="hidden lg:block min-h-0 max-h-full"
-          >
-            <Card className="bg-card border h-full flex flex-col max-h-full">
-              <CardHeader className="pb-3 flex-shrink-0">
-                <CardTitle className="text-lg">Watch Now</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-6 overflow-y-auto flex-1 min-h-0">
-                {/* Favorites Section */}
-                <div>
-                  <div className="flex items-center gap-2 mb-3">
-                    <Star className="h-4 w-4 text-yellow-500" />
-                    <h3 className="font-semibold text-sm">Favorites</h3>
+            {/* Trending Now - Row 2, Col 2 */}
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.5, delay: 0.5 }}
+              className="hidden lg:flex min-h-0"
+            >
+              <Card className="bg-card border h-full flex flex-col w-full">
+                <CardHeader className="pb-3 flex-shrink-0">
+                  <div className="flex items-center gap-2">
+                    <TrendingUp className="h-4 w-4 text-orange-500" />
+                    <CardTitle className="text-lg">Trending Now</CardTitle>
                   </div>
-                  {favoriteChannels.length === 0 ? (
-                    <div className="text-center py-6 text-muted-foreground text-sm">
-                      <Star className="h-8 w-8 mx-auto mb-2 opacity-50" />
-                      <p>No favorites yet</p>
-                      <p className="text-xs mt-1">Right-click a channel to add</p>
-                    </div>
-                  ) : (
-                    <div className="space-y-2">
-                      {favoriteChannels.slice(0, 8).map((fav) => {
-                        // Use the simple lookup map (same as home page)
-                        const channel = channelLookupById.get(fav.channelId);
-                        // Get current program directly from favoriteEpgDataMap (keyed by fav.channelId)
-                        const currentProgram = favoriteEpgDataMap.get(fav.channelId);
-
-                        return (
-                          <div
-                            key={fav.channelId}
-                            className={cn(
-                              "flex items-center gap-3 p-2 rounded-lg cursor-pointer transition-colors",
-                              "hover:bg-accent",
-                              selectedChannel?.iptvId === fav.channelId && "bg-accent"
-                            )}
-                            onClick={() => channel && handleChannelSelect(channel)}
-                          >
-                            {fav.channelLogo ? (
-                              <img
-                                src={fav.channelLogo}
-                                alt={fav.channelName}
-                                className="h-10 w-10 rounded object-contain bg-black/20"
-                              />
-                            ) : (
-                              <div className="h-10 w-10 rounded bg-primary/10 flex items-center justify-center">
-                                <Tv className="h-5 w-5 text-primary" />
-                              </div>
-                            )}
-                            <div className="flex-1 min-w-0">
-                              <p className="font-medium text-sm truncate">{fav.channelName}</p>
-                              <p className="text-xs text-muted-foreground truncate">
-                                {currentProgram?.title || 'No program info'}
-                              </p>
-                            </div>
-                            <Play className="h-4 w-4 text-muted-foreground" />
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
-                </div>
-
-                {/* Trending Section */}
-                {trendingChannels.length > 0 && (
-                  <div>
-                    <div className="flex items-center gap-2 mb-3">
-                      <TrendingUp className="h-4 w-4 text-orange-500" />
-                      <h3 className="font-semibold text-sm">Trending Now</h3>
-                    </div>
+                </CardHeader>
+                <CardContent className="overflow-y-auto flex-1 min-h-0">
+                  {trendingChannels.length > 0 ? (
                     <div className="space-y-2">
                       {trendingChannels.slice(0, 5).map((trending, index) => {
                         const channel = filteredChannels.find(ch =>
@@ -3089,11 +3094,15 @@ export default function LiveTVPage() {
                         );
                       })}
                     </div>
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-          </motion.div>
+                  ) : (
+                    <div className="text-center py-6 text-muted-foreground text-sm">
+                      <TrendingUp className="h-8 w-8 mx-auto mb-2 opacity-50" />
+                      <p>No trending channels</p>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            </motion.div>
         </div>
       </motion.div>
     </motion.div>
