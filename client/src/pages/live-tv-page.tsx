@@ -996,16 +996,7 @@ export default function LiveTVPage() {
   }
 
   // Filter out channels from hidden packages (using channel names)
-  // DEBUG: Log filter state to diagnose package filter issue
-  console.log('[PKG_FILTER]', {
-    hiddenPackages: Array.from(hiddenPackages),
-    channelToPackagesSize: channelToPackages.size,
-    totalChannels: filteredChannels.length,
-    sampleChannelNames: filteredChannels.slice(0, 3).map(ch => ch.GuideName),
-    sampleMapKeys: Array.from(channelToPackages.keys()).slice(0, 3),
-  });
   if (hiddenPackages.size > 0 && channelToPackages.size > 0) {
-    const before = filteredChannels.length;
     filteredChannels = filteredChannels.filter(ch => {
       const packageIds = channelToPackages.get(ch.GuideName.trim());
       // If channel isn't in any package, show it
@@ -1013,7 +1004,6 @@ export default function LiveTVPage() {
       // Show channel if at least one of its packages is not hidden
       return Array.from(packageIds).some(pkgId => !hiddenPackages.has(pkgId));
     });
-    console.log('[PKG_FILTER] Filtered:', before, '->', filteredChannels.length);
   }
 
   // Note: Search filtering happens AFTER EPG data loads (see availableChannels below)
@@ -2926,6 +2916,7 @@ export default function LiveTVPage() {
                             >
                               <Checkbox
                                 checked={hiddenPackages.size === 0}
+                                className="pointer-events-none"
                               />
                               <span className="text-sm font-medium">All Packages</span>
                             </div>
@@ -2950,6 +2941,7 @@ export default function LiveTVPage() {
                                   >
                                     <Checkbox
                                       checked={isVisible}
+                                      className="pointer-events-none"
                                     />
                                     <span className="text-sm">{pkg.packageName}</span>
                                     <span className="text-xs text-muted-foreground ml-auto">
