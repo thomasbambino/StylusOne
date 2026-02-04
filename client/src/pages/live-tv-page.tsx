@@ -2879,6 +2879,7 @@ export default function LiveTVPage() {
                       {favoriteChannels.map((fav) => {
                         const channel = channelLookupById.get(fav.channelId);
                         const currentProgram = favoriteEpgDataMap.get(fav.channelId);
+                        const logo = channel?.logo || fav.channelLogo;
                         return (
                           <div
                             key={fav.channelId}
@@ -2889,9 +2890,9 @@ export default function LiveTVPage() {
                             )}
                             onClick={() => channel && handleChannelSelect(channel)}
                           >
-                            {fav.channelLogo ? (
+                            {logo ? (
                               <img
-                                src={fav.channelLogo}
+                                src={logo}
                                 alt={fav.channelName}
                                 className="h-10 w-10 rounded object-contain bg-black/20"
                               />
