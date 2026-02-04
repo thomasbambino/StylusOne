@@ -734,8 +734,6 @@ export default function LiveTVPage() {
   const [visibleChannelCount, setVisibleChannelCount] = useState(100); // Start with 100 channels
   const [isPiPActive, setIsPiPActive] = useState(false);
   const [guideExpanded, setGuideExpanded] = useState(false);
-  const [videoHeight, setVideoHeight] = useState<number>(0);
-  const videoWrapperRef = useRef<HTMLDivElement>(null);
   const fullscreenContainerRef = useRef<HTMLDivElement>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const hlsRef = useRef<Hls | null>(null);
@@ -846,9 +844,10 @@ export default function LiveTVPage() {
         const { packageId, channels } = query.data;
         channels.forEach((ch: PackageChannel) => {
           if (ch.name) {
-            const existing = map.get(ch.name) || new Set();
+            const key = ch.name.trim();
+            const existing = map.get(key) || new Set();
             existing.add(packageId);
-            map.set(ch.name, existing);
+            map.set(key, existing);
           }
         });
       }
@@ -994,7 +993,7 @@ export default function LiveTVPage() {
   // Filter out channels from hidden packages (exclusion logic like iOS)
   if (hiddenPackages.size > 0 && channelToPackages.size > 0) {
     filteredChannels = filteredChannels.filter(ch => {
-      const packageIds = channelToPackages.get(ch.GuideName);
+      const packageIds = channelToPackages.get(ch.GuideName.trim());
       // If channel isn't in any package, show it
       if (!packageIds || packageIds.size === 0) return true;
       // Show channel if at least one of its packages is not hidden
@@ -1172,19 +1171,6 @@ export default function LiveTVPage() {
   useEffect(() => {
     setVisibleChannelCount(100);
   }, [searchQuery, showHDHomeRun]);
-
-  // Measure video player height to constrain favorites card
-  useEffect(() => {
-    const el = videoWrapperRef.current;
-    if (!el) return;
-    const observer = new ResizeObserver((entries) => {
-      for (const entry of entries) {
-        setVideoHeight(entry.contentRect.height);
-      }
-    });
-    observer.observe(el);
-    return () => observer.disconnect();
-  }, []);
 
   // Expand channel guide when user scrolls down on the page
   useEffect(() => {
@@ -2611,7 +2597,6 @@ export default function LiveTVPage() {
             <div className="flex flex-col gap-4 min-h-0">
             {/* Video Player */}
             <motion.div
-              ref={videoWrapperRef}
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.5, delay: 0.2 }}
@@ -3002,13 +2987,12 @@ export default function LiveTVPage() {
 
             {/* Right Column: Favorites + Trending */}
             <div className="hidden lg:flex flex-col gap-4 min-h-0">
-              {/* Favorites */}
+              {/* Favorites - aspect-[8/9] matches the 16:9 video in the 2fr column */}
               <motion.div
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.5, delay: 0.3 }}
-                className="flex-shrink-0 overflow-hidden"
-                style={videoHeight ? { height: videoHeight } : undefined}
+                className="flex-shrink-0 overflow-hidden aspect-[8/9]"
               >
                 <Card className="bg-card border h-full flex flex-col">
                   <CardHeader className="pb-3 flex-shrink-0">
