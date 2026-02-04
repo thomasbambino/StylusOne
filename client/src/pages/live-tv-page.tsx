@@ -734,6 +734,8 @@ export default function LiveTVPage() {
   const [visibleChannelCount, setVisibleChannelCount] = useState(100); // Start with 100 channels
   const [isPiPActive, setIsPiPActive] = useState(false);
   const [guideExpanded, setGuideExpanded] = useState(false);
+  const [videoHeight, setVideoHeight] = useState<number>(0);
+  const videoCardRef = useRef<HTMLDivElement>(null);
   const fullscreenContainerRef = useRef<HTMLDivElement>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const hlsRef = useRef<Hls | null>(null);
@@ -819,46 +821,44 @@ export default function LiveTVPage() {
     channels: PackageChannel[];
   }
 
-  const packageChannelsQueries = useQueries({
-    queries: userPackages.map(pkg => ({
-      queryKey: [`/api/subscriptions/packages/${pkg.packageId}/channels`],
-      queryFn: getQueryFn({ on401: "returnNull" }) as () => Promise<PackageChannel[] | null>,
-      enabled: !!pkg.packageId,
-      staleTime: 10 * 60 * 1000,
-      // Use select to embed packageId into result (same as iOS)
-      select: (data: PackageChannel[] | null): PackageChannelResult => ({
-        packageId: pkg.packageId,
-        packageName: pkg.packageName,
-        channels: data || []
-      })
-    })),
+  // Single query to fetch all package channels at once (avoids useQueries tracking issues)
+  const packageIds = userPackages.map(p => p.packageId);
+  const { data: allPackageChannels } = useQuery<PackageChannelResult[]>({
+    queryKey: ['all-package-channels', packageIds],
+    queryFn: async () => {
+      const results = await Promise.all(
+        userPackages.map(async (pkg) => {
+          try {
+            const res = await apiRequest('GET', `/api/subscriptions/packages/${pkg.packageId}/channels`);
+            const channels: PackageChannel[] = await res.json();
+            return { packageId: pkg.packageId, packageName: pkg.packageName, channels };
+          } catch {
+            return { packageId: pkg.packageId, packageName: pkg.packageName, channels: [] as PackageChannel[] };
+          }
+        })
+      );
+      return results;
+    },
+    enabled: userPackages.length > 0,
+    staleTime: 10 * 60 * 1000,
   });
 
-  // Extract query data and timestamps outside useMemo so React Query's result
-  // tracking detects the .data accesses and triggers re-renders when queries load.
-  // The timestamps create a stable dependency key that changes only when data updates.
-  const packageQueryData = packageChannelsQueries.map((q: { data?: PackageChannelResult; dataUpdatedAt?: number }) => q.data);
-  const packageDataKey = packageChannelsQueries.map((q: { dataUpdatedAt?: number }) => q.dataUpdatedAt || 0).join(',');
-
-  // Build a map of channel name -> package IDs (same approach as iOS)
+  // Build a map of channel name -> package IDs
   const channelToPackages = useMemo(() => {
     const map = new Map<string, Set<number>>();
-    packageQueryData.forEach((data) => {
-      if (data) {
-        const { packageId, channels } = data;
-        channels.forEach((ch: PackageChannel) => {
-          if (ch.name) {
-            const key = ch.name.trim();
-            const existing = map.get(key) || new Set();
-            existing.add(packageId);
-            map.set(key, existing);
-          }
-        });
-      }
+    if (!allPackageChannels) return map;
+    allPackageChannels.forEach(({ packageId, channels }) => {
+      channels.forEach((ch: PackageChannel) => {
+        if (ch.name) {
+          const key = ch.name.trim();
+          const existing = map.get(key) || new Set();
+          existing.add(packageId);
+          map.set(key, existing);
+        }
+      });
     });
     return map;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [packageDataKey]);
+  }, [allPackageChannels]);
 
   // Favorite channels query
   const queryClient = useQueryClient();
@@ -1176,6 +1176,19 @@ export default function LiveTVPage() {
   useEffect(() => {
     setVisibleChannelCount(100);
   }, [searchQuery, showHDHomeRun]);
+
+  // Measure video player card height for favorites constraint
+  useEffect(() => {
+    const el = videoCardRef.current;
+    if (!el) return;
+    const observer = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        setVideoHeight(entry.contentRect.height);
+      }
+    });
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
 
   // Expand channel guide when user scrolls down on the page
   useEffect(() => {
@@ -2595,17 +2608,19 @@ export default function LiveTVPage() {
           animate={{ opacity: 1 }}
           transition={{ duration: 0.4, delay: 0.1 }}
         >
-          {/* 2x2 grid: Video+Favorites share row 1 (auto height), Guide+Trending share row 2 (1fr) */}
-          <div className="grid grid-cols-1 lg:grid-cols-[2fr_1fr] lg:grid-rows-[auto_1fr] gap-4 min-h-[calc(100vh-2rem)]">
+          {/* Two-column layout: Video+Guide left, Favorites+Trending right */}
+          <div className="grid grid-cols-1 lg:grid-cols-[2fr_1fr] gap-4 min-h-[calc(100vh-2rem)]">
 
-            {/* [Row 1, Col 1] Video Player */}
+            {/* Left Column: Video Player + Channel Guide */}
+            <div className="flex flex-col gap-4 min-h-0">
+            {/* Video Player */}
             <motion.div
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.5, delay: 0.2 }}
               className="flex-shrink-0"
             >
-              {/* Video Player */}
+              <div ref={videoCardRef}>
               <Card className="bg-card border">
                 <CardContent className="p-0">
                   <div
@@ -2857,78 +2872,15 @@ export default function LiveTVPage() {
                   </div>
                 </CardContent>
               </Card>
+              </div>
             </motion.div>
 
-            {/* [Row 1, Col 2] Favorites - same grid row as video, so height matches automatically */}
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.5, delay: 0.3 }}
-              className="hidden lg:block overflow-hidden min-h-0"
-            >
-              <Card className="bg-card border h-full flex flex-col">
-                <CardHeader className="pb-3 flex-shrink-0">
-                  <div className="flex items-center gap-2">
-                    <Star className="h-4 w-4 text-yellow-500" />
-                    <CardTitle className="text-lg">Favorites</CardTitle>
-                  </div>
-                </CardHeader>
-                <CardContent className="overflow-y-auto flex-1 min-h-0">
-                  {favoriteChannels.length === 0 ? (
-                    <div className="text-center py-6 text-muted-foreground text-sm">
-                      <Star className="h-8 w-8 mx-auto mb-2 opacity-50" />
-                      <p>No favorites yet</p>
-                      <p className="text-xs mt-1">Right-click a channel to add</p>
-                    </div>
-                  ) : (
-                    <div className="space-y-2">
-                      {favoriteChannels.map((fav) => {
-                        const channel = channelLookupById.get(fav.channelId);
-                        const currentProgram = favoriteEpgDataMap.get(fav.channelId);
-                        const logo = channel?.logo || fav.channelLogo;
-                        return (
-                          <div
-                            key={fav.channelId}
-                            className={cn(
-                              "flex items-center gap-3 p-2 rounded-lg cursor-pointer transition-colors",
-                              "hover:bg-accent",
-                              selectedChannel?.iptvId === fav.channelId && "bg-accent"
-                            )}
-                            onClick={() => channel && handleChannelSelect(channel)}
-                          >
-                            {logo ? (
-                              <img
-                                src={logo}
-                                alt={fav.channelName}
-                                className="h-10 w-10 rounded object-contain bg-black/20"
-                              />
-                            ) : (
-                              <div className="h-10 w-10 rounded bg-primary/10 flex items-center justify-center">
-                                <Tv className="h-5 w-5 text-primary" />
-                              </div>
-                            )}
-                            <div className="flex-1 min-w-0">
-                              <p className="font-medium text-sm truncate">{fav.channelName}</p>
-                              <p className="text-xs text-muted-foreground truncate">
-                                {currentProgram?.title || 'No program info'}
-                              </p>
-                            </div>
-                            <Play className="h-4 w-4 text-muted-foreground" />
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
-            </motion.div>
-
-            {/* [Row 2, Col 1] Channel Guide */}
+            {/* Channel Guide */}
             <motion.div
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.5, delay: 0.4 }}
-              className={cn("min-h-0 transition-all duration-500", guideExpanded && "min-h-[1100px]")}
+              className={cn("flex-1 min-h-0 transition-all duration-500", guideExpanded && "min-h-[1100px]")}
             >
               <Card className="bg-card border h-full flex flex-col">
                 <CardHeader className="pb-3 flex-shrink-0">
@@ -3050,14 +3002,82 @@ export default function LiveTVPage() {
                 </CardContent>
               </Card>
             </motion.div>
+            </div>
 
-            {/* [Row 2, Col 2] Trending Now */}
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.5, delay: 0.5 }}
-              className="hidden lg:block min-h-0"
-            >
+            {/* Right Column: Favorites + Trending */}
+            <div className="hidden lg:flex flex-col gap-4 min-h-0">
+              {/* Favorites - height matched to video player via ResizeObserver */}
+              <motion.div
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.5, delay: 0.3 }}
+                className="flex-shrink-0 overflow-hidden"
+                style={videoHeight ? { height: videoHeight } : undefined}
+              >
+                <Card className="bg-card border h-full flex flex-col">
+                  <CardHeader className="pb-3 flex-shrink-0">
+                    <div className="flex items-center gap-2">
+                      <Star className="h-4 w-4 text-yellow-500" />
+                      <CardTitle className="text-lg">Favorites</CardTitle>
+                    </div>
+                  </CardHeader>
+                  <CardContent className="overflow-y-auto flex-1 min-h-0">
+                    {favoriteChannels.length === 0 ? (
+                      <div className="text-center py-6 text-muted-foreground text-sm">
+                        <Star className="h-8 w-8 mx-auto mb-2 opacity-50" />
+                        <p>No favorites yet</p>
+                        <p className="text-xs mt-1">Right-click a channel to add</p>
+                      </div>
+                    ) : (
+                      <div className="space-y-2">
+                        {favoriteChannels.map((fav) => {
+                          const channel = channelLookupById.get(fav.channelId);
+                          const currentProgram = favoriteEpgDataMap.get(fav.channelId);
+                          const logo = channel?.logo || fav.channelLogo;
+                          return (
+                            <div
+                              key={fav.channelId}
+                              className={cn(
+                                "flex items-center gap-3 p-2 rounded-lg cursor-pointer transition-colors",
+                                "hover:bg-accent",
+                                selectedChannel?.iptvId === fav.channelId && "bg-accent"
+                              )}
+                              onClick={() => channel && handleChannelSelect(channel)}
+                            >
+                              {logo ? (
+                                <img
+                                  src={logo}
+                                  alt={fav.channelName}
+                                  className="h-10 w-10 rounded object-contain bg-black/20"
+                                />
+                              ) : (
+                                <div className="h-10 w-10 rounded bg-primary/10 flex items-center justify-center">
+                                  <Tv className="h-5 w-5 text-primary" />
+                                </div>
+                              )}
+                              <div className="flex-1 min-w-0">
+                                <p className="font-medium text-sm truncate">{fav.channelName}</p>
+                                <p className="text-xs text-muted-foreground truncate">
+                                  {currentProgram?.title || 'No program info'}
+                                </p>
+                              </div>
+                              <Play className="h-4 w-4 text-muted-foreground" />
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+              </motion.div>
+
+              {/* Trending Now */}
+              <motion.div
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.5, delay: 0.5 }}
+                className="flex-1 min-h-0"
+              >
               <Card className="bg-card border h-full flex flex-col">
                 <CardHeader className="pb-3 flex-shrink-0">
                   <div className="flex items-center gap-2">
@@ -3109,6 +3129,7 @@ export default function LiveTVPage() {
                 </CardContent>
               </Card>
             </motion.div>
+            </div>
         </div>
       </motion.div>
     </motion.div>
