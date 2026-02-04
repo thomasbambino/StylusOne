@@ -2858,7 +2858,7 @@ export default function LiveTVPage() {
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.5, delay: 0.3 }}
-              className="hidden lg:flex min-h-0"
+              className="hidden lg:flex min-h-0 overflow-hidden"
             >
               <Card className="bg-card border h-full flex flex-col w-full">
                 <CardHeader className="pb-3 flex-shrink-0">
@@ -2921,7 +2921,7 @@ export default function LiveTVPage() {
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.5, delay: 0.4 }}
-              className={cn("min-h-0 transition-all duration-500", guideExpanded && "min-h-[70vh]")}
+              className={cn("min-h-0 transition-all duration-500", guideExpanded && "min-h-[1100px]")}
             >
               <Card className="bg-card border h-full flex flex-col">
                 <CardHeader className="pb-3 flex-shrink-0">
