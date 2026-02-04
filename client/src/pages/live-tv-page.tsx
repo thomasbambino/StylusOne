@@ -2920,15 +2920,10 @@ export default function LiveTVPage() {
                               />
                               <span className="text-sm font-medium">All Packages</span>
                             </div>
-                            {channelToPackages.size === 0 ? (
-                              <div className="text-xs text-yellow-600 px-2 py-1">
-                                Loading channel data... (pkgs: {userPackages.length}, data: {allPackageChannels?.length ?? 'none'})
-                              </div>
-                            ) : (
-                              <div className="text-xs text-muted-foreground px-2 py-1">
-                                {channelToPackages.size} channels mapped
-                              </div>
-                            )}
+                            <div className="text-xs text-muted-foreground px-2 py-1 space-y-1">
+                              <div>Hidden: {hiddenPackages.size} | Map: {channelToPackages.size}</div>
+                              <div>All: {allChannels.length} | Filtered: {filteredChannels.length}</div>
+                            </div>
                             <div className="border-t pt-2">
                               {userPackages.map(pkg => {
                                 const isVisible = !hiddenPackages.has(pkg.packageId);
