@@ -2962,7 +2962,10 @@ export default function LiveTVPage() {
                   </div>
                 </CardHeader>
                 <CardContent className="pt-0 flex-1 overflow-hidden">
-                  <div ref={setChannelListRef} className="h-full overflow-y-auto">
+                  <div className="text-xs text-muted-foreground px-3 py-1 border-b">
+                    Showing {availableChannels.length} of {filteredChannels.length} channels (hidden: {hiddenPackages.size})
+                  </div>
+                  <div key={`channels-${hiddenPackages.size}-${filteredChannels.length}`} ref={setChannelListRef} className="h-full overflow-y-auto">
                     {(channelsLoading || iptvChannelsLoading) ? (
                       Array.from({ length: 10 }).map((_, index) => (
                         <div key={index} className="flex items-center gap-3 p-3 border-b border-border">
