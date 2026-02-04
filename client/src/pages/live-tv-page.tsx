@@ -1816,14 +1816,10 @@ export default function LiveTVPage() {
       });
 
       // Wait for sufficient buffer before starting playback (prevents initial buffering)
-      let fragmentsBuffered = 0;
-      const MIN_FRAGMENTS_BEFORE_PLAY = 2; // Wait for ~12 seconds of buffer (2 x 6s segments)
-
       hls.on(Hls.Events.FRAG_BUFFERED, () => {
-        fragmentsBuffered++;
-        if (!playbackStarted && fragmentsBuffered >= MIN_FRAGMENTS_BEFORE_PLAY) {
+        if (!playbackStarted) {
           playbackStarted = true;
-          loggers.tv.debug('Sufficient buffer ready, starting playback', { fragmentsBuffered });
+          loggers.tv.debug('First fragment buffered, starting playback');
           video.play().then(() => {
             loggers.tv.info('Direct stream started playing successfully');
             setIsPlaying(true);
