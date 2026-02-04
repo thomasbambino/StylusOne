@@ -2898,9 +2898,9 @@ export default function LiveTVPage() {
                     {userPackages.length > 0 && (
                       <Popover>
                         <PopoverTrigger asChild>
-                          <Button variant="outline" className="w-44 justify-between" title={`Map size: ${channelToPackages.size}`}>
+                          <Button variant="outline" className="w-44 justify-between">
                             <span className="flex items-center gap-2">
-                              <Filter className={cn("h-4 w-4", channelToPackages.size === 0 && "text-yellow-500")} />
+                              <Filter className="h-4 w-4" />
                               {hiddenPackages.size === 0
                                 ? "All Packages"
                                 : `${userPackages.length - hiddenPackages.size}/${userPackages.length} Packages`}
@@ -2919,10 +2919,6 @@ export default function LiveTVPage() {
                                 className="pointer-events-none"
                               />
                               <span className="text-sm font-medium">All Packages</span>
-                            </div>
-                            <div className="text-xs text-muted-foreground px-2 py-1 space-y-1">
-                              <div>Hidden: {hiddenPackages.size} | Map: {channelToPackages.size}</div>
-                              <div>All: {allChannels.length} | Filtered: {filteredChannels.length}</div>
                             </div>
                             <div className="border-t pt-2">
                               {userPackages.map(pkg => {
@@ -2962,10 +2958,14 @@ export default function LiveTVPage() {
                   </div>
                 </CardHeader>
                 <CardContent className="pt-0 flex-1 overflow-hidden">
-                  <div className="text-xs text-muted-foreground px-3 py-1 border-b">
-                    Showing {availableChannels.length} of {filteredChannels.length} channels (hidden: {hiddenPackages.size})
-                  </div>
-                  <div key={`channels-${hiddenPackages.size}-${filteredChannels.length}`} ref={setChannelListRef} className="h-full overflow-y-auto">
+                  <motion.div
+                    key={`channels-${hiddenPackages.size}-${filteredChannels.length}`}
+                    ref={setChannelListRef}
+                    className="h-full overflow-y-auto"
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    transition={{ duration: 0.2 }}
+                  >
                     {(channelsLoading || iptvChannelsLoading) ? (
                       Array.from({ length: 10 }).map((_, index) => (
                         <div key={index} className="flex items-center gap-3 p-3 border-b border-border">
@@ -2995,7 +2995,7 @@ export default function LiveTVPage() {
                         );
                       })
                     )}
-                  </div>
+                  </motion.div>
                 </CardContent>
               </Card>
             </motion.div>
