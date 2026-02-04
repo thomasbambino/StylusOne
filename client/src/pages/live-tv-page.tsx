@@ -2898,9 +2898,9 @@ export default function LiveTVPage() {
                     {userPackages.length > 0 && (
                       <Popover>
                         <PopoverTrigger asChild>
-                          <Button variant="outline" className="w-44 justify-between">
+                          <Button variant="outline" className="w-44 justify-between" title={`Map size: ${channelToPackages.size}`}>
                             <span className="flex items-center gap-2">
-                              <Filter className="h-4 w-4" />
+                              <Filter className={cn("h-4 w-4", channelToPackages.size === 0 && "text-yellow-500")} />
                               {hiddenPackages.size === 0
                                 ? "All Packages"
                                 : `${userPackages.length - hiddenPackages.size}/${userPackages.length} Packages`}
@@ -2920,6 +2920,15 @@ export default function LiveTVPage() {
                               />
                               <span className="text-sm font-medium">All Packages</span>
                             </div>
+                            {channelToPackages.size === 0 ? (
+                              <div className="text-xs text-yellow-600 px-2 py-1">
+                                Loading channel data... (pkgs: {userPackages.length}, data: {allPackageChannels?.length ?? 'none'})
+                              </div>
+                            ) : (
+                              <div className="text-xs text-muted-foreground px-2 py-1">
+                                {channelToPackages.size} channels mapped
+                              </div>
+                            )}
                             <div className="border-t pt-2">
                               {userPackages.map(pkg => {
                                 const isVisible = !hiddenPackages.has(pkg.packageId);
