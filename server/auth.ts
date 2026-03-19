@@ -764,6 +764,23 @@ export function setupAuth(app: Express) {
 
         // Check if user needs approval
         if (!user.approved) {
+          try {
+            const clientIp = getClientIp(req);
+            const ipInfo = await getIpInfo(clientIp);
+            await storage.addLoginAttempt({
+              identifier: user.email || user.username,
+              ip: ipInfo.ip || clientIp,
+              type: 'failed',
+              timestamp: new Date(),
+              isp: ipInfo.isp ?? null,
+              city: ipInfo.city ?? null,
+              region: ipInfo.region ?? null,
+              country: ipInfo.country ?? null,
+              user_agent: req.headers['user-agent'] ?? null
+            });
+          } catch (error) {
+            loggers.auth.error('[Google OAuth] Failed to record failed login attempt', { error });
+          }
           loggers.auth.info('[Google OAuth] User not approved', { email: user.email });
           return res.redirect('/auth?pending=true');
         }
@@ -780,6 +797,33 @@ export function setupAuth(app: Express) {
           } catch (e) {
             loggers.auth.error('[Google OAuth] Failed to decode state', { error: e });
           }
+        }
+
+        // Record login attempt and update user info
+        try {
+          const clientIp = getClientIp(req);
+          const ipInfo = await getIpInfo(clientIp);
+          const now = new Date();
+
+          await storage.addLoginAttempt({
+            identifier: user.email || user.username,
+            ip: ipInfo.ip || clientIp,
+            type: 'success',
+            timestamp: now,
+            isp: ipInfo.isp ?? null,
+            city: ipInfo.city ?? null,
+            region: ipInfo.region ?? null,
+            country: ipInfo.country ?? null,
+            user_agent: req.headers['user-agent'] ?? null
+          });
+
+          await storage.updateUser({
+            id: user.id,
+            last_ip: ipInfo.ip ?? clientIp,
+            last_login: now
+          });
+        } catch (error) {
+          loggers.auth.error('[Google OAuth] Failed to record login attempt', { error });
         }
 
         // User is authenticated via passport, redirect
