@@ -1,4 +1,11 @@
 #!/bin/sh
+# Patches CodetrixStudio podspec to allow GoogleSignIn 9+ (fixes double-quoted include errors in AppAuth/GTMSessionFetcher).
+PODSPEC="node_modules/@codetrix-studio/capacitor-google-auth/CodetrixStudioCapacitorGoogleAuth.podspec"
+if [ -f "$PODSPEC" ] && grep -q "'~> 7.1'" "$PODSPEC"; then
+  sed -i '' "s/'~> 7.1'/'>= 7.1'/" "$PODSPEC"
+  echo "Patched CodetrixStudioCapacitorGoogleAuth.podspec"
+fi
+
 # Patches WKProcessPool deprecation warning in CapacitorCordova header.
 # WKProcessPool is deprecated in iOS 15+ but still used internally by Capacitor.
 # This patch suppresses the warning so Xcode builds cleanly.

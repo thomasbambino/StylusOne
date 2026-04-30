@@ -31,11 +31,16 @@ post_install do |installer|
   assertDeploymentTarget(installer)
 
   # Mark [CP] script phases as always-out-of-date (intentional, suppresses Xcode warning about missing outputs)
+  # Also disable CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER which "Update to recommended settings"
+  # sets to YES_ERROR and breaks pods like AppAuth and GTMSessionFetcher that use double-quoted includes.
   installer.pods_project.targets.each do |target|
     target.build_phases.each do |phase|
       if phase.respond_to?(:name) && phase.name&.start_with?('[CP]')
         phase.always_out_of_date = '1'
       end
+    end
+    target.build_configurations.each do |config|
+      config.build_settings['CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER'] = 'NO'
     end
   end
 
