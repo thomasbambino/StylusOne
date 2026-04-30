@@ -4179,16 +4179,25 @@ live.ts
 
     loggers.iptv.info('Segment request', { streamId, segmentPath: segmentPath?.substring(0, 30), hasToken: !!token });
 
+    // isCdnToken: true when the ?token= in the URL is a CDN auth token (embedded in segment
+    // URLs by the provider), NOT one of our stream auth tokens. In that case we fall back to
+    // session auth and pass the CDN token through to the upstream CDN fetch/redirect.
+    let isCdnToken = false;
+
     if (token && typeof token === 'string') {
-      // Token-based authentication
       const userId = validateStreamToken(token, streamId);
       if (!userId) {
-        loggers.iptv.debug('Invalid or expired token for segment', { streamId });
-        return res.sendStatus(401);
+        // Not one of our stream tokens — treat as a CDN token and fall back to session auth
+        isCdnToken = true;
+        if (!req.isAuthenticated()) {
+          loggers.iptv.debug('CDN token present but no valid session for segment', { streamId });
+          return res.sendStatus(401);
+        }
+        loggers.iptv.trace('CDN token detected, using session auth for segment');
+      } else {
+        loggers.iptv.trace('Token auth OK for segment');
       }
-      loggers.iptv.trace('Token auth OK for segment');
     } else if (!req.isAuthenticated()) {
-      // No valid authentication
       loggers.iptv.debug('No authentication provided for segment', { streamId });
       return res.sendStatus(401);
     }
@@ -4249,8 +4258,10 @@ live.ts
       loggers.iptv.info('Segment: Full URL constructed', { segmentUrl: segmentUrl.substring(0, 100) });
 
       // Redirect browser directly to CDN segment URL — eliminates server as a proxy bottleneck.
-      // Auth is already validated above; CDN segments don't require additional auth.
-      return res.redirect(302, segmentUrl);
+      // Auth is already validated above. If the request carried a CDN token, append it so the
+      // CDN can validate it on the segment request too.
+      const cdnRedirectUrl = isCdnToken && token ? `${segmentUrl}?token=${token}` : segmentUrl;
+      return res.redirect(302, cdnRedirectUrl);
 
       // Stream the segment with retry logic and timeout (kept as fallback reference)
       // Separate configs for browser (session) vs Chromecast (token)
