@@ -3111,7 +3111,7 @@ live.ts
         let streamUrl = primaryClient.getHLSStreamUrl(streamId);
         loggers.iptv.info('Failover: Trying primary stream', { streamId });
 
-        let response = await fetch(streamUrl);
+        let response = await fetch(streamUrl, { timeout: 10000 });
 
         if (response.ok) {
           let manifestText = await response.text();
@@ -3123,7 +3123,7 @@ live.ts
             const redirectUrl = metaRefreshMatch?.[1] || hrefMatch?.[1];
 
             if (redirectUrl) {
-              response = await fetch(redirectUrl);
+              response = await fetch(redirectUrl, { timeout: 10000 });
               if (response.ok) {
                 manifestText = await response.text();
                 streamUrl = redirectUrl;
@@ -3184,7 +3184,7 @@ live.ts
 
       try {
         let streamUrl = backupClient.getHLSStreamUrl(backup.streamId);
-        let response = await fetch(streamUrl);
+        let response = await fetch(streamUrl, { timeout: 10000 });
 
         if (response.ok) {
           let manifestText = await response.text();
@@ -3196,7 +3196,7 @@ live.ts
             const redirectUrl = metaRefreshMatch?.[1] || hrefMatch?.[1];
 
             if (redirectUrl) {
-              response = await fetch(redirectUrl);
+              response = await fetch(redirectUrl, { timeout: 10000 });
               if (response.ok) {
                 manifestText = await response.text();
                 streamUrl = redirectUrl;
@@ -3584,7 +3584,7 @@ live.ts
             freshStreamUrl = freshStreamUrl.replace(/\.ts$/, '.m3u8');
           }
           loggers.iptv.debug('Fetching fresh M3U manifest', { freshStreamUrl });
-          freshResponse = await fetch(freshStreamUrl);
+          freshResponse = await fetch(freshStreamUrl, { timeout: 10000 });
         } else {
           // Xtream channel - use credential-based URL
           const refreshClient = await xtreamCodesService.getClientForStream(userId, streamId);
@@ -3594,7 +3594,7 @@ live.ts
           }
           freshStreamUrl = refreshClient.getHLSStreamUrl(streamId);
           loggers.iptv.debug('Fetching fresh HLS manifest', { freshStreamUrl });
-          freshResponse = await fetch(freshStreamUrl);
+          freshResponse = await fetch(freshStreamUrl, { timeout: 10000 });
         }
 
         if (!freshResponse.ok) {
