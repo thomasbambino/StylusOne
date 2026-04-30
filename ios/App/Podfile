@@ -2,6 +2,7 @@ require_relative '../../node_modules/@capacitor/ios/scripts/pods_helpers'
 
 platform :ios, '14.0'
 use_frameworks!
+inhibit_all_warnings!
 
 # workaround to avoid Xcode caching of Pods that requires
 # Product -> Clean Build Folder after new Cordova plugins installed
@@ -28,6 +29,15 @@ end
 
 post_install do |installer|
   assertDeploymentTarget(installer)
+
+  # Mark [CP] script phases as always-out-of-date (intentional, suppresses Xcode warning about missing outputs)
+  installer.pods_project.targets.each do |target|
+    target.build_phases.each do |phase|
+      if phase.respond_to?(:name) && phase.name&.start_with?('[CP]')
+        phase.always_out_of_date = '1'
+      end
+    end
+  end
 
   # Privacy manifest XML for SDKs missing them
   privacy_xml = <<-XML

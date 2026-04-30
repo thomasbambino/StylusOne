@@ -4257,13 +4257,23 @@ live.ts
 
       loggers.iptv.info('Segment: Full URL constructed', { segmentUrl: segmentUrl.substring(0, 100) });
 
-      // Redirect browser directly to CDN segment URL — eliminates server as a proxy bottleneck.
-      // Auth is already validated above. If the request carried a CDN token, append it so the
-      // CDN can validate it on the segment request too.
-      const cdnRedirectUrl = isCdnToken && token ? `${segmentUrl}?token=${token}` : segmentUrl;
-      return res.redirect(302, cdnRedirectUrl);
+      // iOS AVPlayer doesn't send a Referer header, so CDNs that check it will reject the
+      // request with a TCP RST. Detect AVPlayer and proxy through the server instead.
+      const userAgent = req.headers['user-agent'] || '';
+      const isAvPlayer = userAgent.includes('AppleCoreMedia') || userAgent.includes('CoreMedia');
 
-      // Stream the segment with retry logic and timeout (kept as fallback reference)
+      if (!isAvPlayer) {
+        // Redirect browser/Chromecast directly to CDN — eliminates server as a proxy bottleneck.
+        const cdnRedirectUrl = isCdnToken && token ? `${segmentUrl}?token=${token}` : segmentUrl;
+        return res.redirect(302, cdnRedirectUrl);
+      }
+
+      // For AVPlayer: append CDN token if present, then proxy through server
+      if (isCdnToken && token) {
+        segmentUrl = `${segmentUrl}?token=${token}`;
+      }
+
+      // Stream the segment via server proxy (AVPlayer / fallback path)
       // Separate configs for browser (session) vs Chromecast (token)
       const isChromecast = !!token;
       const maxRetries = isChromecast ? 2 : 2; // Chromecast: 2 retries, Browser: 2 retries

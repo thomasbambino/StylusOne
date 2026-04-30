@@ -20,7 +20,7 @@ PODS:
     - Capacitor
   - CapacitorScreenOrientation (7.0.3):
     - Capacitor
-  - CaprockAppsCapacitorChromecast (7.0.6):
+  - CaprockappsCapacitorChromecast (7.0.6):
     - Capacitor
   - CodetrixStudioCapacitorGoogleAuth (0.0.1):
     - Capacitor
@@ -43,7 +43,7 @@ DEPENDENCIES:
   - "CapacitorLocalNotifications (from `../../node_modules/@capacitor/local-notifications`)"
   - "CapacitorPreferences (from `../../node_modules/@capacitor/preferences`)"
   - "CapacitorScreenOrientation (from `../../node_modules/@capacitor/screen-orientation`)"
-  - "CaprockAppsCapacitorChromecast (from `../../node_modules/@caprockapps/capacitor-chromecast`)"
+  - "CaprockappsCapacitorChromecast (from `../../node_modules/@caprockapps/capacitor-chromecast`)"
   - "CodetrixStudioCapacitorGoogleAuth (from `../../node_modules/@codetrix-studio/capacitor-google-auth`)"
 
 SPEC REPOS:
@@ -70,7 +70,7 @@ EXTERNAL SOURCES:
     :path: "../../node_modules/@capacitor/preferences"
   CapacitorScreenOrientation:
     :path: "../../node_modules/@capacitor/screen-orientation"
-  CaprockAppsCapacitorChromecast:
+  CaprockappsCapacitorChromecast:
     :path: "../../node_modules/@caprockapps/capacitor-chromecast"
   CodetrixStudioCapacitorGoogleAuth:
     :path: "../../node_modules/@codetrix-studio/capacitor-google-auth"
@@ -85,12 +85,12 @@ SPEC CHECKSUMS:
   CapacitorLocalNotifications: ba2a08bd92887b08f352e6b2db430575cef0cea3
   CapacitorPreferences: 913eef88272c13eb6445b21e51fe8ef6635412cc
   CapacitorScreenOrientation: dbc5cb20775d43a8184830792808c71116b12d56
-  CaprockAppsCapacitorChromecast: 1bde7717d370fd7391754901b42ef6fc7a02c229
+  CaprockappsCapacitorChromecast: be8766ad4c4b30eeb8e778fae6cc17bcae49c2df
   CodetrixStudioCapacitorGoogleAuth: 88ad04845b71e573d44237c15dd6a2345c8cdfcb
   GoogleSignIn: d4281ab6cf21542b1cfaff85c191f230b399d2db
   GTMAppAuth: f69bd07d68cd3b766125f7e072c45d7340dea0de
   GTMSessionFetcher: 5aea5ba6bd522a239e236100971f10cb71b96ab6
 
-PODFILE CHECKSUM: cd6136228d8f8bcd12e79da4231a226d6630db33
+PODFILE CHECKSUM: 2e059ff95d180c63e72b2c8b2749116aa6e046e5
 
 COCOAPODS: 1.16.2

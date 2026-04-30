@@ -13,7 +13,8 @@
     "cap:sync": "npm run update:android-config && npm run build && npx cap sync",
     "cap:open": "npx cap open android",
     "cap:run": "npm run cap:sync && npx cap open android",
-    "android:build": "npm run update:android-config && npm run build && npx cap sync android && cd android && ./gradlew assembleDebug"
+    "android:build": "npm run update:android-config && npm run build && npx cap sync android && cd android && ./gradlew assembleDebug",
+    "postinstall": "sh scripts/patch-capacitor-ios.sh"
   },
   "dependencies": {
     "@capacitor-community/keep-awake": "^7.1.0",
