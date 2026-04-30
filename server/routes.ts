@@ -3514,8 +3514,82 @@ live.ts
           return res.send(existingStream.manifest);
         }
 
-        // Manifest too old, fetch fresh one below
-        loggers.iptv.debug('Browser manifest too old, fetching fresh', { streamId, ageSeconds: Math.round(manifestAge / 1000) });
+        // Manifest too old — refresh directly from the cached CDN URL to bypass the slow Xtream proxy
+        loggers.iptv.debug('Browser manifest too old, refreshing from CDN', { streamId, ageSeconds: Math.round(manifestAge / 1000) });
+
+        existingStream.users.add(userIdString);
+        existingStream.lastAccessed = new Date();
+
+        try {
+          let refreshUrl = existingStream.manifestUrl;
+          let refreshResponse = refreshUrl ? await fetch(refreshUrl, { timeout: 10000 }) : null;
+
+          // If CDN URL failed (token expired) or wasn't cached, fall back to Xtream proxy
+          if (!refreshResponse || !refreshResponse.ok) {
+            const refreshClient = await xtreamCodesService.getClientForStream(userId!, streamId);
+            if (refreshClient) {
+              refreshUrl = refreshClient.getHLSStreamUrl(streamId);
+              refreshResponse = await fetch(refreshUrl, { timeout: 10000 });
+            }
+          }
+
+          if (refreshResponse && refreshResponse.ok) {
+            const freshText = await refreshResponse.text();
+            if (!freshText.trim().startsWith('<!DOCTYPE') && !freshText.trim().startsWith('<html')) {
+              const freshManifestUrl = new URL(refreshResponse.url);
+              const freshBaseSegmentUrl = freshManifestUrl.origin + freshManifestUrl.pathname.substring(0, freshManifestUrl.pathname.lastIndexOf('/') + 1);
+              (global as any).iptvSegmentBaseUrls = (global as any).iptvSegmentBaseUrls || new Map();
+              (global as any).iptvSegmentBaseUrls.set(streamId, freshBaseSegmentUrl);
+              existingStream.baseSegmentUrl = freshBaseSegmentUrl;
+              existingStream.manifestUrl = refreshResponse.url;
+
+              const freshBaseManifest = freshText.replace(
+                /^([^#\n].+\.(ts|m3u8)(?:\?[^\s\n]*)?)$/gm,
+                (match) => {
+                  const trimmed = match.trim();
+                  const isSubPlaylist = trimmed.endsWith('.m3u8') || trimmed.includes('.m3u8?');
+                  if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
+                    try {
+                      const urlObj = new URL(trimmed);
+                      const pathParts = urlObj.pathname.split('/');
+                      const originalFilename = pathParts[pathParts.length - 1] || (isSubPlaylist ? 'variant.m3u8' : 'stream.ts');
+                      return isSubPlaylist
+                        ? `/api/iptv/manifest/${streamId}/${originalFilename}?url=${encodeURIComponent(trimmed)}`
+                        : `/api/iptv/segment/${streamId}/${originalFilename}?url=${encodeURIComponent(trimmed)}`;
+                    } catch {
+                      return isSubPlaylist
+                        ? `/api/iptv/manifest/${streamId}/variant.m3u8?url=${encodeURIComponent(trimmed)}`
+                        : `/api/iptv/segment/${streamId}/stream.ts?url=${encodeURIComponent(trimmed)}`;
+                    }
+                  }
+                  return isSubPlaylist ? `/api/iptv/manifest/${streamId}/${trimmed}` : `/api/iptv/segment/${streamId}/${trimmed}`;
+                }
+              );
+
+              existingStream.manifest = freshBaseManifest;
+              existingStream.manifestFetchedAt = new Date();
+
+              res.set({
+                'Content-Type': 'application/vnd.apple.mpegurl',
+                'Access-Control-Allow-Origin': '*',
+                'Cross-Origin-Resource-Policy': 'cross-origin',
+                'Cache-Control': 'no-cache, no-store, must-revalidate'
+              });
+              return res.send(freshBaseManifest);
+            }
+          }
+        } catch (refreshErr) {
+          loggers.iptv.debug('Browser manifest CDN refresh failed, serving stale', { streamId, error: refreshErr instanceof Error ? refreshErr.message : String(refreshErr) });
+        }
+
+        // Fallback: serve the stale cached manifest
+        res.set({
+          'Content-Type': 'application/vnd.apple.mpegurl',
+          'Access-Control-Allow-Origin': '*',
+          'Cross-Origin-Resource-Policy': 'cross-origin',
+          'Cache-Control': 'no-cache, no-store, must-revalidate'
+        });
+        return res.send(existingStream.manifest);
       } else if (existingStream && token) {
         // For token-based auth (Chromecast), use moderate refresh
         const manifestAge = Date.now() - existingStream.manifestFetchedAt.getTime();
