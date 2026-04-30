@@ -3957,13 +3957,17 @@ live.ts
       // If token authentication, add token to segment and manifest URLs dynamically
       let finalManifest = fixedManifest;
       if (token) {
-        loggers.iptv.debug('Adding token to manifest for Chromecast');
-        // Add token to segment URLs
+        loggers.iptv.debug('Adding token to manifest for Chromecast/iOS');
+        // Add token to segment URLs.
+        // If the segment path already contains a CDN ?token=, use auth_token for our stream
+        // token so they don't collide (duplicate `token` params would produce an array in Express).
         finalManifest = fixedManifest.replace(
           /\/api\/iptv\/segment\/([^/]+)\/([^\s\n]+)/g,
           (match, sid, path) => {
+            const hasCdnToken = path.includes('?token=') || path.includes('&token=');
+            const paramName = hasCdnToken ? 'auth_token' : 'token';
             const separator = path.includes('?') ? '&' : '?';
-            return `/api/iptv/segment/${sid}/${path}${separator}token=${token}`;
+            return `/api/iptv/segment/${sid}/${path}${separator}${paramName}=${token}`;
           }
         );
         // Add token to manifest URLs (for sub-playlists)
@@ -4172,25 +4176,37 @@ live.ts
 
   // IPTV Segment Proxy - proxy the actual video segments
   app.get("/api/iptv/segment/:streamId/*", async (req, res) => {
-    // Check for token-based authentication (for Chromecast) or session authentication
-    const { token } = req.query;
+    // Check for token-based authentication (for Chromecast/iOS) or session authentication
+    // auth_token: our stream token, used when a CDN token already occupies the `token` param
+    // token: either our stream token (Chromecast) or a CDN token embedded in the segment URL
+    const token = Array.isArray(req.query.token) ? undefined : req.query.token as string | undefined;
+    const authToken = req.query.auth_token as string | undefined;
     const { streamId } = req.params;
     const segmentPath = (req.params as Record<string, string>)[0];
 
-    loggers.iptv.info('Segment request', { streamId, segmentPath: segmentPath?.substring(0, 30), hasToken: !!token });
+    loggers.iptv.info('Segment request', { streamId, segmentPath: segmentPath?.substring(0, 30), hasToken: !!(token || authToken) });
 
     // isCdnToken: true when the ?token= in the URL is a CDN auth token (embedded in segment
     // URLs by the provider), NOT one of our stream auth tokens. In that case we fall back to
-    // session auth and pass the CDN token through to the upstream CDN fetch/redirect.
+    // session auth or auth_token and pass the CDN token through to the upstream CDN fetch/redirect.
     let isCdnToken = false;
 
-    if (token && typeof token === 'string') {
+    // Check auth_token first (our stream token when CDN token also present)
+    if (authToken) {
+      const userId = validateStreamToken(authToken, streamId);
+      if (!userId) {
+        loggers.iptv.debug('Invalid auth_token for segment', { streamId });
+        return res.sendStatus(401);
+      }
+      loggers.iptv.trace('auth_token auth OK for segment');
+      isCdnToken = !!token; // token param is the CDN token in this case
+    } else if (token) {
       const userId = validateStreamToken(token, streamId);
       if (!userId) {
         // Not one of our stream tokens — treat as a CDN token and fall back to session auth
         isCdnToken = true;
         if (!req.isAuthenticated()) {
-          loggers.iptv.debug('CDN token present but no valid session for segment', { streamId });
+          loggers.iptv.debug('CDN token present but no valid session or auth_token for segment', { streamId });
           return res.sendStatus(401);
         }
         loggers.iptv.trace('CDN token detected, using session auth for segment');
