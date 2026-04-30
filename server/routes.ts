@@ -4248,15 +4248,11 @@ live.ts
 
       loggers.iptv.info('Segment: Full URL constructed', { segmentUrl: segmentUrl.substring(0, 100) });
 
-      // Set response headers immediately
-      res.set({
-        'Content-Type': 'video/MP2T',
-        'Access-Control-Allow-Origin': '*',
-        'Cross-Origin-Resource-Policy': 'cross-origin',
-        'Cache-Control': 'public, max-age=31536000' // Segments can be cached
-      });
+      // Redirect browser directly to CDN segment URL — eliminates server as a proxy bottleneck.
+      // Auth is already validated above; CDN segments don't require additional auth.
+      return res.redirect(302, segmentUrl);
 
-      // Stream the segment with retry logic and timeout
+      // Stream the segment with retry logic and timeout (kept as fallback reference)
       // Separate configs for browser (session) vs Chromecast (token)
       const isChromecast = !!token;
       const maxRetries = isChromecast ? 2 : 2; // Chromecast: 2 retries, Browser: 2 retries
