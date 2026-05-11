@@ -88,7 +88,7 @@ router.get('/read-status', async (req, res) => {
 
 /**
  * GET /api/books/leaderboard
- * Get yearly and lifetime leaderboard of books read
+ * Get yearly and lifetime leaderboard of books read, with recent books per user
  */
 router.get('/leaderboard', async (req, res) => {
   if (!req.isAuthenticated()) return res.sendStatus(401);
@@ -118,7 +118,40 @@ router.get('/leaderboard', async (req, res) => {
       .groupBy(bookReadLog.user_id, users.username)
       .orderBy(desc(sql`count(*)`));
 
-    res.json({ yearly, lifetime, year: currentYear });
+    // Fetch all reads with book details to build "recent books per user"
+    const allReads = await db
+      .select({
+        userId: bookReadLog.user_id,
+        bookId: books.id,
+        title: books.title,
+        author: books.author,
+        cover_path: books.cover_path,
+        readAt: bookReadLog.read_at,
+      })
+      .from(bookReadLog)
+      .innerJoin(books, eq(bookReadLog.book_id, books.id))
+      .orderBy(desc(bookReadLog.read_at));
+
+    // Group up to 5 most recent books per user (lifetime)
+    const recentByUser: Record<number, typeof allReads> = {};
+    for (const read of allReads) {
+      if (!recentByUser[read.userId]) recentByUser[read.userId] = [];
+      if (recentByUser[read.userId].length < 5) recentByUser[read.userId].push(read);
+    }
+
+    // Group up to 5 most recent books per user (current year)
+    const recentYearlyByUser: Record<number, typeof allReads> = {};
+    for (const read of allReads) {
+      if (new Date(read.readAt).getFullYear() !== currentYear) continue;
+      if (!recentYearlyByUser[read.userId]) recentYearlyByUser[read.userId] = [];
+      if (recentYearlyByUser[read.userId].length < 5) recentYearlyByUser[read.userId].push(read);
+    }
+
+    res.json({
+      yearly: yearly.map(e => ({ ...e, recentBooks: recentYearlyByUser[e.userId] ?? [] })),
+      lifetime: lifetime.map(e => ({ ...e, recentBooks: recentByUser[e.userId] ?? [] })),
+      year: currentYear,
+    });
   } catch (error) {
     loggers.book.error('Error fetching leaderboard', { error });
     res.status(500).json({ error: 'Failed to fetch leaderboard' });

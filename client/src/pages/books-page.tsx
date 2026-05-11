@@ -59,8 +59,23 @@ import {
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { cn } from "@/lib/utils";
+import { useAuth } from "@/hooks/use-auth";
+
+function getUserAvatarColor(username: string): string {
+  const colors = [
+    'bg-red-500', 'bg-blue-500', 'bg-green-500', 'bg-purple-500',
+    'bg-orange-500', 'bg-pink-500', 'bg-cyan-500', 'bg-yellow-500',
+    'bg-indigo-500', 'bg-teal-500',
+  ];
+  let hash = 0;
+  for (let i = 0; i < username.length; i++) {
+    hash = username.charCodeAt(i) + ((hash << 5) - hash);
+  }
+  return colors[Math.abs(hash) % colors.length];
+}
 
 export default function BooksPage() {
+  const { user: currentUser } = useAuth();
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [searchQuery, setSearchQuery] = useState("");
@@ -81,6 +96,7 @@ export default function BooksPage() {
   const [senderEmail, setSenderEmail] = useState("kindle@stylus.services");
   const [leaderboardOpen, setLeaderboardOpen] = useState(true);
   const [leaderboardTab, setLeaderboardTab] = useState<"yearly" | "lifetime">("yearly");
+  const [expandedUser, setExpandedUser] = useState<number | null>(null);
 
   // Fetch all books
   const { data: books = [], isLoading } = useQuery<Book[]>({
@@ -102,10 +118,17 @@ export default function BooksPage() {
     },
   });
 
+  type LeaderboardEntry = {
+    userId: number;
+    username: string;
+    count: number;
+    recentBooks: { bookId: number; title: string; author: string | null; cover_path: string | null; readAt: string }[];
+  };
+
   // Fetch leaderboard
   const { data: leaderboard } = useQuery<{
-    yearly: { userId: number; username: string; count: number }[];
-    lifetime: { userId: number; username: string; count: number }[];
+    yearly: LeaderboardEntry[];
+    lifetime: LeaderboardEntry[];
     year: number;
   }>({
     queryKey: ["/api/books/leaderboard"],
@@ -522,79 +545,186 @@ export default function BooksPage() {
               onClick={() => setLeaderboardOpen(!leaderboardOpen)}
               className="w-full flex items-center justify-between px-5 py-4 hover:bg-muted/20 transition-colors"
             >
-              <div className="flex items-center gap-3">
-                <Trophy className="h-5 w-5 text-yellow-500" />
-                <span className="font-semibold text-base">Reading Leaderboard</span>
-                <div className="flex gap-2">
-                  <span className="text-xs bg-muted/40 rounded-full px-2 py-0.5 text-muted-foreground">
-                    {leaderboard?.year ?? new Date().getFullYear()} · {leaderboard?.yearly.reduce((s, e) => s + e.count, 0) ?? 0} read
-                  </span>
-                  <span className="text-xs bg-muted/40 rounded-full px-2 py-0.5 text-muted-foreground">
-                    All time · {leaderboard?.lifetime.reduce((s, e) => s + e.count, 0) ?? 0} read
-                  </span>
-                </div>
-              </div>
-              {leaderboardOpen ? <ChevronUp className="h-4 w-4 text-muted-foreground" /> : <ChevronDown className="h-4 w-4 text-muted-foreground" />}
-            </button>
-
-            {leaderboardOpen && (
-              <div className="border-t border-muted/30 px-5 py-4">
-                {/* Tabs */}
-                <div className="flex gap-2 mb-4">
-                  <Button
-                    size="sm"
-                    variant={leaderboardTab === "yearly" ? "default" : "outline"}
-                    onClick={() => setLeaderboardTab("yearly")}
-                    className="text-xs"
-                  >
-                    {leaderboard?.year ?? new Date().getFullYear()} Reading
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant={leaderboardTab === "lifetime" ? "default" : "outline"}
-                    onClick={() => setLeaderboardTab("lifetime")}
-                    className="text-xs"
-                  >
-                    Lifetime
-                  </Button>
-                </div>
-
-                {/* Leaderboard list */}
-                {(() => {
-                  const entries = leaderboard?.[leaderboardTab] ?? [];
-                  if (entries.length === 0) {
-                    return (
-                      <p className="text-sm text-muted-foreground text-center py-4">
-                        No books marked as read yet. Be the first!
-                      </p>
-                    );
-                  }
+              <div className="flex items-center gap-3 min-w-0">
+                <Trophy className="h-5 w-5 text-yellow-500 shrink-0" />
+                <span className="font-semibold text-base shrink-0">Reading Leaderboard</span>
+                {currentUser && leaderboard && (() => {
+                  const myYearly = leaderboard.yearly.find(e => e.userId === currentUser.id);
+                  const myLifetime = leaderboard.lifetime.find(e => e.userId === currentUser.id);
                   return (
-                    <div className="space-y-2">
-                      {entries.map((entry, i) => (
-                        <div key={entry.userId} className="flex items-center gap-3 py-2">
-                          <div className="w-7 flex justify-center shrink-0">
-                            {i === 0 ? (
-                              <Trophy className="h-4 w-4 text-yellow-500" />
-                            ) : i === 1 ? (
-                              <Medal className="h-4 w-4 text-slate-400" />
-                            ) : i === 2 ? (
-                              <Medal className="h-4 w-4 text-amber-600" />
-                            ) : (
-                              <span className="text-xs text-muted-foreground font-mono">{i + 1}</span>
-                            )}
-                          </div>
-                          <span className="flex-1 text-sm font-medium truncate">{entry.username}</span>
-                          <div className="flex items-center gap-1.5 shrink-0">
-                            <BookOpen className="h-3.5 w-3.5 text-muted-foreground" />
-                            <span className="text-sm font-semibold tabular-nums">{entry.count}</span>
-                            <span className="text-xs text-muted-foreground">{entry.count === 1 ? "book" : "books"}</span>
-                          </div>
-                        </div>
-                      ))}
+                    <div className="hidden sm:flex gap-2">
+                      <span className="text-xs bg-primary/10 text-primary rounded-full px-2.5 py-0.5 font-medium">
+                        You: {myYearly?.count ?? 0} this year
+                      </span>
+                      <span className="text-xs bg-muted/40 text-muted-foreground rounded-full px-2.5 py-0.5">
+                        {myLifetime?.count ?? 0} all time
+                      </span>
                     </div>
                   );
                 })()}
+              </div>
+              {leaderboardOpen ? <ChevronUp className="h-4 w-4 text-muted-foreground shrink-0" /> : <ChevronDown className="h-4 w-4 text-muted-foreground shrink-0" />}
+            </button>
+
+            {leaderboardOpen && (
+              <div className="border-t border-muted/30">
+                {/* Tabs */}
+                <div className="flex border-b border-muted/20">
+                  <button
+                    onClick={() => setLeaderboardTab("yearly")}
+                    className={cn(
+                      "flex-1 py-2.5 text-sm font-medium transition-colors",
+                      leaderboardTab === "yearly"
+                        ? "border-b-2 border-primary text-primary"
+                        : "text-muted-foreground hover:text-foreground"
+                    )}
+                  >
+                    {leaderboard?.year ?? new Date().getFullYear()} Reading
+                  </button>
+                  <button
+                    onClick={() => setLeaderboardTab("lifetime")}
+                    className={cn(
+                      "flex-1 py-2.5 text-sm font-medium transition-colors",
+                      leaderboardTab === "lifetime"
+                        ? "border-b-2 border-primary text-primary"
+                        : "text-muted-foreground hover:text-foreground"
+                    )}
+                  >
+                    All Time
+                  </button>
+                </div>
+
+                {/* Leaderboard list */}
+                <div className="p-4">
+                  {(() => {
+                    const entries = leaderboard?.[leaderboardTab] ?? [];
+                    if (entries.length === 0) {
+                      return (
+                        <p className="text-sm text-muted-foreground text-center py-6">
+                          No books marked as read yet — be the first!
+                        </p>
+                      );
+                    }
+                    const topCount = entries[0].count;
+                    return (
+                      <div className="space-y-1">
+                        {entries.map((entry, i) => {
+                          const isMe = entry.userId === currentUser?.id;
+                          const isExpanded = expandedUser === entry.userId;
+                          const pct = topCount > 0 ? (entry.count / topCount) * 100 : 0;
+                          return (
+                            <div key={entry.userId}>
+                              <button
+                                onClick={() => setExpandedUser(isExpanded ? null : entry.userId)}
+                                className={cn(
+                                  "w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors text-left",
+                                  isMe ? "bg-primary/5 hover:bg-primary/10" : "hover:bg-muted/30",
+                                  isExpanded && "bg-muted/20"
+                                )}
+                              >
+                                {/* Rank */}
+                                <div className="w-6 flex justify-center shrink-0">
+                                  {i === 0 ? (
+                                    <Trophy className="h-4 w-4 text-yellow-500" />
+                                  ) : i === 1 ? (
+                                    <Medal className="h-4 w-4 text-slate-400" />
+                                  ) : i === 2 ? (
+                                    <Medal className="h-4 w-4 text-amber-600" />
+                                  ) : (
+                                    <span className="text-xs text-muted-foreground font-mono w-4 text-center">{i + 1}</span>
+                                  )}
+                                </div>
+
+                                {/* Avatar */}
+                                <div className={cn(
+                                  "h-8 w-8 rounded-full flex items-center justify-center text-white text-xs font-bold shrink-0",
+                                  getUserAvatarColor(entry.username)
+                                )}>
+                                  {entry.username.slice(0, 2).toUpperCase()}
+                                </div>
+
+                                {/* Name + progress */}
+                                <div className="flex-1 min-w-0">
+                                  <div className="flex items-center gap-2 mb-1">
+                                    <span className={cn("text-sm font-medium truncate", isMe && "text-primary")}>
+                                      {entry.username}
+                                    </span>
+                                    {isMe && (
+                                      <span className="text-xs bg-primary/20 text-primary rounded-full px-1.5 py-0.5 shrink-0">you</span>
+                                    )}
+                                  </div>
+                                  <div className="flex items-center gap-2">
+                                    <div className="flex-1 h-1.5 bg-muted/40 rounded-full overflow-hidden">
+                                      <motion.div
+                                        className={cn(
+                                          "h-full rounded-full",
+                                          i === 0 ? "bg-yellow-500" : i === 1 ? "bg-slate-400" : i === 2 ? "bg-amber-600" : "bg-primary/60"
+                                        )}
+                                        initial={{ width: 0 }}
+                                        animate={{ width: `${pct}%` }}
+                                        transition={{ duration: 0.6, delay: i * 0.05, ease: "easeOut" }}
+                                      />
+                                    </div>
+                                  </div>
+                                </div>
+
+                                {/* Count */}
+                                <div className="flex items-center gap-1 shrink-0">
+                                  <span className="text-base font-bold tabular-nums">{entry.count}</span>
+                                  <span className="text-xs text-muted-foreground">{entry.count === 1 ? "book" : "books"}</span>
+                                  <ChevronDown className={cn("h-3 w-3 text-muted-foreground ml-1 transition-transform", isExpanded && "rotate-180")} />
+                                </div>
+                              </button>
+
+                              {/* Expanded: books read */}
+                              <AnimatePresence>
+                                {isExpanded && (
+                                  <motion.div
+                                    initial={{ opacity: 0, height: 0 }}
+                                    animate={{ opacity: 1, height: "auto" }}
+                                    exit={{ opacity: 0, height: 0 }}
+                                    transition={{ duration: 0.2 }}
+                                    className="overflow-hidden"
+                                  >
+                                    <div className="ml-[68px] mr-3 pb-3">
+                                      {entry.recentBooks.length === 0 ? (
+                                        <p className="text-xs text-muted-foreground py-2">No books yet.</p>
+                                      ) : (
+                                        <>
+                                          <p className="text-xs text-muted-foreground mb-2">
+                                            Recently read{entry.count > entry.recentBooks.length ? ` (showing ${entry.recentBooks.length} of ${entry.count})` : ""}:
+                                          </p>
+                                          <div className="flex gap-2 flex-wrap">
+                                            {entry.recentBooks.map(book => (
+                                              <div key={book.bookId} className="flex items-center gap-2 bg-muted/30 rounded-lg px-2 py-1.5 max-w-[200px]">
+                                                <div className="w-7 h-9 rounded overflow-hidden bg-muted/40 shrink-0">
+                                                  <img
+                                                    src={`/api/books/${book.bookId}/cover`}
+                                                    alt={book.title}
+                                                    className="w-full h-full object-cover"
+                                                    onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                                                  />
+                                                </div>
+                                                <div className="min-w-0">
+                                                  <p className="text-xs font-medium line-clamp-1">{book.title}</p>
+                                                  {book.author && <p className="text-xs text-muted-foreground line-clamp-1">{book.author}</p>}
+                                                </div>
+                                              </div>
+                                            ))}
+                                          </div>
+                                        </>
+                                      )}
+                                    </div>
+                                  </motion.div>
+                                )}
+                              </AnimatePresence>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    );
+                  })()}
+                </div>
               </div>
             )}
           </div>
