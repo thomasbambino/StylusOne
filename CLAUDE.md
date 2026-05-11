@@ -7,7 +7,7 @@ This file contains commands and configurations for Claude Code to help with deve
 **IMPORTANT**: When deploying to remote (pushing to main), increment the app version in:
 - `server/lib/startup-display.ts` → `APP_VERSION` constant
 
-Current version: **1.5.52**
+Current version: **1.5.71**
 
 The startup display reads `APP_NAME` from `.env` and shows: `{APP_NAME} Dashboard v{VERSION}`
 

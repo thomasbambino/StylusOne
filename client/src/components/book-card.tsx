@@ -18,15 +18,17 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { 
-  Download, 
-  Send, 
-  Edit, 
-  Trash2, 
+import {
+  Download,
+  Send,
+  Edit,
+  Trash2,
   FileText,
   MoreVertical,
   Image,
-  BookOpen
+  BookOpen,
+  CheckCircle2,
+  Circle
 } from "lucide-react";
 import { motion } from "framer-motion";
 
@@ -56,6 +58,8 @@ interface BookCardProps {
   onSendToKindle: (book: Book) => void;
   onEdit: (book: Book) => void;
   onDelete: (bookId: number) => void;
+  onToggleRead: (bookId: number, isRead: boolean) => void;
+  isRead?: boolean;
   isSendingToKindle?: boolean;
 }
 
@@ -66,6 +70,8 @@ export function BookCard({
   onSendToKindle,
   onEdit,
   onDelete,
+  onToggleRead,
+  isRead = false,
   isSendingToKindle = false,
 }: BookCardProps) {
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
@@ -134,6 +140,19 @@ export function BookCard({
               </Button>
             </div>
 
+            {/* Read status badge - Top Left Corner */}
+            <div
+              className="absolute top-2 left-2 z-10 cursor-pointer"
+              onClick={(e) => { e.stopPropagation(); onToggleRead(book.id, isRead); }}
+              title={isRead ? "Mark as unread" : "Mark as read"}
+            >
+              {isRead ? (
+                <CheckCircle2 className="h-6 w-6 text-green-500 drop-shadow-md" />
+              ) : (
+                <Circle className="h-6 w-6 text-white/60 opacity-0 group-hover:opacity-100 drop-shadow-md transition-opacity" />
+              )}
+            </div>
+
             {/* More Options Menu - Top Right Corner */}
             <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity">
               <DropdownMenu>
@@ -147,6 +166,14 @@ export function BookCard({
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end" className="w-48">
+                  <DropdownMenuItem onClick={() => onToggleRead(book.id, isRead)}>
+                    {isRead ? (
+                      <><CheckCircle2 className="h-4 w-4 mr-2 text-green-500" />Mark as Unread</>
+                    ) : (
+                      <><Circle className="h-4 w-4 mr-2" />Mark as Read</>
+                    )}
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
                   <DropdownMenuItem onClick={() => onEdit(book)}>
                     <Edit className="h-4 w-4 mr-2" />
                     Edit Details

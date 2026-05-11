@@ -25,9 +25,9 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { useToast } from "@/hooks/use-toast";
-import { 
-  BookOpen, 
-  Upload, 
+import {
+  BookOpen,
+  Upload,
   Search,
   Download,
   Send,
@@ -49,7 +49,13 @@ import {
   Settings,
   Copy,
   Mail,
-  Info
+  Info,
+  Trophy,
+  CheckCircle2,
+  Circle,
+  ChevronDown,
+  ChevronUp,
+  Medal
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { cn } from "@/lib/utils";
@@ -73,6 +79,8 @@ export default function BooksPage() {
   const [kindleSettingsOpen, setKindleSettingsOpen] = useState(false);
   const [kindleEmail, setKindleEmail] = useState("");
   const [senderEmail, setSenderEmail] = useState("kindle@stylus.services");
+  const [leaderboardOpen, setLeaderboardOpen] = useState(true);
+  const [leaderboardTab, setLeaderboardTab] = useState<"yearly" | "lifetime">("yearly");
 
   // Fetch all books
   const { data: books = [], isLoading } = useQuery<Book[]>({
@@ -80,6 +88,30 @@ export default function BooksPage() {
     queryFn: async () => {
       const response = await fetch("/api/books");
       if (!response.ok) throw new Error("Failed to fetch books");
+      return response.json();
+    },
+  });
+
+  // Fetch read status (book IDs the current user has marked as read)
+  const { data: readBookIds = [] } = useQuery<number[]>({
+    queryKey: ["/api/books/read-status"],
+    queryFn: async () => {
+      const response = await fetch("/api/books/read-status");
+      if (!response.ok) throw new Error("Failed to fetch read status");
+      return response.json();
+    },
+  });
+
+  // Fetch leaderboard
+  const { data: leaderboard } = useQuery<{
+    yearly: { userId: number; username: string; count: number }[];
+    lifetime: { userId: number; username: string; count: number }[];
+    year: number;
+  }>({
+    queryKey: ["/api/books/leaderboard"],
+    queryFn: async () => {
+      const response = await fetch("/api/books/leaderboard");
+      if (!response.ok) throw new Error("Failed to fetch leaderboard");
       return response.json();
     },
   });
@@ -316,6 +348,39 @@ export default function BooksPage() {
     },
   });
 
+  // Mark/unmark book as read mutation
+  const toggleReadMutation = useMutation({
+    mutationFn: async ({ bookId, isRead }: { bookId: number; isRead: boolean }) => {
+      const response = await fetch(`/api/books/${bookId}/read`, {
+        method: isRead ? "DELETE" : "POST",
+      });
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || "Failed to update read status");
+      }
+      return response.json();
+    },
+    onSuccess: (_, { isRead }) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/books/read-status"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/books/leaderboard"] });
+      toast({
+        title: isRead ? "Marked as unread" : "Marked as read",
+        description: isRead ? "Removed from your read list" : "Added to your read list",
+      });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Failed to update",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+
+  const handleToggleRead = (bookId: number, isRead: boolean) => {
+    toggleReadMutation.mutate({ bookId, isRead });
+  };
+
   // Filter and sort books
   const filteredBooks = books
     .filter(book => 
@@ -444,8 +509,99 @@ export default function BooksPage() {
     <div className="min-h-screen bg-gradient-to-br from-background via-background to-muted/20">
       <div className="container mx-auto px-6 py-8">
         
+        {/* Leaderboard */}
+        <motion.div
+          className="mb-6"
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.5 }}
+        >
+          <div className="border border-muted/40 rounded-xl bg-card/60 backdrop-blur-sm overflow-hidden">
+            {/* Leaderboard Header */}
+            <button
+              onClick={() => setLeaderboardOpen(!leaderboardOpen)}
+              className="w-full flex items-center justify-between px-5 py-4 hover:bg-muted/20 transition-colors"
+            >
+              <div className="flex items-center gap-3">
+                <Trophy className="h-5 w-5 text-yellow-500" />
+                <span className="font-semibold text-base">Reading Leaderboard</span>
+                <div className="flex gap-2">
+                  <span className="text-xs bg-muted/40 rounded-full px-2 py-0.5 text-muted-foreground">
+                    {leaderboard?.year ?? new Date().getFullYear()} · {leaderboard?.yearly.reduce((s, e) => s + e.count, 0) ?? 0} read
+                  </span>
+                  <span className="text-xs bg-muted/40 rounded-full px-2 py-0.5 text-muted-foreground">
+                    All time · {leaderboard?.lifetime.reduce((s, e) => s + e.count, 0) ?? 0} read
+                  </span>
+                </div>
+              </div>
+              {leaderboardOpen ? <ChevronUp className="h-4 w-4 text-muted-foreground" /> : <ChevronDown className="h-4 w-4 text-muted-foreground" />}
+            </button>
+
+            {leaderboardOpen && (
+              <div className="border-t border-muted/30 px-5 py-4">
+                {/* Tabs */}
+                <div className="flex gap-2 mb-4">
+                  <Button
+                    size="sm"
+                    variant={leaderboardTab === "yearly" ? "default" : "outline"}
+                    onClick={() => setLeaderboardTab("yearly")}
+                    className="text-xs"
+                  >
+                    {leaderboard?.year ?? new Date().getFullYear()} Reading
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant={leaderboardTab === "lifetime" ? "default" : "outline"}
+                    onClick={() => setLeaderboardTab("lifetime")}
+                    className="text-xs"
+                  >
+                    Lifetime
+                  </Button>
+                </div>
+
+                {/* Leaderboard list */}
+                {(() => {
+                  const entries = leaderboard?.[leaderboardTab] ?? [];
+                  if (entries.length === 0) {
+                    return (
+                      <p className="text-sm text-muted-foreground text-center py-4">
+                        No books marked as read yet. Be the first!
+                      </p>
+                    );
+                  }
+                  return (
+                    <div className="space-y-2">
+                      {entries.map((entry, i) => (
+                        <div key={entry.userId} className="flex items-center gap-3 py-2">
+                          <div className="w-7 flex justify-center shrink-0">
+                            {i === 0 ? (
+                              <Trophy className="h-4 w-4 text-yellow-500" />
+                            ) : i === 1 ? (
+                              <Medal className="h-4 w-4 text-slate-400" />
+                            ) : i === 2 ? (
+                              <Medal className="h-4 w-4 text-amber-600" />
+                            ) : (
+                              <span className="text-xs text-muted-foreground font-mono">{i + 1}</span>
+                            )}
+                          </div>
+                          <span className="flex-1 text-sm font-medium truncate">{entry.username}</span>
+                          <div className="flex items-center gap-1.5 shrink-0">
+                            <BookOpen className="h-3.5 w-3.5 text-muted-foreground" />
+                            <span className="text-sm font-semibold tabular-nums">{entry.count}</span>
+                            <span className="text-xs text-muted-foreground">{entry.count === 1 ? "book" : "books"}</span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  );
+                })()}
+              </div>
+            )}
+          </div>
+        </motion.div>
+
         {/* Controls */}
-        <motion.div 
+        <motion.div
           className="mb-8"
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
@@ -875,6 +1031,8 @@ export default function BooksPage() {
                       onSendToKindle={handleSendToKindle}
                       onEdit={handleEdit}
                       onDelete={(bookId) => deleteBookMutation.mutate(bookId)}
+                      onToggleRead={handleToggleRead}
+                      isRead={readBookIds.includes(book.id)}
                       isSendingToKindle={sendToKindleMutation.isPending}
                     />
                   ) : (
@@ -931,6 +1089,20 @@ export default function BooksPage() {
 
                           {/* Actions */}
                           <div className="flex gap-2">
+                            <Button
+                              size="sm"
+                              onClick={() => handleToggleRead(book.id, readBookIds.includes(book.id))}
+                              variant="outline"
+                              title={readBookIds.includes(book.id) ? "Mark as unread" : "Mark as read"}
+                              className={readBookIds.includes(book.id) ? "text-green-600 hover:text-green-700 border-green-200 hover:bg-green-50" : ""}
+                            >
+                              {readBookIds.includes(book.id) ? (
+                                <CheckCircle2 className="h-4 w-4" />
+                              ) : (
+                                <Circle className="h-4 w-4" />
+                              )}
+                            </Button>
+
                             <Button
                               size="sm"
                               onClick={() => handleDownload(book)}

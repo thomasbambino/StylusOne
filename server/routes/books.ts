@@ -2,8 +2,8 @@ import express from 'express';
 import multer from 'multer';
 import { db } from '../db';
 import { loggers } from '../lib/logger';
-import { books, users, type InsertBook } from '@shared/schema';
-import { eq, desc, sql } from 'drizzle-orm';
+import { books, users, bookReadLog, type InsertBook } from '@shared/schema';
+import { eq, desc, sql, and } from 'drizzle-orm';
 import { epubService } from '../services/epub-service';
 import { emailService } from '../services/email-service';
 import path from 'path';
@@ -64,6 +64,64 @@ router.get('/', async (req, res) => {
   } catch (error) {
     loggers.book.error('Error fetching books', { error });
     res.status(500).json({ error: 'Failed to fetch books' });
+  }
+});
+
+/**
+ * GET /api/books/read-status
+ * Get the list of book IDs the current user has marked as read
+ */
+router.get('/read-status', async (req, res) => {
+  if (!req.isAuthenticated()) return res.sendStatus(401);
+  try {
+    const userId = (req.user as User).id;
+    const readEntries = await db
+      .select({ book_id: bookReadLog.book_id })
+      .from(bookReadLog)
+      .where(eq(bookReadLog.user_id, userId));
+    res.json(readEntries.map(r => r.book_id));
+  } catch (error) {
+    loggers.book.error('Error fetching read status', { error });
+    res.status(500).json({ error: 'Failed to fetch read status' });
+  }
+});
+
+/**
+ * GET /api/books/leaderboard
+ * Get yearly and lifetime leaderboard of books read
+ */
+router.get('/leaderboard', async (req, res) => {
+  if (!req.isAuthenticated()) return res.sendStatus(401);
+  try {
+    const currentYear = new Date().getFullYear();
+
+    const lifetime = await db
+      .select({
+        userId: bookReadLog.user_id,
+        username: users.username,
+        count: sql<number>`cast(count(*) as int)`,
+      })
+      .from(bookReadLog)
+      .innerJoin(users, eq(bookReadLog.user_id, users.id))
+      .groupBy(bookReadLog.user_id, users.username)
+      .orderBy(desc(sql`count(*)`));
+
+    const yearly = await db
+      .select({
+        userId: bookReadLog.user_id,
+        username: users.username,
+        count: sql<number>`cast(count(*) as int)`,
+      })
+      .from(bookReadLog)
+      .innerJoin(users, eq(bookReadLog.user_id, users.id))
+      .where(sql`extract(year from ${bookReadLog.read_at}) = ${currentYear}`)
+      .groupBy(bookReadLog.user_id, users.username)
+      .orderBy(desc(sql`count(*)`));
+
+    res.json({ yearly, lifetime, year: currentYear });
+  } catch (error) {
+    loggers.book.error('Error fetching leaderboard', { error });
+    res.status(500).json({ error: 'Failed to fetch leaderboard' });
   }
 });
 
@@ -629,6 +687,59 @@ router.post('/:id/send-to-kindle', async (req, res) => {
   } catch (error) {
     loggers.book.error('Error sending book to Kindle', { error });
     res.status(500).json({ error: 'Failed to send book to Kindle' });
+  }
+});
+
+/**
+ * POST /api/books/:id/read
+ * Mark a book as read for the current user
+ */
+router.post('/:id/read', async (req, res) => {
+  if (!req.isAuthenticated()) return res.sendStatus(401);
+  try {
+    const bookId = parseInt(req.params.id);
+    if (isNaN(bookId)) return res.status(400).json({ error: 'Invalid book ID' });
+    const userId = (req.user as User).id;
+
+    const [book] = await db.select().from(books).where(eq(books.id, bookId));
+    if (!book) return res.status(404).json({ error: 'Book not found' });
+
+    const [existing] = await db
+      .select()
+      .from(bookReadLog)
+      .where(and(eq(bookReadLog.user_id, userId), eq(bookReadLog.book_id, bookId)));
+
+    if (existing) return res.json({ message: 'Already marked as read' });
+
+    await db.insert(bookReadLog).values({ user_id: userId, book_id: bookId });
+    loggers.book.info(`User ${userId} marked book ${bookId} as read`);
+    res.json({ message: 'Book marked as read' });
+  } catch (error) {
+    loggers.book.error('Error marking book as read', { error });
+    res.status(500).json({ error: 'Failed to mark book as read' });
+  }
+});
+
+/**
+ * DELETE /api/books/:id/read
+ * Unmark a book as read for the current user
+ */
+router.delete('/:id/read', async (req, res) => {
+  if (!req.isAuthenticated()) return res.sendStatus(401);
+  try {
+    const bookId = parseInt(req.params.id);
+    if (isNaN(bookId)) return res.status(400).json({ error: 'Invalid book ID' });
+    const userId = (req.user as User).id;
+
+    await db
+      .delete(bookReadLog)
+      .where(and(eq(bookReadLog.user_id, userId), eq(bookReadLog.book_id, bookId)));
+
+    loggers.book.info(`User ${userId} unmarked book ${bookId} as read`);
+    res.json({ message: 'Book unmarked as read' });
+  } catch (error) {
+    loggers.book.error('Error unmarking book as read', { error });
+    res.status(500).json({ error: 'Failed to unmark book as read' });
   }
 });
 

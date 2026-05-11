@@ -170,6 +170,13 @@ export const books = pgTable("books", {
   updated_at: timestamp("updated_at").notNull().defaultNow(),
 });
 
+export const bookReadLog = pgTable("book_read_log", {
+  id: serial("id").primaryKey(),
+  user_id: integer("user_id").notNull().references(() => users.id, { onDelete: 'cascade' }),
+  book_id: integer("book_id").notNull().references(() => books.id, { onDelete: 'cascade' }),
+  read_at: timestamp("read_at").notNull().defaultNow(),
+});
+
 export const favoriteChannels = pgTable("favoriteChannels", {
   id: serial("id").primaryKey(),
   userId: integer("userId").notNull().references(() => users.id, { onDelete: 'cascade' }),
@@ -560,6 +567,7 @@ export type LoginAttempt = typeof loginAttempts.$inferSelect;
 export type InsertBook = z.infer<typeof insertBookSchema>;
 export type UpdateBook = z.infer<typeof updateBookSchema>;
 export type Book = typeof books.$inferSelect;
+export type BookReadLog = typeof bookReadLog.$inferSelect;
 export type InsertFavoriteChannel = z.infer<typeof insertFavoriteChannelSchema>;
 export type FavoriteChannel = typeof favoriteChannels.$inferSelect;
 export type InsertSubscriptionPlan = z.infer<typeof insertSubscriptionPlanSchema>;
