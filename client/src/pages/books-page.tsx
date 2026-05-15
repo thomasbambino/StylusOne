@@ -1,5 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
+import { toPng } from "html-to-image";
 import { Card, CardContent } from "@/components/ui/card";
 import { BookCard, Book } from "@/components/book-card";
 import { Button } from "@/components/ui/button";
@@ -55,7 +56,9 @@ import {
   Circle,
   ChevronDown,
   ChevronUp,
-  Medal
+  Medal,
+  Share2,
+  Check
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { cn } from "@/lib/utils";
@@ -78,6 +81,9 @@ export default function BooksPage() {
   const { user: currentUser } = useAuth();
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const leaderboardRef = useRef<HTMLDivElement>(null);
+  const [isSharing, setIsSharing] = useState(false);
+  const [shareCopied, setShareCopied] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [uploadDialogOpen, setUploadDialogOpen] = useState(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
@@ -403,6 +409,29 @@ export default function BooksPage() {
     toggleReadMutation.mutate({ bookId, isRead });
   };
 
+  const handleShareLeaderboard = async () => {
+    if (!leaderboardRef.current || isSharing) return;
+    setIsSharing(true);
+    try {
+      const dataUrl = await toPng(leaderboardRef.current, {
+        cacheBust: true,
+        pixelRatio: 2,
+        backgroundColor: "hsl(var(--background))",
+        style: { borderRadius: "12px" },
+      });
+      const res = await fetch(dataUrl);
+      const blob = await res.blob();
+      await navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]);
+      setShareCopied(true);
+      toast({ title: "Copied!", description: "Leaderboard image copied to clipboard" });
+      setTimeout(() => setShareCopied(false), 2500);
+    } catch {
+      toast({ title: "Copy failed", description: "Your browser may not support clipboard images", variant: "destructive" });
+    } finally {
+      setIsSharing(false);
+    }
+  };
+
   // Filter and sort books
   const filteredBooks = books
     .filter(book => 
@@ -538,7 +567,7 @@ export default function BooksPage() {
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.5 }}
         >
-          <div className="border border-muted/40 rounded-xl bg-card/60 backdrop-blur-sm overflow-hidden">
+          <div ref={leaderboardRef} className="border border-muted/40 rounded-xl bg-card/60 backdrop-blur-sm overflow-hidden">
 
             {/* Header */}
             <div className="flex items-center justify-between px-6 py-4 border-b border-muted/20">
@@ -577,8 +606,16 @@ export default function BooksPage() {
                   All Time
                 </button>
                 <button
+                  onClick={handleShareLeaderboard}
+                  disabled={isSharing}
+                  title="Copy leaderboard as image"
+                  className="ml-2 p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted/30 transition-colors disabled:opacity-50"
+                >
+                  {shareCopied ? <Check className="h-4 w-4 text-green-500" /> : <Share2 className="h-4 w-4" />}
+                </button>
+                <button
                   onClick={() => setLeaderboardOpen(!leaderboardOpen)}
-                  className="ml-2 p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted/30 transition-colors"
+                  className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted/30 transition-colors"
                 >
                   {leaderboardOpen ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
                 </button>
