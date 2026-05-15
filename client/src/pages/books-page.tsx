@@ -413,20 +413,39 @@ export default function BooksPage() {
     if (!leaderboardRef.current || isSharing) return;
     setIsSharing(true);
     try {
+      // Resolve the actual CSS variable so html-to-image can use it
+      const rawHsl = getComputedStyle(document.documentElement).getPropertyValue("--background").trim();
+      const backgroundColor = rawHsl ? `hsl(${rawHsl})` : "#09090b";
+
       const dataUrl = await toPng(leaderboardRef.current, {
         cacheBust: true,
         pixelRatio: 2,
-        backgroundColor: "hsl(var(--background))",
-        style: { borderRadius: "12px" },
+        backgroundColor,
       });
-      const res = await fetch(dataUrl);
-      const blob = await res.blob();
-      await navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]);
-      setShareCopied(true);
-      toast({ title: "Copied!", description: "Leaderboard image copied to clipboard" });
-      setTimeout(() => setShareCopied(false), 2500);
+
+      // Safari + Chrome require ClipboardItem to receive a Promise (not a resolved blob)
+      // so the browser can keep the user-gesture context alive across the async work.
+      if (typeof ClipboardItem !== "undefined" && navigator.clipboard?.write) {
+        try {
+          const blobPromise = fetch(dataUrl).then(r => r.blob());
+          await navigator.clipboard.write([new ClipboardItem({ "image/png": blobPromise })]);
+          setShareCopied(true);
+          toast({ title: "Copied!", description: "Paste it anywhere to share" });
+          setTimeout(() => setShareCopied(false), 2500);
+          return;
+        } catch {
+          // clipboard failed — fall through to download
+        }
+      }
+
+      // Fallback: trigger a file download
+      const a = document.createElement("a");
+      a.href = dataUrl;
+      a.download = `reading-leaderboard-${new Date().getFullYear()}.png`;
+      a.click();
+      toast({ title: "Saved!", description: "Clipboard not supported — image downloaded instead" });
     } catch {
-      toast({ title: "Copy failed", description: "Your browser may not support clipboard images", variant: "destructive" });
+      toast({ title: "Share failed", description: "Could not generate the leaderboard image", variant: "destructive" });
     } finally {
       setIsSharing(false);
     }
