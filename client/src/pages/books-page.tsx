@@ -82,6 +82,7 @@ export default function BooksPage() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const leaderboardRef = useRef<HTMLDivElement>(null);
+  const shareCardRef = useRef<HTMLDivElement>(null);
   const [isSharing, setIsSharing] = useState(false);
   const [shareCopied, setShareCopied] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
@@ -410,17 +411,12 @@ export default function BooksPage() {
   };
 
   const handleShareLeaderboard = async () => {
-    if (!leaderboardRef.current || isSharing) return;
+    if (!shareCardRef.current || isSharing) return;
     setIsSharing(true);
     try {
-      // Resolve the actual CSS variable so html-to-image can use it
-      const rawHsl = getComputedStyle(document.documentElement).getPropertyValue("--background").trim();
-      const backgroundColor = rawHsl ? `hsl(${rawHsl})` : "#09090b";
-
-      const dataUrl = await toPng(leaderboardRef.current, {
+      const dataUrl = await toPng(shareCardRef.current, {
         cacheBust: true,
         pixelRatio: 2,
-        backgroundColor,
       });
 
       // Safari + Chrome require ClipboardItem to receive a Promise (not a resolved blob)
@@ -576,6 +572,7 @@ export default function BooksPage() {
   };
 
   return (
+    <>
     <div className="min-h-screen bg-gradient-to-br from-background via-background to-muted/20">
       <div className="container mx-auto px-6 py-8">
         
@@ -1322,5 +1319,138 @@ export default function BooksPage() {
         </AnimatePresence>
       </div>
     </div>
+
+    {/* Hidden share card — off-screen, captured by handleShareLeaderboard */}
+
+    <div
+      ref={shareCardRef}
+      style={{
+        position: "fixed",
+        left: "-9999px",
+        top: 0,
+        width: "480px",
+        backgroundColor: "#0c0c0f",
+        borderRadius: "20px",
+        overflow: "hidden",
+        fontFamily: "system-ui, -apple-system, sans-serif",
+      }}
+    >
+      {/* Header */}
+      <div style={{
+        background: "linear-gradient(135deg, #18181b 0%, #1e1230 60%, #18181b 100%)",
+        padding: "24px 24px 20px",
+        borderBottom: "1px solid #27272a",
+      }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "6px" }}>
+          <span style={{ fontSize: "22px" }}>🏆</span>
+          <span style={{ color: "#fafafa", fontWeight: 700, fontSize: "20px", letterSpacing: "-0.3px" }}>
+            Reading Leaderboard
+          </span>
+          <span style={{
+            marginLeft: "auto",
+            background: leaderboardTab === "yearly" ? "#7c3aed" : "#3f3f46",
+            color: "#fff",
+            fontSize: "11px",
+            fontWeight: 600,
+            padding: "3px 10px",
+            borderRadius: "999px",
+          }}>
+            {leaderboardTab === "yearly" ? `${leaderboard?.year ?? new Date().getFullYear()}` : "All Time"}
+          </span>
+        </div>
+        <div style={{ color: "#71717a", fontSize: "13px" }}>
+          {leaderboard?.[leaderboardTab].reduce((s, e) => s + e.count, 0) ?? 0} books read
+          {leaderboardTab === "yearly" ? ` this year` : ` all time`}
+          {" · "}
+          {leaderboard?.[leaderboardTab].length ?? 0} readers
+        </div>
+      </div>
+
+      {/* Rows */}
+      {(leaderboard?.[leaderboardTab] ?? []).slice(0, 6).map((entry, i) => {
+        const rankColors = ["#eab308", "#94a3b8", "#d97706"];
+        const barColors = ["#eab308", "#94a3b8", "#d97706", "#7c3aed"];
+        const topCount = leaderboard?.[leaderboardTab][0]?.count ?? 1;
+        const pct = Math.round((entry.count / topCount) * 100);
+        const isMe = entry.userId === currentUser?.id;
+        const avatarColors = ["#ef4444","#3b82f6","#22c55e","#a855f7","#f97316","#ec4899","#06b6d4","#eab308"];
+        let hash = 0;
+        for (let c = 0; c < entry.username.length; c++) hash = entry.username.charCodeAt(c) + ((hash << 5) - hash);
+        const avatarBg = avatarColors[Math.abs(hash) % avatarColors.length];
+
+        return (
+          <div key={entry.userId} style={{
+            display: "flex",
+            alignItems: "center",
+            gap: "12px",
+            padding: "14px 20px",
+            borderBottom: "1px solid #1c1c1e",
+            backgroundColor: i === 0 ? "rgba(234,179,8,0.04)" : isMe ? "rgba(124,58,237,0.04)" : "transparent",
+          }}>
+            {/* Rank */}
+            <div style={{ width: "24px", textAlign: "center", flexShrink: 0 }}>
+              {i < 3
+                ? <span style={{ fontSize: "18px" }}>{["🥇","🥈","🥉"][i]}</span>
+                : <span style={{ color: "#52525b", fontSize: "13px", fontWeight: 600 }}>{i + 1}</span>
+              }
+            </div>
+
+            {/* Avatar */}
+            <div style={{
+              width: "36px", height: "36px", borderRadius: "50%",
+              backgroundColor: avatarBg, flexShrink: 0,
+              display: "flex", alignItems: "center", justifyContent: "center",
+              color: "#fff", fontWeight: 700, fontSize: "13px",
+              border: isMe ? "2px solid #7c3aed" : "2px solid #27272a",
+            }}>
+              {entry.username.slice(0, 2).toUpperCase()}
+            </div>
+
+            {/* Name + bar */}
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ display: "flex", alignItems: "baseline", gap: "6px", marginBottom: "6px" }}>
+                <span style={{ color: isMe ? "#a78bfa" : "#e4e4e7", fontWeight: 600, fontSize: "14px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                  {entry.username}
+                </span>
+                {isMe && (
+                  <span style={{ fontSize: "10px", background: "#4c1d95", color: "#c4b5fd", padding: "1px 6px", borderRadius: "999px", flexShrink: 0 }}>you</span>
+                )}
+                <span style={{ marginLeft: "auto", color: "#fafafa", fontWeight: 700, fontSize: "16px", flexShrink: 0 }}>{entry.count}</span>
+                <span style={{ color: "#52525b", fontSize: "11px", flexShrink: 0 }}>{entry.count === 1 ? "book" : "books"}</span>
+              </div>
+              <div style={{ height: "4px", backgroundColor: "#27272a", borderRadius: "999px", overflow: "hidden" }}>
+                <div style={{
+                  width: `${pct}%`, height: "100%",
+                  background: i < 3
+                    ? `linear-gradient(90deg, ${rankColors[i]}aa, ${rankColors[i]})`
+                    : "linear-gradient(90deg, #7c3aed88, #7c3aed)",
+                  borderRadius: "999px",
+                }} />
+              </div>
+            </div>
+
+            {/* Book covers */}
+            <div style={{ display: "flex", gap: "4px", flexShrink: 0 }}>
+              {entry.recentBooks.slice(0, 3).map(book => (
+                <div key={book.bookId} style={{ width: "28px", height: "42px", borderRadius: "4px", overflow: "hidden", backgroundColor: "#27272a", border: "1px solid #3f3f46" }}>
+                  <img src={`/api/books/${book.bookId}/cover`} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                </div>
+              ))}
+              {entry.count > entry.recentBooks.length && entry.recentBooks.length === 0 && (
+                <div style={{ width: "28px", height: "42px", borderRadius: "4px", backgroundColor: "#27272a", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                  <span style={{ color: "#52525b", fontSize: "10px" }}>—</span>
+                </div>
+              )}
+            </div>
+          </div>
+        );
+      })}
+
+      {/* Footer */}
+      <div style={{ padding: "12px 20px", textAlign: "center", color: "#3f3f46", fontSize: "11px", letterSpacing: "0.05em" }}>
+        stylus.services
+      </div>
+    </div>
+    </>
   );
 }
