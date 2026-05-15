@@ -421,6 +421,9 @@ export default function BooksPage() {
         pixelRatio: 2,
         width: shareCardRef.current.offsetWidth,
         height: shareCardRef.current.offsetHeight,
+        // Override opacity for the capture — the element is hidden via
+        // opacity:0 in the DOM but the PNG must render it fully visible.
+        style: { opacity: "1" },
       });
 
       // Safari + Chrome require ClipboardItem to receive a Promise (not a resolved blob)
