@@ -414,9 +414,13 @@ export default function BooksPage() {
     if (!shareCardRef.current || isSharing) return;
     setIsSharing(true);
     try {
+      // Give the card's images a moment to finish loading
+      await new Promise(r => setTimeout(r, 150));
       const dataUrl = await toPng(shareCardRef.current, {
         cacheBust: true,
         pixelRatio: 2,
+        width: shareCardRef.current.offsetWidth,
+        height: shareCardRef.current.offsetHeight,
       });
 
       // Safari + Chrome require ClipboardItem to receive a Promise (not a resolved blob)
@@ -1324,10 +1328,14 @@ export default function BooksPage() {
 
     <div
       ref={shareCardRef}
+      aria-hidden="true"
       style={{
         position: "fixed",
-        left: "-9999px",
         top: 0,
+        left: 0,
+        opacity: 0,
+        pointerEvents: "none",
+        zIndex: -1,
         width: "480px",
         backgroundColor: "#0c0c0f",
         borderRadius: "20px",
